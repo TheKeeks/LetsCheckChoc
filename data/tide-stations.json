@@ -1,0 +1,290 @@
+[
+  {
+    "id": "8510719",
+    "name": "Silver Eel Pond, Fishers Island, NY",
+    "lat": 41.263,
+    "lon": -72.048
+  },
+  {
+    "id": "8510560",
+    "name": "Montauk, NY",
+    "lat": 41.048,
+    "lon": -71.96
+  },
+  {
+    "id": "8461490",
+    "name": "New London, CT",
+    "lat": 41.355,
+    "lon": -72.09
+  },
+  {
+    "id": "8467150",
+    "name": "Bridgeport, CT",
+    "lat": 41.173,
+    "lon": -73.182
+  },
+  {
+    "id": "8516945",
+    "name": "Kings Point, NY",
+    "lat": 40.81,
+    "lon": -73.765
+  },
+  {
+    "id": "8518750",
+    "name": "The Battery, NY",
+    "lat": 40.7,
+    "lon": -74.014
+  },
+  {
+    "id": "8519483",
+    "name": "Bergen Point, NY",
+    "lat": 40.636,
+    "lon": -74.142
+  },
+  {
+    "id": "8531680",
+    "name": "Sandy Hook, NJ",
+    "lat": 40.467,
+    "lon": -74.009
+  },
+  {
+    "id": "8534720",
+    "name": "Atlantic City, NJ",
+    "lat": 39.355,
+    "lon": -74.418
+  },
+  {
+    "id": "8536110",
+    "name": "Cape May, NJ",
+    "lat": 38.968,
+    "lon": -74.96
+  },
+  {
+    "id": "8551910",
+    "name": "Reedy Point, DE",
+    "lat": 39.558,
+    "lon": -75.573
+  },
+  {
+    "id": "8557380",
+    "name": "Lewes, DE",
+    "lat": 38.782,
+    "lon": -75.119
+  },
+  {
+    "id": "8570283",
+    "name": "Ocean City, MD",
+    "lat": 38.328,
+    "lon": -75.091
+  },
+  {
+    "id": "8573364",
+    "name": "Tolchester Beach, MD",
+    "lat": 39.213,
+    "lon": -76.245
+  },
+  {
+    "id": "8574680",
+    "name": "Baltimore, MD",
+    "lat": 39.267,
+    "lon": -76.579
+  },
+  {
+    "id": "8575512",
+    "name": "Annapolis, MD",
+    "lat": 38.983,
+    "lon": -76.482
+  },
+  {
+    "id": "8594900",
+    "name": "Washington, DC",
+    "lat": 38.873,
+    "lon": -77.022
+  },
+  {
+    "id": "8632200",
+    "name": "Kiptopeke, VA",
+    "lat": 37.167,
+    "lon": -75.988
+  },
+  {
+    "id": "8635750",
+    "name": "Lewisetta, VA",
+    "lat": 37.995,
+    "lon": -76.464
+  },
+  {
+    "id": "8637624",
+    "name": "Gloucester Point, VA",
+    "lat": 37.247,
+    "lon": -76.5
+  },
+  {
+    "id": "8638610",
+    "name": "Sewells Point, VA",
+    "lat": 36.947,
+    "lon": -76.33
+  },
+  {
+    "id": "8638863",
+    "name": "Chesapeake Bay Bridge Tunnel, VA",
+    "lat": 36.967,
+    "lon": -76.113
+  },
+  {
+    "id": "8651370",
+    "name": "Duck, NC",
+    "lat": 36.183,
+    "lon": -75.747
+  },
+  {
+    "id": "8652587",
+    "name": "Oregon Inlet, NC",
+    "lat": 35.795,
+    "lon": -75.548
+  },
+  {
+    "id": "8654467",
+    "name": "Hatteras, NC",
+    "lat": 35.209,
+    "lon": -75.704
+  },
+  {
+    "id": "8656483",
+    "name": "Beaufort, NC",
+    "lat": 34.72,
+    "lon": -76.67
+  },
+  {
+    "id": "8658120",
+    "name": "Wilmington, NC",
+    "lat": 34.227,
+    "lon": -77.954
+  },
+  {
+    "id": "8659084",
+    "name": "Southport, NC",
+    "lat": 33.915,
+    "lon": -78.02
+  },
+  {
+    "id": "8661070",
+    "name": "Myrtle Beach, SC",
+    "lat": 33.655,
+    "lon": -78.918
+  },
+  {
+    "id": "8665530",
+    "name": "Charleston, SC",
+    "lat": 32.782,
+    "lon": -79.925
+  },
+  {
+    "id": "8670870",
+    "name": "Fort Pulaski, GA",
+    "lat": 32.034,
+    "lon": -80.902
+  },
+  {
+    "id": "8720030",
+    "name": "Fernandina Beach, FL",
+    "lat": 30.672,
+    "lon": -81.466
+  },
+  {
+    "id": "8720218",
+    "name": "Mayport, FL",
+    "lat": 30.397,
+    "lon": -81.43
+  },
+  {
+    "id": "8721604",
+    "name": "Trident Pier, FL",
+    "lat": 28.416,
+    "lon": -80.593
+  },
+  {
+    "id": "8722670",
+    "name": "Lake Worth Pier, FL",
+    "lat": 26.613,
+    "lon": -80.034
+  },
+  {
+    "id": "8723214",
+    "name": "Virginia Key, FL",
+    "lat": 25.731,
+    "lon": -80.162
+  },
+  {
+    "id": "8413320",
+    "name": "Bar Harbor, ME",
+    "lat": 44.392,
+    "lon": -68.205
+  },
+  {
+    "id": "8418150",
+    "name": "Portland, ME",
+    "lat": 43.657,
+    "lon": -70.246
+  },
+  {
+    "id": "8419317",
+    "name": "Wells, ME",
+    "lat": 43.32,
+    "lon": -70.563
+  },
+  {
+    "id": "8423898",
+    "name": "Fort Point, NH",
+    "lat": 43.072,
+    "lon": -70.712
+  },
+  {
+    "id": "8443970",
+    "name": "Boston, MA",
+    "lat": 42.355,
+    "lon": -71.053
+  },
+  {
+    "id": "8447386",
+    "name": "Fall River, MA",
+    "lat": 41.704,
+    "lon": -71.164
+  },
+  {
+    "id": "8447930",
+    "name": "Woods Hole, MA",
+    "lat": 41.524,
+    "lon": -70.672
+  },
+  {
+    "id": "8449130",
+    "name": "Nantucket Island, MA",
+    "lat": 41.285,
+    "lon": -70.096
+  },
+  {
+    "id": "8452660",
+    "name": "Newport, RI",
+    "lat": 41.505,
+    "lon": -71.326
+  },
+  {
+    "id": "8452944",
+    "name": "Conimicut Light, RI",
+    "lat": 41.717,
+    "lon": -71.343
+  },
+  {
+    "id": "8454000",
+    "name": "Providence, RI",
+    "lat": 41.807,
+    "lon": -71.401
+  },
+  {
+    "id": "8512354",
+    "name": "New Rochelle, NY",
+    "lat": 40.894,
+    "lon": -73.782
+  }
+]
