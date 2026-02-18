@@ -1,0 +1,504 @@
+/* ── Design tokens ─────────────────────────────── */
+:root {
+  --bg: #f4f1ec;
+  --bg-card: #ffffff;
+  --bg-alt: #faf8f5;
+  --border: #e0dbd3;
+  --border-l: #eae6e0;
+  --ink: #2c2825;
+  --ink2: #5c554d;
+  --ink3: #8a827a;
+  --ink4: #b5afa8;
+  --green: #3a7d56;
+  --orange: #b87a2e;
+  --gray-c: #a09890;
+  --red-m: #a85a4a;
+  --blue: #5a7fa0;
+  --teal: #3a7d7d;
+  --warm-orange: #d4844c;
+  --temp-cold: #4a7fb5;
+  --temp-cool: #6a9a72;
+  --temp-warm: #c98a35;
+  --temp-hot: #c05545;
+  --night-bg: rgba(44, 40, 37, 0.06);
+  --serif: 'Libre Baskerville', 'Georgia', serif;
+  --mono: 'DM Mono', 'Menlo', monospace;
+  --card-r: 8px;
+  --gap: 12px;
+}
+
+/* ── Reset & base ─────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--serif);
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.hidden { display: none !important; }
+
+/* ── Gate overlay ─────────────────────────────── */
+#gate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#gate-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--card-r);
+  padding: 48px 40px;
+  text-align: center;
+  max-width: 380px;
+  width: 90%;
+  box-shadow: 0 2px 20px rgba(0,0,0,0.06);
+}
+
+.gate-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+#gate-card h2 {
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  font-weight: 400;
+  color: var(--ink);
+  margin-bottom: 28px;
+  line-height: 1.5;
+}
+
+.gate-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.gate-btn {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  padding: 10px 32px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--ink2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gate-btn:hover {
+  border-color: var(--ink4);
+  color: var(--ink);
+}
+
+.gate-btn-primary {
+  background: var(--ink);
+  color: var(--bg-card);
+  border-color: var(--ink);
+}
+
+.gate-btn-primary:hover {
+  background: var(--ink2);
+}
+
+/* ── Header ───────────────────────────────────── */
+#app-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 16px var(--gap) 8px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.site-title {
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.header-location {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ink3);
+  margin-left: 12px;
+}
+
+.header-meta {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--ink4);
+}
+
+/* ── Panels ───────────────────────────────────── */
+.panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--card-r);
+  margin: var(--gap) auto;
+  max-width: 900px;
+  overflow: hidden;
+}
+
+.panel-title {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--ink3);
+  padding: 10px 14px 0;
+  letter-spacing: 0.01em;
+}
+
+.panel-footer {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--ink4);
+  padding: 6px 14px 8px;
+  border-top: 1px solid var(--border-l);
+  background: var(--bg-alt);
+}
+
+.panel-footer a {
+  color: var(--ink3);
+}
+
+.panel-footer a:hover {
+  color: var(--ink2);
+}
+
+/* ── Map containers ───────────────────────────── */
+.map-container {
+  height: 320px;
+  width: 100%;
+}
+
+.map-container-sm {
+  height: 250px;
+}
+
+/* Fix leaflet font */
+.leaflet-container {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+/* ── Conditions row ───────────────────────────── */
+.conditions-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--gap);
+  max-width: 900px;
+  margin: var(--gap) auto;
+  padding: 0;
+}
+
+.condition-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--card-r);
+  padding: 12px 14px 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 110px;
+}
+
+.condition-label {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--ink3);
+  margin-bottom: 6px;
+}
+
+.condition-value {
+  font-family: var(--mono);
+  font-size: 1.6rem;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.condition-detail {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink2);
+  margin-top: 4px;
+}
+
+.condition-extra {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--ink3);
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-l);
+  line-height: 1.4;
+}
+
+.condition-card .panel-footer {
+  margin-top: auto;
+  margin-left: -14px;
+  margin-right: -14px;
+  padding: 6px 14px 7px;
+}
+
+/* ── Temperature color classes ────────────────── */
+.temp-cold { color: var(--temp-cold); }
+.temp-cool { color: var(--temp-cool); }
+.temp-warm { color: var(--temp-warm); }
+.temp-hot  { color: var(--temp-hot); }
+
+/* ── Direction color classes (Chocomount only) ── */
+.dir-in    { color: var(--green); }
+.dir-edge  { color: var(--orange); }
+.dir-out   { color: var(--gray-c); }
+
+/* ── Windy embeds ─────────────────────────────── */
+.embed-container {
+  position: relative;
+  width: 100%;
+  height: 350px;
+}
+
+.windy-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+/* ── Chart containers ─────────────────────────── */
+.chart-container {
+  position: relative;
+  width: 100%;
+  height: 280px;
+  padding: 8px 4px;
+}
+
+.chart-container-sm {
+  height: 200px;
+}
+
+.chart-container-sq {
+  height: 260px;
+}
+
+.chart-container canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ── Panel row (compass + spectrum side by side) ─ */
+.panel-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap);
+  max-width: 900px;
+  margin: var(--gap) auto;
+}
+
+.panel-half {
+  margin: 0;
+}
+
+/* ── Hourly table ─────────────────────────────── */
+.hourly-table-wrap {
+  max-height: 480px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.hourly-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.hourly-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.hourly-table th {
+  background: var(--bg-alt);
+  color: var(--ink3);
+  font-weight: 400;
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.hourly-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border-l);
+  white-space: nowrap;
+  color: var(--ink2);
+}
+
+.hourly-table tr.day-separator td {
+  background: var(--bg-alt);
+  font-weight: 500;
+  color: var(--ink);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.hourly-table tr.night-row td {
+  background: var(--night-bg);
+}
+
+/* ── Tide list below tide chart ───────────────── */
+.tide-list {
+  padding: 8px 14px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.tide-item {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.tide-item .tide-type {
+  font-weight: 500;
+  color: var(--ink3);
+  min-width: 18px;
+}
+
+.tide-item .tide-type-h { color: var(--blue); }
+.tide-item .tide-type-l { color: var(--ink4); }
+
+/* ── Tide station map info ────────────────────── */
+.tide-map-info {
+  padding: 8px 14px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink2);
+  min-height: 28px;
+}
+
+/* ── Page footer ──────────────────────────────── */
+#page-footer {
+  max-width: 900px;
+  margin: 20px auto;
+  padding: 16px var(--gap);
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--ink4);
+  text-align: center;
+}
+
+#page-footer a {
+  color: var(--ink3);
+}
+
+/* ── Leaflet custom markers ───────────────────── */
+.buoy-marker {
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.9);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+
+.buoy-marker-selected {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px rgba(44,40,37,0.2);
+}
+
+.choc-marker {
+  font-size: 20px;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.pin-marker {
+  font-size: 22px;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.3));
+}
+
+.tide-station-marker {
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.9);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  opacity: 0.85;
+}
+
+.tide-station-marker-active {
+  opacity: 1;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px rgba(90,127,160,0.3);
+}
+
+/* ── Loading shimmer ──────────────────────────── */
+.loading-shimmer {
+  background: linear-gradient(90deg, var(--bg-alt) 25%, var(--border-l) 50%, var(--bg-alt) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ── Responsive ───────────────────────────────── */
+@media (max-width: 700px) {
+  .conditions-row {
+    grid-template-columns: repeat(2, 1fr);
+    padding: 0 var(--gap);
+  }
+
+  .panel-row {
+    grid-template-columns: 1fr;
+    padding: 0 var(--gap);
+  }
+
+  .panel {
+    margin-left: var(--gap);
+    margin-right: var(--gap);
+  }
+
+  #app-header {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .header-location {
+    margin-left: 0;
+  }
+
+  .embed-container {
+    height: 280px;
+  }
+
+  .condition-value {
+    font-size: 1.3rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .conditions-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .map-container {
+    height: 260px;
+  }
+}

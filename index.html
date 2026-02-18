@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LetsCheckChoc</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Boat question gate -->
+  <div id="gate-overlay">
+    <div id="gate-card">
+      <div class="gate-icon">⚓</div>
+      <h2>Are you coming by boat today?</h2>
+      <div class="gate-buttons">
+        <button id="gate-yes" class="gate-btn">Yes</button>
+        <button id="gate-no" class="gate-btn gate-btn-primary">No</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main app -->
+  <div id="app" class="hidden">
+    <header id="app-header">
+      <div class="header-left">
+        <h1 class="site-title">LetsCheckChoc</h1>
+        <span id="header-location" class="header-location">Select a buoy or drag the pin</span>
+      </div>
+      <div class="header-right">
+        <span id="header-update-time" class="header-meta"></span>
+      </div>
+    </header>
+
+    <!-- Buoy selector map -->
+    <section class="panel" id="panel-map">
+      <div id="buoy-map" class="map-container"></div>
+    </section>
+
+    <!-- Current conditions row -->
+    <section class="conditions-row" id="conditions-row">
+      <div class="condition-card" id="card-swell">
+        <div class="condition-label">Swell: Current</div>
+        <div class="condition-value" id="val-swell-height">—</div>
+        <div class="condition-detail" id="val-swell-detail">—</div>
+        <div class="condition-extra" id="val-swell-arrival" style="display:none;"></div>
+        <div class="panel-footer" id="footer-swell"></div>
+      </div>
+      <div class="condition-card" id="card-wind">
+        <div class="condition-label">Wind: Current</div>
+        <div class="condition-value" id="val-wind-speed">—</div>
+        <div class="condition-detail" id="val-wind-detail">—</div>
+        <div class="panel-footer" id="footer-wind"></div>
+      </div>
+      <div class="condition-card" id="card-temp">
+        <div class="condition-label">Water Temp</div>
+        <div class="condition-value" id="val-water-temp">—</div>
+        <div class="condition-detail" id="val-temp-detail">—</div>
+        <div class="panel-footer" id="footer-temp"></div>
+      </div>
+      <div class="condition-card" id="card-daylight">
+        <div class="condition-label">Daylight</div>
+        <div class="condition-value" id="val-daylight">—</div>
+        <div class="condition-detail" id="val-daylight-detail">—</div>
+        <div class="panel-footer" id="footer-daylight"></div>
+      </div>
+    </section>
+
+    <!-- Wind map (Windy embed) -->
+    <section class="panel" id="panel-wind-map">
+      <h3 class="panel-title">Wind Map</h3>
+      <div class="embed-container">
+        <iframe id="windy-wind" class="windy-iframe" frameborder="0" loading="lazy"></iframe>
+      </div>
+      <div class="panel-footer" id="footer-wind-map"></div>
+    </section>
+
+    <!-- Swell map (Windy embed) -->
+    <section class="panel" id="panel-swell-map">
+      <h3 class="panel-title">Swell Map</h3>
+      <div class="embed-container">
+        <iframe id="windy-swell" class="windy-iframe" frameborder="0" loading="lazy"></iframe>
+      </div>
+      <div class="panel-footer" id="footer-swell-map"></div>
+    </section>
+
+    <!-- Swell forecast chart -->
+    <section class="panel" id="panel-forecast">
+      <h3 class="panel-title">Swell Forecast</h3>
+      <div class="chart-container">
+        <canvas id="forecast-canvas"></canvas>
+      </div>
+      <div class="panel-footer" id="footer-forecast"></div>
+    </section>
+
+    <!-- Tides -->
+    <section class="panel" id="panel-tides" style="display:none;">
+      <h3 class="panel-title">Tides</h3>
+      <div class="chart-container chart-container-sm">
+        <canvas id="tide-canvas"></canvas>
+      </div>
+      <div id="tide-hilo-list" class="tide-list"></div>
+      <div class="panel-footer" id="footer-tides"></div>
+    </section>
+
+    <!-- Compass rose + wave energy spectrum side by side -->
+    <section class="panel-row" id="panel-spectral-row" style="display:none;">
+      <div class="panel panel-half" id="panel-compass">
+        <h3 class="panel-title">Spectral Compass Rose</h3>
+        <div class="chart-container chart-container-sq">
+          <canvas id="compass-canvas"></canvas>
+        </div>
+        <div class="panel-footer" id="footer-compass"></div>
+      </div>
+      <div class="panel panel-half" id="panel-spectrum">
+        <h3 class="panel-title">Wave Energy Spectrum</h3>
+        <div class="chart-container chart-container-sq">
+          <canvas id="spectrum-canvas"></canvas>
+        </div>
+        <div class="panel-footer" id="footer-spectrum"></div>
+      </div>
+    </section>
+
+    <!-- Hourly forecast detail -->
+    <section class="panel" id="panel-hourly">
+      <h3 class="panel-title">Hourly Forecast Detail</h3>
+      <div class="hourly-table-wrap">
+        <table id="hourly-table" class="hourly-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Height</th>
+              <th>Period</th>
+              <th>Dir</th>
+              <th>Wind</th>
+              <th>Gust</th>
+            </tr>
+          </thead>
+          <tbody id="hourly-tbody"></tbody>
+        </table>
+      </div>
+      <div class="panel-footer" id="footer-hourly"></div>
+    </section>
+
+    <!-- Tide station selector map -->
+    <section class="panel" id="panel-tide-map">
+      <h3 class="panel-title">Tide Stations</h3>
+      <div id="tide-map" class="map-container map-container-sm"></div>
+      <div id="tide-map-info" class="tide-map-info"></div>
+      <div class="panel-footer" id="footer-tide-map"></div>
+    </section>
+
+    <!-- Page footer -->
+    <footer id="page-footer">
+      <span>LetsCheckChoc — data from <a href="https://www.ndbc.noaa.gov/" target="_blank" rel="noopener">ndbc</a>, <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, <a href="https://tidesandcurrents.noaa.gov/" target="_blank" rel="noopener">CO-OPS</a>, <a href="https://www.windy.com/" target="_blank" rel="noopener">Windy</a></span>
+    </footer>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
