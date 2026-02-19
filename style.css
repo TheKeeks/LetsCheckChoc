@@ -458,6 +458,42 @@ a:hover { text-decoration: underline; }
   100% { background-position: 200% 0; }
 }
 
+/* ── Wind arrow in card ───────────────────────── */
+.wind-arrow-inline {
+  display: inline-block;
+  font-size: 1.1em;
+  font-weight: 700;
+  color: var(--ink);
+  vertical-align: baseline;
+  line-height: 1;
+}
+
+/* ── Daylight card value sizing ──────────────── */
+#card-daylight .condition-value {
+  font-size: 1.05rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* ── Spectral empty state ────────────────────── */
+.spectral-empty-msg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px 20px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--ink3);
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ── Hourly table horizontal scroll on mobile ── */
+.hourly-table {
+  min-width: 540px;
+}
+
 /* ── Responsive ───────────────────────────────── */
 @media (max-width: 700px) {
   .conditions-row {
@@ -491,6 +527,20 @@ a:hover { text-decoration: underline; }
   .condition-value {
     font-size: 1.3rem;
   }
+
+  #card-daylight .condition-value {
+    font-size: 0.95rem;
+  }
+
+  /* Force forecast chart to scroll horizontally on narrow screens */
+  #panel-forecast .chart-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #panel-forecast .chart-container canvas {
+    min-width: 600px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -500,5 +550,13 @@ a:hover { text-decoration: underline; }
 
   .map-container {
     height: 260px;
+  }
+
+  #panel-forecast .chart-container canvas {
+    min-width: 700px;
+  }
+
+  .hourly-table {
+    min-width: 580px;
   }
 }
