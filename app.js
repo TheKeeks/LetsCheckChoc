@@ -11,8 +11,10 @@ const CONFIG = {
     name: 'Chocomount Beach',
     lat: 41.275693,
     lon: -71.963310,
-    forecastLat: 41.074783,
-    forecastLon: -71.692795,
+    forecastLat: 41.089152,
+    forecastLon: -71.721050,
+    starLat: 41.089152,
+    starLon: -71.721050,
     buoyId: '44097',
     tideStation: '8510719',
     waterTempStation: '8510560',
@@ -21,7 +23,7 @@ const CONFIG = {
     swellWindowEdge: 5,
     buoyLat: 40.969,
     buoyLon: -71.124,
-    buoyDistanceMiles: 22
+    buoyDistanceMiles: 50
   },
   api: {
     openMeteoMarine: 'https://marine-api.open-meteo.com/v1/marine',
@@ -80,8 +82,11 @@ function directionLabel(deg) {
 
 function directionArrow(deg) {
   if (deg == null || isNaN(deg)) return '';
-  // Meteorological: "from" direction. Arrow points where wave/wind is going.
-  return '↓';
+  // Meteorological: "from" direction. Arrow points where wind/wave is going TO.
+  // We rotate by 180° because deg is "from" and we want "to".
+  const arrows = ['↓','↙','←','↖','↑','↗','→','↘'];
+  const idx = Math.round((((deg + 180) % 360 + 360) % 360) / 45) % 8;
+  return arrows[idx];
 }
 
 function tempColorClass(f) {
@@ -520,32 +525,43 @@ function initBuoyMap() {
   STATE.buoys.forEach(buoy => {
     if (buoy.home === 'chocomount' && !STATE.boatGatePassed) return;
 
-    const color = '#5a7fa0'; // default blue, will be updated with live data
-    const icon = buoy.home === 'chocomount'
-      ? L.divIcon({ className: 'choc-marker', html: '⭐', iconSize: [24, 24], iconAnchor: [12, 12] })
-      : L.divIcon({
-          className: 'buoy-marker',
-          html: '',
-          iconSize: [12, 12],
-          iconAnchor: [6, 6]
-        });
-
-    // Style the buoy dot
-    if (buoy.home !== 'chocomount') {
-      icon.options.html = `<div style="width:12px;height:12px;border-radius:50%;background:${color};"></div>`;
-    }
+    const color = '#5a7fa0'; // default blue
+    // Chocomount buoy gets a regular dot marker (the star is placed separately)
+    const icon = L.divIcon({
+      className: 'buoy-marker',
+      html: `<div style="width:12px;height:12px;border-radius:50%;background:${color};"></div>`,
+      iconSize: [12, 12],
+      iconAnchor: [6, 6]
+    });
 
     const marker = L.marker([buoy.lat, buoy.lon], { icon })
       .addTo(STATE.buoyMap)
       .bindTooltip(`${buoy.name}<br>${buoy.id}`, { direction: 'top', offset: [0, -8] });
 
     marker.on('click', () => selectBuoy(buoy));
-
-    if (buoy.home === 'chocomount') {
-      STATE.chocMarker = marker;
-    }
     STATE.buoyMarkers.push({ marker, buoy });
   });
+
+  // Add permanent Chocomount Star marker at the forecast point
+  if (STATE.boatGatePassed) {
+    const starIcon = L.divIcon({
+      className: 'choc-marker',
+      html: '⭐',
+      iconSize: [28, 28],
+      iconAnchor: [14, 14]
+    });
+    STATE.chocMarker = L.marker(
+      [CONFIG.chocomount.starLat, CONFIG.chocomount.starLon],
+      { icon: starIcon, zIndexOffset: 500 }
+    )
+      .addTo(STATE.buoyMap)
+      .bindTooltip('Chocomount Star<br>41.089°N, 71.721°W', { direction: 'top', offset: [0, -10] });
+
+    STATE.chocMarker.on('click', () => {
+      const chocBuoy = STATE.buoys.find(b => b.home === 'chocomount');
+      if (chocBuoy) selectBuoy(chocBuoy);
+    });
+  }
 
   // Add draggable forecast pin
   const pinIcon = L.divIcon({ className: 'pin-marker', html: '📍', iconSize: [24, 24], iconAnchor: [12, 24] });
@@ -766,26 +782,34 @@ async function loadAllData(buoy) {
   // ── Spectral data (compass rose + spectrum) ──
   if (buoy.spectral) {
     el('panel-spectral-row').style.display = '';
-    const spectral = await fetchNDBCSpectral(buoy.id);
-    const parsed = parseNDBCSpectral(spectral);
-    if (parsed) {
-      drawCompassRose(parsed);
-      drawSpectrum(parsed);
-      setFooter('footer-compass',
-        `ndbc ${buoy.id} · ${buoy.name} · ${buoy.lat}°N, ${Math.abs(buoy.lon)}°W`,
-        `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}`,
-        'ndbc station page'
-      );
-      setFooter('footer-spectrum',
-        `ndbc ${buoy.id} spectral data`,
-        `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}`,
-        'ndbc station page'
-      );
-    } else {
-      el('panel-spectral-row').style.display = 'none';
+    try {
+      const spectral = await fetchNDBCSpectral(buoy.id);
+      const parsed = parseNDBCSpectral(spectral);
+      if (parsed && parsed.bins && parsed.bins.length > 0) {
+        showSpectralCharts();
+        drawCompassRose(parsed);
+        drawSpectrum(parsed);
+        setFooter('footer-compass',
+          `ndbc ${buoy.id} · ${buoy.name} · ${buoy.lat}°N, ${Math.abs(buoy.lon)}°W`,
+          `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}`,
+          'ndbc station page'
+        );
+        setFooter('footer-spectrum',
+          `ndbc ${buoy.id} spectral data`,
+          `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}`,
+          'ndbc station page'
+        );
+      } else {
+        console.warn('Spectral parse returned no bins for buoy', buoy.id);
+        showSpectralEmpty(buoy.id);
+      }
+    } catch (err) {
+      console.warn('Spectral fetch error for buoy', buoy.id, err);
+      showSpectralEmpty(buoy.id);
     }
   } else {
-    el('panel-spectral-row').style.display = 'none';
+    el('panel-spectral-row').style.display = '';
+    showSpectralEmpty();
   }
 
   // ── Hourly table ──
@@ -850,8 +874,9 @@ async function loadPinData(lat, lon) {
     el('panel-tides').style.display = 'none';
   }
 
-  // No spectral for pin
-  el('panel-spectral-row').style.display = 'none';
+  // No spectral for pin — show empty state
+  el('panel-spectral-row').style.display = '';
+  showSpectralEmpty();
 
   // Hourly table
   if (marine && marine.hourly && wind && wind.hourly) {
@@ -918,22 +943,24 @@ function updateSwellCard(buoyParsed, marine, buoy) {
 }
 
 function updateWindCard(wind, buoyParsed, isChoc, lat, lon) {
-  // For Chocomount, attempt NWS first (handled async separately)
-  // For now, use Open-Meteo wind
   if (wind && wind.current) {
     const s = wind.current.wind_speed_10m;
     const d = wind.current.wind_direction_10m;
     const g = wind.current.wind_gusts_10m;
+    const arrow = directionArrow(d);
     el('val-wind-speed').textContent = s != null ? `${Math.round(s)} mph` : '—';
-    el('val-wind-detail').textContent = `${directionLabel(d)} · gusts ${g != null ? Math.round(g) : '—'} mph`;
+    el('val-wind-detail').innerHTML = d != null
+      ? `<span class="wind-arrow-inline">${arrow}</span> ${directionLabel(d)} (${Math.round(d)}°) · gusts ${g != null ? Math.round(g) : '—'} mph`
+      : `${directionLabel(d)} · gusts ${g != null ? Math.round(g) : '—'} mph`;
     setFooter('footer-wind',
       `Open-Meteo Weather · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`,
       'https://open-meteo.com/en/docs',
       'open-meteo.com'
     );
   } else if (buoyParsed && buoyParsed.windSpeed != null) {
+    const arrow = directionArrow(buoyParsed.windDir);
     el('val-wind-speed').textContent = `${Math.round(buoyParsed.windSpeed)} mph`;
-    el('val-wind-detail').textContent = `${directionLabel(buoyParsed.windDir)} · gusts ${buoyParsed.windGust ? Math.round(buoyParsed.windGust) : '—'} mph`;
+    el('val-wind-detail').innerHTML = `<span class="wind-arrow-inline">${arrow}</span> ${directionLabel(buoyParsed.windDir)} · gusts ${buoyParsed.windGust ? Math.round(buoyParsed.windGust) : '—'} mph`;
     setFooter('footer-wind', 'ndbc buoy', 'https://www.ndbc.noaa.gov/', 'ndbc');
   } else {
     el('val-wind-speed').textContent = '—';
@@ -985,16 +1012,16 @@ async function updateWaterTempCard(buoyParsed, marine, isChoc) {
 function updateDaylightCard(lat, lon) {
   const dl = calcDaylight(lat, lon, new Date());
   if (dl.alwaysDay) {
-    el('val-daylight').textContent = '24 hrs';
-    el('val-daylight-detail').textContent = 'Midnight sun';
+    el('val-daylight').textContent = 'Midnight sun';
+    el('val-daylight-detail').textContent = '24 hrs of daylight';
   } else if (dl.alwaysNight) {
-    el('val-daylight').textContent = '0 hrs';
-    el('val-daylight-detail').textContent = 'Polar night';
+    el('val-daylight').textContent = 'Polar night';
+    el('val-daylight-detail').textContent = '0 hrs of daylight';
   } else {
     const h = Math.floor(dl.daylightHours);
     const m = Math.round((dl.daylightHours - h) * 60);
-    el('val-daylight').textContent = `${h}h ${m}m`;
-    el('val-daylight-detail').textContent = `${formatTime(dl.firstLight)} → ${formatTime(dl.lastLight)}`;
+    el('val-daylight').textContent = `${formatTime(dl.firstLight)} → ${formatTime(dl.lastLight)}`;
+    el('val-daylight-detail').textContent = `${h}h ${m}m of daylight`;
   }
   setFooter('footer-daylight', `Astronomical calc · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`);
 }
@@ -1004,11 +1031,12 @@ function updateDaylightCard(lat, lon) {
 // ════════════════════════════════════════════════
 
 function updateWindyEmbeds(lat, lon) {
-  const base = 'https://embed.windy.com/embed.html?type=map&location=coordinates&metricWind=mph&metricTemp=%C2%B0F&zoom=8';
-  el('windy-wind').src = `${base}&overlay=wind&product=ecmwf&level=surface&lat=${lat.toFixed(2)}&lon=${lon.toFixed(2)}`;
-  el('windy-swell').src = `${base}&overlay=swell&product=ecmwf&level=surface&lat=${lat.toFixed(2)}&lon=${lon.toFixed(2)}`;
+  const windBase = 'https://embed.windy.com/embed.html?type=map&location=coordinates&metricWind=mph&metricTemp=%C2%B0F&zoom=8';
+  const wavesBase = 'https://embed.windy.com/embed.html?type=map&location=coordinates&metricWind=mph&metricTemp=%C2%B0F&zoom=6';
+  el('windy-wind').src = `${windBase}&overlay=wind&product=ecmwf&level=surface&lat=${lat.toFixed(2)}&lon=${lon.toFixed(2)}`;
+  el('windy-swell').src = `${wavesBase}&overlay=waves&product=ecmwf&level=surface&lat=${lat.toFixed(2)}&lon=${lon.toFixed(2)}`;
   setFooter('footer-wind-map', 'Windy.com · ecmwf model', 'https://www.windy.com/', 'windy.com');
-  setFooter('footer-swell-map', 'Windy.com · ecmwf model', 'https://www.windy.com/', 'windy.com');
+  setFooter('footer-swell-map', 'Windy.com · ecmwf waves layer', 'https://www.windy.com/', 'windy.com');
 }
 
 // ════════════════════════════════════════════════
@@ -1242,22 +1270,22 @@ function drawForecastChart(marine, wind, daylight, tideHiLo) {
       if (diff < closestDiff) { closestDiff = diff; closest = i; }
     }
 
-    // Swell arrow
+    // Swell arrow (large, colored by direction)
     const swDir = swellDirs[closest];
     if (swDir != null) {
-      drawArrow(ctx, xx, pad.top + 12, swDir, 8, swellDirColor(swDir), 1.5);
+      drawArrow(ctx, xx, pad.top + 13, swDir, 11, swellDirColor(swDir), 2);
     }
 
-    // Wind arrow (smaller, above)
+    // Wind arrow (offset right, dark for contrast)
     const wDir = windDirs[closest];
     const wSpd = windSpeeds[closest];
     if (wDir != null) {
-      drawArrow(ctx, xx + 14, pad.top + 12, wDir, 6, '#8a827a', 1);
+      drawArrow(ctx, xx + 18, pad.top + 13, wDir, 8, '#4a443e', 1.5);
       if (wSpd != null) {
-        ctx.fillStyle = '#8a827a';
-        ctx.font = '8px "DM Mono", monospace';
+        ctx.fillStyle = '#4a443e';
+        ctx.font = '9px "DM Mono", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(`${Math.round(wSpd)}`, xx + 14, pad.top + 24);
+        ctx.fillText(`${Math.round(wSpd)}`, xx + 18, pad.top + 27);
       }
     }
   }
@@ -1298,21 +1326,25 @@ function drawForecastChart(marine, wind, daylight, tideHiLo) {
 function drawArrow(ctx, x, y, dirDeg, size, color, lineW) {
   // dirDeg is "from" direction (meteorological). Arrow points in the "to" direction.
   const rad = degToRad((dirDeg + 180) % 360 - 90);
+  const headLen = Math.max(5, size * 0.6);
+  const headW = Math.max(4, size * 0.45);
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rad);
+  // Shaft with rounded cap
   ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = lineW;
+  ctx.lineWidth = lineW + 0.5;
+  ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(-size, 0);
-  ctx.lineTo(size, 0);
+  ctx.lineTo(size - headLen * 0.5, 0);
   ctx.stroke();
-  // Arrowhead
+  // Filled arrowhead triangle
+  ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(size, 0);
-  ctx.lineTo(size - 3, -2);
-  ctx.lineTo(size - 3, 2);
+  ctx.lineTo(size - headLen, -headW);
+  ctx.lineTo(size - headLen, headW);
   ctx.closePath();
   ctx.fill();
   ctx.restore();
@@ -1418,6 +1450,42 @@ function drawTideChart(predictions) {
       ctx.fillText(formatDayShort(d), xx, pad.top + plotH + 6);
     }
   }
+}
+
+// ════════════════════════════════════════════════
+// SPECTRAL EMPTY STATE HELPERS
+// ════════════════════════════════════════════════
+
+function showSpectralEmpty(buoyId) {
+  const compassContainer = el('compass-canvas').parentElement;
+  const spectrumContainer = el('spectrum-canvas').parentElement;
+  el('compass-canvas').style.display = 'none';
+  el('spectrum-canvas').style.display = 'none';
+  // Remove old empty messages if present
+  compassContainer.querySelectorAll('.spectral-empty-msg').forEach(e => e.remove());
+  spectrumContainer.querySelectorAll('.spectral-empty-msg').forEach(e => e.remove());
+  const msg = document.createElement('div');
+  msg.className = 'spectral-empty-msg';
+  msg.textContent = 'Please select a buoy with spectral data (e.g., 44097) to view wave energy.';
+  const msg2 = msg.cloneNode(true);
+  compassContainer.appendChild(msg);
+  spectrumContainer.appendChild(msg2);
+  if (buoyId) {
+    setFooter('footer-compass', `ndbc ${buoyId} · no spectral data currently available`);
+    setFooter('footer-spectrum', `ndbc ${buoyId} · no spectral data currently available`);
+  } else {
+    setFooter('footer-compass', 'Select a spectral buoy to view data');
+    setFooter('footer-spectrum', 'Select a spectral buoy to view data');
+  }
+}
+
+function showSpectralCharts() {
+  el('compass-canvas').style.display = '';
+  el('spectrum-canvas').style.display = '';
+  const compassContainer = el('compass-canvas').parentElement;
+  const spectrumContainer = el('spectrum-canvas').parentElement;
+  compassContainer.querySelectorAll('.spectral-empty-msg').forEach(e => e.remove());
+  spectrumContainer.querySelectorAll('.spectral-empty-msg').forEach(e => e.remove());
 }
 
 // ════════════════════════════════════════════════
