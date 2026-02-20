@@ -709,7 +709,7 @@ async function selectTideStation(station) {
 
 async function loadAllData(buoy) {
   // Reset forecast chart to first page when loading new data
-  _forecastPage = 0;
+  _forecastDayOffset = 0;
 
   const lat = buoy.lat;
   const lon = buoy.lon;
@@ -1103,8 +1103,8 @@ function highlightNearestTideStation(lat, lon) {
 // ════════════════════════════════════════════════
 
 // ── Forecast chart paging state ──
-let _forecastPage = 0; // 0 = days 0-2, 1 = days 3-5, etc.
-const FORECAST_DAYS_PER_PAGE = 3;
+let _forecastDayOffset = 0; // day offset from first day (advances 1 day per click)
+const FORECAST_DAYS_VISIBLE = 3;
 
 function drawForecastChart(marine, wind, daylight, tideHiLo) {
   // Store raw data for paging
@@ -1115,24 +1115,24 @@ function drawForecastChart(marine, wind, daylight, tideHiLo) {
   const firstDay = new Date(allTimes[0]); firstDay.setHours(0,0,0,0);
   const lastDay = new Date(allTimes[allTimes.length - 1]); lastDay.setHours(0,0,0,0);
   const totalDays = Math.round((lastDay - firstDay) / 86400000) + 1;
-  const maxPage = Math.max(0, Math.ceil(totalDays / FORECAST_DAYS_PER_PAGE) - 1);
+  const maxOffset = Math.max(0, totalDays - FORECAST_DAYS_VISIBLE);
 
-  // Clamp page
-  if (_forecastPage > maxPage) _forecastPage = maxPage;
-  if (_forecastPage < 0) _forecastPage = 0;
+  // Clamp offset
+  if (_forecastDayOffset > maxOffset) _forecastDayOffset = maxOffset;
+  if (_forecastDayOffset < 0) _forecastDayOffset = 0;
 
   // Update nav buttons
   const prevBtn = el('forecast-prev');
   const nextBtn = el('forecast-next');
   const navLabel = el('forecast-nav-label');
-  if (prevBtn) prevBtn.disabled = _forecastPage === 0;
-  if (nextBtn) nextBtn.disabled = _forecastPage >= maxPage;
+  if (prevBtn) prevBtn.disabled = _forecastDayOffset === 0;
+  if (nextBtn) nextBtn.disabled = _forecastDayOffset >= maxOffset;
 
-  // Calculate time window for this page
+  // Calculate time window: 3 days starting from offset
   const pageStart = new Date(firstDay);
-  pageStart.setDate(pageStart.getDate() + _forecastPage * FORECAST_DAYS_PER_PAGE);
+  pageStart.setDate(pageStart.getDate() + _forecastDayOffset);
   const pageEnd = new Date(pageStart);
-  pageEnd.setDate(pageEnd.getDate() + FORECAST_DAYS_PER_PAGE);
+  pageEnd.setDate(pageEnd.getDate() + FORECAST_DAYS_VISIBLE);
 
   // Update nav label
   if (navLabel) {
@@ -1159,7 +1159,7 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  const pad = { top: 32, right: 16, bottom: 38, left: 44 };
+  const pad = { top: 32, right: 16, bottom: 52, left: 44 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top - pad.bottom;
 
@@ -1216,7 +1216,7 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
 
   // ── Nighttime shading ──
   if (daylight && !daylight.alwaysDay) {
-    for (let dayOff = 0; dayOff < FORECAST_DAYS_PER_PAGE + 1; dayOff++) {
+    for (let dayOff = 0; dayOff < FORECAST_DAYS_VISIBLE + 1; dayOff++) {
       const dayDate = new Date(pageStart);
       dayDate.setDate(dayDate.getDate() + dayOff);
       const dl = calcDaylight(STATE.pinLat || CONFIG.chocomount.lat, STATE.pinLon || CONFIG.chocomount.lon, dayDate);
@@ -1256,7 +1256,7 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
   // ── Day separators (at midnight) ──
   ctx.strokeStyle = '#e0dbd3';
   ctx.lineWidth = 0.5;
-  for (let dayOff = 0; dayOff <= FORECAST_DAYS_PER_PAGE; dayOff++) {
+  for (let dayOff = 0; dayOff <= FORECAST_DAYS_VISIBLE; dayOff++) {
     const midDate = new Date(pageStart);
     midDate.setDate(midDate.getDate() + dayOff);
     midDate.setHours(0, 0, 0, 0);
@@ -1318,7 +1318,7 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
 
   ctx.restore(); // remove clip
 
-  // ── Low tide vertical drop lines ──
+  // ── Low tide vertical drop lines (no labels — labels are below x-axis) ──
   if (tideHiLo) {
     tideHiLo.forEach(p => {
       if (p.type !== 'L') return;
@@ -1328,12 +1328,10 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
       const xx = xPos(d);
       if (xx < pad.left || xx > pad.left + plotW) return;
 
-      // Get wave height at this time for the top of the drop line
       const waveH = getHeightAtTime(dMs);
       const lineTop = yPos(Math.min(waveH, maxY));
       const lineBottom = yPos(0);
 
-      // Draw dashed vertical line from swell line down to axis
       ctx.save();
       ctx.strokeStyle = 'rgba(90, 127, 160, 0.5)';
       ctx.lineWidth = 1.5;
@@ -1344,27 +1342,11 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.restore();
-
-      // Draw label just above x-axis: "Low 6:30am"
-      const hrs = d.getHours();
-      const mins = d.getMinutes();
-      const ampm = hrs >= 12 ? 'pm' : 'am';
-      const h12 = hrs % 12 || 12;
-      const timeStr = mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
-      const label = `Low ${timeStr}`;
-
-      ctx.save();
-      ctx.fillStyle = '#5a7fa0';
-      ctx.font = '10px "DM Mono", monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(label, xx, lineBottom - 3);
-      ctx.restore();
     });
   }
 
   // ── Direction arrows at 6am each day (larger) ──
-  for (let dayOff = 0; dayOff < FORECAST_DAYS_PER_PAGE; dayOff++) {
+  for (let dayOff = 0; dayOff < FORECAST_DAYS_VISIBLE; dayOff++) {
     const arrowDate = new Date(pageStart);
     arrowDate.setDate(arrowDate.getDate() + dayOff);
     arrowDate.setHours(6, 0, 0, 0);
@@ -1408,17 +1390,49 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
     ctx.fillText(`${y}`, pad.left - 6, yPos(y));
   }
 
-  // ── X-axis labels (at noon each day) ──
+  // ── X-axis labels (date + low tides below) ──
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  ctx.font = '11px "DM Mono", monospace';
-  for (let dayOff = 0; dayOff < FORECAST_DAYS_PER_PAGE; dayOff++) {
+  for (let dayOff = 0; dayOff < FORECAST_DAYS_VISIBLE; dayOff++) {
     const noonDate = new Date(pageStart);
     noonDate.setDate(noonDate.getDate() + dayOff);
     noonDate.setHours(12, 0, 0, 0);
     const xx = xPos(noonDate);
-    if (xx > pad.left && xx < pad.left + plotW) {
-      ctx.fillText(formatDay(noonDate), xx, pad.top + plotH + 6);
+    if (xx <= pad.left || xx >= pad.left + plotW) continue;
+
+    // Line 1: day label
+    ctx.fillStyle = '#8a827a';
+    ctx.font = '11px "DM Mono", monospace';
+    ctx.fillText(formatDay(noonDate), xx, pad.top + plotH + 4);
+
+    // Line 2: low tide times for this day
+    if (tideHiLo) {
+      const dayStart = new Date(pageStart);
+      dayStart.setDate(dayStart.getDate() + dayOff);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+
+      const lowTides = tideHiLo.filter(p => {
+        if (p.type !== 'L') return false;
+        const pt = new Date(p.t).getTime();
+        return pt >= dayStart.getTime() && pt < dayEnd.getTime();
+      });
+
+      if (lowTides.length > 0) {
+        const tideStr = lowTides.map(p => {
+          const td = new Date(p.t);
+          const hrs = td.getHours();
+          const mins = td.getMinutes();
+          const ampm = hrs >= 12 ? 'pm' : 'am';
+          const h12 = hrs % 12 || 12;
+          return mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
+        }).join(', ');
+
+        ctx.fillStyle = '#5a7fa0';
+        ctx.font = '9px "DM Mono", monospace';
+        ctx.fillText(`Low ${tideStr}`, xx, pad.top + plotH + 18);
+      }
     }
   }
 
@@ -1595,8 +1609,8 @@ function wireForecastNav() {
   _forecastNavWired = true;
 
   el('forecast-prev').addEventListener('click', function() {
-    if (_forecastPage > 0) {
-      _forecastPage--;
+    if (_forecastDayOffset > 0) {
+      _forecastDayOffset--;
       if (STATE.forecastData) {
         const d = STATE.forecastData;
         drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo);
@@ -1605,7 +1619,7 @@ function wireForecastNav() {
   });
 
   el('forecast-next').addEventListener('click', function() {
-    _forecastPage++;
+    _forecastDayOffset++;
     if (STATE.forecastData) {
       const d = STATE.forecastData;
       drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo);
