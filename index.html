@@ -88,10 +88,22 @@
 
     <!-- Swell forecast chart -->
     <section class="panel" id="panel-forecast">
-      <h3 class="panel-title">Swell Forecast</h3>
-      <div class="chart-container">
+      <div class="forecast-header-row">
+        <h3 class="panel-title">Swell Forecast</h3>
+        <div class="forecast-day-nav">
+          <button class="forecast-nav-btn" id="forecast-prev" aria-label="Previous days">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+          <span class="forecast-nav-label" id="forecast-nav-label"></span>
+          <button class="forecast-nav-btn" id="forecast-next" aria-label="Next days">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+        </div>
+      </div>
+      <div class="chart-container" id="forecast-chart-container">
         <canvas id="forecast-canvas"></canvas>
       </div>
+      <div class="forecast-detail-bar" id="forecast-detail-bar"></div>
       <div class="panel-footer" id="footer-forecast"></div>
     </section>
 
