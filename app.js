@@ -58,7 +58,8 @@ const STATE = {
   buoyMarkers: [],
   chocMarker: null,
   tideMarkers: [],
-  activeTideMarker: null
+  activeTideMarker: null,
+  forecastChart: null   // cached chart state for tooltip
 };
 
 // ── Utility functions ────────────────────────────
@@ -1100,7 +1101,11 @@ function drawForecastChart(marine, wind, daylight, tideHiLo) {
   const canvas = el('forecast-canvas');
   const container = canvas.parentElement;
   const dpr = window.devicePixelRatio || 1;
-  const W = container.clientWidth;
+
+  // On mobile, ensure enough horizontal space per day for readability
+  const isMobile = window.innerWidth <= 700;
+  const minW = isMobile ? 160 * 7 : 0; // 160px per day on mobile
+  const W = Math.max(container.clientWidth, minW);
   const H = container.clientHeight;
   canvas.width = W * dpr;
   canvas.height = H * dpr;
@@ -1109,7 +1114,7 @@ function drawForecastChart(marine, wind, daylight, tideHiLo) {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  const pad = { top: 30, right: 16, bottom: 32, left: 44 };
+  const pad = { top: 30, right: 16, bottom: 48, left: 44 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top - pad.bottom;
 
@@ -1117,8 +1122,10 @@ function drawForecastChart(marine, wind, daylight, tideHiLo) {
   const heights = marine.hourly.wave_height || [];
   const swellHeights = marine.hourly.swell_wave_height || [];
   const swellDirs = marine.hourly.swell_wave_direction || [];
+  const wavePeriods = marine.hourly.wave_period || [];
   const windSpeeds = wind && wind.hourly ? wind.hourly.wind_speed_10m || [] : [];
   const windDirs = wind && wind.hourly ? wind.hourly.wind_direction_10m || [] : [];
+  const windGusts = wind && wind.hourly ? wind.hourly.wind_gusts_10m || [] : [];
 
   const maxY = 20;
   const yStep = 2;
@@ -1202,9 +1209,6 @@ function drawForecastChart(marine, wind, daylight, tideHiLo) {
   ctx.closePath();
 
   if (STATE.isChocomount) {
-    // Color segments by direction
-    // For simplicity in Canvas, use a single gradient approximation
-    // or paint segments. We'll paint hour-by-hour rectangles then overlay the line.
     ctx.save();
     ctx.clip();
     for (let i = 0; i < times.length - 1; i++) {
@@ -1236,19 +1240,41 @@ function drawForecastChart(marine, wind, daylight, tideHiLo) {
   }
   ctx.stroke();
 
-  // ── Low tide diamonds ──
+  // ── Low tide labels (diamond + "Wed Low 6:30am") ──
   if (tideHiLo) {
     tideHiLo.forEach(p => {
       if (p.type !== 'L') return;
       const d = new Date(p.t);
       const xx = xPos(d);
       if (xx < pad.left || xx > pad.left + plotW) return;
-      const yy = yPos(0) + 4;
+
+      // Draw downward-pointing triangle marker
+      const markerY = yPos(0) + 2;
       ctx.save();
       ctx.fillStyle = '#5a7fa0';
-      ctx.translate(xx, yy);
-      ctx.rotate(Math.PI / 4);
-      ctx.fillRect(-3, -3, 6, 6);
+      ctx.beginPath();
+      ctx.moveTo(xx, markerY + 7);
+      ctx.lineTo(xx - 4, markerY);
+      ctx.lineTo(xx + 4, markerY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      // Draw label: "Wed Low 6:30am"
+      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+      const hrs = d.getHours();
+      const mins = d.getMinutes();
+      const ampm = hrs >= 12 ? 'pm' : 'am';
+      const h12 = hrs % 12 || 12;
+      const timeStr = mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
+      const label = `${dayName} Low ${timeStr}`;
+
+      ctx.save();
+      ctx.fillStyle = '#5a7fa0';
+      ctx.font = '9px "DM Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(label, xx, markerY + 9);
       ctx.restore();
     });
   }
@@ -1321,6 +1347,168 @@ function drawForecastChart(marine, wind, daylight, tideHiLo) {
   ctx.rotate(-Math.PI / 2);
   ctx.fillText('ft', 0, 0);
   ctx.restore();
+
+  // ── Store chart state for tooltip ──
+  STATE.forecastChart = {
+    pad, plotW, plotH, W, H, t0, tEnd, tRange,
+    times, heights, wavePeriods, swellDirs, windSpeeds, windDirs, windGusts,
+    tideHiLo
+  };
+  setupForecastTooltip(canvas, container);
+}
+
+// ════════════════════════════════════════════════
+// FORECAST CHART TOOLTIP (hover + touch)
+// ════════════════════════════════════════════════
+
+let _forecastTooltipAbort = null;
+
+function setupForecastTooltip(canvas, container) {
+  // Abort previous listeners so they don't stack up on redraws
+  if (_forecastTooltipAbort) _forecastTooltipAbort.abort();
+  _forecastTooltipAbort = new AbortController();
+  const signal = _forecastTooltipAbort.signal;
+
+  // Create or reuse tooltip element
+  let tooltip = container.querySelector('.forecast-tooltip');
+  if (!tooltip) {
+    tooltip = document.createElement('div');
+    tooltip.className = 'forecast-tooltip';
+    container.appendChild(tooltip);
+  }
+  tooltip.style.display = 'none';
+
+  // Create or reuse crosshair line element
+  let crosshair = container.querySelector('.forecast-crosshair');
+  if (!crosshair) {
+    crosshair = document.createElement('div');
+    crosshair.className = 'forecast-crosshair';
+    container.appendChild(crosshair);
+  }
+  crosshair.style.display = 'none';
+
+  function showTooltip(clientX, clientY) {
+    const cs = STATE.forecastChart;
+    if (!cs) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const chartX = clientX - rect.left;
+
+    // Map pixel X back to time
+    const tFrac = (chartX - cs.pad.left) / cs.plotW;
+    if (tFrac < 0 || tFrac > 1) { hideTooltip(); return; }
+
+    const targetT = cs.t0 + tFrac * cs.tRange;
+
+    // Find nearest hour index
+    let closest = 0;
+    let closestDiff = Infinity;
+    for (let i = 0; i < cs.times.length; i++) {
+      const diff = Math.abs(cs.times[i].getTime() - targetT);
+      if (diff < closestDiff) { closestDiff = diff; closest = i; }
+    }
+
+    const t = cs.times[closest];
+    const h = cs.heights[closest];
+    const p = cs.wavePeriods[closest];
+    const dir = cs.swellDirs[closest];
+    const ws = cs.windSpeeds[closest];
+    const wd = cs.windDirs[closest];
+    const wg = cs.windGusts[closest];
+
+    // Format time
+    const dayName = t.toLocaleDateString('en-US', { weekday: 'short' });
+    const timeStr = t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+    // Find nearby low tide (within 2 hours)
+    let tideLine = '';
+    if (cs.tideHiLo) {
+      const twoHrs = 2 * 60 * 60 * 1000;
+      const nearby = cs.tideHiLo.find(p =>
+        p.type === 'L' && Math.abs(new Date(p.t).getTime() - t.getTime()) < twoHrs
+      );
+      if (nearby) {
+        const td = new Date(nearby.t);
+        const tideTime = td.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        tideLine = `<div class="tt-row tt-tide">Low Tide ${tideTime}</div>`;
+      }
+    }
+
+    tooltip.innerHTML =
+      `<div class="tt-header">${dayName} ${timeStr}</div>` +
+      `<div class="tt-row"><span class="tt-label">Wave</span> <span class="tt-val">${h != null ? h.toFixed(1) + ' ft' : '—'}</span></div>` +
+      `<div class="tt-row"><span class="tt-label">Period</span> <span class="tt-val">${p != null ? p.toFixed(0) + 's' : '—'}</span></div>` +
+      `<div class="tt-row"><span class="tt-label">Dir</span> <span class="tt-val">${directionLabel(dir)}${dir != null ? ' (' + Math.round(dir) + '°)' : ''}</span></div>` +
+      `<div class="tt-row"><span class="tt-label">Wind</span> <span class="tt-val">${ws != null ? Math.round(ws) + ' mph ' + directionLabel(wd) : '—'}</span></div>` +
+      `<div class="tt-row"><span class="tt-label">Gusts</span> <span class="tt-val">${wg != null ? Math.round(wg) + ' mph' : '—'}</span></div>` +
+      tideLine;
+
+    tooltip.style.display = '';
+
+    // Position tooltip: above cursor, clamped to container bounds
+    const containerRect = container.getBoundingClientRect();
+    const tipW = tooltip.offsetWidth;
+    const tipH = tooltip.offsetHeight;
+
+    // Horizontal: center on cursor, clamp within container scroll area
+    let tipLeft = (clientX - containerRect.left + container.scrollLeft) - tipW / 2;
+    tipLeft = Math.max(4, Math.min(tipLeft, container.scrollWidth - tipW - 4));
+    tooltip.style.left = tipLeft + 'px';
+
+    // Vertical: above cursor with some padding, fallback below if no room
+    const cursorY = clientY - containerRect.top;
+    if (cursorY - tipH - 12 > 0) {
+      tooltip.style.top = (cursorY - tipH - 12) + 'px';
+    } else {
+      tooltip.style.top = (cursorY + 16) + 'px';
+    }
+
+    // Show vertical crosshair line at the data point x
+    const dataXPx = cs.pad.left + ((cs.times[closest].getTime() - cs.t0) / cs.tRange) * cs.plotW;
+    crosshair.style.display = '';
+    crosshair.style.left = dataXPx + 'px';
+    crosshair.style.top = cs.pad.top + 'px';
+    crosshair.style.height = cs.plotH + 'px';
+  }
+
+  function hideTooltip() {
+    tooltip.style.display = 'none';
+    crosshair.style.display = 'none';
+  }
+
+  // ── Mouse events (desktop hover) ──
+  canvas.addEventListener('mousemove', function(e) {
+    showTooltip(e.clientX, e.clientY);
+  }, { signal });
+  canvas.addEventListener('mouseleave', hideTooltip, { signal });
+
+  // ── Touch events (mobile single-finger drag) ──
+  let touching = false;
+  canvas.addEventListener('touchstart', function(e) {
+    if (e.touches.length === 1) {
+      touching = true;
+      const t = e.touches[0];
+      showTooltip(t.clientX, t.clientY);
+    }
+  }, { passive: true, signal });
+
+  canvas.addEventListener('touchmove', function(e) {
+    if (touching && e.touches.length === 1) {
+      e.preventDefault(); // prevent scroll while dragging on chart
+      const t = e.touches[0];
+      showTooltip(t.clientX, t.clientY);
+    }
+  }, { passive: false, signal });
+
+  canvas.addEventListener('touchend', function() {
+    touching = false;
+    hideTooltip();
+  }, { signal });
+
+  canvas.addEventListener('touchcancel', function() {
+    touching = false;
+    hideTooltip();
+  }, { signal });
 }
 
 function drawArrow(ctx, x, y, dirDeg, size, color, lineW) {
