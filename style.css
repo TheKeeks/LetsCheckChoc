@@ -299,62 +299,119 @@ a:hover { text-decoration: underline; }
   height: 100%;
 }
 
-/* ── Forecast tooltip ─────────────────────────── */
-.forecast-tooltip {
-  position: absolute;
-  z-index: 10;
-  pointer-events: none;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  color: var(--ink);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.10);
-  min-width: 140px;
-  line-height: 1.5;
-}
-
-.forecast-tooltip .tt-header {
-  font-weight: 500;
-  color: var(--ink);
-  border-bottom: 1px solid var(--border-l);
-  padding-bottom: 4px;
-  margin-bottom: 4px;
-  font-size: 0.72rem;
-}
-
-.forecast-tooltip .tt-row {
+/* ── Forecast header & navigation ────────────── */
+.forecast-header-row {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  padding-right: 10px;
 }
 
-.forecast-tooltip .tt-label {
+.forecast-day-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.forecast-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--ink2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.forecast-nav-btn:hover {
+  background: var(--bg-alt);
+  border-color: var(--ink4);
+  color: var(--ink);
+}
+
+.forecast-nav-btn:active {
+  background: var(--border-l);
+  transform: scale(0.95);
+}
+
+.forecast-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+  pointer-events: none;
+}
+
+.forecast-nav-label {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink2);
+  min-width: 110px;
+  text-align: center;
+  user-select: none;
+}
+
+/* ── Forecast detail bar (selected hour info) ── */
+.forecast-detail-bar {
+  display: none;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink);
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-l);
+  background: var(--bg-alt);
+  line-height: 1.6;
+}
+
+.forecast-detail-bar.active {
+  display: block;
+}
+
+.forecast-detail-bar .detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  align-items: baseline;
+}
+
+.forecast-detail-bar .detail-time {
+  font-weight: 500;
+  font-size: 0.78rem;
+  color: var(--ink);
+  margin-right: 4px;
+}
+
+.forecast-detail-bar .detail-item {
+  display: inline-flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.forecast-detail-bar .detail-label {
   color: var(--ink3);
 }
 
-.forecast-tooltip .tt-val {
+.forecast-detail-bar .detail-val {
   font-weight: 500;
-  text-align: right;
 }
 
-.forecast-tooltip .tt-tide {
-  color: #5a7fa0;
+.forecast-detail-bar .detail-tide {
+  color: var(--blue);
   font-weight: 500;
-  justify-content: center;
-  margin-top: 3px;
-  padding-top: 3px;
-  border-top: 1px solid var(--border-l);
 }
 
+/* ── Forecast crosshair ──────────────────────── */
 .forecast-crosshair {
   position: absolute;
-  width: 1px;
-  background: rgba(90, 127, 160, 0.4);
+  width: 2px;
+  background: rgba(90, 127, 160, 0.5);
   pointer-events: none;
   z-index: 5;
+  border-radius: 1px;
 }
 
 /* ── Panel row (compass + spectrum side by side) ─ */
@@ -519,7 +576,7 @@ a:hover { text-decoration: underline; }
 /* ── Wind arrow in card ───────────────────────── */
 .wind-arrow-inline {
   display: inline-block;
-  font-size: 1.1em;
+  font-size: 1.4em;
   font-weight: 700;
   color: var(--ink);
   vertical-align: baseline;
@@ -590,10 +647,19 @@ a:hover { text-decoration: underline; }
     font-size: 0.95rem;
   }
 
-  /* Force forecast chart to scroll horizontally on narrow screens */
+  /* Forecast chart fits in view — nav buttons handle paging */
   #panel-forecast .chart-container {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    overflow: hidden;
+  }
+
+  .forecast-nav-btn {
+    width: 48px;
+    height: 48px;
+  }
+
+  .forecast-nav-btn svg {
+    width: 32px;
+    height: 32px;
   }
 }
 
