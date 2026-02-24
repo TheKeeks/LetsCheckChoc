@@ -647,9 +647,10 @@ a:hover { text-decoration: underline; }
     font-size: 0.95rem;
   }
 
-  /* Forecast chart fits in view — nav buttons handle paging */
+  /* Forecast chart: taller on mobile for less cramped feel */
   #panel-forecast .chart-container {
     overflow: hidden;
+    height: 260px;
   }
 
   .forecast-nav-btn {
@@ -660,6 +661,21 @@ a:hover { text-decoration: underline; }
   .forecast-nav-btn svg {
     width: 32px;
     height: 32px;
+  }
+
+  /* Give chart containers a bit more horizontal padding on mobile */
+  .chart-container {
+    padding: 6px 2px;
+  }
+
+  /* Tighten forecast header row */
+  .forecast-header-row {
+    padding-right: 6px;
+  }
+
+  .forecast-nav-label {
+    min-width: 90px;
+    font-size: 0.65rem;
   }
 }
 

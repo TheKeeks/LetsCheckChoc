@@ -1159,7 +1159,11 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  const pad = { top: 32, right: 16, bottom: 52, left: 44 };
+  // Responsive padding: tighter on mobile for more plot area
+  const isMobile = W < 600;
+  const pad = isMobile
+    ? { top: 24, right: 10, bottom: 44, left: 34 }
+    : { top: 32, right: 16, bottom: 52, left: 44 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top - pad.bottom;
 
@@ -1345,7 +1349,15 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
     });
   }
 
-  // ── Direction arrows at 6am each day (larger) ──
+  // ── Direction arrows at 6am each day ──
+  const arrowSize = isMobile ? 10 : 14;
+  const arrowLineW = isMobile ? 2 : 2.5;
+  const windArrowSize = isMobile ? 7 : 10;
+  const windArrowOffset = isMobile ? 18 : 24;
+  const windFontSize = isMobile ? '8px' : '10px';
+  const arrowY = pad.top + (isMobile ? 10 : 14);
+  const windLabelY = pad.top + (isMobile ? 22 : 29);
+
   for (let dayOff = 0; dayOff < FORECAST_DAYS_VISIBLE; dayOff++) {
     const arrowDate = new Date(pageStart);
     arrowDate.setDate(arrowDate.getDate() + dayOff);
@@ -1361,36 +1373,42 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
       if (diff < closestDiff) { closestDiff = diff; closest = i; }
     }
 
-    // Swell arrow (larger, colored by direction)
+    // Swell arrow (colored by direction)
     const swDir = swellDirs[closest];
     if (swDir != null) {
-      drawArrow(ctx, xx, pad.top + 14, swDir, 14, swellDirColor(swDir), 2.5);
+      drawArrow(ctx, xx, arrowY, swDir, arrowSize, swellDirColor(swDir), arrowLineW);
     }
 
-    // Wind arrow (offset right, larger, dark for contrast)
+    // Wind arrow (offset right, dark for contrast)
     const wDir = windDirs[closest];
     const wSpd = windSpeeds[closest];
     if (wDir != null) {
-      drawArrow(ctx, xx + 24, pad.top + 14, wDir, 10, '#4a443e', 2);
+      drawArrow(ctx, xx + windArrowOffset, arrowY, wDir, windArrowSize, '#4a443e', 2);
       if (wSpd != null) {
         ctx.fillStyle = '#4a443e';
-        ctx.font = '10px "DM Mono", monospace';
+        ctx.font = `${windFontSize} "DM Mono", monospace`;
         ctx.textAlign = 'center';
-        ctx.fillText(`${Math.round(wSpd)}`, xx + 24, pad.top + 29);
+        ctx.fillText(`${Math.round(wSpd)}`, xx + windArrowOffset, windLabelY);
       }
     }
   }
 
   // ── Y-axis labels ──
+  const axisFont = isMobile ? '9px' : '11px';
   ctx.fillStyle = '#8a827a';
-  ctx.font = '11px "DM Mono", monospace';
+  ctx.font = `${axisFont} "DM Mono", monospace`;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   for (let y = 0; y <= maxY; y += yStep) {
-    ctx.fillText(`${y}`, pad.left - 6, yPos(y));
+    ctx.fillText(`${y}`, pad.left - (isMobile ? 4 : 6), yPos(y));
   }
 
   // ── X-axis labels (date + low tides below) ──
+  const dayLabelFont = isMobile ? '9px' : '11px';
+  const tideLabelFont = isMobile ? '8px' : '9px';
+  const dayLabelY = pad.top + plotH + (isMobile ? 3 : 4);
+  const tideLabelY = pad.top + plotH + (isMobile ? 14 : 18);
+
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   for (let dayOff = 0; dayOff < FORECAST_DAYS_VISIBLE; dayOff++) {
@@ -1402,8 +1420,8 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
 
     // Line 1: day label
     ctx.fillStyle = '#8a827a';
-    ctx.font = '11px "DM Mono", monospace';
-    ctx.fillText(formatDay(noonDate), xx, pad.top + plotH + 4);
+    ctx.font = `${dayLabelFont} "DM Mono", monospace`;
+    ctx.fillText(formatDay(noonDate), xx, dayLabelY);
 
     // Line 2: low tide times for this day
     if (tideHiLo) {
@@ -1430,8 +1448,8 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
         }).join(', ');
 
         ctx.fillStyle = '#5a7fa0';
-        ctx.font = '9px "DM Mono", monospace';
-        ctx.fillText(`Low ${tideStr}`, xx, pad.top + plotH + 18);
+        ctx.font = `${tideLabelFont} "DM Mono", monospace`;
+        ctx.fillText(`Low ${tideStr}`, xx, tideLabelY);
       }
     }
   }
@@ -1439,9 +1457,9 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
   // ── "ft" label ──
   ctx.save();
   ctx.fillStyle = '#b5afa8';
-  ctx.font = '10px "DM Mono", monospace';
+  ctx.font = `${isMobile ? '8px' : '10px'} "DM Mono", monospace`;
   ctx.textAlign = 'center';
-  ctx.translate(12, pad.top + plotH / 2);
+  ctx.translate(isMobile ? 8 : 12, pad.top + plotH / 2);
   ctx.rotate(-Math.PI / 2);
   ctx.fillText('ft', 0, 0);
   ctx.restore();
