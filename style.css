@@ -198,7 +198,7 @@ a:hover { text-decoration: underline; }
 /* ── Conditions row ───────────────────────────── */
 .conditions-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: var(--gap);
   max-width: 900px;
   margin: var(--gap) auto;
@@ -590,6 +590,140 @@ a:hover { text-decoration: underline; }
   letter-spacing: -0.01em;
 }
 
+/* ── Conditions summary banner ────────────────── */
+.conditions-summary {
+  max-width: 900px;
+  margin: var(--gap) auto 0;
+  padding: 14px 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--card-r);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.summary-rating {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.summary-rating .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background 0.2s;
+}
+
+.summary-rating .dot.filled { background: var(--green); }
+.summary-rating .dot.filled-fair { background: var(--orange); }
+.summary-rating .dot.filled-poor { background: var(--gray-c); }
+
+.summary-rating .rating-label {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 500;
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.summary-text {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ink2);
+  line-height: 1.5;
+  flex: 1;
+  min-width: 200px;
+}
+
+.summary-best {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--green);
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.summary-best:empty { display: none; }
+
+/* ── Condition card border accents ────────────── */
+.condition-card.quality-good  { border-left: 4px solid var(--green); }
+.condition-card.quality-fair  { border-left: 4px solid var(--orange); }
+.condition-card.quality-poor  { border-left: 4px solid var(--gray-c); }
+
+/* ── Wind quality classes ────────────────────── */
+.wind-offshore  { color: var(--green); }
+.wind-cross     { color: var(--orange); }
+.wind-onshore   { color: var(--red-m); }
+
+.wind-quality-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.wind-quality-badge.offshore  { background: rgba(58, 125, 86, 0.12); color: var(--green); }
+.wind-quality-badge.cross     { background: rgba(184, 122, 46, 0.12); color: var(--orange); }
+.wind-quality-badge.onshore   { background: rgba(168, 90, 74, 0.12); color: var(--red-m); }
+.wind-quality-badge.light     { background: rgba(90, 127, 160, 0.12); color: var(--blue); }
+
+/* ── Advanced data toggle ────────────────────── */
+.advanced-toggle-wrap {
+  max-width: 900px;
+  margin: var(--gap) auto 0;
+  text-align: center;
+}
+
+.advanced-toggle-btn {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink3);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 20px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.advanced-toggle-btn:hover {
+  color: var(--ink);
+  border-color: var(--ink4);
+}
+
+.advanced-toggle-icon {
+  display: inline-block;
+  font-size: 0.6rem;
+  margin-right: 6px;
+  transition: transform 0.2s ease;
+}
+
+.advanced-toggle-icon.open {
+  transform: rotate(90deg);
+}
+
+.advanced-sections.collapsed {
+  display: none;
+}
+
+.advanced-sections.expanded {
+  display: block;
+}
+
 /* ── Spectral empty state ────────────────────── */
 .spectral-empty-msg {
   display: flex;
@@ -614,6 +748,27 @@ a:hover { text-decoration: underline; }
   .conditions-row {
     grid-template-columns: repeat(2, 1fr);
     padding: 0 var(--gap);
+  }
+
+  /* Tide card spans full row on 2-col mobile */
+  #card-tide {
+    grid-column: 1 / -1;
+  }
+
+  .conditions-summary {
+    margin-left: var(--gap);
+    margin-right: var(--gap);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px 14px;
+  }
+
+  .summary-text { min-width: unset; }
+
+  .advanced-toggle-wrap {
+    margin-left: var(--gap);
+    margin-right: var(--gap);
   }
 
   .panel-row {
