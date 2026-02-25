@@ -83,8 +83,8 @@ function directionLabel(deg) {
 
 function directionArrow(deg) {
   if (deg == null || isNaN(deg)) return '';
-  // Meteorological: "from" direction. Arrow points where wind/wave is going TO.
-  // We rotate by 180° because deg is "from" and we want "to".
+  // Meteorological: deg is "from" direction.
+  // Arrow points where wind is blowing TO: N wind (0°) → ↓ (southward).
   const arrows = ['↓','↙','←','↖','↑','↗','→','↘'];
   const idx = Math.round((((deg) % 360 + 360) % 360) / 45) % 8;
   return arrows[idx];
@@ -118,22 +118,6 @@ function swellDirColor(deg) {
   return '#5a7fa0';
 }
 
-// ── Wind quality assessment ──────────────────────
-// coastAngle is the angle the coastline faces (perpendicular to shore).
-// For Chocomount (south-facing), waves come from ~south, so offshore = N wind.
-function windQuality(windDirDeg, coastAngle) {
-  if (windDirDeg == null) return { label: '—', cls: '', badge: '' };
-  // coastAngle = direction the coast faces INTO the ocean
-  // offshore = wind blowing from land to sea = wind dir opposite to coast angle
-  const offshoreDir = (coastAngle + 180) % 360;
-  let diff = Math.abs(windDirDeg - offshoreDir);
-  if (diff > 180) diff = 360 - diff;
-  if (diff <= 45) return { label: 'Offshore', cls: 'offshore', badge: 'offshore' };
-  if (diff <= 90) return { label: 'Cross-offshore', cls: 'offshore', badge: 'offshore' };
-  if (diff <= 135) return { label: 'Cross-onshore', cls: 'cross', badge: 'cross' };
-  return { label: 'Onshore', cls: 'onshore', badge: 'onshore' };
-}
-
 // Light wind threshold
 function isLightWind(speedMph) { return speedMph != null && speedMph < 8; }
 
@@ -155,17 +139,11 @@ function calcSurfRating(waveHeightFt, periodSec, windSpeedMph, windDirDeg, swell
     else if (periodSec >= 7) score += 0.5;
   }
 
-  // Wind contribution (0-1.5 points)
+  // Wind contribution (0-1.5 points, based on speed only)
   if (windSpeedMph != null) {
-    if (isLightWind(windSpeedMph)) {
-      score += 1.5; // glassy
-    } else {
-      const coastAngle = STATE.isChocomount ? 180 : 180; // default south-facing
-      const wq = windQuality(windDirDeg, coastAngle);
-      if (wq.badge === 'offshore') score += 1.5;
-      else if (wq.badge === 'cross') score += 0.5;
-      // onshore = 0
-    }
+    if (isLightWind(windSpeedMph)) score += 1.5;
+    else if (windSpeedMph < 15) score += 1;
+    else if (windSpeedMph < 25) score += 0.5;
   }
 
   // Swell direction bonus (0-0.5 points, Chocomount only)
@@ -214,15 +192,13 @@ function buildConditionsSummary(waveH, periodSec, windSpeedMph, windDirDeg, swel
     }
   }
 
-  // Wind description
+  // Wind description (speed only, no direction quality)
   if (windSpeedMph != null) {
-    const coastAngle = STATE.isChocomount ? 180 : 180;
     if (isLightWind(windSpeedMph)) {
-      parts.push('light winds (glassy)');
+      parts.push('light winds');
     } else {
-      const wq = windQuality(windDirDeg, coastAngle);
       const strength = windSpeedMph < 15 ? 'light' : windSpeedMph < 25 ? 'moderate' : 'strong';
-      parts.push(`${strength} ${wq.label.toLowerCase()} winds`);
+      parts.push(`${strength} winds`);
     }
   }
 
@@ -1166,9 +1142,6 @@ function updateSwellCard(buoyParsed, marine, buoy) {
 }
 
 function updateWindCard(wind, buoyParsed, isChoc, lat, lon) {
-  const card = el('card-wind');
-  card.classList.remove('quality-good', 'quality-fair', 'quality-poor');
-
   if (wind && wind.current) {
     const s = wind.current.wind_speed_10m;
     const d = wind.current.wind_direction_10m;
@@ -1176,24 +1149,8 @@ function updateWindCard(wind, buoyParsed, isChoc, lat, lon) {
     const arrow = directionArrow(d);
     el('val-wind-speed').textContent = s != null ? `${Math.round(s)} mph` : '—';
 
-    // Wind quality badge
-    const coastAngle = STATE.isChocomount ? 180 : 180;
-    let badge = '';
-    if (s != null && d != null) {
-      if (isLightWind(s)) {
-        badge = '<span class="wind-quality-badge light">Glassy</span>';
-        card.classList.add('quality-good');
-      } else {
-        const wq = windQuality(d, coastAngle);
-        badge = `<span class="wind-quality-badge ${wq.badge}">${wq.label}</span>`;
-        if (wq.badge === 'offshore') card.classList.add('quality-good');
-        else if (wq.badge === 'cross') card.classList.add('quality-fair');
-        else card.classList.add('quality-poor');
-      }
-    }
-
     el('val-wind-detail').innerHTML = d != null
-      ? `<span class="wind-arrow-inline">${arrow}</span> ${directionLabel(d)} (${Math.round(d)}°) · gusts ${g != null ? Math.round(g) : '—'} mph${badge}`
+      ? `<span class="wind-arrow-inline">${arrow}</span> ${directionLabel(d)} (${Math.round(d)}°) · gusts ${g != null ? Math.round(g) : '—'} mph`
       : `${directionLabel(d)} · gusts ${g != null ? Math.round(g) : '—'} mph`;
     setFooter('footer-wind',
       `Open-Meteo Weather · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`,
