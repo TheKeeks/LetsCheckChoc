@@ -83,10 +83,10 @@ function directionLabel(deg) {
 
 function directionArrow(deg) {
   if (deg == null || isNaN(deg)) return '';
-  // Meteorological: "from" direction. Arrow points where wind/wave is going TO.
-  // We rotate by 180° because deg is "from" and we want "to".
+  // Meteorological: deg is "from" direction.
+  // Arrow points where wind is blowing TO: N wind (0°) → ↓ (southward).
   const arrows = ['↓','↙','←','↖','↑','↗','→','↘'];
-  const idx = Math.round((((deg + 180) % 360 + 360) % 360) / 45) % 8;
+  const idx = Math.round(((deg % 360 + 360) % 360) / 45) % 8;
   return arrows[idx];
 }
 
