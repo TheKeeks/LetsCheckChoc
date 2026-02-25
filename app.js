@@ -118,6 +118,191 @@ function swellDirColor(deg) {
   return '#5a7fa0';
 }
 
+// ── Wind quality assessment ──────────────────────
+// coastAngle is the angle the coastline faces (perpendicular to shore).
+// For Chocomount (south-facing), waves come from ~south, so offshore = N wind.
+function windQuality(windDirDeg, coastAngle) {
+  if (windDirDeg == null) return { label: '—', cls: '', badge: '' };
+  // coastAngle = direction the coast faces INTO the ocean
+  // offshore = wind blowing from land to sea = wind dir opposite to coast angle
+  const offshoreDir = (coastAngle + 180) % 360;
+  let diff = Math.abs(windDirDeg - offshoreDir);
+  if (diff > 180) diff = 360 - diff;
+  if (diff <= 45) return { label: 'Offshore', cls: 'offshore', badge: 'offshore' };
+  if (diff <= 90) return { label: 'Cross-offshore', cls: 'offshore', badge: 'offshore' };
+  if (diff <= 135) return { label: 'Cross-onshore', cls: 'cross', badge: 'cross' };
+  return { label: 'Onshore', cls: 'onshore', badge: 'onshore' };
+}
+
+// Light wind threshold
+function isLightWind(speedMph) { return speedMph != null && speedMph < 8; }
+
+// ── Surf quality rating (1-5 scale) ─────────────
+function calcSurfRating(waveHeightFt, periodSec, windSpeedMph, windDirDeg, swellDirDeg) {
+  let score = 0;
+
+  // Wave height contribution (0-2 points)
+  if (waveHeightFt != null) {
+    if (waveHeightFt >= 3 && waveHeightFt <= 8) score += 2;       // sweet spot
+    else if (waveHeightFt >= 2 && waveHeightFt < 3) score += 1.5;
+    else if (waveHeightFt > 8 && waveHeightFt <= 12) score += 1.5;
+    else if (waveHeightFt >= 1) score += 0.5;
+  }
+
+  // Period contribution (0-1 point)
+  if (periodSec != null) {
+    if (periodSec >= 10) score += 1;
+    else if (periodSec >= 7) score += 0.5;
+  }
+
+  // Wind contribution (0-1.5 points)
+  if (windSpeedMph != null) {
+    if (isLightWind(windSpeedMph)) {
+      score += 1.5; // glassy
+    } else {
+      const coastAngle = STATE.isChocomount ? 180 : 180; // default south-facing
+      const wq = windQuality(windDirDeg, coastAngle);
+      if (wq.badge === 'offshore') score += 1.5;
+      else if (wq.badge === 'cross') score += 0.5;
+      // onshore = 0
+    }
+  }
+
+  // Swell direction bonus (0-0.5 points, Chocomount only)
+  if (STATE.isChocomount && swellDirDeg != null) {
+    const cls = swellDirClass(swellDirDeg);
+    if (cls === 'dir-in') score += 0.5;
+    else if (cls === 'dir-edge') score += 0.25;
+  } else if (swellDirDeg != null) {
+    score += 0.25; // generic small bonus for having direction data
+  }
+
+  // Clamp to 1-5
+  return Math.max(1, Math.min(5, Math.round(score)));
+}
+
+function ratingLabel(score) {
+  if (score >= 5) return { text: 'Epic', color: 'var(--green)' };
+  if (score >= 4) return { text: 'Good', color: 'var(--green)' };
+  if (score >= 3) return { text: 'Fair', color: 'var(--orange)' };
+  if (score >= 2) return { text: 'Poor', color: 'var(--gray-c)' };
+  return { text: 'Flat', color: 'var(--ink4)' };
+}
+
+// ── Natural language conditions summary ─────────
+function buildConditionsSummary(waveH, periodSec, windSpeedMph, windDirDeg, swellDirDeg) {
+  const parts = [];
+
+  // Swell description
+  if (waveH != null) {
+    let sizeWord;
+    if (waveH < 1) sizeWord = 'flat';
+    else if (waveH < 2) sizeWord = 'ankle-to-knee high';
+    else if (waveH < 3) sizeWord = 'waist high';
+    else if (waveH < 4) sizeWord = 'chest high';
+    else if (waveH < 6) sizeWord = 'overhead';
+    else if (waveH < 8) sizeWord = 'well overhead';
+    else if (waveH < 12) sizeWord = 'double overhead';
+    else sizeWord = 'triple overhead+';
+
+    const periodDesc = periodSec != null && periodSec >= 10 ? 'long-period' :
+                       periodSec != null && periodSec >= 7 ? 'mid-period' : 'short-period';
+    if (waveH < 1) {
+      parts.push('Flat conditions');
+    } else {
+      parts.push(`${sizeWord} ${periodDesc} surf`);
+    }
+  }
+
+  // Wind description
+  if (windSpeedMph != null) {
+    const coastAngle = STATE.isChocomount ? 180 : 180;
+    if (isLightWind(windSpeedMph)) {
+      parts.push('light winds (glassy)');
+    } else {
+      const wq = windQuality(windDirDeg, coastAngle);
+      const strength = windSpeedMph < 15 ? 'light' : windSpeedMph < 25 ? 'moderate' : 'strong';
+      parts.push(`${strength} ${wq.label.toLowerCase()} winds`);
+    }
+  }
+
+  // Direction note for Chocomount
+  if (STATE.isChocomount && swellDirDeg != null) {
+    const cls = swellDirClass(swellDirDeg);
+    if (cls === 'dir-in') parts.push('swell in the window');
+    else if (cls === 'dir-edge') parts.push('swell on edge of window');
+  }
+
+  if (parts.length === 0) return '';
+
+  // Capitalize first letter
+  let text = parts.join(', ');
+  return text.charAt(0).toUpperCase() + text.slice(1) + '.';
+}
+
+// ── Best window predictor ───────────────────────
+function findBestWindow(marine, wind, tideHiLo) {
+  if (!marine || !marine.hourly || !wind || !wind.hourly) return null;
+
+  const times = marine.hourly.time;
+  const heights = marine.hourly.wave_height || [];
+  const periods = marine.hourly.wave_period || [];
+  const swDirs = marine.hourly.swell_wave_direction || [];
+  const windSpeeds = wind.hourly.wind_speed_10m || [];
+  const windDirs = wind.hourly.wind_direction_10m || [];
+
+  const now = Date.now();
+  let bestScore = -1;
+  let bestIdx = -1;
+
+  for (let i = 0; i < Math.min(times.length, 168); i++) { // up to 7 days
+    const t = new Date(times[i]).getTime();
+    if (t < now) continue;
+
+    const h = heights[i];
+    const p = periods[i];
+    const ws = windSpeeds[i];
+    const wd = windDirs[i];
+    const sd = swDirs[i];
+
+    if (h == null || h < 1) continue;
+
+    // Skip nighttime (6pm-5am is less useful)
+    const hour = new Date(times[i]).getHours();
+    if (hour < 5 || hour > 18) continue;
+
+    const score = calcSurfRating(h, p, ws, wd, sd);
+
+    // Tiebreak: prefer mornings and lower tides
+    let tideBonus = 0;
+    if (tideHiLo) {
+      const twoHrs = 2 * 60 * 60 * 1000;
+      const nearLow = tideHiLo.find(tp => tp.type === 'L' && Math.abs(new Date(tp.t).getTime() - t) < twoHrs);
+      if (nearLow) tideBonus = 0.3;
+    }
+    const morningBonus = (hour >= 5 && hour <= 10) ? 0.2 : 0;
+    const adjusted = score + tideBonus + morningBonus;
+
+    if (adjusted > bestScore) {
+      bestScore = adjusted;
+      bestIdx = i;
+    }
+  }
+
+  if (bestIdx < 0) return null;
+
+  const bestTime = new Date(times[bestIdx]);
+  const dayName = bestTime.toLocaleDateString('en-US', { weekday: 'short' });
+  const timeStr = bestTime.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true });
+  const h = heights[bestIdx];
+
+  return {
+    label: `Best: ${dayName} ~${timeStr} (${h.toFixed(1)}ft)`,
+    time: bestTime,
+    score: bestScore
+  };
+}
+
 function formatTime(date) {
   return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
@@ -709,7 +894,7 @@ async function selectTideStation(station) {
 
 async function loadAllData(buoy) {
   // Reset forecast chart to first page when loading new data
-  _forecastPage = 0;
+  _forecastDayOffset = 0;
 
   const lat = buoy.lat;
   const lon = buoy.lon;
@@ -723,6 +908,7 @@ async function loadAllData(buoy) {
   el('val-swell-height').textContent = '···';
   el('val-wind-speed').textContent = '···';
   el('val-water-temp').textContent = '···';
+  el('val-tide').textContent = '···';
 
   // Fetch all in parallel
   const [marine, wind, buoyData, pipelineData] = await Promise.all([
@@ -766,6 +952,18 @@ async function loadAllData(buoy) {
       const td = await fetchTideHiLo(tideStn.id, 10);
       tideHiLoForChart = td && td.predictions ? td.predictions : null;
     }
+
+    // ── Tide condition card ──
+    updateTideCard(tideHiLoForChart, tideStn);
+
+    // ── Conditions summary + rating + best window ──
+    const wH = buoyParsed ? buoyParsed.waveHeight : (marine.current ? marine.current.wave_height : null);
+    const pS = buoyParsed ? buoyParsed.dominantPeriod : (marine.current ? marine.current.wave_period : null);
+    const wS = wind && wind.current ? wind.current.wind_speed_10m : null;
+    const wD = wind && wind.current ? wind.current.wind_direction_10m : null;
+    const sD = buoyParsed ? buoyParsed.meanDirection : (marine.current ? marine.current.wave_direction : null);
+    updateConditionsSummary(wH, pS, wS, wD, sD, marine, wind, tideHiLoForChart);
+
     drawForecastChart(marine, wind, daylight, tideHiLoForChart);
     const coordLabel = isChoc ? `${forecastLat}°N, ${Math.abs(forecastLon)}°W (open water)` : `${forecastLat.toFixed(3)}°N, ${Math.abs(forecastLon).toFixed(3)}°W`;
     setFooter('footer-forecast',
@@ -840,6 +1038,7 @@ async function loadPinData(lat, lon) {
   el('val-swell-height').textContent = '···';
   el('val-wind-speed').textContent = '···';
   el('val-water-temp').textContent = '···';
+  el('val-tide').textContent = '···';
 
   const [marine, wind] = await Promise.all([
     fetchMarineForecast(lat, lon),
@@ -864,6 +1063,18 @@ async function loadPinData(lat, lon) {
       const td = await fetchTideHiLo(tideStn.id, 10);
       tideHiLoForChart = td && td.predictions ? td.predictions : null;
     }
+
+    // ── Tide condition card ──
+    updateTideCard(tideHiLoForChart, tideStn);
+
+    // ── Conditions summary + rating + best window ──
+    const wH = marine.current ? marine.current.wave_height : null;
+    const pS = marine.current ? marine.current.wave_period : null;
+    const wS = wind && wind.current ? wind.current.wind_speed_10m : null;
+    const wD = wind && wind.current ? wind.current.wind_direction_10m : null;
+    const sD = marine.current ? marine.current.wave_direction : null;
+    updateConditionsSummary(wH, pS, wS, wD, sD, marine, wind, tideHiLoForChart);
+
     drawForecastChart(marine, wind, daylight, tideHiLoForChart);
     setFooter('footer-forecast',
       `Open-Meteo Marine · gfs Wave 0.16° · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`,
@@ -904,12 +1115,18 @@ async function loadPinData(lat, lon) {
 
 function updateSwellCard(buoyParsed, marine, buoy) {
   const isChoc = STATE.isChocomount;
+  const card = el('card-swell');
+  card.classList.remove('quality-good', 'quality-fair', 'quality-poor');
 
   // Prefer buoy data for current swell
   if (buoyParsed && buoyParsed.waveHeight != null) {
     const h = buoyParsed.waveHeight;
     const p = buoyParsed.dominantPeriod;
     const d = buoyParsed.meanDirection;
+    // Add card border accent based on wave height
+    if (h >= 3) card.classList.add('quality-good');
+    else if (h >= 1.5) card.classList.add('quality-fair');
+    else card.classList.add('quality-poor');
     el('val-swell-height').textContent = `${h.toFixed(1)} ft`;
     el('val-swell-height').className = `condition-value ${swellDirClass(d)}`;
     el('val-swell-detail').textContent = `${p ? p.toFixed(0) + 's' : '—'} · ${directionLabel(d)} (${d != null ? d + '°' : '—'})`;
@@ -949,14 +1166,34 @@ function updateSwellCard(buoyParsed, marine, buoy) {
 }
 
 function updateWindCard(wind, buoyParsed, isChoc, lat, lon) {
+  const card = el('card-wind');
+  card.classList.remove('quality-good', 'quality-fair', 'quality-poor');
+
   if (wind && wind.current) {
     const s = wind.current.wind_speed_10m;
     const d = wind.current.wind_direction_10m;
     const g = wind.current.wind_gusts_10m;
     const arrow = directionArrow(d);
     el('val-wind-speed').textContent = s != null ? `${Math.round(s)} mph` : '—';
+
+    // Wind quality badge
+    const coastAngle = STATE.isChocomount ? 180 : 180;
+    let badge = '';
+    if (s != null && d != null) {
+      if (isLightWind(s)) {
+        badge = '<span class="wind-quality-badge light">Glassy</span>';
+        card.classList.add('quality-good');
+      } else {
+        const wq = windQuality(d, coastAngle);
+        badge = `<span class="wind-quality-badge ${wq.badge}">${wq.label}</span>`;
+        if (wq.badge === 'offshore') card.classList.add('quality-good');
+        else if (wq.badge === 'cross') card.classList.add('quality-fair');
+        else card.classList.add('quality-poor');
+      }
+    }
+
     el('val-wind-detail').innerHTML = d != null
-      ? `<span class="wind-arrow-inline">${arrow}</span> ${directionLabel(d)} (${Math.round(d)}°) · gusts ${g != null ? Math.round(g) : '—'} mph`
+      ? `<span class="wind-arrow-inline">${arrow}</span> ${directionLabel(d)} (${Math.round(d)}°) · gusts ${g != null ? Math.round(g) : '—'} mph${badge}`
       : `${directionLabel(d)} · gusts ${g != null ? Math.round(g) : '—'} mph`;
     setFooter('footer-wind',
       `Open-Meteo Weather · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`,
@@ -1033,6 +1270,134 @@ function updateDaylightCard(lat, lon) {
 }
 
 // ════════════════════════════════════════════════
+// TIDE CONDITION CARD
+// ════════════════════════════════════════════════
+
+function updateTideCard(tideHiLo, station) {
+  const card = el('card-tide');
+  if (!card) return;
+
+  if (!tideHiLo || tideHiLo.length === 0) {
+    el('val-tide').textContent = '—';
+    el('val-tide-detail').textContent = 'No tide data';
+    setFooter('footer-tide-card', '');
+    return;
+  }
+
+  const now = Date.now();
+  // Find next upcoming tide event
+  let next = null;
+  let prev = null;
+  for (const p of tideHiLo) {
+    const t = new Date(p.t).getTime();
+    if (t > now && !next) next = p;
+    if (t <= now) prev = p;
+  }
+
+  if (next) {
+    const nd = new Date(next.t);
+    const type = next.type === 'H' ? 'High' : 'Low';
+    const timeStr = formatTime(nd);
+    const dayStr = nd.toLocaleDateString('en-US', { weekday: 'short' });
+    const val = parseFloat(next.v).toFixed(1);
+    el('val-tide').textContent = `${type} ${timeStr}`;
+    el('val-tide-detail').textContent = `${dayStr} · ${val} ft`;
+
+    // Color accent: low tide = good for surfing
+    card.classList.remove('quality-good', 'quality-fair', 'quality-poor');
+    if (next.type === 'L') card.classList.add('quality-good');
+    else card.classList.add('quality-fair');
+  }
+
+  if (prev && next) {
+    // Show "rising" or "falling"
+    const prevType = prev.type === 'H' ? 'High' : 'Low';
+    const trend = prev.type === 'H' ? 'Falling' : 'Rising';
+    el('val-tide-detail').textContent += ` · ${trend}`;
+  }
+
+  if (station) {
+    setFooter('footer-tide-card',
+      `CO-OPS ${station.id}`,
+      `https://tidesandcurrents.noaa.gov/noaatidepredictions.html?id=${station.id}`,
+      'tides'
+    );
+  }
+}
+
+// ════════════════════════════════════════════════
+// CONDITIONS SUMMARY BANNER
+// ════════════════════════════════════════════════
+
+function updateConditionsSummary(waveH, periodSec, windSpeedMph, windDirDeg, swellDirDeg, marine, wind, tideHiLo) {
+  const banner = el('conditions-summary');
+  if (!banner) return;
+
+  // Calculate rating
+  const score = calcSurfRating(waveH, periodSec, windSpeedMph, windDirDeg, swellDirDeg);
+  const rl = ratingLabel(score);
+
+  // Build rating dots
+  const ratingEl = el('summary-rating');
+  let dotsHtml = '';
+  for (let i = 1; i <= 5; i++) {
+    let dotCls = 'dot';
+    if (i <= score) {
+      if (score >= 4) dotCls += ' filled';
+      else if (score >= 3) dotCls += ' filled-fair';
+      else dotCls += ' filled-poor';
+    }
+    dotsHtml += `<span class="${dotCls}"></span>`;
+  }
+  dotsHtml += `<span class="rating-label" style="color:${rl.color}">${rl.text}</span>`;
+  ratingEl.innerHTML = dotsHtml;
+
+  // Build summary text
+  const summaryText = buildConditionsSummary(waveH, periodSec, windSpeedMph, windDirDeg, swellDirDeg);
+  el('summary-text').textContent = summaryText;
+
+  // Best window
+  const best = findBestWindow(marine, wind, tideHiLo);
+  el('summary-best').textContent = best ? best.label : '';
+
+  banner.style.display = '';
+}
+
+// ════════════════════════════════════════════════
+// ADVANCED DATA TOGGLE
+// ════════════════════════════════════════════════
+
+function initAdvancedToggle() {
+  const btn = el('advanced-toggle-btn');
+  const sections = el('advanced-sections');
+  const icon = el('advanced-toggle-icon');
+  if (!btn || !sections) return;
+
+  // Restore preference
+  const saved = localStorage.getItem('lcc-advanced');
+  if (saved === 'open') {
+    sections.classList.remove('collapsed');
+    sections.classList.add('expanded');
+    icon.classList.add('open');
+  }
+
+  btn.addEventListener('click', () => {
+    const isOpen = sections.classList.contains('expanded');
+    if (isOpen) {
+      sections.classList.remove('expanded');
+      sections.classList.add('collapsed');
+      icon.classList.remove('open');
+      localStorage.setItem('lcc-advanced', 'closed');
+    } else {
+      sections.classList.remove('collapsed');
+      sections.classList.add('expanded');
+      icon.classList.add('open');
+      localStorage.setItem('lcc-advanced', 'open');
+    }
+  });
+}
+
+// ════════════════════════════════════════════════
 // WINDY EMBEDS
 // ════════════════════════════════════════════════
 
@@ -1103,8 +1468,8 @@ function highlightNearestTideStation(lat, lon) {
 // ════════════════════════════════════════════════
 
 // ── Forecast chart paging state ──
-let _forecastPage = 0; // 0 = days 0-2, 1 = days 3-5, etc.
-const FORECAST_DAYS_PER_PAGE = 3;
+let _forecastDayOffset = 0; // day offset from first day (advances 1 day per click)
+const FORECAST_DAYS_VISIBLE = 3;
 
 function drawForecastChart(marine, wind, daylight, tideHiLo) {
   // Store raw data for paging
@@ -1115,24 +1480,24 @@ function drawForecastChart(marine, wind, daylight, tideHiLo) {
   const firstDay = new Date(allTimes[0]); firstDay.setHours(0,0,0,0);
   const lastDay = new Date(allTimes[allTimes.length - 1]); lastDay.setHours(0,0,0,0);
   const totalDays = Math.round((lastDay - firstDay) / 86400000) + 1;
-  const maxPage = Math.max(0, Math.ceil(totalDays / FORECAST_DAYS_PER_PAGE) - 1);
+  const maxOffset = Math.max(0, totalDays - FORECAST_DAYS_VISIBLE);
 
-  // Clamp page
-  if (_forecastPage > maxPage) _forecastPage = maxPage;
-  if (_forecastPage < 0) _forecastPage = 0;
+  // Clamp offset
+  if (_forecastDayOffset > maxOffset) _forecastDayOffset = maxOffset;
+  if (_forecastDayOffset < 0) _forecastDayOffset = 0;
 
   // Update nav buttons
   const prevBtn = el('forecast-prev');
   const nextBtn = el('forecast-next');
   const navLabel = el('forecast-nav-label');
-  if (prevBtn) prevBtn.disabled = _forecastPage === 0;
-  if (nextBtn) nextBtn.disabled = _forecastPage >= maxPage;
+  if (prevBtn) prevBtn.disabled = _forecastDayOffset === 0;
+  if (nextBtn) nextBtn.disabled = _forecastDayOffset >= maxOffset;
 
-  // Calculate time window for this page
+  // Calculate time window: 3 days starting from offset
   const pageStart = new Date(firstDay);
-  pageStart.setDate(pageStart.getDate() + _forecastPage * FORECAST_DAYS_PER_PAGE);
+  pageStart.setDate(pageStart.getDate() + _forecastDayOffset);
   const pageEnd = new Date(pageStart);
-  pageEnd.setDate(pageEnd.getDate() + FORECAST_DAYS_PER_PAGE);
+  pageEnd.setDate(pageEnd.getDate() + FORECAST_DAYS_VISIBLE);
 
   // Update nav label
   if (navLabel) {
@@ -1159,7 +1524,11 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  const pad = { top: 32, right: 16, bottom: 38, left: 44 };
+  // Responsive padding: tighter on mobile for more plot area
+  const isMobile = W < 600;
+  const pad = isMobile
+    ? { top: 24, right: 10, bottom: 44, left: 34 }
+    : { top: 32, right: 16, bottom: 52, left: 44 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top - pad.bottom;
 
@@ -1216,7 +1585,7 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
 
   // ── Nighttime shading ──
   if (daylight && !daylight.alwaysDay) {
-    for (let dayOff = 0; dayOff < FORECAST_DAYS_PER_PAGE + 1; dayOff++) {
+    for (let dayOff = 0; dayOff < FORECAST_DAYS_VISIBLE + 1; dayOff++) {
       const dayDate = new Date(pageStart);
       dayDate.setDate(dayDate.getDate() + dayOff);
       const dl = calcDaylight(STATE.pinLat || CONFIG.chocomount.lat, STATE.pinLon || CONFIG.chocomount.lon, dayDate);
@@ -1256,7 +1625,7 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
   // ── Day separators (at midnight) ──
   ctx.strokeStyle = '#e0dbd3';
   ctx.lineWidth = 0.5;
-  for (let dayOff = 0; dayOff <= FORECAST_DAYS_PER_PAGE; dayOff++) {
+  for (let dayOff = 0; dayOff <= FORECAST_DAYS_VISIBLE; dayOff++) {
     const midDate = new Date(pageStart);
     midDate.setDate(midDate.getDate() + dayOff);
     midDate.setHours(0, 0, 0, 0);
@@ -1318,7 +1687,7 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
 
   ctx.restore(); // remove clip
 
-  // ── Low tide vertical drop lines ──
+  // ── Low tide vertical drop lines (no labels — labels are below x-axis) ──
   if (tideHiLo) {
     tideHiLo.forEach(p => {
       if (p.type !== 'L') return;
@@ -1328,12 +1697,10 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
       const xx = xPos(d);
       if (xx < pad.left || xx > pad.left + plotW) return;
 
-      // Get wave height at this time for the top of the drop line
       const waveH = getHeightAtTime(dMs);
       const lineTop = yPos(Math.min(waveH, maxY));
       const lineBottom = yPos(0);
 
-      // Draw dashed vertical line from swell line down to axis
       ctx.save();
       ctx.strokeStyle = 'rgba(90, 127, 160, 0.5)';
       ctx.lineWidth = 1.5;
@@ -1344,27 +1711,19 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.restore();
-
-      // Draw label just above x-axis: "Low 6:30am"
-      const hrs = d.getHours();
-      const mins = d.getMinutes();
-      const ampm = hrs >= 12 ? 'pm' : 'am';
-      const h12 = hrs % 12 || 12;
-      const timeStr = mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
-      const label = `Low ${timeStr}`;
-
-      ctx.save();
-      ctx.fillStyle = '#5a7fa0';
-      ctx.font = '10px "DM Mono", monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(label, xx, lineBottom - 3);
-      ctx.restore();
     });
   }
 
-  // ── Direction arrows at 6am each day (larger) ──
-  for (let dayOff = 0; dayOff < FORECAST_DAYS_PER_PAGE; dayOff++) {
+  // ── Direction arrows at 6am each day ──
+  const arrowSize = isMobile ? 10 : 14;
+  const arrowLineW = isMobile ? 2 : 2.5;
+  const windArrowSize = isMobile ? 7 : 10;
+  const windArrowOffset = isMobile ? 18 : 24;
+  const windFontSize = isMobile ? '8px' : '10px';
+  const arrowY = pad.top + (isMobile ? 10 : 14);
+  const windLabelY = pad.top + (isMobile ? 22 : 29);
+
+  for (let dayOff = 0; dayOff < FORECAST_DAYS_VISIBLE; dayOff++) {
     const arrowDate = new Date(pageStart);
     arrowDate.setDate(arrowDate.getDate() + dayOff);
     arrowDate.setHours(6, 0, 0, 0);
@@ -1379,55 +1738,93 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
       if (diff < closestDiff) { closestDiff = diff; closest = i; }
     }
 
-    // Swell arrow (larger, colored by direction)
+    // Swell arrow (colored by direction)
     const swDir = swellDirs[closest];
     if (swDir != null) {
-      drawArrow(ctx, xx, pad.top + 14, swDir, 14, swellDirColor(swDir), 2.5);
+      drawArrow(ctx, xx, arrowY, swDir, arrowSize, swellDirColor(swDir), arrowLineW);
     }
 
-    // Wind arrow (offset right, larger, dark for contrast)
+    // Wind arrow (offset right, dark for contrast)
     const wDir = windDirs[closest];
     const wSpd = windSpeeds[closest];
     if (wDir != null) {
-      drawArrow(ctx, xx + 24, pad.top + 14, wDir, 10, '#4a443e', 2);
+      drawArrow(ctx, xx + windArrowOffset, arrowY, wDir, windArrowSize, '#4a443e', 2);
       if (wSpd != null) {
         ctx.fillStyle = '#4a443e';
-        ctx.font = '10px "DM Mono", monospace';
+        ctx.font = `${windFontSize} "DM Mono", monospace`;
         ctx.textAlign = 'center';
-        ctx.fillText(`${Math.round(wSpd)}`, xx + 24, pad.top + 29);
+        ctx.fillText(`${Math.round(wSpd)}`, xx + windArrowOffset, windLabelY);
       }
     }
   }
 
   // ── Y-axis labels ──
+  const axisFont = isMobile ? '9px' : '11px';
   ctx.fillStyle = '#8a827a';
-  ctx.font = '11px "DM Mono", monospace';
+  ctx.font = `${axisFont} "DM Mono", monospace`;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   for (let y = 0; y <= maxY; y += yStep) {
-    ctx.fillText(`${y}`, pad.left - 6, yPos(y));
+    ctx.fillText(`${y}`, pad.left - (isMobile ? 4 : 6), yPos(y));
   }
 
-  // ── X-axis labels (at noon each day) ──
+  // ── X-axis labels (date + low tides below) ──
+  const dayLabelFont = isMobile ? '9px' : '11px';
+  const tideLabelFont = isMobile ? '8px' : '9px';
+  const dayLabelY = pad.top + plotH + (isMobile ? 3 : 4);
+  const tideLabelY = pad.top + plotH + (isMobile ? 14 : 18);
+
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  ctx.font = '11px "DM Mono", monospace';
-  for (let dayOff = 0; dayOff < FORECAST_DAYS_PER_PAGE; dayOff++) {
+  for (let dayOff = 0; dayOff < FORECAST_DAYS_VISIBLE; dayOff++) {
     const noonDate = new Date(pageStart);
     noonDate.setDate(noonDate.getDate() + dayOff);
     noonDate.setHours(12, 0, 0, 0);
     const xx = xPos(noonDate);
-    if (xx > pad.left && xx < pad.left + plotW) {
-      ctx.fillText(formatDay(noonDate), xx, pad.top + plotH + 6);
+    if (xx <= pad.left || xx >= pad.left + plotW) continue;
+
+    // Line 1: day label
+    ctx.fillStyle = '#8a827a';
+    ctx.font = `${dayLabelFont} "DM Mono", monospace`;
+    ctx.fillText(formatDay(noonDate), xx, dayLabelY);
+
+    // Line 2: low tide times for this day
+    if (tideHiLo) {
+      const dayStart = new Date(pageStart);
+      dayStart.setDate(dayStart.getDate() + dayOff);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+
+      const lowTides = tideHiLo.filter(p => {
+        if (p.type !== 'L') return false;
+        const pt = new Date(p.t).getTime();
+        return pt >= dayStart.getTime() && pt < dayEnd.getTime();
+      });
+
+      if (lowTides.length > 0) {
+        const tideStr = lowTides.map(p => {
+          const td = new Date(p.t);
+          const hrs = td.getHours();
+          const mins = td.getMinutes();
+          const ampm = hrs >= 12 ? 'pm' : 'am';
+          const h12 = hrs % 12 || 12;
+          return mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
+        }).join(', ');
+
+        ctx.fillStyle = '#5a7fa0';
+        ctx.font = `${tideLabelFont} "DM Mono", monospace`;
+        ctx.fillText(`Low ${tideStr}`, xx, tideLabelY);
+      }
     }
   }
 
   // ── "ft" label ──
   ctx.save();
   ctx.fillStyle = '#b5afa8';
-  ctx.font = '10px "DM Mono", monospace';
+  ctx.font = `${isMobile ? '8px' : '10px'} "DM Mono", monospace`;
   ctx.textAlign = 'center';
-  ctx.translate(12, pad.top + plotH / 2);
+  ctx.translate(isMobile ? 8 : 12, pad.top + plotH / 2);
   ctx.rotate(-Math.PI / 2);
   ctx.fillText('ft', 0, 0);
   ctx.restore();
@@ -1558,27 +1955,63 @@ function setupForecastInteraction(canvas, container) {
     canvas.style.cursor = '';
   }, { signal });
 
-  // ── Touch events (mobile: tap or drag to select) ──
+  // ── Touch events (mobile: tap/drag to select + swipe to page) ──
   let touching = false;
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let touchMoved = false;
+  let swipeHandled = false;
+  const SWIPE_THRESHOLD = 60;
+  const SWIPE_ANGLE_LIMIT = 35; // max degrees from horizontal
+
   canvas.addEventListener('touchstart', function(e) {
     if (e.touches.length === 1) {
       touching = true;
-      const t = e.touches[0];
-      const idx = findNearestIndex(t.clientX);
-      selectHour(idx);
+      touchMoved = false;
+      swipeHandled = false;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
     }
   }, { passive: true, signal });
 
   canvas.addEventListener('touchmove', function(e) {
-    if (touching && e.touches.length === 1) {
+    if (!touching || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const dx = t.clientX - touchStartX;
+    const dy = t.clientY - touchStartY;
+    touchMoved = true;
+
+    // Determine if this is a horizontal swipe
+    const angle = Math.abs(Math.atan2(dy, dx) * 180 / Math.PI);
+    const isHorizontal = (angle < SWIPE_ANGLE_LIMIT || angle > (180 - SWIPE_ANGLE_LIMIT));
+
+    if (isHorizontal && Math.abs(dx) > SWIPE_THRESHOLD && !swipeHandled) {
+      // Swipe detected — page the forecast
+      swipeHandled = true;
+      if (dx < 0) {
+        // Swipe left → next page
+        _forecastDayOffset++;
+      } else {
+        // Swipe right → prev page
+        if (_forecastDayOffset > 0) _forecastDayOffset--;
+      }
+      if (STATE.forecastData) {
+        const fd = STATE.forecastData;
+        drawForecastChart(fd.marine, fd.wind, fd.daylight, fd.tideHiLo);
+      }
+    } else if (!swipeHandled && !isHorizontal) {
+      // Vertical-ish drag — select hour
       e.preventDefault();
-      const t = e.touches[0];
       const idx = findNearestIndex(t.clientX);
       selectHour(idx);
     }
   }, { passive: false, signal });
 
   canvas.addEventListener('touchend', function() {
+    // If it was a quick tap (no swipe, minimal move), select hour at tap position
+    if (touching && !touchMoved && !swipeHandled) {
+      // Already handled in touchstart implicitly via no move
+    }
     touching = false;
     // Keep selection visible on mobile after lifting finger
   }, { signal });
@@ -1595,8 +2028,8 @@ function wireForecastNav() {
   _forecastNavWired = true;
 
   el('forecast-prev').addEventListener('click', function() {
-    if (_forecastPage > 0) {
-      _forecastPage--;
+    if (_forecastDayOffset > 0) {
+      _forecastDayOffset--;
       if (STATE.forecastData) {
         const d = STATE.forecastData;
         drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo);
@@ -1605,7 +2038,7 @@ function wireForecastNav() {
   });
 
   el('forecast-next').addEventListener('click', function() {
-    _forecastPage++;
+    _forecastDayOffset++;
     if (STATE.forecastData) {
       const d = STATE.forecastData;
       drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo);
@@ -2026,6 +2459,9 @@ async function initApp() {
 
   // Wire forecast chart navigation buttons
   wireForecastNav();
+
+  // Wire advanced data toggle
+  initAdvancedToggle();
 
   // Default: if gate passed (not by boat), load Chocomount
   if (STATE.boatGatePassed) {

@@ -39,6 +39,13 @@
       <div id="buoy-map" class="map-container"></div>
     </section>
 
+    <!-- Conditions summary banner -->
+    <section class="conditions-summary" id="conditions-summary" style="display:none;">
+      <div class="summary-rating" id="summary-rating"></div>
+      <div class="summary-text" id="summary-text"></div>
+      <div class="summary-best" id="summary-best"></div>
+    </section>
+
     <!-- Current conditions row -->
     <section class="conditions-row" id="conditions-row">
       <div class="condition-card" id="card-swell">
@@ -53,6 +60,12 @@
         <div class="condition-value" id="val-wind-speed">—</div>
         <div class="condition-detail" id="val-wind-detail">—</div>
         <div class="panel-footer" id="footer-wind"></div>
+      </div>
+      <div class="condition-card" id="card-tide">
+        <div class="condition-label">Tide</div>
+        <div class="condition-value" id="val-tide">—</div>
+        <div class="condition-detail" id="val-tide-detail">—</div>
+        <div class="panel-footer" id="footer-tide-card"></div>
       </div>
       <div class="condition-card" id="card-temp">
         <div class="condition-label">Water Temp</div>
@@ -117,44 +130,55 @@
       <div class="panel-footer" id="footer-tides"></div>
     </section>
 
-    <!-- Compass rose + wave energy spectrum side by side -->
-    <section class="panel-row" id="panel-spectral-row" style="display:none;">
-      <div class="panel panel-half" id="panel-compass">
-        <h3 class="panel-title">Spectral Compass Rose</h3>
-        <div class="chart-container chart-container-sq">
-          <canvas id="compass-canvas"></canvas>
-        </div>
-        <div class="panel-footer" id="footer-compass"></div>
-      </div>
-      <div class="panel panel-half" id="panel-spectrum">
-        <h3 class="panel-title">Wave Energy Spectrum</h3>
-        <div class="chart-container chart-container-sq">
-          <canvas id="spectrum-canvas"></canvas>
-        </div>
-        <div class="panel-footer" id="footer-spectrum"></div>
-      </div>
-    </section>
+    <!-- Advanced data toggle -->
+    <div class="advanced-toggle-wrap" id="advanced-toggle-wrap">
+      <button class="advanced-toggle-btn" id="advanced-toggle-btn">
+        <span id="advanced-toggle-icon" class="advanced-toggle-icon">&#9654;</span>
+        Advanced Data
+      </button>
+    </div>
 
-    <!-- Hourly forecast detail -->
-    <section class="panel" id="panel-hourly">
-      <h3 class="panel-title">Hourly Forecast Detail</h3>
-      <div class="hourly-table-wrap">
-        <table id="hourly-table" class="hourly-table">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Height</th>
-              <th>Period</th>
-              <th>Dir</th>
-              <th>Wind</th>
-              <th>Gust</th>
-            </tr>
-          </thead>
-          <tbody id="hourly-tbody"></tbody>
-        </table>
-      </div>
-      <div class="panel-footer" id="footer-hourly"></div>
-    </section>
+    <!-- Advanced data sections (hidden by default) -->
+    <div id="advanced-sections" class="advanced-sections collapsed">
+      <!-- Compass rose + wave energy spectrum side by side -->
+      <section class="panel-row" id="panel-spectral-row" style="display:none;">
+        <div class="panel panel-half" id="panel-compass">
+          <h3 class="panel-title">Spectral Compass Rose</h3>
+          <div class="chart-container chart-container-sq">
+            <canvas id="compass-canvas"></canvas>
+          </div>
+          <div class="panel-footer" id="footer-compass"></div>
+        </div>
+        <div class="panel panel-half" id="panel-spectrum">
+          <h3 class="panel-title">Wave Energy Spectrum</h3>
+          <div class="chart-container chart-container-sq">
+            <canvas id="spectrum-canvas"></canvas>
+          </div>
+          <div class="panel-footer" id="footer-spectrum"></div>
+        </div>
+      </section>
+
+      <!-- Hourly forecast detail -->
+      <section class="panel" id="panel-hourly">
+        <h3 class="panel-title">Hourly Forecast Detail</h3>
+        <div class="hourly-table-wrap">
+          <table id="hourly-table" class="hourly-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Height</th>
+                <th>Period</th>
+                <th>Dir</th>
+                <th>Wind</th>
+                <th>Gust</th>
+              </tr>
+            </thead>
+            <tbody id="hourly-tbody"></tbody>
+          </table>
+        </div>
+        <div class="panel-footer" id="footer-hourly"></div>
+      </section>
+    </div>
 
     <!-- Tide station selector map -->
     <section class="panel" id="panel-tide-map">
