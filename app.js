@@ -86,7 +86,7 @@ function directionArrow(deg) {
   // Meteorological: deg is "from" direction.
   // Arrow points where wind is blowing TO: N wind (0°) → ↓ (southward).
   const arrows = ['↓','↙','←','↖','↑','↗','→','↘'];
-  const idx = Math.round(((deg % 360 + 360) % 360) / 45) % 8;
+  const idx = Math.round((((deg) % 360 + 360) % 360) / 45) % 8;
   return arrows[idx];
 }
 
