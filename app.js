@@ -2997,6 +2997,7 @@ function initSurfLogForm() {
         el('sl-save-btn').textContent = 'Save Entry';
       } else { await addLogEntry(entry); }
       resetSurfLogForm();
+      showToast('✓ Session saved!', 'success');
     } catch(e) {
       console.error('Save entry failed:', e);
       alert('Entry saved locally but cloud sync failed. It will sync when connection is restored.');
@@ -3027,6 +3028,8 @@ function resetSurfLogForm() {
   _slPhotos = []; _slPhotoFiles = []; _slConditions = null; renderPhotoGallery();
   const d = el('sl-conditions-display');
   if (d) d.innerHTML = '<span class="sl-hint">Click "Lookup" to auto-fill from historical data</span>';
+  const formEl = el('panel-surflog-form');
+  if (formEl) formEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function editLogEntry(id) {
