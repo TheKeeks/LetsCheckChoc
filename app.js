@@ -2452,16 +2452,24 @@ function saveSurfLog() {
 async function addLogEntry(entry) {
   entry.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   STATE.surfLog.unshift(entry);
-  await saveLogEntryToFirebase(entry);
   saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
+  try {
+    await saveLogEntryToFirebase(entry);
+  } catch(e) {
+    console.warn('Firebase save failed (entry saved locally):', e);
+  }
 }
 
 async function updateLogEntry(id, updates) {
   const idx = STATE.surfLog.findIndex(e => e.id === id);
   if (idx < 0) return;
   Object.assign(STATE.surfLog[idx], updates);
-  await saveLogEntryToFirebase(STATE.surfLog[idx]);
   saveSurfLog(); slRetrain(); renderSurfLogTable();
+  try {
+    await saveLogEntryToFirebase(STATE.surfLog[idx]);
+  } catch(e) {
+    console.warn('Firebase save failed (entry saved locally):', e);
+  }
 }
 
 async function deleteLogEntry(id) {
@@ -2490,7 +2498,19 @@ function photoUrl(p) {
 }
 
 async function saveLogEntryToFirebase(entry) {
-  if (!window._fbUserId) return;
+  if (!window._fbUserId) {
+    await new Promise(function(resolve) {
+      let attempts = 0;
+      const check = setInterval(function() {
+        attempts++;
+        if (window._fbUserId || attempts > 50) { clearInterval(check); resolve(); }
+      }, 100);
+    });
+  }
+  if (!window._fbUserId) {
+    console.warn('saveLogEntryToFirebase: not authenticated after waiting');
+    return;
+  }
   const d = new Date(entry.timestamp);
   const YYYY = d.getFullYear();
   const MM = String(d.getMonth() + 1).padStart(2, '0');
@@ -2894,13 +2914,18 @@ function initSurfLogForm() {
       ratings: { size: parseInt(el('sl-size')?.value||'5'), windQuality: parseInt(el('sl-wind-quality')?.value||'5'), rideQuality: parseInt(el('sl-ride-quality')?.value||'5') },
       notes: el('sl-notes')?.value || '', conditions: _slConditions || null
     };
-    if (STATE.surfLogEditId) {
-      await updateLogEntry(STATE.surfLogEditId, entry);
-      STATE.surfLogEditId = null;
-      el('sl-cancel-edit-btn').style.display = 'none';
-      el('sl-save-btn').textContent = 'Save Entry';
-    } else { await addLogEntry(entry); }
-    resetSurfLogForm();
+    try {
+      if (STATE.surfLogEditId) {
+        await updateLogEntry(STATE.surfLogEditId, entry);
+        STATE.surfLogEditId = null;
+        el('sl-cancel-edit-btn').style.display = 'none';
+        el('sl-save-btn').textContent = 'Save Entry';
+      } else { await addLogEntry(entry); }
+      resetSurfLogForm();
+    } catch(e) {
+      console.error('Save entry failed:', e);
+      alert('Entry saved locally but cloud sync failed. It will sync when connection is restored.');
+    }
   });
   el('sl-cancel-edit-btn')?.addEventListener('click', () => {
     STATE.surfLogEditId = null; el('sl-cancel-edit-btn').style.display = 'none';
@@ -3292,9 +3317,14 @@ function initMatchModal() {
   el('fb-save-btn')?.addEventListener('click', async () => {
     if(!STATE.matchModalData) return;
     const fc = buildForecastConditions(STATE._cachedMarine,STATE._cachedWind,STATE._cachedTideHiLo,STATE.matchModalData.forecastHourIdx);
-    await addLogEntry({ timestamp: new Date().toISOString().slice(0,16), photos:[], ratings:{size:parseInt(el('fb-size')?.value||'5'),windQuality:parseInt(el('fb-wind-quality')?.value||'5'),rideQuality:parseInt(el('fb-ride-quality')?.value||'5')}, notes:el('fb-notes')?.value||'', conditions:fc });
-    el('match-modal').style.display='none'; STATE.matchModalData=null; el('fb-notes').value='';
-    alert('Session logged! Model improving.');
+    try {
+      await addLogEntry({ timestamp: new Date().toISOString().slice(0,16), photos:[], ratings:{size:parseInt(el('fb-size')?.value||'5'),windQuality:parseInt(el('fb-wind-quality')?.value||'5'),rideQuality:parseInt(el('fb-ride-quality')?.value||'5')}, notes:el('fb-notes')?.value||'', conditions:fc });
+      el('match-modal').style.display='none'; STATE.matchModalData=null; el('fb-notes').value='';
+      alert('Session logged! Model improving.');
+    } catch(e) {
+      console.error('Save feedback entry failed:', e);
+      alert('Entry saved locally but cloud sync failed. It will sync when connection is restored.');
+    }
   });
 }
 
