@@ -5,6 +5,12 @@
 
 'use strict';
 
+// ── Surf Log Constants ──────────────────────────────
+const CHOC_OFFSHORE_CENTER = 337.5;  // NNW — best offshore wind direction
+const OFFSHORE_HALF_WINDOW = 90;     // ±90° for full score
+const CHOC_WIND_LAT = 41.276083;     // Chocomount land GPS for wind history
+const CHOC_WIND_LON = -71.963725;
+
 // ── Configuration ────────────────────────────────
 const CONFIG = {
   chocomount: {
@@ -28,6 +34,7 @@ const CONFIG = {
   api: {
     openMeteoMarine: 'https://marine-api.open-meteo.com/v1/marine',
     openMeteoWeather: 'https://api.open-meteo.com/v1/forecast',
+    openMeteoArchive: 'https://archive-api.open-meteo.com/v1/archive',
     coops: 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter',
     nws: 'https://api.weather.gov/points/',
     ndbcProxy: 'https://corsproxy.io/?',
@@ -59,7 +66,16 @@ const STATE = {
   chocMarker: null,
   tideMarkers: [],
   activeTideMarker: null,
-  forecastChart: null   // cached chart state for tooltip
+  forecastChart: null,   // cached chart state for tooltip
+  // Surf log
+  surfLog: [],
+  surfLogWeights: null,
+  surfLogFeatureStats: null,
+  surfLogEditId: null,
+  activeTab: 'forecast',
+  personalMatchesOpen: false,
+  matchModalData: null,
+  matchModalPhotoIdx: 0
 };
 
 // ── Utility functions ────────────────────────────
@@ -820,6 +836,10 @@ function selectBuoy(buoy) {
   const prefix = STATE.isChocomount ? 'Choc · ' : '';
   el('header-location').textContent = `${prefix}${buoy.id} ${buoy.name}`;
 
+  // Update surf log tab visibility
+  updateTabBarVisibility();
+  updatePersonalMatchToggle();
+
   // Load all data
   loadAllData(buoy);
 }
@@ -929,6 +949,11 @@ async function loadAllData(buoy) {
       tideHiLoForChart = td && td.predictions ? td.predictions : null;
     }
 
+    // Cache forecast data for surf log personal matching
+    STATE._cachedMarine = marine;
+    STATE._cachedWind = wind;
+    STATE._cachedTideHiLo = tideHiLoForChart;
+
     // ── Tide condition card ──
     updateTideCard(tideHiLoForChart, tideStn);
 
@@ -941,6 +966,10 @@ async function loadAllData(buoy) {
     updateConditionsSummary(wH, pS, wS, wD, sD, marine, wind, tideHiLoForChart);
 
     drawForecastChart(marine, wind, daylight, tideHiLoForChart);
+
+    // Update personal match cards if open
+    if (STATE.personalMatchesOpen) renderPersonalMatchCards();
+
     const coordLabel = isChoc ? `${forecastLat}°N, ${Math.abs(forecastLon)}°W (open water)` : `${forecastLat.toFixed(3)}°N, ${Math.abs(forecastLon).toFixed(3)}°W`;
     setFooter('footer-forecast',
       `Open-Meteo Marine · gfs Wave 0.16° · ${coordLabel}`,
@@ -2397,6 +2426,707 @@ function buildHourlyTable(marine, wind, lat, lon) {
 }
 
 // ════════════════════════════════════════════════
+// SURF LOG — Storage
+// ════════════════════════════════════════════════
+
+function loadSurfLog() {
+  try {
+    const raw = localStorage.getItem('lcc_surfLog');
+    STATE.surfLog = raw ? JSON.parse(raw) : [];
+  } catch (e) { STATE.surfLog = []; }
+}
+
+function saveSurfLog() {
+  try {
+    localStorage.setItem('lcc_surfLog', JSON.stringify(STATE.surfLog));
+    updateStorageNote();
+  } catch (e) { alert('Storage full — try removing photos or exporting.'); }
+}
+
+function addLogEntry(entry) {
+  entry.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  STATE.surfLog.unshift(entry);
+  saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
+}
+
+function updateLogEntry(id, updates) {
+  const idx = STATE.surfLog.findIndex(e => e.id === id);
+  if (idx < 0) return;
+  Object.assign(STATE.surfLog[idx], updates);
+  saveSurfLog(); slRetrain(); renderSurfLogTable();
+}
+
+function deleteLogEntry(id) {
+  STATE.surfLog = STATE.surfLog.filter(e => e.id !== id);
+  saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
+}
+
+function updateStorageNote() {
+  const noteEl = el('sl-storage-note');
+  if (!noteEl) return;
+  const raw = localStorage.getItem('lcc_surfLog') || '';
+  const kb = (new Blob([raw]).size / 1024).toFixed(0);
+  noteEl.textContent = STATE.surfLog.length + ' entries \u00b7 ' + kb + ' KB';
+  if (new Blob([raw]).size > 4 * 1024 * 1024) {
+    noteEl.textContent += ' (storage nearly full!)';
+    noteEl.style.color = 'var(--red-m)';
+  }
+}
+
+// ════════════════════════════════════════════════
+// SURF LOG — Tab Navigation
+// ════════════════════════════════════════════════
+
+function initTabBar() {
+  el('tab-btn-forecast')?.addEventListener('click', () => switchTab('forecast'));
+  el('tab-btn-surflog')?.addEventListener('click', () => switchTab('surflog'));
+}
+
+function switchTab(tab) {
+  STATE.activeTab = tab;
+  el('tab-btn-forecast')?.classList.toggle('active', tab === 'forecast');
+  el('tab-btn-surflog')?.classList.toggle('active', tab === 'surflog');
+  const vF = el('view-forecast'), vS = el('view-surflog');
+  if (vF) vF.style.display = tab === 'forecast' ? '' : 'none';
+  if (vS) vS.style.display = tab === 'surflog' ? '' : 'none';
+  if (tab === 'surflog') { renderSurfLogTable(); renderWeightsPanel(); }
+}
+
+function updateTabBarVisibility() {
+  const tabBar = el('tab-bar');
+  if (tabBar) tabBar.style.display = STATE.isChocomount ? '' : 'none';
+  if (!STATE.isChocomount && STATE.activeTab === 'surflog') switchTab('forecast');
+}
+
+// ════════════════════════════════════════════════
+// SURF LOG — Photo Helpers
+// ════════════════════════════════════════════════
+
+let _slPhotos = [];
+
+function resizeImageFile(file, maxW, quality) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL('image/jpeg', quality || 0.7));
+      };
+      img.onerror = () => resolve(null);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderPhotoGallery() {
+  const gallery = el('sl-photo-gallery');
+  if (!gallery) return;
+  gallery.innerHTML = '';
+  _slPhotos.forEach((src, i) => {
+    const thumb = document.createElement('div');
+    thumb.className = 'sl-photo-thumb';
+    const img = document.createElement('img');
+    img.src = src; img.alt = 'Photo ' + (i + 1);
+    img.onerror = () => { thumb.classList.add('sl-photo-thumb-broken'); img.style.display = 'none'; thumb.textContent = '?'; };
+    const rm = document.createElement('button');
+    rm.className = 'sl-photo-remove'; rm.textContent = '\u00d7';
+    rm.addEventListener('click', () => { _slPhotos.splice(i, 1); renderPhotoGallery(); });
+    thumb.append(img, rm);
+    gallery.appendChild(thumb);
+  });
+}
+
+// ════════════════════════════════════════════════
+// SURF LOG — Historical Condition Lookup
+// ════════════════════════════════════════════════
+
+function fmtDate(d) { return d.toISOString().split('T')[0]; }
+
+function angularDist(a, b) { let d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+
+async function fetchHistoricalWind(dateStr) {
+  const target = new Date(dateStr);
+  const dayBefore = new Date(target); dayBefore.setDate(dayBefore.getDate() - 1);
+  const diffDays = (Date.now() - target.getTime()) / 86400000;
+  if (diffDays <= 5) {
+    const p = new URLSearchParams({ latitude: CHOC_WIND_LAT, longitude: CHOC_WIND_LON, hourly: 'wind_speed_10m,wind_direction_10m,wind_gusts_10m', wind_speed_unit: 'mph', timezone: 'auto', past_days: 7, forecast_days: 1 });
+    return fetchJSON(CONFIG.api.openMeteoWeather + '?' + p);
+  }
+  const p = new URLSearchParams({ latitude: CHOC_WIND_LAT, longitude: CHOC_WIND_LON, hourly: 'wind_speed_10m,wind_direction_10m,wind_gusts_10m', wind_speed_unit: 'mph', timezone: 'auto', start_date: fmtDate(dayBefore), end_date: fmtDate(target) });
+  return fetchJSON(CONFIG.api.openMeteoArchive + '?' + p);
+}
+
+async function fetchHistoricalMarine(dateStr) {
+  const target = new Date(dateStr);
+  const diffDays = (Date.now() - target.getTime()) / 86400000;
+  const vars = 'wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_direction,swell_wave_period,secondary_swell_wave_height,secondary_swell_wave_direction,secondary_swell_wave_period';
+  if (diffDays <= 5) {
+    const p = new URLSearchParams({ latitude: CONFIG.chocomount.forecastLat, longitude: CONFIG.chocomount.forecastLon, hourly: vars, length_unit: 'imperial', timezone: 'auto', past_days: 7, forecast_days: 1 });
+    return fetchJSON(CONFIG.api.openMeteoMarine + '?' + p);
+  }
+  const d = fmtDate(target);
+  const p = new URLSearchParams({ latitude: CONFIG.chocomount.forecastLat, longitude: CONFIG.chocomount.forecastLon, hourly: vars, length_unit: 'imperial', timezone: 'auto', start_date: d, end_date: d });
+  return fetchJSON(CONFIG.api.openMeteoMarine + '?' + p);
+}
+
+async function fetchHistoricalTide(dateStr) {
+  const d = new Date(dateStr);
+  const bd = [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('');
+  const p = new URLSearchParams({ begin_date: bd, range: 24, station: CONFIG.chocomount.tideStation, product: 'predictions', datum: 'MLLW', units: 'english', time_zone: 'lst_ldt', interval: 'hilo', application: 'letscheckchoc', format: 'json' });
+  return fetchJSON(CONFIG.api.coops + '?' + p);
+}
+
+function computeBlownWaterIndex(windData, targetDateStr) {
+  if (!windData?.hourly) return 0;
+  const times = windData.hourly.time || [], speeds = windData.hourly.wind_speed_10m || [], dirs = windData.hourly.wind_direction_10m || [];
+  const target = new Date(targetDateStr).getTime(), t24 = target - 86400000;
+  let sum = 0, count = 0;
+  for (let i = 0; i < times.length; i++) {
+    const t = new Date(times[i]).getTime();
+    if (t >= t24 && t <= target && speeds[i] != null && dirs[i] != null) {
+      const easterly = speeds[i] * Math.cos(degToRad(dirs[i] - 90));
+      if (easterly > 0) { sum += easterly; count++; }
+    }
+  }
+  return count > 0 ? Math.round(sum / count * 100) / 100 : 0;
+}
+
+function computeWindOffshoreScore(windDir) {
+  if (windDir == null) return 0;
+  return Math.round(Math.max(0, 1 - angularDist(windDir, CHOC_OFFSHORE_CENTER) / OFFSHORE_HALF_WINDOW) * 100) / 100;
+}
+
+function findNearestHour(times, dateStr) {
+  const t = new Date(dateStr).getTime();
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < times.length; i++) {
+    const d = Math.abs(new Date(times[i]).getTime() - t);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
+function parseTideAtTime(tideData, dateStr) {
+  if (!tideData?.predictions?.length) return { height: 0, stage: 'rising', timeToNearest: 0 };
+  const preds = tideData.predictions, tt = new Date(dateStr).getTime();
+  let ni = 0, nd = Infinity;
+  for (let i = 0; i < preds.length; i++) {
+    const d = Math.abs(new Date(preds[i].t).getTime() - tt);
+    if (d < nd) { nd = d; ni = i; }
+  }
+  const n = preds[ni], nt = new Date(n.t).getTime();
+  const stage = nt > tt ? (n.type === 'H' ? 'rising' : 'falling') : (n.type === 'H' ? 'falling' : 'rising');
+  return { height: parseFloat(n.v) || 0, stage, timeToNearest: Math.round(Math.abs(nt - tt) / 3600000 * 10) / 10 };
+}
+
+async function lookupHistoricalConditions(dateStr) {
+  const display = el('sl-conditions-display');
+  if (display) display.innerHTML = '<span class="sl-hint">Looking up conditions...</span>';
+  try {
+    const [wind, marine, tide] = await Promise.all([fetchHistoricalWind(dateStr), fetchHistoricalMarine(dateStr), fetchHistoricalTide(dateStr)]);
+    if (!wind?.hourly || !marine?.hourly) {
+      if (display) display.innerHTML = '<span class="sl-hint">Historical data not available for this date.</span>';
+      return null;
+    }
+    const idx = findNearestHour(marine.hourly.time, dateStr);
+    const wIdx = findNearestHour(wind.hourly.time, dateStr);
+    const swH = marine.hourly.swell_wave_height?.[idx] ?? marine.hourly.wave_height?.[idx] ?? 0;
+    const swD = marine.hourly.swell_wave_direction?.[idx] ?? marine.hourly.wave_direction?.[idx] ?? 0;
+    const swP = marine.hourly.swell_wave_period?.[idx] ?? marine.hourly.wave_period?.[idx] ?? 0;
+    const secH = marine.hourly.secondary_swell_wave_height?.[idx] ?? 0;
+    const secD = marine.hourly.secondary_swell_wave_direction?.[idx] ?? 0;
+    const secP = marine.hourly.secondary_swell_wave_period?.[idx] ?? 0;
+    const wSpd = wind.hourly.wind_speed_10m?.[wIdx] ?? 0;
+    const wDir = wind.hourly.wind_direction_10m?.[wIdx] ?? 0;
+    const tideInfo = parseTideAtTime(tide, dateStr);
+    const conditions = {
+      swell: { height: Math.round(swH*10)/10, direction: Math.round(swD), period: Math.round(swP*10)/10 },
+      wind: { speed: Math.round(wSpd), direction: Math.round(wDir) },
+      tide: { height: Math.round(tideInfo.height*10)/10, stage: tideInfo.stage, timeToNearest: tideInfo.timeToNearest },
+      blown_water_index: computeBlownWaterIndex(wind, dateStr),
+      wind_offshore_score: computeWindOffshoreScore(wDir)
+    };
+    if (secH > 0.3) conditions.swell.secondary = { height: Math.round(secH*10)/10, direction: Math.round(secD), period: Math.round(secP*10)/10 };
+    renderConditionsDisplay(conditions);
+    return conditions;
+  } catch (err) {
+    console.warn('Historical lookup failed:', err);
+    if (display) display.innerHTML = '<span class="sl-hint">Lookup failed. You can enter conditions manually.</span>';
+    return null;
+  }
+}
+
+function renderConditionsDisplay(cond) {
+  const display = el('sl-conditions-display');
+  if (!display || !cond) return;
+  const dl = (l,v) => '<span class="sl-cond-label">'+l+'</span> <span class="sl-cond-val">'+v+'</span>';
+  const hl = (l,v) => '<span class="sl-cond-label">'+l+'</span> <span class="sl-cond-highlight">'+v+'</span>';
+  let h = '<div class="sl-cond-row">';
+  h += dl('Swell:', cond.swell.height+'ft '+cond.swell.period+'s '+directionLabel(cond.swell.direction)+' ('+cond.swell.direction+'\u00b0)');
+  if (cond.swell.secondary) h += dl('2nd:', cond.swell.secondary.height+'ft '+cond.swell.secondary.period+'s '+directionLabel(cond.swell.secondary.direction));
+  h += '</div><div class="sl-cond-row">';
+  h += dl('Wind:', cond.wind.speed+' mph '+directionLabel(cond.wind.direction)+' ('+cond.wind.direction+'\u00b0)');
+  h += dl('Tide:', cond.tide.height+'ft '+cond.tide.stage+' ('+cond.tide.timeToNearest+'h to next)');
+  h += '</div><div class="sl-cond-row">';
+  h += hl('Offshore Score:', cond.wind_offshore_score.toFixed(2));
+  h += hl('Blown Water Idx:', cond.blown_water_index.toFixed(2));
+  h += '</div>';
+  display.innerHTML = h;
+}
+
+// ════════════════════════════════════════════════
+// SURF LOG — Form Logic
+// ════════════════════════════════════════════════
+
+let _slConditions = null;
+
+function initSurfLogForm() {
+  const dtInput = el('sl-datetime');
+  if (dtInput) {
+    const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    dtInput.value = now.toISOString().slice(0, 16);
+  }
+  ['sl-size','sl-wind-quality','sl-ride-quality'].forEach(id => {
+    const s = el(id);
+    const vid = id === 'sl-size' ? 'sl-size-val' : id === 'sl-wind-quality' ? 'sl-wind-val' : 'sl-ride-val';
+    s?.addEventListener('input', () => { el(vid).textContent = s.value; });
+  });
+  ['fb-size','fb-wind-quality','fb-ride-quality'].forEach(id => {
+    const s = el(id);
+    const vid = id === 'fb-size' ? 'fb-size-val' : id === 'fb-wind-quality' ? 'fb-wind-val' : 'fb-ride-val';
+    s?.addEventListener('input', () => { el(vid).textContent = s.value; });
+  });
+  el('sl-add-url')?.addEventListener('click', () => {
+    const input = el('sl-photo-url'), url = (input.value||'').trim();
+    if (url) { _slPhotos.push(url); input.value = ''; renderPhotoGallery(); }
+  });
+  el('sl-photo-file')?.addEventListener('change', async e => {
+    for (const f of Array.from(e.target.files)) {
+      const uri = await resizeImageFile(f, 800, 0.7);
+      if (uri) _slPhotos.push(uri);
+    }
+    e.target.value = ''; renderPhotoGallery();
+  });
+  el('sl-lookup-btn')?.addEventListener('click', async () => {
+    const dt = el('sl-datetime')?.value;
+    if (!dt) { alert('Set a date first.'); return; }
+    const btn = el('sl-lookup-btn'); btn.disabled = true; btn.textContent = 'Looking up...';
+    _slConditions = await lookupHistoricalConditions(dt);
+    btn.disabled = false; btn.textContent = 'Lookup Historical Conditions';
+  });
+  el('sl-save-btn')?.addEventListener('click', () => {
+    const dt = el('sl-datetime')?.value;
+    if (!dt) { alert('Set a date and time.'); return; }
+    const entry = {
+      timestamp: dt, photos: [..._slPhotos],
+      ratings: { size: parseInt(el('sl-size')?.value||'5'), windQuality: parseInt(el('sl-wind-quality')?.value||'5'), rideQuality: parseInt(el('sl-ride-quality')?.value||'5') },
+      notes: el('sl-notes')?.value || '', conditions: _slConditions || null
+    };
+    if (STATE.surfLogEditId) {
+      updateLogEntry(STATE.surfLogEditId, entry);
+      STATE.surfLogEditId = null;
+      el('sl-cancel-edit-btn').style.display = 'none';
+      el('sl-save-btn').textContent = 'Save Entry';
+    } else { addLogEntry(entry); }
+    resetSurfLogForm();
+  });
+  el('sl-cancel-edit-btn')?.addEventListener('click', () => {
+    STATE.surfLogEditId = null; el('sl-cancel-edit-btn').style.display = 'none';
+    el('sl-save-btn').textContent = 'Save Entry'; resetSurfLogForm();
+  });
+  el('sl-export-json')?.addEventListener('click', exportJSON);
+  el('sl-export-csv')?.addEventListener('click', exportCSV);
+  el('sl-import-json-btn')?.addEventListener('click', () => el('sl-import-json')?.click());
+  el('sl-import-json')?.addEventListener('change', importJSON);
+  ['sl-filter-from','sl-filter-to','sl-filter-rating'].forEach(id => {
+    el(id)?.addEventListener('change', () => renderSurfLogTable());
+  });
+}
+
+function resetSurfLogForm() {
+  const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  if (el('sl-datetime')) el('sl-datetime').value = now.toISOString().slice(0, 16);
+  ['sl-size','sl-wind-quality','sl-ride-quality'].forEach(id => { if(el(id)) el(id).value = 5; });
+  ['sl-size-val','sl-wind-val','sl-ride-val'].forEach(id => { if(el(id)) el(id).textContent = '5'; });
+  if (el('sl-notes')) el('sl-notes').value = '';
+  _slPhotos = []; _slConditions = null; renderPhotoGallery();
+  const d = el('sl-conditions-display');
+  if (d) d.innerHTML = '<span class="sl-hint">Click "Lookup" to auto-fill from historical data</span>';
+}
+
+function editLogEntry(id) {
+  const e = STATE.surfLog.find(x => x.id === id);
+  if (!e) return;
+  STATE.surfLogEditId = id;
+  el('sl-cancel-edit-btn').style.display = '';
+  el('sl-save-btn').textContent = 'Update Entry';
+  if (el('sl-datetime')) el('sl-datetime').value = e.timestamp;
+  if (el('sl-size')) { el('sl-size').value = e.ratings.size; el('sl-size-val').textContent = e.ratings.size; }
+  if (el('sl-wind-quality')) { el('sl-wind-quality').value = e.ratings.windQuality; el('sl-wind-val').textContent = e.ratings.windQuality; }
+  if (el('sl-ride-quality')) { el('sl-ride-quality').value = e.ratings.rideQuality; el('sl-ride-val').textContent = e.ratings.rideQuality; }
+  if (el('sl-notes')) el('sl-notes').value = e.notes || '';
+  _slPhotos = [...(e.photos||[])]; _slConditions = e.conditions || null;
+  renderPhotoGallery();
+  if (_slConditions) renderConditionsDisplay(_slConditions);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ════════════════════════════════════════════════
+// SURF LOG — Export / Import
+// ════════════════════════════════════════════════
+
+function exportJSON() {
+  const blob = new Blob([JSON.stringify(STATE.surfLog, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'surflog-export.json'; a.click();
+}
+
+function exportCSV() {
+  const rows = [['id','date','size','windQuality','rideQuality','avg','notes','swellH','swellDir','swellPer','windSpd','windDir','tideH','tideStage','bwi','wos']];
+  STATE.surfLog.forEach(e => {
+    const c = e.conditions||{}, s = c.swell||{}, w = c.wind||{}, t = c.tide||{};
+    rows.push([e.id,e.timestamp,e.ratings.size,e.ratings.windQuality,e.ratings.rideQuality,
+      ((e.ratings.size+e.ratings.windQuality+e.ratings.rideQuality)/3).toFixed(1),
+      '"'+(e.notes||'').replace(/"/g,'""')+'"',
+      s.height||'',s.direction||'',s.period||'',w.speed||'',w.direction||'',t.height||'',t.stage||'',c.blown_water_index||'',c.wind_offshore_score||'']);
+  });
+  const blob = new Blob([rows.map(r=>r.join(',')).join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'surflog-export.csv'; a.click();
+}
+
+function importJSON(ev) {
+  const file = ev.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!Array.isArray(data)) throw new Error('Not an array');
+      let imported = 0;
+      data.forEach(entry => {
+        if (!entry.timestamp || !entry.ratings) return;
+        if (!entry.id) entry.id = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+        if (!STATE.surfLog.find(x => x.id === entry.id)) { STATE.surfLog.push(entry); imported++; }
+      });
+      STATE.surfLog.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+      saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
+      alert('Imported ' + imported + ' entries.');
+    } catch (err) { alert('Invalid JSON: ' + err.message); }
+  };
+  reader.readAsText(file); ev.target.value = '';
+}
+
+// ════════════════════════════════════════════════
+// SURF LOG — Table Rendering
+// ════════════════════════════════════════════════
+
+function ratingBadge(val) {
+  const v = typeof val === 'number' ? val : parseFloat(val);
+  const cls = v >= 7 ? 'sl-badge-good' : v >= 4 ? 'sl-badge-fair' : 'sl-badge-poor';
+  return '<span class="sl-rating-badge '+cls+'">'+v+'</span>';
+}
+
+function renderSurfLogTable() {
+  const tbody = el('surflog-tbody'), emptyEl = el('surflog-empty'), exportRow = el('sl-export-row');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  let entries = [...STATE.surfLog];
+  const fromD = el('sl-filter-from')?.value, toD = el('sl-filter-to')?.value;
+  const minR = parseFloat(el('sl-filter-rating')?.value || '0');
+  if (fromD) entries = entries.filter(e => e.timestamp >= fromD);
+  if (toD) entries = entries.filter(e => e.timestamp <= toD + 'T23:59:59');
+  if (minR > 0) entries = entries.filter(e => (e.ratings.size+e.ratings.windQuality+e.ratings.rideQuality)/3 >= minR);
+
+  const tableEl = el('surflog-table');
+  if (entries.length === 0) {
+    if (emptyEl) emptyEl.style.display = '';
+    if (tableEl) tableEl.style.display = 'none';
+  } else {
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (tableEl) tableEl.style.display = '';
+  }
+
+  entries.forEach(entry => {
+    const tr = document.createElement('tr');
+    const d = new Date(entry.timestamp);
+    const dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'});
+    const timeStr = d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
+    const avg = ((entry.ratings.size+entry.ratings.windQuality+entry.ratings.rideQuality)/3).toFixed(1);
+    const photos = (entry.photos||[]).slice(0,3);
+    const photoHtml = photos.length > 0
+      ? '<div class="sl-row-photos">'+photos.map(p=>'<img src="'+p+'" alt="" onerror="this.style.display=\'none\'">').join('')+'</div>'
+      : '<span style="color:var(--ink4)">\u2014</span>';
+    const notes = (entry.notes||'').slice(0,30) + ((entry.notes||'').length>30?'...':'');
+    tr.innerHTML = '<td style="white-space:nowrap">'+dateStr+'<br><span style="color:var(--ink4);font-size:0.65rem">'+timeStr+'</span></td>'
+      +'<td>'+photoHtml+'</td>'
+      +'<td>'+ratingBadge(entry.ratings.size)+'</td>'
+      +'<td>'+ratingBadge(entry.ratings.windQuality)+'</td>'
+      +'<td>'+ratingBadge(entry.ratings.rideQuality)+'</td>'
+      +'<td>'+ratingBadge(parseFloat(avg))+'</td>'
+      +'<td style="max-width:120px;overflow:hidden;text-overflow:ellipsis">'+(notes||'<span style="color:var(--ink4)">\u2014</span>')+'</td>'
+      +'<td style="white-space:nowrap"><button class="sl-btn sl-btn-sm sl-edit-btn" data-id="'+entry.id+'">Edit</button> <button class="sl-btn sl-btn-sm sl-btn-danger sl-delete-btn" data-id="'+entry.id+'">Del</button></td>';
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', ev => { if (!ev.target.closest('button')) toggleEntryDetail(entry, tr); });
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll('.sl-edit-btn').forEach(b => b.addEventListener('click', () => editLogEntry(b.dataset.id)));
+  tbody.querySelectorAll('.sl-delete-btn').forEach(b => b.addEventListener('click', () => { if(confirm('Delete this session?')) deleteLogEntry(b.dataset.id); }));
+  updateStorageNote();
+  if (exportRow) exportRow.style.display = STATE.surfLog.length > 0 ? '' : 'none';
+}
+
+function toggleEntryDetail(entry, tr) {
+  const existing = tr.nextElementSibling;
+  if (existing?.classList.contains('sl-detail-row')) { existing.remove(); return; }
+  const dr = document.createElement('tr'); dr.className = 'sl-detail-row';
+  const c = entry.conditions;
+  let h = '<td colspan="8"><div class="sl-detail-content">';
+  if (c) {
+    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Swell</span>'+c.swell.height+'ft '+c.swell.period+'s '+directionLabel(c.swell.direction)+' ('+c.swell.direction+'\u00b0)';
+    if (c.swell.secondary) h += '<br>2nd: '+c.swell.secondary.height+'ft '+c.swell.secondary.period+'s '+directionLabel(c.swell.secondary.direction);
+    h += '</div><div class="sl-cond-group"><span class="sl-cond-group-title">Wind</span>'+c.wind.speed+' mph '+directionLabel(c.wind.direction)+' ('+c.wind.direction+'\u00b0)</div>';
+    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Tide</span>'+c.tide.height+'ft '+c.tide.stage+' ('+c.tide.timeToNearest+'h to next)</div>';
+    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Custom</span>Offshore Score: <strong>'+(c.wind_offshore_score?.toFixed(2)||'\u2014')+'</strong><br>Blown Water Idx: <strong>'+(c.blown_water_index?.toFixed(2)||'\u2014')+'</strong></div>';
+  } else { h += '<div style="grid-column:1/-1;color:var(--ink4)">No conditions recorded</div>'; }
+  h += '</div></td>';
+  dr.innerHTML = h; tr.after(dr);
+}
+
+// ════════════════════════════════════════════════
+// SURF LOG — Linear Regression (Normal Equation)
+// ════════════════════════════════════════════════
+
+const SL_FEATURE_NAMES = ['swell_height','swell_period','swell_dir_sin','swell_dir_cos','sec_swell_height','sec_dir_sin','sec_dir_cos','wind_speed','wind_dir_sin','wind_dir_cos','tide_height','tide_stage','tide_interaction','time_to_nearest','blown_water_index','wind_offshore_score'];
+
+function extractFeatures(cond) {
+  if (!cond?.swell) return null;
+  const s = cond.swell, w = cond.wind||{speed:0,direction:0}, t = cond.tide||{height:0,stage:'rising',timeToNearest:0};
+  const sec = s.secondary||{height:0,direction:0};
+  const ts = t.stage === 'rising' ? 1 : -1;
+  return [s.height||0, s.period||0, Math.sin(degToRad(s.direction||0)), Math.cos(degToRad(s.direction||0)),
+    sec.height||0, Math.sin(degToRad(sec.direction||0)), Math.cos(degToRad(sec.direction||0)),
+    w.speed||0, Math.sin(degToRad(w.direction||0)), Math.cos(degToRad(w.direction||0)),
+    t.height||0, ts, (t.height||0)*ts, t.timeToNearest||0,
+    cond.blown_water_index||0, cond.wind_offshore_score||0];
+}
+
+function matTranspose(A) { const r=A.length,c=A[0].length,T=[]; for(let j=0;j<c;j++){T[j]=[]; for(let i=0;i<r;i++) T[j][i]=A[i][j];} return T; }
+function matMul(A,B) { const rA=A.length,cA=A[0].length,cB=B[0].length,C=Array.from({length:rA},()=>new Array(cB).fill(0)); for(let i=0;i<rA;i++) for(let j=0;j<cB;j++) for(let k=0;k<cA;k++) C[i][j]+=A[i][k]*B[k][j]; return C; }
+function matInvert(m) {
+  const n=m.length, aug=m.map((r,i)=>{const row=[...r]; for(let j=0;j<n;j++) row.push(i===j?1:0); return row;});
+  for(let c=0;c<n;c++){
+    let mr=c; for(let r=c+1;r<n;r++) if(Math.abs(aug[r][c])>Math.abs(aug[mr][c])) mr=r;
+    [aug[c],aug[mr]]=[aug[mr],aug[c]];
+    if(Math.abs(aug[c][c])<1e-10) return null;
+    const piv=aug[c][c]; for(let j=0;j<2*n;j++) aug[c][j]/=piv;
+    for(let r=0;r<n;r++){ if(r===c) continue; const f=aug[r][c]; for(let j=0;j<2*n;j++) aug[r][j]-=f*aug[c][j]; }
+  }
+  return aug.map(r=>r.slice(n));
+}
+
+function normalEquation(X,y) {
+  const Xt=matTranspose(X), XtX=matMul(Xt,X);
+  for(let i=0;i<XtX.length;i++) XtX[i][i]+=0.001;
+  const inv=matInvert(XtX); if(!inv) return null;
+  return matMul(inv, matMul(Xt, y.map(v=>[v]))).map(r=>r[0]);
+}
+
+function slRetrain() {
+  const entries = STATE.surfLog.filter(e => e.conditions?.swell);
+  if (entries.length < 8) { STATE.surfLogWeights = null; STATE.surfLogFeatureStats = null; renderWeightsPanel(); return; }
+  const X = [], y = [];
+  entries.forEach(e => { const f = extractFeatures(e.conditions); if(f){ X.push(f); y.push((e.ratings.size+e.ratings.windQuality+e.ratings.rideQuality)/3); }});
+  if (X.length < 8) { STATE.surfLogWeights = null; renderWeightsPanel(); return; }
+  const nF = X[0].length, stats = { min:[], max:[], mean:[] };
+  for (let j=0;j<nF;j++) { const col=X.map(r=>r[j]); stats.min[j]=Math.min(...col); stats.max[j]=Math.max(...col); stats.mean[j]=col.reduce((a,b)=>a+b,0)/col.length; }
+  const Xn = X.map(row => row.map((v,j) => { const rng=stats.max[j]-stats.min[j]; return rng>1e-10?(v-stats.min[j])/rng:0; }));
+  STATE.surfLogWeights = normalEquation(Xn, y);
+  STATE.surfLogFeatureStats = stats;
+  renderWeightsPanel();
+}
+
+function renderWeightsPanel() {
+  const panel = el('panel-surflog-weights'), container = el('surflog-weights');
+  if (!panel||!container) return;
+  if (!STATE.surfLogWeights) { panel.style.display='none'; return; }
+  panel.style.display = '';
+  const w = STATE.surfLogWeights, tot = w.reduce((s,v)=>s+Math.abs(v),0);
+  if (tot===0) { container.innerHTML='<span class="sl-hint">Not enough variance.</span>'; return; }
+  container.innerHTML = w.map((v,i) => {
+    const pct = Math.round(Math.abs(v)/tot*100);
+    return '<div class="sl-weight-bar"><span class="sl-w-label">'+(SL_FEATURE_NAMES[i]||'f'+i)+'</span><div class="sl-w-bar" style="width:'+Math.max(2,pct*1.5)+'px"></div><span class="sl-w-val">'+pct+'%</span></div>';
+  }).join('');
+}
+
+// ════════════════════════════════════════════════
+// SURF LOG — Forecast Matching
+// ════════════════════════════════════════════════
+
+function computeMatchPct(ef, ff) {
+  const stats = STATE.surfLogFeatureStats;
+  if (!stats) return 0;
+  const w = STATE.surfLogWeights || new Array(ef.length).fill(1);
+  let dist = 0;
+  for (let i=0;i<ef.length;i++) { const rng=stats.max[i]-stats.min[i]; if(rng<1e-10) continue; dist+=Math.abs(w[i])*Math.pow((ef[i]-stats.min[i])/rng-(ff[i]-stats.min[i])/rng,2); }
+  return Math.round(Math.exp(-Math.sqrt(dist))*100);
+}
+
+function predictRating(ff) {
+  if (!STATE.surfLogWeights||!STATE.surfLogFeatureStats) return null;
+  const s=STATE.surfLogFeatureStats, w=STATE.surfLogWeights;
+  let pred=0;
+  for(let i=0;i<ff.length;i++){ const rng=s.max[i]-s.min[i]; pred+=w[i]*(rng>1e-10?(ff[i]-s.min[i])/rng:0); }
+  return Math.max(1,Math.min(10,Math.round(pred*10)/10));
+}
+
+function simpleMatchPct(a,b) {
+  let dist=0; for(let i=0;i<a.length;i++) dist+=Math.pow(a[i]-b[i],2);
+  return Math.round(Math.exp(-Math.sqrt(dist)/a.length)*100);
+}
+
+function buildForecastConditions(marine, wind, tideHiLo, hi) {
+  if (!marine?.hourly||!wind?.hourly) return null;
+  const swH=marine.hourly.swell_wave_height?.[hi]??marine.hourly.wave_height?.[hi]??0;
+  const swD=marine.hourly.swell_wave_direction?.[hi]??marine.hourly.wave_direction?.[hi]??0;
+  const swP=marine.hourly.swell_wave_period?.[hi]??marine.hourly.wave_period?.[hi]??0;
+  const secH=marine.hourly.secondary_swell_wave_height?.[hi]??0;
+  const secD=marine.hourly.secondary_swell_wave_direction?.[hi]??0;
+  const wSpd=wind.hourly.wind_speed_10m?.[hi]??0, wDir=wind.hourly.wind_direction_10m?.[hi]??0;
+  let bwi=0,bc=0;
+  for(let i=Math.max(0,hi-24);i<=hi;i++){const s=wind.hourly.wind_speed_10m?.[i],d=wind.hourly.wind_direction_10m?.[i]; if(s!=null&&d!=null){const e=s*Math.cos(degToRad(d-90)); if(e>0){bwi+=e;bc++;}}}
+  bwi=bc>0?Math.round(bwi/bc*100)/100:0;
+  const tideInfo = tideHiLo ? parseTideAtTime({predictions:tideHiLo}, marine.hourly.time?.[hi]) : {height:0,stage:'rising',timeToNearest:0};
+  return { swell:{height:swH,direction:swD,period:swP,secondary:secH>0.3?{height:secH,direction:secD}:undefined},
+    wind:{speed:wSpd,direction:wDir}, tide:tideInfo, blown_water_index:bwi, wind_offshore_score:computeWindOffshoreScore(wDir) };
+}
+
+function findBestMatchPerDay(marine, wind, tideHiLo) {
+  if (!STATE.surfLog.length||!marine?.hourly) return [];
+  const ewf = STATE.surfLog.filter(e=>e.conditions).map(e=>({entry:e,features:extractFeatures(e.conditions)})).filter(x=>x.features);
+  if (!ewf.length) return [];
+  const times = marine.hourly.time||[], dayMap={};
+  times.forEach((t,i) => { const day=t.split('T')[0]; if(!dayMap[day]) dayMap[day]=[]; dayMap[day].push(i); });
+  const results = [];
+  Object.entries(dayMap).forEach(([day, idxs]) => {
+    let bestM=0,bestE=null,bestP=null,bestH=0;
+    idxs.forEach(hi => {
+      const fc=buildForecastConditions(marine,wind,tideHiLo,hi); if(!fc) return;
+      const ff=extractFeatures(fc); if(!ff) return;
+      ewf.forEach(({entry,features}) => {
+        const pct=STATE.surfLogWeights?computeMatchPct(features,ff):simpleMatchPct(features,ff);
+        if(pct>bestM){bestM=pct;bestE=entry;bestH=hi;bestP=STATE.surfLogWeights?predictRating(ff):null;}
+      });
+    });
+    if(bestE) results.push({day,matchPct:bestM,entry:bestE,predictedRating:bestP,hourIdx:bestH});
+  });
+  return results;
+}
+
+function updatePersonalMatchToggle() {
+  const w = el('personal-match-toggle-wrap');
+  if (w) w.style.display = (STATE.isChocomount && STATE.surfLog.length > 0) ? '' : 'none';
+}
+
+function initPersonalMatchToggle() {
+  const btn = el('personal-match-toggle-btn'), cards = el('personal-match-cards'), icon = el('personal-match-icon');
+  if (!btn||!cards) return;
+  btn.addEventListener('click', () => {
+    STATE.personalMatchesOpen = !STATE.personalMatchesOpen;
+    cards.classList.toggle('collapsed', !STATE.personalMatchesOpen);
+    cards.classList.toggle('expanded', STATE.personalMatchesOpen);
+    icon?.classList.toggle('open', STATE.personalMatchesOpen);
+    if (STATE.personalMatchesOpen) renderPersonalMatchCards();
+  });
+}
+
+function renderPersonalMatchCards() {
+  const container = el('personal-match-cards');
+  if (!container||!STATE.personalMatchesOpen) return;
+  if (!STATE._cachedMarine||!STATE._cachedWind) {
+    container.innerHTML = '<div style="padding:16px;text-align:center;font-family:var(--mono);font-size:0.75rem;color:var(--ink3)">Load forecast data first.</div>';
+    return;
+  }
+  const matches = findBestMatchPerDay(STATE._cachedMarine, STATE._cachedWind, STATE._cachedTideHiLo);
+  if (!matches.length) { container.innerHTML = '<div style="padding:16px;text-align:center;font-family:var(--mono);font-size:0.75rem;color:var(--ink3)">No matches. Log more sessions.</div>'; return; }
+  let h = '<div class="pm-cards-row">';
+  matches.slice(0,7).forEach(m => {
+    const dl = new Date(m.day).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    const thumb = m.entry.photos?.[0] || '';
+    const imgH = thumb ? '<img class="pm-card-img" src="'+thumb+'" alt="" onerror="this.style.display=\'none\'">' : '<div class="pm-card-img" style="display:flex;align-items:center;justify-content:center;color:var(--ink4);font-family:var(--mono);font-size:0.7rem">No photo</div>';
+    h += '<div class="pm-card" data-day="'+m.day+'" data-eid="'+m.entry.id+'" data-hi="'+m.hourIdx+'">'+imgH+'<div class="pm-card-body"><div class="pm-card-date">'+dl+'</div><div class="pm-card-match">'+m.matchPct+'% match</div>'+(m.predictedRating?'<div class="pm-card-predicted">Predicted fun: '+m.predictedRating.toFixed(1)+'/10</div>':'')+'</div></div>';
+  });
+  h += '</div>'; container.innerHTML = h;
+  container.querySelectorAll('.pm-card').forEach(c => c.addEventListener('click', () => {
+    const e = STATE.surfLog.find(x=>x.id===c.dataset.eid);
+    if (e) openMatchModal(e, c.dataset.day, parseInt(c.dataset.hi));
+  }));
+}
+
+// ════════════════════════════════════════════════
+// SURF LOG — Match Modal
+// ════════════════════════════════════════════════
+
+function openMatchModal(entry, forecastDay, hi) {
+  STATE.matchModalData = { entry, forecastDay, forecastHourIdx: hi };
+  STATE.matchModalPhotoIdx = 0;
+  el('match-modal').style.display = '';
+  updateModalCarousel(entry.photos||[], 0);
+  const fc = buildForecastConditions(STATE._cachedMarine, STATE._cachedWind, STATE._cachedTideHiLo, hi);
+  let pct = 0;
+  if (fc && entry.conditions) {
+    const ff=extractFeatures(fc), ef=extractFeatures(entry.conditions);
+    if(ff&&ef) pct = STATE.surfLogWeights ? computeMatchPct(ef,ff) : simpleMatchPct(ef,ff);
+  }
+  el('modal-match-badge').textContent = pct+'% match';
+  el('modal-title').textContent = new Date(entry.timestamp).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  const ce = el('modal-conditions');
+  if (ce && entry.conditions) {
+    const c=entry.conditions, dl=(l,v)=>'<span class="mc-label">'+l+'</span><span class="mc-val">'+v+'</span>', hl=(l,v)=>'<span class="mc-label">'+l+'</span><span class="mc-highlight">'+v+'</span>';
+    ce.innerHTML = [dl('Swell',c.swell.height+'ft '+c.swell.period+'s '+directionLabel(c.swell.direction)), dl('Wind',c.wind.speed+'mph '+directionLabel(c.wind.direction)), dl('Tide',c.tide.height+'ft '+c.tide.stage), hl('Offshore',c.wind_offshore_score?.toFixed(2)||'\u2014'), hl('Blown Water',c.blown_water_index?.toFixed(2)||'\u2014'), fc?dl('Fcst Wind',Math.round(fc.wind.speed)+'mph '+directionLabel(fc.wind.direction)):''].join('');
+  }
+  el('modal-ratings').innerHTML = ratingBadge(entry.ratings.size)+' Size '+ratingBadge(entry.ratings.windQuality)+' Wind '+ratingBadge(entry.ratings.rideQuality)+' Ride';
+  el('modal-notes').textContent = entry.notes || '';
+}
+
+function updateModalCarousel(photos, idx) {
+  const img=el('modal-carousel-img'), dots=el('modal-carousel-dots'), prev=el('modal-carousel-prev'), next=el('modal-carousel-next');
+  if (!img) return;
+  if (!photos.length) { img.src=''; prev.style.display='none'; next.style.display='none'; dots.innerHTML=''; return; }
+  img.src = photos[idx];
+  prev.style.display = photos.length>1?'':'none';
+  next.style.display = photos.length>1?'':'none';
+  dots.innerHTML = photos.map((_,i)=>'<span class="dot'+(i===idx?' active':'')+'"></span>').join('');
+}
+
+function initMatchModal() {
+  el('match-modal-close')?.addEventListener('click', () => { el('match-modal').style.display='none'; });
+  el('match-modal')?.addEventListener('click', e => { if(e.target===el('match-modal')) el('match-modal').style.display='none'; });
+  el('modal-carousel-prev')?.addEventListener('click', () => {
+    if(!STATE.matchModalData) return; const p=STATE.matchModalData.entry.photos||[];
+    STATE.matchModalPhotoIdx=(STATE.matchModalPhotoIdx-1+p.length)%p.length; updateModalCarousel(p,STATE.matchModalPhotoIdx);
+  });
+  el('modal-carousel-next')?.addEventListener('click', () => {
+    if(!STATE.matchModalData) return; const p=STATE.matchModalData.entry.photos||[];
+    STATE.matchModalPhotoIdx=(STATE.matchModalPhotoIdx+1)%p.length; updateModalCarousel(p,STATE.matchModalPhotoIdx);
+  });
+  el('fb-save-btn')?.addEventListener('click', () => {
+    if(!STATE.matchModalData) return;
+    const fc = buildForecastConditions(STATE._cachedMarine,STATE._cachedWind,STATE._cachedTideHiLo,STATE.matchModalData.forecastHourIdx);
+    addLogEntry({ timestamp: new Date().toISOString().slice(0,16), photos:[], ratings:{size:parseInt(el('fb-size')?.value||'5'),windQuality:parseInt(el('fb-wind-quality')?.value||'5'),rideQuality:parseInt(el('fb-ride-quality')?.value||'5')}, notes:el('fb-notes')?.value||'', conditions:fc });
+    el('match-modal').style.display='none'; STATE.matchModalData=null; el('fb-notes').value='';
+    alert('Session logged! Model improving.');
+  });
+}
+
+// ════════════════════════════════════════════════
 // INITIALIZATION
 // ════════════════════════════════════════════════
 
@@ -2419,6 +3149,14 @@ async function initApp() {
 
   // Wire advanced data toggle
   initAdvancedToggle();
+
+  // Wire surf log
+  loadSurfLog();
+  initTabBar();
+  initSurfLogForm();
+  initPersonalMatchToggle();
+  initMatchModal();
+  slRetrain();
 
   // Default: if gate passed (not by boat), load Chocomount
   if (STATE.boatGatePassed) {
