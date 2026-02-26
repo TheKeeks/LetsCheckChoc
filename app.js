@@ -2427,6 +2427,68 @@ function buildHourlyTable(marine, wind, lat, lon) {
 }
 
 // ════════════════════════════════════════════════
+// Auth UI & toast notifications
+// ════════════════════════════════════════════════
+
+function showToast(message, type) {
+  var container = el('toast-container');
+  if (!container) return;
+  var toast = document.createElement('div');
+  toast.className = 'toast' + (type ? ' toast-' + type : '');
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(function() {
+    toast.classList.add('toast-fade');
+    setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 450);
+  }, 3500);
+}
+
+function updateAuthUI(user) {
+  var signinBtn = el('auth-signin-btn');
+  var signoutBtn = el('auth-signout-btn');
+  var userName = el('auth-user-name');
+  var authPrompt = el('sl-auth-prompt');
+  if (user && !user.isAnonymous) {
+    if (signinBtn) signinBtn.style.display = 'none';
+    if (signoutBtn) signoutBtn.style.display = '';
+    if (userName) {
+      userName.textContent = user.displayName || user.email || '';
+      userName.style.display = '';
+    }
+    if (authPrompt) authPrompt.style.display = 'none';
+  } else {
+    if (signinBtn) signinBtn.style.display = '';
+    if (signoutBtn) signoutBtn.style.display = 'none';
+    if (userName) userName.style.display = 'none';
+  }
+  updateStorageNote();
+}
+
+async function migrateAnonDataToUser() {
+  var entriesToMigrate = STATE.surfLog ? STATE.surfLog.slice() : [];
+  if (entriesToMigrate.length > 0) {
+    var count = 0;
+    for (var i = 0; i < entriesToMigrate.length; i++) {
+      try {
+        await saveLogEntryToFirebase(entriesToMigrate[i]);
+        count++;
+      } catch(e) {
+        console.warn('Migration failed for entry:', e);
+      }
+    }
+    if (count > 0) {
+      showToast(count + ' session' + (count !== 1 ? 's' : '') + ' synced to your account', 'success');
+    }
+  }
+  try {
+    await loadLogsFromFirebase();
+  } catch(e) {
+    console.warn('Post-migration Firebase load failed:', e);
+  }
+  updateStorageNote();
+}
+
+// ════════════════════════════════════════════════
 // SURF LOG — Storage
 // ════════════════════════════════════════════════
 
@@ -2457,6 +2519,7 @@ async function addLogEntry(entry) {
     await saveLogEntryToFirebase(entry);
   } catch(e) {
     console.warn('Firebase save failed (entry saved locally):', e);
+    showToast('\u26a0 Saved locally \u2014 sync failed', 'warn');
   }
 }
 
@@ -2469,6 +2532,7 @@ async function updateLogEntry(id, updates) {
     await saveLogEntryToFirebase(STATE.surfLog[idx]);
   } catch(e) {
     console.warn('Firebase save failed (entry saved locally):', e);
+    showToast('\u26a0 Saved locally \u2014 sync failed', 'warn');
   }
 }
 
@@ -2483,7 +2547,11 @@ async function deleteLogEntry(id) {
 function updateStorageNote() {
   const noteEl = el('sl-storage-note');
   if (!noteEl) return;
-  noteEl.textContent = STATE.surfLog.length + ' entries \u00b7 synced to cloud';
+  const count = STATE.surfLog.length;
+  const synced = window._fbUserIsAnon === false;
+  noteEl.textContent = count + ' entries \u00b7 ' + (synced ? '\u2713 Synced to cloud' : '\u26a0 Local only \u2014 sign in to sync');
+  noteEl.classList.toggle('note-synced', synced);
+  noteEl.classList.toggle('note-local', !synced);
 }
 
 // ════════════════════════════════════════════════
@@ -2503,12 +2571,13 @@ async function saveLogEntryToFirebase(entry) {
       let attempts = 0;
       const check = setInterval(function() {
         attempts++;
-        if (window._fbUserId || attempts > 50) { clearInterval(check); resolve(); }
+        if (window._fbUserId || attempts > 150) { clearInterval(check); resolve(); }
       }, 100);
     });
   }
   if (!window._fbUserId) {
     console.warn('saveLogEntryToFirebase: not authenticated after waiting');
+    showToast('\u26a0 Could not sync \u2014 not signed in', 'warn');
     return;
   }
   const d = new Date(entry.timestamp);
@@ -2563,7 +2632,7 @@ async function loadLogsFromFirebase() {
       var attempts = 0;
       var check = setInterval(function() {
         attempts++;
-        if (window._fbUserId || attempts > 50) { clearInterval(check); resolve(); }
+        if (window._fbUserId || attempts > 150) { clearInterval(check); resolve(); }
       }, 100);
     });
   }
@@ -2596,7 +2665,13 @@ function switchTab(tab) {
   const vF = el('view-forecast'), vS = el('view-surflog');
   if (vF) vF.style.display = tab === 'forecast' ? '' : 'none';
   if (vS) vS.style.display = tab === 'surflog' ? '' : 'none';
-  if (tab === 'surflog') { renderSurfLogTable(); renderWeightsPanel(); }
+  if (tab === 'surflog') {
+    renderSurfLogTable(); renderWeightsPanel();
+    const authPrompt = el('sl-auth-prompt');
+    if (authPrompt && window._fbUserIsAnon !== false) {
+      authPrompt.style.display = '';
+    }
+  }
 }
 
 function updateTabBarVisibility() {
@@ -3359,6 +3434,21 @@ async function initApp() {
   initPersonalMatchToggle();
   initMatchModal();
   slRetrain();
+
+  // Wire auth buttons
+  el('auth-signin-btn')?.addEventListener('click', function() {
+    if (typeof signInWithGoogle === 'function') signInWithGoogle();
+  });
+  el('auth-signout-btn')?.addEventListener('click', function() {
+    if (typeof signOutUser === 'function') signOutUser();
+  });
+  el('sl-auth-prompt-signin')?.addEventListener('click', function() {
+    if (typeof signInWithGoogle === 'function') signInWithGoogle();
+  });
+  el('sl-auth-prompt-dismiss')?.addEventListener('click', function() {
+    const authPrompt = el('sl-auth-prompt');
+    if (authPrompt) authPrompt.style.display = 'none';
+  });
 
   // Default: if gate passed (not by boat), load Chocomount
   if (STATE.boatGatePassed) {

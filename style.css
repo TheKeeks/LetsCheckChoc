@@ -1258,6 +1258,9 @@ a:hover { text-decoration: underline; }
   margin-left: auto;
 }
 
+.sl-storage-note.note-synced { color: var(--green); }
+.sl-storage-note.note-local  { color: var(--orange); }
+
 /* ═══════════════════════════════════════════════════
    SURF LOG — Expanded Row Details
    ═══════════════════════════════════════════════════ */
@@ -1627,6 +1630,139 @@ a:hover { text-decoration: underline; }
 @media (max-width: 480px) {
   .pm-cards-row {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ── Auth bar ─────────────────────────────────── */
+.auth-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+}
+
+.auth-user-name {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--ink3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.auth-btn {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--ink2);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+}
+
+.auth-btn:hover {
+  border-color: var(--ink4);
+  color: var(--ink);
+}
+
+.auth-btn-out {
+  color: var(--ink3);
+}
+
+/* ── Toast notifications ─────────────────────── */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9998;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  font-family: var(--mono);
+  font-size: 0.73rem;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--bg-card);
+  opacity: 1;
+  transition: opacity 0.4s ease;
+  max-width: 340px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.toast.toast-error {
+  background: var(--red-m);
+}
+
+.toast.toast-warn {
+  background: var(--orange);
+}
+
+.toast.toast-success {
+  background: var(--green);
+  color: #fff;
+}
+
+.toast.toast-fade {
+  opacity: 0;
+}
+
+/* ── Surf log sign-in prompt ─────────────────── */
+.sl-auth-prompt {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--card-r);
+  margin: var(--gap) auto;
+  max-width: 900px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 0.73rem;
+  color: var(--ink2);
+}
+
+.sl-auth-prompt-text {
+  flex: 1;
+}
+
+.sl-auth-prompt-dismiss {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--ink4);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sl-auth-prompt-dismiss:hover {
+  color: var(--ink3);
+}
+
+@media (max-width: 600px) {
+  .auth-bar {
+    margin-left: 0;
+  }
+
+  .auth-user-name {
+    max-width: 90px;
   }
 }
 
