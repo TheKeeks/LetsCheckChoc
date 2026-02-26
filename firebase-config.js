@@ -21,3 +21,7 @@ var fbStorage   = firebase.storage();
 fbAuth.onAuthStateChanged(function(user) {
   window._fbUserId = user ? user.uid : null;
 });
+
+fbAuth.signInAnonymously().catch(function(err) {
+  console.warn('Anonymous auth failed:', err);
+});

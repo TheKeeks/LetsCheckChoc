@@ -2430,11 +2430,16 @@ function buildHourlyTable(marine, wind, lat, lon) {
 // SURF LOG — Storage
 // ════════════════════════════════════════════════
 
-function loadSurfLog() {
+async function loadSurfLog() {
   try {
-    const raw = localStorage.getItem('lcc_surfLog');
-    STATE.surfLog = raw ? JSON.parse(raw) : [];
-  } catch (e) { STATE.surfLog = []; }
+    await loadLogsFromFirebase();
+  } catch(e) {
+    console.warn('Firebase load failed, falling back to localStorage:', e);
+    try {
+      const raw = localStorage.getItem('lcc_surfLog');
+      STATE.surfLog = raw ? JSON.parse(raw) : [];
+    } catch (e2) { STATE.surfLog = []; }
+  }
 }
 
 function saveSurfLog() {
@@ -2444,34 +2449,115 @@ function saveSurfLog() {
   } catch (e) { alert('Storage full — try removing photos or exporting.'); }
 }
 
-function addLogEntry(entry) {
+async function addLogEntry(entry) {
   entry.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   STATE.surfLog.unshift(entry);
+  await saveLogEntryToFirebase(entry);
   saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
 }
 
-function updateLogEntry(id, updates) {
+async function updateLogEntry(id, updates) {
   const idx = STATE.surfLog.findIndex(e => e.id === id);
   if (idx < 0) return;
   Object.assign(STATE.surfLog[idx], updates);
+  await saveLogEntryToFirebase(STATE.surfLog[idx]);
   saveSurfLog(); slRetrain(); renderSurfLogTable();
 }
 
-function deleteLogEntry(id) {
+async function deleteLogEntry(id) {
   STATE.surfLog = STATE.surfLog.filter(e => e.id !== id);
+  if (window._fbUserId) {
+    try { await fbFirestore.collection('surf_logs').doc(id).delete(); } catch(e) { console.warn('Firestore delete failed:', e); }
+  }
   saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
 }
 
 function updateStorageNote() {
   const noteEl = el('sl-storage-note');
   if (!noteEl) return;
-  const raw = localStorage.getItem('lcc_surfLog') || '';
-  const kb = (new Blob([raw]).size / 1024).toFixed(0);
-  noteEl.textContent = STATE.surfLog.length + ' entries \u00b7 ' + kb + ' KB';
-  if (new Blob([raw]).size > 4 * 1024 * 1024) {
-    noteEl.textContent += ' (storage nearly full!)';
-    noteEl.style.color = 'var(--red-m)';
+  noteEl.textContent = STATE.surfLog.length + ' entries \u00b7 synced to cloud';
+}
+
+// ════════════════════════════════════════════════
+// SURF LOG — Firebase persistence helpers
+// ════════════════════════════════════════════════
+
+function photoUrl(p) {
+  if (!p) return '';
+  if (typeof p === 'string') return p;
+  if (p.url) return p.url;
+  return '';
+}
+
+async function saveLogEntryToFirebase(entry) {
+  if (!window._fbUserId) return;
+  const d = new Date(entry.timestamp);
+  const YYYY = d.getFullYear();
+  const MM = String(d.getMonth() + 1).padStart(2, '0');
+  const ts = Date.now();
+  const processedPhotos = [];
+  for (let i = 0; i < (entry.photos || []).length; i++) {
+    const p = entry.photos[i];
+    if (typeof p === 'object' && p.url) {
+      processedPhotos.push(p);
+    } else if (typeof p === 'string' && p.startsWith('http')) {
+      processedPhotos.push({ url: p, path: '' });
+    } else if (typeof p === 'string' && p.startsWith('data:')) {
+      try {
+        const path = 'surf-photos/raw/' + window._fbUserId + '/' + YYYY + '/' + MM + '/' + ts + '_' + i + '.jpg';
+        const ref = fbStorage.ref(path);
+        const file = _slPhotoFiles && _slPhotoFiles[i] ? _slPhotoFiles[i] : null;
+        if (file) {
+          await ref.put(file);
+        } else {
+          const res = await fetch(p);
+          const blob = await res.blob();
+          await ref.put(blob, { contentType: 'image/jpeg' });
+        }
+        const url = await ref.getDownloadURL();
+        processedPhotos.push({ url: url, path: path });
+      } catch (err) {
+        console.warn('Photo upload failed:', err);
+        processedPhotos.push({ url: p, path: '' });
+      }
+    } else {
+      processedPhotos.push({ url: typeof p === 'string' ? p : '', path: '' });
+    }
   }
+  entry.photos = processedPhotos;
+  await fbFirestore.collection('surf_logs').doc(entry.id).set({
+    id: entry.id,
+    userId: window._fbUserId,
+    timestamp: entry.timestamp,
+    photos: processedPhotos,
+    ratings: entry.ratings,
+    notes: entry.notes || '',
+    conditions: entry.conditions || null,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+async function loadLogsFromFirebase() {
+  if (!window._fbUserId) {
+    await new Promise(function(resolve) {
+      var attempts = 0;
+      var check = setInterval(function() {
+        attempts++;
+        if (window._fbUserId || attempts > 50) { clearInterval(check); resolve(); }
+      }, 100);
+    });
+  }
+  if (!window._fbUserId) throw new Error('Not authenticated');
+  const snap = await fbFirestore.collection('surf_logs')
+    .where('userId', '==', window._fbUserId)
+    .orderBy('createdAt', 'desc')
+    .get();
+  STATE.surfLog = snap.docs.map(function(doc) {
+    const d = doc.data();
+    return { id: d.id, timestamp: d.timestamp, photos: d.photos || [], ratings: d.ratings, notes: d.notes || '', conditions: d.conditions || null };
+  });
+  saveSurfLog();
+  slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
 }
 
 // ════════════════════════════════════════════════
@@ -2504,6 +2590,7 @@ function updateTabBarVisibility() {
 // ════════════════════════════════════════════════
 
 let _slPhotos = [];
+let _slPhotoFiles = [];
 
 function resizeImageFile(file, maxW, quality) {
   return new Promise(resolve => {
@@ -2538,7 +2625,7 @@ function renderPhotoGallery() {
     img.onerror = () => { thumb.classList.add('sl-photo-thumb-broken'); img.style.display = 'none'; thumb.textContent = '?'; };
     const rm = document.createElement('button');
     rm.className = 'sl-photo-remove'; rm.textContent = '\u00d7';
-    rm.addEventListener('click', () => { _slPhotos.splice(i, 1); renderPhotoGallery(); });
+    rm.addEventListener('click', () => { _slPhotos.splice(i, 1); _slPhotoFiles.splice(i, 1); renderPhotoGallery(); });
     thumb.append(img, rm);
     gallery.appendChild(thumb);
   });
@@ -2783,12 +2870,12 @@ function initSurfLogForm() {
   });
   el('sl-add-url')?.addEventListener('click', () => {
     const input = el('sl-photo-url'), url = (input.value||'').trim();
-    if (url) { _slPhotos.push(url); input.value = ''; renderPhotoGallery(); }
+    if (url) { _slPhotos.push(url); _slPhotoFiles.push(null); input.value = ''; renderPhotoGallery(); }
   });
   el('sl-photo-file')?.addEventListener('change', async e => {
     for (const f of Array.from(e.target.files)) {
       const uri = await resizeImageFile(f, 800, 0.7);
-      if (uri) _slPhotos.push(uri);
+      if (uri) { _slPhotos.push(uri); _slPhotoFiles.push(f); }
     }
     e.target.value = ''; renderPhotoGallery();
   });
@@ -2799,7 +2886,7 @@ function initSurfLogForm() {
     _slConditions = await lookupHistoricalConditions(dt);
     btn.disabled = false; btn.textContent = 'Lookup Historical Conditions';
   });
-  el('sl-save-btn')?.addEventListener('click', () => {
+  el('sl-save-btn')?.addEventListener('click', async () => {
     const dt = el('sl-datetime')?.value;
     if (!dt) { alert('Set a date and time.'); return; }
     const entry = {
@@ -2808,11 +2895,11 @@ function initSurfLogForm() {
       notes: el('sl-notes')?.value || '', conditions: _slConditions || null
     };
     if (STATE.surfLogEditId) {
-      updateLogEntry(STATE.surfLogEditId, entry);
+      await updateLogEntry(STATE.surfLogEditId, entry);
       STATE.surfLogEditId = null;
       el('sl-cancel-edit-btn').style.display = 'none';
       el('sl-save-btn').textContent = 'Save Entry';
-    } else { addLogEntry(entry); }
+    } else { await addLogEntry(entry); }
     resetSurfLogForm();
   });
   el('sl-cancel-edit-btn')?.addEventListener('click', () => {
@@ -2837,7 +2924,7 @@ function resetSurfLogForm() {
   if (el('sl-wind-desc')) el('sl-wind-desc').textContent = getWindDesc(5);
   if (el('sl-ride-desc')) el('sl-ride-desc').textContent = getRideDesc(5);
   if (el('sl-notes')) el('sl-notes').value = '';
-  _slPhotos = []; _slConditions = null; renderPhotoGallery();
+  _slPhotos = []; _slPhotoFiles = []; _slConditions = null; renderPhotoGallery();
   const d = el('sl-conditions-display');
   if (d) d.innerHTML = '<span class="sl-hint">Click "Lookup" to auto-fill from historical data</span>';
 }
@@ -2853,7 +2940,7 @@ function editLogEntry(id) {
   if (el('sl-wind-quality')) { el('sl-wind-quality').value = e.ratings.windQuality; el('sl-wind-val').textContent = e.ratings.windQuality; if(el('sl-wind-desc')) el('sl-wind-desc').textContent = getWindDesc(e.ratings.windQuality); }
   if (el('sl-ride-quality')) { el('sl-ride-quality').value = e.ratings.rideQuality; el('sl-ride-val').textContent = e.ratings.rideQuality; if(el('sl-ride-desc')) el('sl-ride-desc').textContent = getRideDesc(e.ratings.rideQuality); }
   if (el('sl-notes')) el('sl-notes').value = e.notes || '';
-  _slPhotos = [...(e.photos||[])]; _slConditions = e.conditions || null;
+  _slPhotos = (e.photos||[]).map(p => photoUrl(p) || p).filter(Boolean); _slPhotoFiles = new Array(_slPhotos.length).fill(null); _slConditions = e.conditions || null;
   renderPhotoGallery();
   if (_slConditions) renderConditionsDisplay(_slConditions);
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2886,16 +2973,20 @@ function exportCSV() {
 function importJSON(ev) {
   const file = ev.target.files[0]; if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     try {
       const data = JSON.parse(e.target.result);
       if (!Array.isArray(data)) throw new Error('Not an array');
       let imported = 0;
-      data.forEach(entry => {
-        if (!entry.timestamp || !entry.ratings) return;
+      for (const entry of data) {
+        if (!entry.timestamp || !entry.ratings) continue;
         if (!entry.id) entry.id = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
-        if (!STATE.surfLog.find(x => x.id === entry.id)) { STATE.surfLog.push(entry); imported++; }
-      });
+        if (!STATE.surfLog.find(x => x.id === entry.id)) {
+          STATE.surfLog.push(entry);
+          await saveLogEntryToFirebase(entry);
+          imported++;
+        }
+      }
       STATE.surfLog.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
       saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
       alert('Imported ' + imported + ' entries.');
@@ -2942,7 +3033,7 @@ function renderSurfLogTable() {
     const avg = ((entry.ratings.size+entry.ratings.windQuality+entry.ratings.rideQuality)/3).toFixed(1);
     const photos = (entry.photos||[]).slice(0,3);
     const photoHtml = photos.length > 0
-      ? '<div class="sl-row-photos">'+photos.map(p=>'<img src="'+p+'" alt="" onerror="this.style.display=\'none\'">').join('')+'</div>'
+      ? '<div class="sl-row-photos">'+photos.map(p=>'<img src="'+photoUrl(p)+'" alt="" onerror="this.style.display=\'none\'">').join('')+'</div>'
       : '<span style="color:var(--ink4)">\u2014</span>';
     const notes = (entry.notes||'').slice(0,30) + ((entry.notes||'').length>30?'...':'');
     tr.innerHTML = '<td style="white-space:nowrap">'+dateStr+'<br><span style="color:var(--ink4);font-size:0.65rem">'+timeStr+'</span></td>'
@@ -3140,7 +3231,7 @@ function renderPersonalMatchCards() {
   let h = '<div class="pm-cards-row">';
   matches.slice(0,7).forEach(m => {
     const dl = new Date(m.day).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-    const thumb = m.entry.photos?.[0] || '';
+    const thumb = m.entry.photos?.[0] ? photoUrl(m.entry.photos[0]) : '';
     const imgH = thumb ? '<img class="pm-card-img" src="'+thumb+'" alt="" onerror="this.style.display=\'none\'">' : '<div class="pm-card-img" style="display:flex;align-items:center;justify-content:center;color:var(--ink4);font-family:var(--mono);font-size:0.7rem">No photo</div>';
     h += '<div class="pm-card" data-day="'+m.day+'" data-eid="'+m.entry.id+'" data-hi="'+m.hourIdx+'">'+imgH+'<div class="pm-card-body"><div class="pm-card-date">'+dl+'</div><div class="pm-card-match">'+m.matchPct+'% match</div>'+(m.predictedRating?'<div class="pm-card-predicted">Predicted fun: '+m.predictedRating.toFixed(1)+'/10</div>':'')+'</div></div>';
   });
@@ -3181,7 +3272,7 @@ function updateModalCarousel(photos, idx) {
   const img=el('modal-carousel-img'), dots=el('modal-carousel-dots'), prev=el('modal-carousel-prev'), next=el('modal-carousel-next');
   if (!img) return;
   if (!photos.length) { img.src=''; prev.style.display='none'; next.style.display='none'; dots.innerHTML=''; return; }
-  img.src = photos[idx];
+  img.src = photoUrl(photos[idx]);
   prev.style.display = photos.length>1?'':'none';
   next.style.display = photos.length>1?'':'none';
   dots.innerHTML = photos.map((_,i)=>'<span class="dot'+(i===idx?' active':'')+'"></span>').join('');
@@ -3198,10 +3289,10 @@ function initMatchModal() {
     if(!STATE.matchModalData) return; const p=STATE.matchModalData.entry.photos||[];
     STATE.matchModalPhotoIdx=(STATE.matchModalPhotoIdx+1)%p.length; updateModalCarousel(p,STATE.matchModalPhotoIdx);
   });
-  el('fb-save-btn')?.addEventListener('click', () => {
+  el('fb-save-btn')?.addEventListener('click', async () => {
     if(!STATE.matchModalData) return;
     const fc = buildForecastConditions(STATE._cachedMarine,STATE._cachedWind,STATE._cachedTideHiLo,STATE.matchModalData.forecastHourIdx);
-    addLogEntry({ timestamp: new Date().toISOString().slice(0,16), photos:[], ratings:{size:parseInt(el('fb-size')?.value||'5'),windQuality:parseInt(el('fb-wind-quality')?.value||'5'),rideQuality:parseInt(el('fb-ride-quality')?.value||'5')}, notes:el('fb-notes')?.value||'', conditions:fc });
+    await addLogEntry({ timestamp: new Date().toISOString().slice(0,16), photos:[], ratings:{size:parseInt(el('fb-size')?.value||'5'),windQuality:parseInt(el('fb-wind-quality')?.value||'5'),rideQuality:parseInt(el('fb-ride-quality')?.value||'5')}, notes:el('fb-notes')?.value||'', conditions:fc });
     el('match-modal').style.display='none'; STATE.matchModalData=null; el('fb-notes').value='';
     alert('Session logged! Model improving.');
   });
@@ -3419,7 +3510,7 @@ async function initApp() {
   initAdvancedToggle();
 
   // Wire surf log
-  loadSurfLog();
+  await loadSurfLog();
   initTabBar();
   initSurfLogForm();
   initPersonalMatchToggle();
