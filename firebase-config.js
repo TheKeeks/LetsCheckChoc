@@ -21,20 +21,28 @@ var fbStorage   = firebase.storage();
 window._fbUserId = null;
 window._fbUserIsAnon = true;
 
+var _authReadyResolve;
+window._fbAuthReady = new Promise(function(resolve) { _authReadyResolve = resolve; });
+var _firstAuthEvent = true;
+var AUTH_RESTORE_WAIT_MS = 1500;
+var ANON_SIGNIN_DELAY_MS = 2000;
+
 var _prevUserWasAnon = false;
 var _migrationDone = false;
 
 fbAuth.onAuthStateChanged(function(user) {
   if (user) {
-    var justBecameReal = _prevUserWasAnon && !user.isAnonymous;
+    var wasAnon = _prevUserWasAnon;
+    var justBecameReal = wasAnon && !user.isAnonymous;
     window._fbUserId = user.uid;
     window._fbUserIsAnon = user.isAnonymous;
     _prevUserWasAnon = user.isAnonymous;
+
     if (justBecameReal && !_migrationDone && typeof migrateAnonDataToUser === 'function') {
       _migrationDone = true;
-      migrateAnonDataToUser();
-    }
-    if (!user.isAnonymous && typeof loadLogsFromFirebase === 'function') {
+      migrateAnonDataToUser(); // This already calls loadLogsFromFirebase() at the end
+    } else if (!user.isAnonymous && typeof loadLogsFromFirebase === 'function') {
+      // Non-anonymous user on page load (not a transition) — load their data
       loadLogsFromFirebase().then(function() {
         if (typeof updateStorageNote === 'function') updateStorageNote();
       }).catch(function(e) {
@@ -47,13 +55,29 @@ fbAuth.onAuthStateChanged(function(user) {
     _prevUserWasAnon = false;
     _migrationDone = false;
   }
+
+  // Resolve auth ready on first event
+  if (_firstAuthEvent) {
+    _firstAuthEvent = false;
+    if (user && !user.isAnonymous) {
+      _authReadyResolve();
+    } else {
+      // Give Firebase a moment to restore a Google session before resolving
+      setTimeout(function() { _authReadyResolve(); }, AUTH_RESTORE_WAIT_MS);
+    }
+  }
+
   if (typeof updateAuthUI === 'function') updateAuthUI(user);
 });
 
-// Sign in anonymously as fallback (data stays local / per-device)
-fbAuth.signInAnonymously().catch(function(err) {
-  console.warn('Anonymous auth failed:', err);
-});
+// Only sign in anonymously if no persisted session is detected after a delay
+setTimeout(function() {
+  if (!fbAuth.currentUser) {
+    fbAuth.signInAnonymously().catch(function(err) {
+      console.warn('Anonymous auth failed:', err);
+    });
+  }
+}, ANON_SIGNIN_DELAY_MS);
 
 // Sign in with Google; tries to link the existing anonymous account first
 var _signingIn = false;
