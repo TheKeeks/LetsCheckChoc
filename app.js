@@ -2559,22 +2559,22 @@ function getSizeDesc(val) {
   if (v === 6) return 'Chest high';
   if (v === 7) return 'Head high';
   if (v === 8) return 'Overhead';
-  if (v === 9) return 'Double overhead';
-  return 'Triple overhead or bigger';
+  if (v === 9) return '1.5x OH';
+  return '2X OH';
 }
 
 function getWindDesc(val) {
   const v = parseInt(val);
-  if (v <= 2) return 'Unmanageable (blown out, onshore mess)';
+  if (v <= 2) return 'Unmanageable (blown out mess)';
   if (v <= 4) return 'Choppy';
   if (v <= 6) return 'Choppy but enjoyable';
-  return 'Glassy to light offshore (clean, perfect)';
+  return 'Glassy to light offshore (clean, perfectly groomed)';
 }
 
 function getRideDesc(val) {
   const v = parseInt(val);
-  if (v <= 1) return 'Breaking inside out (closeouts, no ride)';
-  if (v <= 3) return 'Go straight (sectiony, no turns)';
+  if (v <= 1) return 'Breaking inside out (negative peeling)';
+  if (v <= 3) return 'Go straight (mushy shoulder)';
   if (v <= 5) return 'One critical turn possible';
   if (v <= 7) return 'Connecting sections to the beach';
   return 'Reeling perfect lines to the beach';
