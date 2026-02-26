@@ -21,20 +21,27 @@ var fbStorage   = firebase.storage();
 window._fbUserId = null;
 window._fbUserIsAnon = true;
 
+// Promise that resolves once the initial auth state is known (Google session or fallback)
+var _authReadyResolve;
+window._fbAuthReady = new Promise(function(resolve) { _authReadyResolve = resolve; });
+var _firstAuthEvent = true;
+
 var _prevUserWasAnon = false;
 var _migrationDone = false;
 
 fbAuth.onAuthStateChanged(function(user) {
   if (user) {
-    var justBecameReal = _prevUserWasAnon && !user.isAnonymous;
+    var wasAnon = _prevUserWasAnon;
+    var justBecameReal = wasAnon && !user.isAnonymous;
     window._fbUserId = user.uid;
     window._fbUserIsAnon = user.isAnonymous;
     _prevUserWasAnon = user.isAnonymous;
+
     if (justBecameReal && !_migrationDone && typeof migrateAnonDataToUser === 'function') {
       _migrationDone = true;
-      migrateAnonDataToUser();
-    }
-    if (!user.isAnonymous && typeof loadLogsFromFirebase === 'function') {
+      migrateAnonDataToUser(); // already calls loadLogsFromFirebase() at the end
+    } else if (!user.isAnonymous && typeof loadLogsFromFirebase === 'function') {
+      // Non-anonymous user on page load (not a transition) — load their data
       loadLogsFromFirebase().then(function() {
         if (typeof updateStorageNote === 'function') updateStorageNote();
       }).catch(function(e) {
@@ -47,13 +54,34 @@ fbAuth.onAuthStateChanged(function(user) {
     _prevUserWasAnon = false;
     _migrationDone = false;
   }
+
+  // Resolve auth ready on first event
+  if (_firstAuthEvent) {
+    _firstAuthEvent = false;
+    if (user && !user.isAnonymous) {
+      // Google (or other real) session already restored — auth is ready now
+      _authReadyResolve();
+    } else {
+      // Anonymous or signed-out on first event: wait briefly for Firebase to restore a
+      // persisted Google session before resolving (Firebase may fire null/anonymous first,
+      // then a second event with the real user). 1500ms is enough for local cache restore.
+      setTimeout(function() { _authReadyResolve(); }, 1500);
+    }
+  }
+
   if (typeof updateAuthUI === 'function') updateAuthUI(user);
 });
 
-// Sign in anonymously as fallback (data stays local / per-device)
-fbAuth.signInAnonymously().catch(function(err) {
-  console.warn('Anonymous auth failed:', err);
-});
+// Only sign in anonymously if no persisted session is detected after a brief delay.
+// 2000ms > the 1500ms auth-ready timeout so the app can load from localStorage first;
+// the anonymous session then enables local-only writes for non-signed-in users.
+setTimeout(function() {
+  if (!fbAuth.currentUser) {
+    fbAuth.signInAnonymously().catch(function(err) {
+      console.warn('Anonymous auth failed:', err);
+    });
+  }
+}, 2000);
 
 // Sign in with Google; tries to link the existing anonymous account first
 var _signingIn = false;
