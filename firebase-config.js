@@ -34,6 +34,13 @@ fbAuth.onAuthStateChanged(function(user) {
       _migrationDone = true;
       migrateAnonDataToUser();
     }
+    if (!user.isAnonymous && typeof loadLogsFromFirebase === 'function') {
+      loadLogsFromFirebase().then(function() {
+        if (typeof updateStorageNote === 'function') updateStorageNote();
+      }).catch(function(e) {
+        console.warn('Log reload after auth failed:', e);
+      });
+    }
   } else {
     window._fbUserId = null;
     window._fbUserIsAnon = true;
