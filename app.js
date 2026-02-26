@@ -25,6 +25,12 @@
   const app = initializeApp(firebaseConfig);
   const analytics = getAnalytics(app);
 </script>
+
+console.log("Firebase initialized:", firebase.apps.length > 0 ? "Yes" : "No");
+console.log("Auth ready:", auth);
+console.log("Firestore ready:", db);
+console.log("Storage ready:", storage);
+
 'use strict';
 
 // ── Surf Log Constants ──────────────────────────────
