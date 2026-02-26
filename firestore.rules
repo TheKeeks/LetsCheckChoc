@@ -1,0 +1,27 @@
+// Firestore Security Rules
+// Paste these into Firebase Console → Firestore Database → Rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // photo_logs: users can create/read their own docs;
+    // only admins (via Firebase Admin SDK or console) can approve
+    match /photo_logs/{docId} {
+      // Allow a user to create a new photo log for themselves
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.status == 'pending';
+
+      // Allow a user to read their own photo logs
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+
+      // Allow read of approved photos (community gallery)
+      allow read: if resource.data.status == 'approved';
+
+      // Deny client-side updates/deletes (use Admin SDK for approval flow)
+      allow update, delete: if false;
+    }
+  }
+}
