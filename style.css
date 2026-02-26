@@ -950,6 +950,13 @@ a:hover { text-decoration: underline; }
   margin-left: 4px;
 }
 
+.sl-slider-desc {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-style: italic;
+  min-height: 1.1em;
+}
+
 .sl-range {
   -webkit-appearance: none;
   appearance: none;

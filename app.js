@@ -2545,12 +2545,73 @@ function renderPhotoGallery() {
 }
 
 // ════════════════════════════════════════════════
+// SURF LOG — Slider Descriptions
+// ════════════════════════════════════════════════
+
+function getSizeDesc(val) {
+  const v = parseInt(val);
+  if (v === 0) return 'Flat';
+  if (v === 1) return 'Ankle high';
+  if (v === 2) return 'Knee high';
+  if (v === 3) return 'Knee to thigh';
+  if (v === 4) return 'Waist high';
+  if (v === 5) return 'Waist to chest';
+  if (v === 6) return 'Chest high';
+  if (v === 7) return 'Head high';
+  if (v === 8) return 'Overhead';
+  if (v === 9) return 'Double overhead';
+  return 'Triple overhead or bigger';
+}
+
+function getWindDesc(val) {
+  const v = parseInt(val);
+  if (v <= 2) return 'Unmanageable (blown out, onshore mess)';
+  if (v <= 4) return 'Choppy';
+  if (v <= 6) return 'Choppy but enjoyable';
+  return 'Glassy to light offshore (clean, perfect)';
+}
+
+function getRideDesc(val) {
+  const v = parseInt(val);
+  if (v <= 1) return 'Breaking inside out (closeouts, no ride)';
+  if (v <= 3) return 'Go straight (sectiony, no turns)';
+  if (v <= 5) return 'One critical turn possible';
+  if (v <= 7) return 'Connecting sections to the beach';
+  return 'Reeling perfect lines to the beach';
+}
+
+// ════════════════════════════════════════════════
 // SURF LOG — Historical Condition Lookup
 // ════════════════════════════════════════════════
 
 function fmtDate(d) { return d.toISOString().split('T')[0]; }
 
 function angularDist(a, b) { let d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+
+// Wave group velocity approximation: speed (knots) ≈ SWELL_SPEED_KTS_PER_PERIOD × period (seconds)
+// This is the standard surf forecaster rule (deep-water group velocity ~1.5 × period).
+const SWELL_SPEED_KTS_PER_PERIOD = 1.5;
+
+// Estimate swell travel lag from buoy to Chocomount.
+// Algorithm: average primary swell period in the window [T-5h, T-2h] to represent
+// the swell arriving at session time T; then lag = distance / (SWELL_SPEED_KTS_PER_PERIOD × avgPeriod).
+function getSwellLagHours(marineData, dateStr) {
+  if (!marineData?.hourly?.time) return 0;
+  const times = marineData.hourly.time;
+  const periods = marineData.hourly.swell_wave_period || marineData.hourly.wave_period || [];
+  const T = new Date(dateStr).getTime();
+  const windowStart = T - 5 * 3600000;
+  const windowEnd = T - 2 * 3600000;
+  let sum = 0, count = 0;
+  for (let i = 0; i < times.length; i++) {
+    const t = new Date(times[i]).getTime();
+    if (t >= windowStart && t <= windowEnd && periods[i] > 0) { sum += periods[i]; count++; }
+  }
+  const avgPeriod = count > 0 ? sum / count : 0;
+  if (avgPeriod <= 0) return 0;
+  const speedKts = SWELL_SPEED_KTS_PER_PERIOD * avgPeriod;
+  return CONFIG.chocomount.buoyDistanceMiles / speedKts;
+}
 
 async function fetchHistoricalWind(dateStr) {
   const target = new Date(dateStr);
@@ -2636,14 +2697,16 @@ async function lookupHistoricalConditions(dateStr) {
       if (display) display.innerHTML = '<span class="sl-hint">Historical data not available for this date.</span>';
       return null;
     }
-    const idx = findNearestHour(marine.hourly.time, dateStr);
+    const lagHours = getSwellLagHours(marine, dateStr);
+    const laggedDateStr = lagHours > 0 ? new Date(new Date(dateStr).getTime() - lagHours * 3600000).toISOString() : dateStr;
+    const swellIdx = findNearestHour(marine.hourly.time, laggedDateStr);
     const wIdx = findNearestHour(wind.hourly.time, dateStr);
-    const swH = marine.hourly.swell_wave_height?.[idx] ?? marine.hourly.wave_height?.[idx] ?? 0;
-    const swD = marine.hourly.swell_wave_direction?.[idx] ?? marine.hourly.wave_direction?.[idx] ?? 0;
-    const swP = marine.hourly.swell_wave_period?.[idx] ?? marine.hourly.wave_period?.[idx] ?? 0;
-    const secH = marine.hourly.secondary_swell_wave_height?.[idx] ?? 0;
-    const secD = marine.hourly.secondary_swell_wave_direction?.[idx] ?? 0;
-    const secP = marine.hourly.secondary_swell_wave_period?.[idx] ?? 0;
+    const swH = marine.hourly.swell_wave_height?.[swellIdx] ?? marine.hourly.wave_height?.[swellIdx] ?? 0;
+    const swD = marine.hourly.swell_wave_direction?.[swellIdx] ?? marine.hourly.wave_direction?.[swellIdx] ?? 0;
+    const swP = marine.hourly.swell_wave_period?.[swellIdx] ?? marine.hourly.wave_period?.[swellIdx] ?? 0;
+    const secH = marine.hourly.secondary_swell_wave_height?.[swellIdx] ?? 0;
+    const secD = marine.hourly.secondary_swell_wave_direction?.[swellIdx] ?? 0;
+    const secP = marine.hourly.secondary_swell_wave_period?.[swellIdx] ?? 0;
     const wSpd = wind.hourly.wind_speed_10m?.[wIdx] ?? 0;
     const wDir = wind.hourly.wind_direction_10m?.[wIdx] ?? 0;
     const tideInfo = parseTideAtTime(tide, dateStr);
@@ -2654,6 +2717,11 @@ async function lookupHistoricalConditions(dateStr) {
       blown_water_index: computeBlownWaterIndex(wind, dateStr),
       wind_offshore_score: computeWindOffshoreScore(wDir)
     };
+    if (lagHours > 0) {
+      conditions.swellLagHours = Math.round(lagHours * 10) / 10;
+      conditions.originalLoggedTime = dateStr;
+      conditions.calculatedFromBuoyTime = laggedDateStr;
+    }
     if (secH > 0.3) conditions.swell.secondary = { height: Math.round(secH*10)/10, direction: Math.round(secD), period: Math.round(secP*10)/10 };
     renderConditionsDisplay(conditions);
     return conditions;
@@ -2679,6 +2747,9 @@ function renderConditionsDisplay(cond) {
   h += hl('Offshore Score:', cond.wind_offshore_score.toFixed(2));
   h += hl('Blown Water Idx:', cond.blown_water_index.toFixed(2));
   h += '</div>';
+  if (cond.swellLagHours > 0) {
+    h += `<div class="sl-cond-row"><span class="sl-hint">Using swell from ~${cond.swellLagHours}h ago at buoy (travel time estimate)</span></div>`;
+  }
   display.innerHTML = h;
 }
 
@@ -2697,12 +2768,18 @@ function initSurfLogForm() {
   ['sl-size','sl-wind-quality','sl-ride-quality'].forEach(id => {
     const s = el(id);
     const vid = id === 'sl-size' ? 'sl-size-val' : id === 'sl-wind-quality' ? 'sl-wind-val' : 'sl-ride-val';
-    s?.addEventListener('input', () => { el(vid).textContent = s.value; });
+    const did = id === 'sl-size' ? 'sl-size-desc' : id === 'sl-wind-quality' ? 'sl-wind-desc' : 'sl-ride-desc';
+    const descFn = id === 'sl-size' ? getSizeDesc : id === 'sl-wind-quality' ? getWindDesc : getRideDesc;
+    s?.addEventListener('input', () => { el(vid).textContent = s.value; if(el(did)) el(did).textContent = descFn(s.value); });
+    if (s && el(did)) el(did).textContent = descFn(s.value);
   });
   ['fb-size','fb-wind-quality','fb-ride-quality'].forEach(id => {
     const s = el(id);
     const vid = id === 'fb-size' ? 'fb-size-val' : id === 'fb-wind-quality' ? 'fb-wind-val' : 'fb-ride-val';
-    s?.addEventListener('input', () => { el(vid).textContent = s.value; });
+    const did = id === 'fb-size' ? 'fb-size-desc' : id === 'fb-wind-quality' ? 'fb-wind-desc' : 'fb-ride-desc';
+    const descFn = id === 'fb-size' ? getSizeDesc : id === 'fb-wind-quality' ? getWindDesc : getRideDesc;
+    s?.addEventListener('input', () => { el(vid).textContent = s.value; if(el(did)) el(did).textContent = descFn(s.value); });
+    if (s && el(did)) el(did).textContent = descFn(s.value);
   });
   el('sl-add-url')?.addEventListener('click', () => {
     const input = el('sl-photo-url'), url = (input.value||'').trim();
@@ -2756,6 +2833,9 @@ function resetSurfLogForm() {
   if (el('sl-datetime')) el('sl-datetime').value = now.toISOString().slice(0, 16);
   ['sl-size','sl-wind-quality','sl-ride-quality'].forEach(id => { if(el(id)) el(id).value = 5; });
   ['sl-size-val','sl-wind-val','sl-ride-val'].forEach(id => { if(el(id)) el(id).textContent = '5'; });
+  if (el('sl-size-desc')) el('sl-size-desc').textContent = getSizeDesc(5);
+  if (el('sl-wind-desc')) el('sl-wind-desc').textContent = getWindDesc(5);
+  if (el('sl-ride-desc')) el('sl-ride-desc').textContent = getRideDesc(5);
   if (el('sl-notes')) el('sl-notes').value = '';
   _slPhotos = []; _slConditions = null; renderPhotoGallery();
   const d = el('sl-conditions-display');
@@ -2769,9 +2849,9 @@ function editLogEntry(id) {
   el('sl-cancel-edit-btn').style.display = '';
   el('sl-save-btn').textContent = 'Update Entry';
   if (el('sl-datetime')) el('sl-datetime').value = e.timestamp;
-  if (el('sl-size')) { el('sl-size').value = e.ratings.size; el('sl-size-val').textContent = e.ratings.size; }
-  if (el('sl-wind-quality')) { el('sl-wind-quality').value = e.ratings.windQuality; el('sl-wind-val').textContent = e.ratings.windQuality; }
-  if (el('sl-ride-quality')) { el('sl-ride-quality').value = e.ratings.rideQuality; el('sl-ride-val').textContent = e.ratings.rideQuality; }
+  if (el('sl-size')) { el('sl-size').value = e.ratings.size; el('sl-size-val').textContent = e.ratings.size; if(el('sl-size-desc')) el('sl-size-desc').textContent = getSizeDesc(e.ratings.size); }
+  if (el('sl-wind-quality')) { el('sl-wind-quality').value = e.ratings.windQuality; el('sl-wind-val').textContent = e.ratings.windQuality; if(el('sl-wind-desc')) el('sl-wind-desc').textContent = getWindDesc(e.ratings.windQuality); }
+  if (el('sl-ride-quality')) { el('sl-ride-quality').value = e.ratings.rideQuality; el('sl-ride-val').textContent = e.ratings.rideQuality; if(el('sl-ride-desc')) el('sl-ride-desc').textContent = getRideDesc(e.ratings.rideQuality); }
   if (el('sl-notes')) el('sl-notes').value = e.notes || '';
   _slPhotos = [...(e.photos||[])]; _slConditions = e.conditions || null;
   renderPhotoGallery();
