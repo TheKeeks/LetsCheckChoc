@@ -34,159 +34,337 @@
       </div>
     </header>
 
-    <!-- Buoy selector map -->
-    <section class="panel" id="panel-map">
-      <div id="buoy-map" class="map-container"></div>
-    </section>
+    <!-- Tab navigation (visible when Chocomount selected) -->
+    <nav class="tab-bar" id="tab-bar" style="display:none;">
+      <button class="tab-btn active" data-tab="forecast" id="tab-btn-forecast">Forecast</button>
+      <button class="tab-btn" data-tab="surflog" id="tab-btn-surflog">My Surf Log</button>
+    </nav>
 
-    <!-- Conditions summary banner -->
-    <section class="conditions-summary" id="conditions-summary" style="display:none;">
-      <div class="summary-rating" id="summary-rating"></div>
-      <div class="summary-text" id="summary-text"></div>
-      <div class="summary-best" id="summary-best"></div>
-    </section>
+    <!-- ═══ FORECAST VIEW (existing content) ═══ -->
+    <div id="view-forecast">
 
-    <!-- Current conditions row -->
-    <section class="conditions-row" id="conditions-row">
-      <div class="condition-card" id="card-swell">
-        <div class="condition-label">Swell: Current</div>
-        <div class="condition-value" id="val-swell-height">—</div>
-        <div class="condition-detail" id="val-swell-detail">—</div>
-        <div class="condition-extra" id="val-swell-arrival" style="display:none;"></div>
-        <div class="panel-footer" id="footer-swell"></div>
-      </div>
-      <div class="condition-card" id="card-wind">
-        <div class="condition-label">Wind: Current</div>
-        <div class="condition-value" id="val-wind-speed">—</div>
-        <div class="condition-detail" id="val-wind-detail">—</div>
-        <div class="panel-footer" id="footer-wind"></div>
-      </div>
-      <div class="condition-card" id="card-tide">
-        <div class="condition-label">Tide</div>
-        <div class="condition-value" id="val-tide">—</div>
-        <div class="condition-detail" id="val-tide-detail">—</div>
-        <div class="panel-footer" id="footer-tide-card"></div>
-      </div>
-      <div class="condition-card" id="card-temp">
-        <div class="condition-label">Water Temp</div>
-        <div class="condition-value" id="val-water-temp">—</div>
-        <div class="condition-detail" id="val-temp-detail">—</div>
-        <div class="panel-footer" id="footer-temp"></div>
-      </div>
-      <div class="condition-card" id="card-daylight">
-        <div class="condition-label">Daylight</div>
-        <div class="condition-value" id="val-daylight">—</div>
-        <div class="condition-detail" id="val-daylight-detail">—</div>
-        <div class="panel-footer" id="footer-daylight"></div>
-      </div>
-    </section>
+      <!-- Buoy selector map -->
+      <section class="panel" id="panel-map">
+        <div id="buoy-map" class="map-container"></div>
+      </section>
 
-    <!-- Wind map (Windy embed) -->
-    <section class="panel" id="panel-wind-map">
-      <h3 class="panel-title">Wind Map</h3>
-      <div class="embed-container">
-        <iframe id="windy-wind" class="windy-iframe" frameborder="0" loading="lazy"></iframe>
-      </div>
-      <div class="panel-footer" id="footer-wind-map"></div>
-    </section>
+      <!-- Conditions summary banner -->
+      <section class="conditions-summary" id="conditions-summary" style="display:none;">
+        <div class="summary-rating" id="summary-rating"></div>
+        <div class="summary-text" id="summary-text"></div>
+        <div class="summary-best" id="summary-best"></div>
+      </section>
 
-    <!-- Waves map (Windy embed) -->
-    <section class="panel" id="panel-swell-map">
-      <h3 class="panel-title">Waves Map</h3>
-      <div class="embed-container">
-        <iframe id="windy-swell" class="windy-iframe" frameborder="0" loading="lazy"></iframe>
-      </div>
-      <div class="panel-footer" id="footer-swell-map"></div>
-    </section>
-
-    <!-- Swell forecast chart -->
-    <section class="panel" id="panel-forecast">
-      <div class="forecast-header-row">
-        <h3 class="panel-title">Swell Forecast</h3>
-        <div class="forecast-day-nav">
-          <button class="forecast-nav-btn" id="forecast-prev" aria-label="Previous days">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-          </button>
-          <span class="forecast-nav-label" id="forecast-nav-label"></span>
-          <button class="forecast-nav-btn" id="forecast-next" aria-label="Next days">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-          </button>
+      <!-- Current conditions row -->
+      <section class="conditions-row" id="conditions-row">
+        <div class="condition-card" id="card-swell">
+          <div class="condition-label">Swell: Current</div>
+          <div class="condition-value" id="val-swell-height">—</div>
+          <div class="condition-detail" id="val-swell-detail">—</div>
+          <div class="condition-extra" id="val-swell-arrival" style="display:none;"></div>
+          <div class="panel-footer" id="footer-swell"></div>
         </div>
-      </div>
-      <div class="chart-container" id="forecast-chart-container">
-        <canvas id="forecast-canvas"></canvas>
-      </div>
-      <div class="forecast-detail-bar" id="forecast-detail-bar"></div>
-      <div class="panel-footer" id="footer-forecast"></div>
-    </section>
-
-    <!-- Tides -->
-    <section class="panel" id="panel-tides" style="display:none;">
-      <h3 class="panel-title">Tides</h3>
-      <div class="chart-container chart-container-sm">
-        <canvas id="tide-canvas"></canvas>
-      </div>
-      <div id="tide-hilo-list" class="tide-list"></div>
-      <div class="panel-footer" id="footer-tides"></div>
-    </section>
-
-    <!-- Advanced data toggle -->
-    <div class="advanced-toggle-wrap" id="advanced-toggle-wrap">
-      <button class="advanced-toggle-btn" id="advanced-toggle-btn">
-        <span id="advanced-toggle-icon" class="advanced-toggle-icon">&#9654;</span>
-        Advanced Data
-      </button>
-    </div>
-
-    <!-- Advanced data sections (hidden by default) -->
-    <div id="advanced-sections" class="advanced-sections collapsed">
-      <!-- Compass rose + wave energy spectrum side by side -->
-      <section class="panel-row" id="panel-spectral-row" style="display:none;">
-        <div class="panel panel-half" id="panel-compass">
-          <h3 class="panel-title">Spectral Compass Rose</h3>
-          <div class="chart-container chart-container-sq">
-            <canvas id="compass-canvas"></canvas>
-          </div>
-          <div class="panel-footer" id="footer-compass"></div>
+        <div class="condition-card" id="card-wind">
+          <div class="condition-label">Wind: Current</div>
+          <div class="condition-value" id="val-wind-speed">—</div>
+          <div class="condition-detail" id="val-wind-detail">—</div>
+          <div class="panel-footer" id="footer-wind"></div>
         </div>
-        <div class="panel panel-half" id="panel-spectrum">
-          <h3 class="panel-title">Wave Energy Spectrum</h3>
-          <div class="chart-container chart-container-sq">
-            <canvas id="spectrum-canvas"></canvas>
-          </div>
-          <div class="panel-footer" id="footer-spectrum"></div>
+        <div class="condition-card" id="card-tide">
+          <div class="condition-label">Tide</div>
+          <div class="condition-value" id="val-tide">—</div>
+          <div class="condition-detail" id="val-tide-detail">—</div>
+          <div class="panel-footer" id="footer-tide-card"></div>
+        </div>
+        <div class="condition-card" id="card-temp">
+          <div class="condition-label">Water Temp</div>
+          <div class="condition-value" id="val-water-temp">—</div>
+          <div class="condition-detail" id="val-temp-detail">—</div>
+          <div class="panel-footer" id="footer-temp"></div>
+        </div>
+        <div class="condition-card" id="card-daylight">
+          <div class="condition-label">Daylight</div>
+          <div class="condition-value" id="val-daylight">—</div>
+          <div class="condition-detail" id="val-daylight-detail">—</div>
+          <div class="panel-footer" id="footer-daylight"></div>
         </div>
       </section>
 
-      <!-- Hourly forecast detail -->
-      <section class="panel" id="panel-hourly">
-        <h3 class="panel-title">Hourly Forecast Detail</h3>
-        <div class="hourly-table-wrap">
-          <table id="hourly-table" class="hourly-table">
+      <!-- Wind map (Windy embed) -->
+      <section class="panel" id="panel-wind-map">
+        <h3 class="panel-title">Wind Map</h3>
+        <div class="embed-container">
+          <iframe id="windy-wind" class="windy-iframe" frameborder="0" loading="lazy"></iframe>
+        </div>
+        <div class="panel-footer" id="footer-wind-map"></div>
+      </section>
+
+      <!-- Waves map (Windy embed) -->
+      <section class="panel" id="panel-swell-map">
+        <h3 class="panel-title">Waves Map</h3>
+        <div class="embed-container">
+          <iframe id="windy-swell" class="windy-iframe" frameborder="0" loading="lazy"></iframe>
+        </div>
+        <div class="panel-footer" id="footer-swell-map"></div>
+      </section>
+
+      <!-- Swell forecast chart -->
+      <section class="panel" id="panel-forecast">
+        <div class="forecast-header-row">
+          <h3 class="panel-title">Swell Forecast</h3>
+          <div class="forecast-day-nav">
+            <button class="forecast-nav-btn" id="forecast-prev" aria-label="Previous days">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            </button>
+            <span class="forecast-nav-label" id="forecast-nav-label"></span>
+            <button class="forecast-nav-btn" id="forecast-next" aria-label="Next days">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+          </div>
+        </div>
+        <div class="chart-container" id="forecast-chart-container">
+          <canvas id="forecast-canvas"></canvas>
+        </div>
+        <div class="forecast-detail-bar" id="forecast-detail-bar"></div>
+        <div class="panel-footer" id="footer-forecast"></div>
+      </section>
+
+      <!-- Personal matches toggle (Chocomount only, shown when surf log has entries) -->
+      <div class="advanced-toggle-wrap" id="personal-match-toggle-wrap" style="display:none;">
+        <button class="advanced-toggle-btn" id="personal-match-toggle-btn">
+          <span id="personal-match-icon" class="advanced-toggle-icon">&#9654;</span>
+          Show My Personal Matches
+        </button>
+      </div>
+
+      <!-- Personal match cards (hidden by default) -->
+      <div id="personal-match-cards" class="personal-match-cards collapsed"></div>
+
+      <!-- Tides -->
+      <section class="panel" id="panel-tides" style="display:none;">
+        <h3 class="panel-title">Tides</h3>
+        <div class="chart-container chart-container-sm">
+          <canvas id="tide-canvas"></canvas>
+        </div>
+        <div id="tide-hilo-list" class="tide-list"></div>
+        <div class="panel-footer" id="footer-tides"></div>
+      </section>
+
+      <!-- Advanced data toggle -->
+      <div class="advanced-toggle-wrap" id="advanced-toggle-wrap">
+        <button class="advanced-toggle-btn" id="advanced-toggle-btn">
+          <span id="advanced-toggle-icon" class="advanced-toggle-icon">&#9654;</span>
+          Advanced Data
+        </button>
+      </div>
+
+      <!-- Advanced data sections (hidden by default) -->
+      <div id="advanced-sections" class="advanced-sections collapsed">
+        <!-- Compass rose + wave energy spectrum side by side -->
+        <section class="panel-row" id="panel-spectral-row" style="display:none;">
+          <div class="panel panel-half" id="panel-compass">
+            <h3 class="panel-title">Spectral Compass Rose</h3>
+            <div class="chart-container chart-container-sq">
+              <canvas id="compass-canvas"></canvas>
+            </div>
+            <div class="panel-footer" id="footer-compass"></div>
+          </div>
+          <div class="panel panel-half" id="panel-spectrum">
+            <h3 class="panel-title">Wave Energy Spectrum</h3>
+            <div class="chart-container chart-container-sq">
+              <canvas id="spectrum-canvas"></canvas>
+            </div>
+            <div class="panel-footer" id="footer-spectrum"></div>
+          </div>
+        </section>
+
+        <!-- Hourly forecast detail -->
+        <section class="panel" id="panel-hourly">
+          <h3 class="panel-title">Hourly Forecast Detail</h3>
+          <div class="hourly-table-wrap">
+            <table id="hourly-table" class="hourly-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Height</th>
+                  <th>Period</th>
+                  <th>Dir</th>
+                  <th>Wind</th>
+                  <th>Gust</th>
+                </tr>
+              </thead>
+              <tbody id="hourly-tbody"></tbody>
+            </table>
+          </div>
+          <div class="panel-footer" id="footer-hourly"></div>
+        </section>
+      </div>
+
+      <!-- Tide station selector map -->
+      <section class="panel" id="panel-tide-map">
+        <h3 class="panel-title">Tide Stations</h3>
+        <div id="tide-map" class="map-container map-container-sm"></div>
+        <div id="tide-map-info" class="tide-map-info"></div>
+        <div class="panel-footer" id="footer-tide-map"></div>
+      </section>
+
+    </div><!-- end #view-forecast -->
+
+    <!-- ═══ SURF LOG VIEW ═══ -->
+    <div id="view-surflog" style="display:none;">
+
+      <!-- Log a session form -->
+      <section class="panel" id="panel-surflog-form">
+        <h3 class="panel-title">Log a Session</h3>
+        <div class="surflog-form" id="surflog-form">
+          <div class="sl-field">
+            <label class="sl-label" for="sl-datetime">Date & Time</label>
+            <input type="datetime-local" id="sl-datetime" class="sl-input">
+          </div>
+
+          <div class="sl-ratings-row">
+            <div class="sl-slider-group">
+              <label class="sl-label">Size <span class="sl-slider-val" id="sl-size-val">5</span></label>
+              <input type="range" id="sl-size" class="sl-range" min="1" max="10" value="5">
+            </div>
+            <div class="sl-slider-group">
+              <label class="sl-label">Wind Quality <span class="sl-slider-val" id="sl-wind-val">5</span></label>
+              <input type="range" id="sl-wind-quality" class="sl-range" min="1" max="10" value="5">
+            </div>
+            <div class="sl-slider-group">
+              <label class="sl-label">Ride Quality <span class="sl-slider-val" id="sl-ride-val">5</span></label>
+              <input type="range" id="sl-ride-quality" class="sl-range" min="1" max="10" value="5">
+            </div>
+          </div>
+
+          <div class="sl-field">
+            <label class="sl-label" for="sl-notes">Notes</label>
+            <textarea id="sl-notes" class="sl-textarea" rows="2" placeholder="How was the session?"></textarea>
+          </div>
+
+          <div class="sl-field">
+            <label class="sl-label">Photos</label>
+            <div class="sl-photo-input-row">
+              <input type="text" id="sl-photo-url" class="sl-input sl-input-grow" placeholder="Paste image URL...">
+              <button class="sl-btn sl-btn-sm" id="sl-add-url">Add URL</button>
+              <label class="sl-btn sl-btn-sm sl-btn-file">
+                Upload
+                <input type="file" id="sl-photo-file" accept="image/*" multiple style="display:none;">
+              </label>
+            </div>
+            <div class="sl-photo-gallery" id="sl-photo-gallery"></div>
+          </div>
+
+          <div class="sl-field">
+            <label class="sl-label">Conditions</label>
+            <div class="sl-conditions-display" id="sl-conditions-display">
+              <span class="sl-hint">Click "Lookup" to auto-fill from historical data</span>
+            </div>
+            <div class="sl-note">Weather archive has a ~5 day delay. Very recent sessions may show partial data.</div>
+          </div>
+
+          <div class="sl-btn-row">
+            <button class="sl-btn" id="sl-lookup-btn">Lookup Historical Conditions</button>
+            <button class="sl-btn sl-btn-primary" id="sl-save-btn">Save Entry</button>
+            <button class="sl-btn" id="sl-cancel-edit-btn" style="display:none;">Cancel Edit</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Learned preference weights -->
+      <section class="panel" id="panel-surflog-weights" style="display:none;">
+        <h3 class="panel-title">Learned Preferences</h3>
+        <div id="surflog-weights" class="surflog-weights"></div>
+      </section>
+
+      <!-- Past sessions table -->
+      <section class="panel" id="panel-surflog-entries">
+        <h3 class="panel-title">Past Sessions</h3>
+        <div class="sl-filters" id="sl-filters">
+          <div class="sl-filter-group">
+            <label class="sl-label sl-label-sm" for="sl-filter-from">From</label>
+            <input type="date" id="sl-filter-from" class="sl-input sl-input-sm">
+          </div>
+          <div class="sl-filter-group">
+            <label class="sl-label sl-label-sm" for="sl-filter-to">To</label>
+            <input type="date" id="sl-filter-to" class="sl-input sl-input-sm">
+          </div>
+          <div class="sl-filter-group">
+            <label class="sl-label sl-label-sm" for="sl-filter-rating">Min Avg Rating</label>
+            <input type="number" id="sl-filter-rating" class="sl-input sl-input-sm" min="1" max="10" step="0.5" placeholder="1">
+          </div>
+        </div>
+        <div class="surflog-table-wrap">
+          <table class="surflog-table" id="surflog-table">
             <thead>
               <tr>
-                <th>Time</th>
-                <th>Height</th>
-                <th>Period</th>
-                <th>Dir</th>
+                <th>Date</th>
+                <th>Photos</th>
+                <th>Size</th>
                 <th>Wind</th>
-                <th>Gust</th>
+                <th>Ride</th>
+                <th>Avg</th>
+                <th>Notes</th>
+                <th></th>
               </tr>
             </thead>
-            <tbody id="hourly-tbody"></tbody>
+            <tbody id="surflog-tbody"></tbody>
           </table>
         </div>
-        <div class="panel-footer" id="footer-hourly"></div>
+        <div id="surflog-empty" class="sl-empty">
+          No sessions logged yet. Use the form above to log your first Chocomount session.
+        </div>
+        <div class="sl-export-row" id="sl-export-row">
+          <button class="sl-btn sl-btn-sm" id="sl-export-json">Export JSON</button>
+          <button class="sl-btn sl-btn-sm" id="sl-import-json-btn">Import JSON</button>
+          <input type="file" id="sl-import-json" accept=".json" style="display:none;">
+          <button class="sl-btn sl-btn-sm" id="sl-export-csv">Export CSV</button>
+          <span class="sl-storage-note" id="sl-storage-note"></span>
+        </div>
       </section>
-    </div>
 
-    <!-- Tide station selector map -->
-    <section class="panel" id="panel-tide-map">
-      <h3 class="panel-title">Tide Stations</h3>
-      <div id="tide-map" class="map-container map-container-sm"></div>
-      <div id="tide-map-info" class="tide-map-info"></div>
-      <div class="panel-footer" id="footer-tide-map"></div>
-    </section>
+    </div><!-- end #view-surflog -->
+
+    <!-- ═══ MATCH DETAIL MODAL ═══ -->
+    <div id="match-modal" class="modal-overlay" style="display:none;">
+      <div class="modal-card">
+        <button class="modal-close" id="match-modal-close">&times;</button>
+        <div class="modal-carousel" id="modal-carousel">
+          <button class="modal-carousel-btn modal-carousel-prev" id="modal-carousel-prev">&lsaquo;</button>
+          <img class="modal-carousel-img" id="modal-carousel-img" src="" alt="Session photo">
+          <button class="modal-carousel-btn modal-carousel-next" id="modal-carousel-next">&rsaquo;</button>
+          <div class="modal-carousel-dots" id="modal-carousel-dots"></div>
+        </div>
+        <div class="modal-body">
+          <div class="modal-match-badge" id="modal-match-badge"></div>
+          <h4 class="modal-title" id="modal-title"></h4>
+          <div class="modal-conditions" id="modal-conditions"></div>
+          <div class="modal-ratings" id="modal-ratings"></div>
+          <div class="modal-notes" id="modal-notes"></div>
+
+          <!-- "I Surfed This" feedback -->
+          <div class="modal-feedback" id="modal-feedback">
+            <h4 class="modal-subtitle">I Surfed This</h4>
+            <div class="sl-ratings-row">
+              <div class="sl-slider-group">
+                <label class="sl-label">Size <span class="sl-slider-val" id="fb-size-val">5</span></label>
+                <input type="range" id="fb-size" class="sl-range" min="1" max="10" value="5">
+              </div>
+              <div class="sl-slider-group">
+                <label class="sl-label">Wind Quality <span class="sl-slider-val" id="fb-wind-val">5</span></label>
+                <input type="range" id="fb-wind-quality" class="sl-range" min="1" max="10" value="5">
+              </div>
+              <div class="sl-slider-group">
+                <label class="sl-label">Ride Quality <span class="sl-slider-val" id="fb-ride-val">5</span></label>
+                <input type="range" id="fb-ride-quality" class="sl-range" min="1" max="10" value="5">
+              </div>
+            </div>
+            <textarea id="fb-notes" class="sl-textarea" rows="2" placeholder="Quick notes..."></textarea>
+            <button class="sl-btn sl-btn-primary" id="fb-save-btn">Save Feedback</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Page footer -->
     <footer id="page-footer">
