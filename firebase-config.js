@@ -1,10 +1,20 @@
-const firebaseConfig = {
-    apiKey: "AIzaSyBWuLMPKGS91HSOzmQALinQl3w5FwkIdIs",
-    authDomain: "letscheckchoc.firebaseapp.com",
-    projectId: "letscheckchoc",
-    storageBucket: "letscheckchoc.firebasestorage.app",
-    messagingSenderId: "801516961544",
-    appId: "1:801516961544:web:c28584674e5be4643e36bd"
+// Initialize Firebase
+var firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_AUTH_DOMAIN",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_STORAGE_BUCKET",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID"
 };
 
-export default firebaseConfig;
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+
+// Reference Firebase services
+window._fbUserId = firebase.auth().currentUser ? firebase.auth().currentUser.uid : null;
+var fbAuth = firebase.auth();
+var fbFirestore = firebase.firestore();
+var fbStorage = firebase.storage();
+
+// You can use fbAuth, fbFirestore, fbStorage in your application
