@@ -2494,6 +2494,10 @@ async function migrateAnonDataToUser() {
 
 async function loadSurfLog() {
   try {
+    // Wait for Firebase auth to settle (avoid querying with anonymous UID)
+    if (window._fbAuthReady) {
+      await window._fbAuthReady;
+    }
     await loadLogsFromFirebase();
   } catch(e) {
     console.warn('Firebase load failed, falling back to localStorage:', e);
@@ -2576,9 +2580,7 @@ async function saveLogEntryToFirebase(entry) {
     });
   }
   if (!window._fbUserId) {
-    console.warn('saveLogEntryToFirebase: not authenticated after waiting');
-    showToast('\u26a0 Could not sync \u2014 not signed in', 'warn');
-    return;
+    throw new Error('Not authenticated — cannot sync to cloud');
   }
   const d = new Date(entry.timestamp);
   const YYYY = d.getFullYear();
@@ -2637,6 +2639,13 @@ async function loadLogsFromFirebase() {
     });
   }
   if (!window._fbUserId) throw new Error('Not authenticated');
+
+  // Don't query Firestore with anonymous UID — data is only stored under real user IDs
+  if (window._fbUserIsAnon) {
+    console.log('loadLogsFromFirebase: skipping — user is anonymous');
+    return;
+  }
+
   const snap = await fbFirestore.collection('surf_logs')
     .where('userId', '==', window._fbUserId)
     .orderBy('createdAt', 'desc')
