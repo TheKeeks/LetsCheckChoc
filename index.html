@@ -31,6 +31,11 @@
       </div>
       <div class="header-right">
         <span id="header-update-time" class="header-meta"></span>
+        <div class="auth-bar" id="auth-bar">
+          <span class="auth-user-name" id="auth-user-name" style="display:none;"></span>
+          <button class="auth-btn" id="auth-signin-btn">Sign in with Google</button>
+          <button class="auth-btn auth-btn-out" id="auth-signout-btn" style="display:none;">Sign out</button>
+        </div>
       </div>
     </header>
 
@@ -213,6 +218,13 @@
     <!-- ═══ SURF LOG VIEW ═══ -->
     <div id="view-surflog" style="display:none;">
 
+      <!-- Sign-in prompt (shown when not authenticated with a real account) -->
+      <div id="sl-auth-prompt" class="sl-auth-prompt" style="display:none;">
+        <span class="sl-auth-prompt-text">⚠ Sign in with Google to sync your sessions across devices</span>
+        <button class="sl-btn sl-btn-sm" id="sl-auth-prompt-signin">Sign in</button>
+        <button class="sl-auth-prompt-dismiss" id="sl-auth-prompt-dismiss">Continue without signing in</button>
+      </div>
+
       <!-- Log a session form -->
       <section class="panel" id="panel-surflog-form">
         <h3 class="panel-title">Log a Session</h3>
@@ -386,5 +398,6 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="firebase-config.js"></script>
   <script src="app.js"></script>
+  <div id="toast-container" class="toast-container"></div>
 </body>
 </html>
