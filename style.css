@@ -950,6 +950,14 @@ a:hover { text-decoration: underline; }
   margin-left: 4px;
 }
 
+.sl-slider-desc {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--ink3);
+  font-style: italic;
+  min-height: 1.2em;
+}
+
 .sl-range {
   -webkit-appearance: none;
   appearance: none;
@@ -1291,6 +1299,17 @@ a:hover { text-decoration: underline; }
   gap: 8px;
 }
 
+.sl-weights-section { margin-bottom: 12px; }
+.sl-weights-heading {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink2);
+  margin: 0 0 6px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
 .sl-weight-bar {
   display: flex;
   align-items: center;
@@ -1373,19 +1392,25 @@ a:hover { text-decoration: underline; }
   color: var(--ink3);
 }
 
+.pm-card-scores {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 500;
+  display: flex;
+  gap: 6px;
+}
+.pm-score-wave { color: var(--blue, #4a90d9); }
+.pm-score-cond { color: var(--green); }
+
 .pm-card-match {
   font-family: var(--mono);
-  font-size: 0.85rem;
+  font-size: 0.72rem;
   font-weight: 500;
-  color: var(--green);
+  display: flex;
+  gap: 6px;
 }
-
-.pm-card-predicted {
-  font-family: var(--mono);
-  font-size: 0.65rem;
-  color: var(--ink3);
-  margin-top: 2px;
-}
+.pm-match-wave { color: var(--blue, #4a90d9); }
+.pm-match-cond { color: var(--green); }
 
 /* ═══════════════════════════════════════════════════
    MODAL

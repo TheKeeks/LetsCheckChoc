@@ -69,8 +69,10 @@ const STATE = {
   forecastChart: null,   // cached chart state for tooltip
   // Surf log
   surfLog: [],
-  surfLogWeights: null,
-  surfLogFeatureStats: null,
+  surfLogWaveWeights: null,
+  surfLogWaveStats: null,
+  surfLogCondWeights: null,
+  surfLogCondStats: null,
   surfLogEditId: null,
   activeTab: 'forecast',
   personalMatchesOpen: false,
@@ -2626,6 +2628,26 @@ function parseTideAtTime(tideData, dateStr) {
   return { height: parseFloat(n.v) || 0, stage, timeToNearest: Math.round(Math.abs(nt - tt) / 3600000 * 10) / 10 };
 }
 
+// Estimate swell travel lag from buoy to Chocomount.
+// Looks at swell periods 2-5 hours before session, computes average group velocity travel time.
+function estimateSwellLag(marine, sessionDateStr) {
+  if (!marine?.hourly) return 0;
+  const sessionT = new Date(sessionDateStr).getTime();
+  const t5h = sessionT - 5 * 3600000;
+  const t2h = sessionT - 2 * 3600000;
+  const times = marine.hourly.time || [];
+  const periods = marine.hourly.swell_wave_period || marine.hourly.wave_period || [];
+  let sumPeriod = 0, count = 0;
+  for (let i = 0; i < times.length; i++) {
+    const t = new Date(times[i]).getTime();
+    if (t >= t5h && t <= t2h && periods[i] > 0) { sumPeriod += periods[i]; count++; }
+  }
+  if (count === 0) return 0;
+  const avgPeriod = sumPeriod / count;
+  const arrival = swellArrivalTime(avgPeriod, CONFIG.chocomount.buoyDistanceMiles);
+  return arrival ? arrival.minutes : 0;
+}
+
 async function lookupHistoricalConditions(dateStr) {
   const display = el('sl-conditions-display');
   if (display) display.innerHTML = '<span class="sl-hint">Looking up conditions...</span>';
@@ -2635,25 +2657,40 @@ async function lookupHistoricalConditions(dateStr) {
       if (display) display.innerHTML = '<span class="sl-hint">Historical data not available for this date.</span>';
       return null;
     }
-    const idx = findNearestHour(marine.hourly.time, dateStr);
+
+    // Compute swell travel lag: what time was this swell at the buoy?
+    const lagMinutes = estimateSwellLag(marine, dateStr);
+    const lagMs = lagMinutes * 60000;
+    const sessionT = new Date(dateStr).getTime();
+    const buoyTimeStr = new Date(sessionT - lagMs).toISOString();
+
+    // Use lagged time for swell data (reads buoy conditions at the time swell departed)
+    const swellIdx = findNearestHour(marine.hourly.time, buoyTimeStr);
+    // Use session time for wind (wind is local, no lag)
     const wIdx = findNearestHour(wind.hourly.time, dateStr);
-    const swH = marine.hourly.swell_wave_height?.[idx] ?? marine.hourly.wave_height?.[idx] ?? 0;
-    const swD = marine.hourly.swell_wave_direction?.[idx] ?? marine.hourly.wave_direction?.[idx] ?? 0;
-    const swP = marine.hourly.swell_wave_period?.[idx] ?? marine.hourly.wave_period?.[idx] ?? 0;
-    const secH = marine.hourly.secondary_swell_wave_height?.[idx] ?? 0;
-    const secD = marine.hourly.secondary_swell_wave_direction?.[idx] ?? 0;
-    const secP = marine.hourly.secondary_swell_wave_period?.[idx] ?? 0;
+
+    const swH = marine.hourly.swell_wave_height?.[swellIdx] ?? marine.hourly.wave_height?.[swellIdx] ?? 0;
+    const swD = marine.hourly.swell_wave_direction?.[swellIdx] ?? marine.hourly.wave_direction?.[swellIdx] ?? 0;
+    const swP = marine.hourly.swell_wave_period?.[swellIdx] ?? marine.hourly.wave_period?.[swellIdx] ?? 0;
+    const secH = marine.hourly.secondary_swell_wave_height?.[swellIdx] ?? 0;
+    const secD = marine.hourly.secondary_swell_wave_direction?.[swellIdx] ?? 0;
+    const secP = marine.hourly.secondary_swell_wave_period?.[swellIdx] ?? 0;
     const wSpd = wind.hourly.wind_speed_10m?.[wIdx] ?? 0;
     const wDir = wind.hourly.wind_direction_10m?.[wIdx] ?? 0;
     const tideInfo = parseTideAtTime(tide, dateStr);
+
+    const lagHours = Math.round(lagMinutes / 60 * 10) / 10;
     const conditions = {
-      swell: { height: Math.round(swH*10)/10, direction: Math.round(swD), period: Math.round(swP*10)/10 },
+      swell: { height: Math.round(swH*10)/10, direction: Math.round(swD), period: Math.round(swP*10)/10, lagHours: lagHours },
       wind: { speed: Math.round(wSpd), direction: Math.round(wDir) },
       tide: { height: Math.round(tideInfo.height*10)/10, stage: tideInfo.stage, timeToNearest: tideInfo.timeToNearest },
       blown_water_index: computeBlownWaterIndex(wind, dateStr),
       wind_offshore_score: computeWindOffshoreScore(wDir)
     };
-    if (secH > 0.3) conditions.swell.secondary = { height: Math.round(secH*10)/10, direction: Math.round(secD), period: Math.round(secP*10)/10 };
+    if (secH > 0.3) {
+      // Secondary swell also gets lag (may differ slightly but we use same avg lag)
+      conditions.swell.secondary = { height: Math.round(secH*10)/10, direction: Math.round(secD), period: Math.round(secP*10)/10 };
+    }
     renderConditionsDisplay(conditions);
     return conditions;
   } catch (err) {
@@ -2668,9 +2705,10 @@ function renderConditionsDisplay(cond) {
   if (!display || !cond) return;
   const dl = (l,v) => '<span class="sl-cond-label">'+l+'</span> <span class="sl-cond-val">'+v+'</span>';
   const hl = (l,v) => '<span class="sl-cond-label">'+l+'</span> <span class="sl-cond-highlight">'+v+'</span>';
+  const lagNote = cond.swell.lagHours ? ' ('+cond.swell.lagHours+'h buoy lag)' : '';
   let h = '<div class="sl-cond-row">';
-  h += dl('Swell:', cond.swell.height+'ft '+cond.swell.period+'s '+directionLabel(cond.swell.direction)+' ('+cond.swell.direction+'\u00b0)');
-  if (cond.swell.secondary) h += dl('2nd:', cond.swell.secondary.height+'ft '+cond.swell.secondary.period+'s '+directionLabel(cond.swell.secondary.direction));
+  h += dl('Swell'+lagNote+':', cond.swell.height+'ft '+cond.swell.period+'s '+directionLabel(cond.swell.direction)+' ('+cond.swell.direction+'\u00b0)');
+  if (cond.swell.secondary) h += dl('2nd:', cond.swell.secondary.height+'ft '+(cond.swell.secondary.period||'')+'s '+directionLabel(cond.swell.secondary.direction));
   h += '</div><div class="sl-cond-row">';
   h += dl('Wind:', cond.wind.speed+' mph '+directionLabel(cond.wind.direction)+' ('+cond.wind.direction+'\u00b0)');
   h += dl('Tide:', cond.tide.height+'ft '+cond.tide.stage+' ('+cond.tide.timeToNearest+'h to next)');
@@ -2687,21 +2725,35 @@ function renderConditionsDisplay(cond) {
 
 let _slConditions = null;
 
+// Slider description maps
+const SIZE_DESCS = { 1:'Ankle', 2:'Flat', 3:'Knee', 4:'Waist', 5:'Waist', 6:'Chest', 7:'Chest', 8:'Head high', 9:'Overhead', 10:'2X Overhead' };
+const WIND_DESCS = { 1:'Unmanageable', 2:'Unmanageable', 3:'Choppy', 4:'Choppy', 5:'Choppy but enjoyable', 6:'Choppy but enjoyable', 7:'Glassy / Light Offshore', 8:'Glassy / Light Offshore', 9:'Glassy / Light Offshore', 10:'Glassy / Light Offshore' };
+const RIDE_DESCS = { 1:'Breaking inside out', 2:'Go straight', 3:'Go straight', 4:'One critical turn', 5:'One critical turn', 6:'Connecting to beach', 7:'Connecting to beach', 8:'Reeling to beach', 9:'Reeling to beach', 10:'Reeling to beach' };
+
+function updateSliderDesc(sliderId, descId, val) {
+  const descEl = el(descId);
+  if (!descEl) return;
+  const v = parseInt(val);
+  if (sliderId.includes('size')) descEl.textContent = SIZE_DESCS[v] || '';
+  else if (sliderId.includes('wind')) descEl.textContent = WIND_DESCS[v] || '';
+  else if (sliderId.includes('ride')) descEl.textContent = RIDE_DESCS[v] || '';
+}
+
 function initSurfLogForm() {
   const dtInput = el('sl-datetime');
   if (dtInput) {
     const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     dtInput.value = now.toISOString().slice(0, 16);
   }
-  ['sl-size','sl-wind-quality','sl-ride-quality'].forEach(id => {
+  // Main form sliders
+  [['sl-size','sl-size-val','sl-size-desc'],['sl-wind-quality','sl-wind-val','sl-wind-desc'],['sl-ride-quality','sl-ride-val','sl-ride-desc']].forEach(([id,vid,did]) => {
     const s = el(id);
-    const vid = id === 'sl-size' ? 'sl-size-val' : id === 'sl-wind-quality' ? 'sl-wind-val' : 'sl-ride-val';
-    s?.addEventListener('input', () => { el(vid).textContent = s.value; });
+    s?.addEventListener('input', () => { el(vid).textContent = s.value; updateSliderDesc(id, did, s.value); });
   });
-  ['fb-size','fb-wind-quality','fb-ride-quality'].forEach(id => {
+  // Feedback sliders in modal
+  [['fb-size','fb-size-val','fb-size-desc'],['fb-wind-quality','fb-wind-val','fb-wind-desc'],['fb-ride-quality','fb-ride-val','fb-ride-desc']].forEach(([id,vid,did]) => {
     const s = el(id);
-    const vid = id === 'fb-size' ? 'fb-size-val' : id === 'fb-wind-quality' ? 'fb-wind-val' : 'fb-ride-val';
-    s?.addEventListener('input', () => { el(vid).textContent = s.value; });
+    s?.addEventListener('input', () => { el(vid).textContent = s.value; updateSliderDesc(id, did, s.value); });
   });
   el('sl-add-url')?.addEventListener('click', () => {
     const input = el('sl-photo-url'), url = (input.value||'').trim();
@@ -2755,6 +2807,9 @@ function resetSurfLogForm() {
   if (el('sl-datetime')) el('sl-datetime').value = now.toISOString().slice(0, 16);
   ['sl-size','sl-wind-quality','sl-ride-quality'].forEach(id => { if(el(id)) el(id).value = 5; });
   ['sl-size-val','sl-wind-val','sl-ride-val'].forEach(id => { if(el(id)) el(id).textContent = '5'; });
+  updateSliderDesc('sl-size','sl-size-desc',5);
+  updateSliderDesc('sl-wind-quality','sl-wind-desc',5);
+  updateSliderDesc('sl-ride-quality','sl-ride-desc',5);
   if (el('sl-notes')) el('sl-notes').value = '';
   _slPhotos = []; _slConditions = null; renderPhotoGallery();
   const d = el('sl-conditions-display');
@@ -2768,9 +2823,9 @@ function editLogEntry(id) {
   el('sl-cancel-edit-btn').style.display = '';
   el('sl-save-btn').textContent = 'Update Entry';
   if (el('sl-datetime')) el('sl-datetime').value = e.timestamp;
-  if (el('sl-size')) { el('sl-size').value = e.ratings.size; el('sl-size-val').textContent = e.ratings.size; }
-  if (el('sl-wind-quality')) { el('sl-wind-quality').value = e.ratings.windQuality; el('sl-wind-val').textContent = e.ratings.windQuality; }
-  if (el('sl-ride-quality')) { el('sl-ride-quality').value = e.ratings.rideQuality; el('sl-ride-val').textContent = e.ratings.rideQuality; }
+  if (el('sl-size')) { el('sl-size').value = e.ratings.size; el('sl-size-val').textContent = e.ratings.size; updateSliderDesc('sl-size','sl-size-desc',e.ratings.size); }
+  if (el('sl-wind-quality')) { el('sl-wind-quality').value = e.ratings.windQuality; el('sl-wind-val').textContent = e.ratings.windQuality; updateSliderDesc('sl-wind-quality','sl-wind-desc',e.ratings.windQuality); }
+  if (el('sl-ride-quality')) { el('sl-ride-quality').value = e.ratings.rideQuality; el('sl-ride-val').textContent = e.ratings.rideQuality; updateSliderDesc('sl-ride-quality','sl-ride-desc',e.ratings.rideQuality); }
   if (el('sl-notes')) el('sl-notes').value = e.notes || '';
   _slPhotos = [...(e.photos||[])]; _slConditions = e.conditions || null;
   renderPhotoGallery();
@@ -2904,18 +2959,42 @@ function toggleEntryDetail(entry, tr) {
 // SURF LOG — Linear Regression (Normal Equation)
 // ════════════════════════════════════════════════
 
-const SL_FEATURE_NAMES = ['swell_height','swell_period','swell_dir_sin','swell_dir_cos','sec_swell_height','sec_dir_sin','sec_dir_cos','wind_speed','wind_dir_sin','wind_dir_cos','tide_height','tide_stage','tide_interaction','time_to_nearest','blown_water_index','wind_offshore_score'];
+// Wave Score features (target: avg of size + rideQuality)
+// blown_water_index disabled for now — kept in code for future use
+const WAVE_FEATURE_NAMES = [
+  'swell_height','swell_period','swell_dir_sin','swell_dir_cos',
+  'sec_swell_height','sec_swell_period','sec_dir_sin','sec_dir_cos',
+  'tide_height','tide_stage'
+  // ,'blown_water_index'  // available but disabled
+];
 
-function extractFeatures(cond) {
+// Conditions Score features (target: windQuality)
+const COND_FEATURE_NAMES = [
+  'wind_speed','wind_offshore_score'
+  // ,'blown_water_index'  // available but disabled
+];
+
+function extractWaveFeatures(cond) {
   if (!cond?.swell) return null;
-  const s = cond.swell, w = cond.wind||{speed:0,direction:0}, t = cond.tide||{height:0,stage:'rising',timeToNearest:0};
-  const sec = s.secondary||{height:0,direction:0};
+  const s = cond.swell, t = cond.tide||{height:0,stage:'rising'};
+  const sec = s.secondary||{height:0,direction:0,period:0};
   const ts = t.stage === 'rising' ? 1 : -1;
-  return [s.height||0, s.period||0, Math.sin(degToRad(s.direction||0)), Math.cos(degToRad(s.direction||0)),
-    sec.height||0, Math.sin(degToRad(sec.direction||0)), Math.cos(degToRad(sec.direction||0)),
-    w.speed||0, Math.sin(degToRad(w.direction||0)), Math.cos(degToRad(w.direction||0)),
-    t.height||0, ts, (t.height||0)*ts, t.timeToNearest||0,
-    cond.blown_water_index||0, cond.wind_offshore_score||0];
+  return [
+    s.height||0, s.period||0,
+    Math.sin(degToRad(s.direction||0)), Math.cos(degToRad(s.direction||0)),
+    sec.height||0, sec.period||0,
+    Math.sin(degToRad(sec.direction||0)), Math.cos(degToRad(sec.direction||0)),
+    t.height||0, ts
+    // , cond.blown_water_index||0  // disabled
+  ];
+}
+
+function extractCondFeatures(cond) {
+  const w = cond?.wind||{speed:0};
+  return [
+    w.speed||0, cond?.wind_offshore_score||0
+    // , cond?.blown_water_index||0  // disabled
+  ];
 }
 
 function matTranspose(A) { const r=A.length,c=A[0].length,T=[]; for(let j=0;j<c;j++){T[j]=[]; for(let i=0;i<r;i++) T[j][i]=A[i][j];} return T; }
@@ -2939,53 +3018,75 @@ function normalEquation(X,y) {
   return matMul(inv, matMul(Xt, y.map(v=>[v]))).map(r=>r[0]);
 }
 
-function slRetrain() {
-  const entries = STATE.surfLog.filter(e => e.conditions?.swell);
-  if (entries.length < 8) { STATE.surfLogWeights = null; STATE.surfLogFeatureStats = null; renderWeightsPanel(); return; }
+function trainModel(entries, featureExtractor, targetFn) {
   const X = [], y = [];
-  entries.forEach(e => { const f = extractFeatures(e.conditions); if(f){ X.push(f); y.push((e.ratings.size+e.ratings.windQuality+e.ratings.rideQuality)/3); }});
-  if (X.length < 8) { STATE.surfLogWeights = null; renderWeightsPanel(); return; }
+  entries.forEach(e => { const f = featureExtractor(e.conditions); if(f){ X.push(f); y.push(targetFn(e)); }});
+  if (X.length < 8) return null;
   const nF = X[0].length, stats = { min:[], max:[], mean:[] };
   for (let j=0;j<nF;j++) { const col=X.map(r=>r[j]); stats.min[j]=Math.min(...col); stats.max[j]=Math.max(...col); stats.mean[j]=col.reduce((a,b)=>a+b,0)/col.length; }
   const Xn = X.map(row => row.map((v,j) => { const rng=stats.max[j]-stats.min[j]; return rng>1e-10?(v-stats.min[j])/rng:0; }));
-  STATE.surfLogWeights = normalEquation(Xn, y);
-  STATE.surfLogFeatureStats = stats;
+  const weights = normalEquation(Xn, y);
+  return weights ? { weights, stats } : null;
+}
+
+function slRetrain() {
+  const entries = STATE.surfLog.filter(e => e.conditions?.swell);
+  // Wave model: target = (size + rideQuality) / 2
+  const wave = trainModel(entries, extractWaveFeatures, e => (e.ratings.size + e.ratings.rideQuality) / 2);
+  STATE.surfLogWaveWeights = wave?.weights || null;
+  STATE.surfLogWaveStats = wave?.stats || null;
+  // Conditions model: target = windQuality
+  const cond = trainModel(entries, extractCondFeatures, e => e.ratings.windQuality);
+  STATE.surfLogCondWeights = cond?.weights || null;
+  STATE.surfLogCondStats = cond?.stats || null;
   renderWeightsPanel();
+}
+
+function renderWeightSection(weights, stats, featureNames) {
+  if (!weights) return '<span class="sl-hint">Need 8+ sessions to train.</span>';
+  const tot = weights.reduce((s,v)=>s+Math.abs(v),0);
+  if (tot===0) return '<span class="sl-hint">Not enough variance.</span>';
+  return weights.map((v,i) => {
+    const pct = Math.round(Math.abs(v)/tot*100);
+    return '<div class="sl-weight-bar"><span class="sl-w-label">'+(featureNames[i]||'f'+i)+'</span><div class="sl-w-bar" style="width:'+Math.max(2,pct*1.5)+'px"></div><span class="sl-w-val">'+pct+'%</span></div>';
+  }).join('');
 }
 
 function renderWeightsPanel() {
   const panel = el('panel-surflog-weights'), container = el('surflog-weights');
   if (!panel||!container) return;
-  if (!STATE.surfLogWeights) { panel.style.display='none'; return; }
+  if (!STATE.surfLogWaveWeights && !STATE.surfLogCondWeights) { panel.style.display='none'; return; }
   panel.style.display = '';
-  const w = STATE.surfLogWeights, tot = w.reduce((s,v)=>s+Math.abs(v),0);
-  if (tot===0) { container.innerHTML='<span class="sl-hint">Not enough variance.</span>'; return; }
-  container.innerHTML = w.map((v,i) => {
-    const pct = Math.round(Math.abs(v)/tot*100);
-    return '<div class="sl-weight-bar"><span class="sl-w-label">'+(SL_FEATURE_NAMES[i]||'f'+i)+'</span><div class="sl-w-bar" style="width:'+Math.max(2,pct*1.5)+'px"></div><span class="sl-w-val">'+pct+'%</span></div>';
-  }).join('');
+  let h = '<div class="sl-weights-section"><h4 class="sl-weights-heading">Wave Score Weights</h4>';
+  h += renderWeightSection(STATE.surfLogWaveWeights, STATE.surfLogWaveStats, WAVE_FEATURE_NAMES);
+  h += '</div><div class="sl-weights-section"><h4 class="sl-weights-heading">Conditions Score Weights</h4>';
+  h += renderWeightSection(STATE.surfLogCondWeights, STATE.surfLogCondStats, COND_FEATURE_NAMES);
+  h += '</div>';
+  container.innerHTML = h;
 }
 
 // ════════════════════════════════════════════════
 // SURF LOG — Forecast Matching
 // ════════════════════════════════════════════════
 
-function computeMatchPct(ef, ff) {
-  const stats = STATE.surfLogFeatureStats;
+function _matchPct(ef, ff, weights, stats) {
   if (!stats) return 0;
-  const w = STATE.surfLogWeights || new Array(ef.length).fill(1);
+  const w = weights || new Array(ef.length).fill(1);
   let dist = 0;
   for (let i=0;i<ef.length;i++) { const rng=stats.max[i]-stats.min[i]; if(rng<1e-10) continue; dist+=Math.abs(w[i])*Math.pow((ef[i]-stats.min[i])/rng-(ff[i]-stats.min[i])/rng,2); }
   return Math.round(Math.exp(-Math.sqrt(dist))*100);
 }
+function computeWaveMatch(ef, ff) { return _matchPct(ef, ff, STATE.surfLogWaveWeights, STATE.surfLogWaveStats); }
+function computeCondMatch(ef, ff) { return _matchPct(ef, ff, STATE.surfLogCondWeights, STATE.surfLogCondStats); }
 
-function predictRating(ff) {
-  if (!STATE.surfLogWeights||!STATE.surfLogFeatureStats) return null;
-  const s=STATE.surfLogFeatureStats, w=STATE.surfLogWeights;
+function _predict(ff, weights, stats) {
+  if (!weights||!stats) return null;
   let pred=0;
-  for(let i=0;i<ff.length;i++){ const rng=s.max[i]-s.min[i]; pred+=w[i]*(rng>1e-10?(ff[i]-s.min[i])/rng:0); }
+  for(let i=0;i<ff.length;i++){ const rng=stats.max[i]-stats.min[i]; pred+=weights[i]*(rng>1e-10?(ff[i]-stats.min[i])/rng:0); }
   return Math.max(1,Math.min(10,Math.round(pred*10)/10));
 }
+function predictWaveRating(wf) { return _predict(wf, STATE.surfLogWaveWeights, STATE.surfLogWaveStats); }
+function predictCondRating(cf) { return _predict(cf, STATE.surfLogCondWeights, STATE.surfLogCondStats); }
 
 function simpleMatchPct(a,b) {
   let dist=0; for(let i=0;i<a.length;i++) dist+=Math.pow(a[i]-b[i],2);
@@ -2999,33 +3100,45 @@ function buildForecastConditions(marine, wind, tideHiLo, hi) {
   const swP=marine.hourly.swell_wave_period?.[hi]??marine.hourly.wave_period?.[hi]??0;
   const secH=marine.hourly.secondary_swell_wave_height?.[hi]??0;
   const secD=marine.hourly.secondary_swell_wave_direction?.[hi]??0;
+  const secP=marine.hourly.secondary_swell_wave_period?.[hi]??0;
   const wSpd=wind.hourly.wind_speed_10m?.[hi]??0, wDir=wind.hourly.wind_direction_10m?.[hi]??0;
   let bwi=0,bc=0;
   for(let i=Math.max(0,hi-24);i<=hi;i++){const s=wind.hourly.wind_speed_10m?.[i],d=wind.hourly.wind_direction_10m?.[i]; if(s!=null&&d!=null){const e=s*Math.cos(degToRad(d-90)); if(e>0){bwi+=e;bc++;}}}
   bwi=bc>0?Math.round(bwi/bc*100)/100:0;
   const tideInfo = tideHiLo ? parseTideAtTime({predictions:tideHiLo}, marine.hourly.time?.[hi]) : {height:0,stage:'rising',timeToNearest:0};
-  return { swell:{height:swH,direction:swD,period:swP,secondary:secH>0.3?{height:secH,direction:secD}:undefined},
+  return { swell:{height:swH,direction:swD,period:swP,secondary:secH>0.3?{height:secH,direction:secD,period:secP}:undefined},
     wind:{speed:wSpd,direction:wDir}, tide:tideInfo, blown_water_index:bwi, wind_offshore_score:computeWindOffshoreScore(wDir) };
 }
 
 function findBestMatchPerDay(marine, wind, tideHiLo) {
   if (!STATE.surfLog.length||!marine?.hourly) return [];
-  const ewf = STATE.surfLog.filter(e=>e.conditions).map(e=>({entry:e,features:extractFeatures(e.conditions)})).filter(x=>x.features);
-  if (!ewf.length) return [];
+  const entries = STATE.surfLog.filter(e=>e.conditions).map(e=>({
+    entry:e,
+    wf:extractWaveFeatures(e.conditions),
+    cf:extractCondFeatures(e.conditions)
+  })).filter(x=>x.wf);
+  if (!entries.length) return [];
   const times = marine.hourly.time||[], dayMap={};
   times.forEach((t,i) => { const day=t.split('T')[0]; if(!dayMap[day]) dayMap[day]=[]; dayMap[day].push(i); });
   const results = [];
   Object.entries(dayMap).forEach(([day, idxs]) => {
-    let bestM=0,bestE=null,bestP=null,bestH=0;
+    let bestWM=0,bestCM=0,bestE=null,bestWP=null,bestCP=null,bestH=0;
     idxs.forEach(hi => {
       const fc=buildForecastConditions(marine,wind,tideHiLo,hi); if(!fc) return;
-      const ff=extractFeatures(fc); if(!ff) return;
-      ewf.forEach(({entry,features}) => {
-        const pct=STATE.surfLogWeights?computeMatchPct(features,ff):simpleMatchPct(features,ff);
-        if(pct>bestM){bestM=pct;bestE=entry;bestH=hi;bestP=STATE.surfLogWeights?predictRating(ff):null;}
+      const fwf=extractWaveFeatures(fc), fcf=extractCondFeatures(fc);
+      if(!fwf) return;
+      entries.forEach(({entry,wf,cf}) => {
+        const wPct=STATE.surfLogWaveWeights?computeWaveMatch(wf,fwf):simpleMatchPct(wf,fwf);
+        const cPct=STATE.surfLogCondWeights?computeCondMatch(cf,fcf):simpleMatchPct(cf,fcf);
+        const avg=(wPct+cPct)/2;
+        if(avg>((bestWM+bestCM)/2)){
+          bestWM=wPct;bestCM=cPct;bestE=entry;bestH=hi;
+          bestWP=STATE.surfLogWaveWeights?predictWaveRating(fwf):null;
+          bestCP=STATE.surfLogCondWeights?predictCondRating(fcf):null;
+        }
       });
     });
-    if(bestE) results.push({day,matchPct:bestM,entry:bestE,predictedRating:bestP,hourIdx:bestH});
+    if(bestE) results.push({day,waveMatch:bestWM,condMatch:bestCM,entry:bestE,waveRating:bestWP,condRating:bestCP,hourIdx:bestH});
   });
   return results;
 }
@@ -3061,7 +3174,10 @@ function renderPersonalMatchCards() {
     const dl = new Date(m.day).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
     const thumb = m.entry.photos?.[0] || '';
     const imgH = thumb ? '<img class="pm-card-img" src="'+thumb+'" alt="" onerror="this.style.display=\'none\'">' : '<div class="pm-card-img" style="display:flex;align-items:center;justify-content:center;color:var(--ink4);font-family:var(--mono);font-size:0.7rem">No photo</div>';
-    h += '<div class="pm-card" data-day="'+m.day+'" data-eid="'+m.entry.id+'" data-hi="'+m.hourIdx+'">'+imgH+'<div class="pm-card-body"><div class="pm-card-date">'+dl+'</div><div class="pm-card-match">'+m.matchPct+'% match</div>'+(m.predictedRating?'<div class="pm-card-predicted">Predicted fun: '+m.predictedRating.toFixed(1)+'/10</div>':'')+'</div></div>';
+    const waveLine = '<span class="pm-score-wave">Wave: '+(m.waveRating?m.waveRating.toFixed(1):'--')+'</span>';
+    const condLine = '<span class="pm-score-cond">Cond: '+(m.condRating?m.condRating.toFixed(1):'--')+'</span>';
+    const matchLine = '<span class="pm-match-wave">W '+m.waveMatch+'%</span> <span class="pm-match-cond">C '+m.condMatch+'%</span>';
+    h += '<div class="pm-card" data-day="'+m.day+'" data-eid="'+m.entry.id+'" data-hi="'+m.hourIdx+'">'+imgH+'<div class="pm-card-body"><div class="pm-card-date">'+dl+'</div><div class="pm-card-scores">'+waveLine+' '+condLine+'</div><div class="pm-card-match">'+matchLine+'</div></div></div>';
   });
   h += '</div>'; container.innerHTML = h;
   container.querySelectorAll('.pm-card').forEach(c => c.addEventListener('click', () => {
@@ -3080,12 +3196,14 @@ function openMatchModal(entry, forecastDay, hi) {
   el('match-modal').style.display = '';
   updateModalCarousel(entry.photos||[], 0);
   const fc = buildForecastConditions(STATE._cachedMarine, STATE._cachedWind, STATE._cachedTideHiLo, hi);
-  let pct = 0;
+  let wPct = 0, cPct = 0;
   if (fc && entry.conditions) {
-    const ff=extractFeatures(fc), ef=extractFeatures(entry.conditions);
-    if(ff&&ef) pct = STATE.surfLogWeights ? computeMatchPct(ef,ff) : simpleMatchPct(ef,ff);
+    const ewf=extractWaveFeatures(entry.conditions), fwf=extractWaveFeatures(fc);
+    const ecf=extractCondFeatures(entry.conditions), fcf=extractCondFeatures(fc);
+    if(ewf&&fwf) wPct = STATE.surfLogWaveWeights ? computeWaveMatch(ewf,fwf) : simpleMatchPct(ewf,fwf);
+    if(ecf&&fcf) cPct = STATE.surfLogCondWeights ? computeCondMatch(ecf,fcf) : simpleMatchPct(ecf,fcf);
   }
-  el('modal-match-badge').textContent = pct+'% match';
+  el('modal-match-badge').innerHTML = '<span class="pm-match-wave">Wave '+wPct+'%</span> <span class="pm-match-cond">Cond '+cPct+'%</span>';
   el('modal-title').textContent = new Date(entry.timestamp).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   const ce = el('modal-conditions');
   if (ce && entry.conditions) {
