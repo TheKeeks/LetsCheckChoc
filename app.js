@@ -2998,8 +2998,6 @@ function initSurfLogForm() {
   // Main form sliders
   [['sl-size','sl-size-val','sl-size-desc'],['sl-wind-quality','sl-wind-val','sl-wind-desc'],['sl-ride-quality','sl-ride-val','sl-ride-desc']].forEach(([id,vid,did]) => {
     const s = el(id);
-    const vid = id === 'sl-size' ? 'sl-size-val' : id === 'sl-wind-quality' ? 'sl-wind-val' : 'sl-ride-val';
-    const did = id === 'sl-size' ? 'sl-size-desc' : id === 'sl-wind-quality' ? 'sl-wind-desc' : 'sl-ride-desc';
     const descFn = id === 'sl-size' ? getSizeDesc : id === 'sl-wind-quality' ? getWindDesc : getRideDesc;
     s?.addEventListener('input', () => { el(vid).textContent = s.value; if(el(did)) el(did).textContent = descFn(s.value); });
     if (s && el(did)) el(did).textContent = descFn(s.value);
@@ -3007,8 +3005,6 @@ function initSurfLogForm() {
   // Feedback sliders in modal
   [['fb-size','fb-size-val','fb-size-desc'],['fb-wind-quality','fb-wind-val','fb-wind-desc'],['fb-ride-quality','fb-ride-val','fb-ride-desc']].forEach(([id,vid,did]) => {
     const s = el(id);
-    const vid = id === 'fb-size' ? 'fb-size-val' : id === 'fb-wind-quality' ? 'fb-wind-val' : 'fb-ride-val';
-    const did = id === 'fb-size' ? 'fb-size-desc' : id === 'fb-wind-quality' ? 'fb-wind-desc' : 'fb-ride-desc';
     const descFn = id === 'fb-size' ? getSizeDesc : id === 'fb-wind-quality' ? getWindDesc : getRideDesc;
     s?.addEventListener('input', () => { el(vid).textContent = s.value; if(el(did)) el(did).textContent = descFn(s.value); });
     if (s && el(did)) el(did).textContent = descFn(s.value);
