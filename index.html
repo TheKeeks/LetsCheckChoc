@@ -31,6 +31,11 @@
       </div>
       <div class="header-right">
         <span id="header-update-time" class="header-meta"></span>
+        <div class="auth-bar" id="auth-bar">
+          <span class="auth-user-name" id="auth-user-name" style="display:none;"></span>
+          <button class="auth-btn" id="auth-signin-btn">Sign in with Google</button>
+          <button class="auth-btn auth-btn-out" id="auth-signout-btn" style="display:none;">Sign out</button>
+        </div>
       </div>
     </header>
 
@@ -213,6 +218,13 @@
     <!-- ═══ SURF LOG VIEW ═══ -->
     <div id="view-surflog" style="display:none;">
 
+      <!-- Sign-in prompt (shown when not authenticated with a real account) -->
+      <div id="sl-auth-prompt" class="sl-auth-prompt" style="display:none;">
+        <span class="sl-auth-prompt-text">⚠ Sign in with Google to sync your sessions across devices</span>
+        <button class="sl-btn sl-btn-sm" id="sl-auth-prompt-signin">Sign in</button>
+        <button class="sl-auth-prompt-dismiss" id="sl-auth-prompt-dismiss">Continue without signing in</button>
+      </div>
+
       <!-- Log a session form -->
       <section class="panel" id="panel-surflog-form">
         <h3 class="panel-title">Log a Session</h3>
@@ -225,18 +237,18 @@
           <div class="sl-ratings-row">
             <div class="sl-slider-group">
               <label class="sl-label">Size <span class="sl-slider-val" id="sl-size-val">5</span></label>
-              <input type="range" id="sl-size" class="sl-range" min="1" max="10" value="5">
-              <span class="sl-slider-desc" id="sl-size-desc">Waist</span>
+              <input type="range" id="sl-size" class="sl-range" min="0" max="10" value="5">
+              <span class="sl-slider-desc" id="sl-size-desc"></span>
             </div>
             <div class="sl-slider-group">
               <label class="sl-label">Wind Quality <span class="sl-slider-val" id="sl-wind-val">5</span></label>
-              <input type="range" id="sl-wind-quality" class="sl-range" min="1" max="10" value="5">
-              <span class="sl-slider-desc" id="sl-wind-desc">Choppy but enjoyable</span>
+              <input type="range" id="sl-wind-quality" class="sl-range" min="0" max="10" value="5">
+              <span class="sl-slider-desc" id="sl-wind-desc"></span>
             </div>
             <div class="sl-slider-group">
               <label class="sl-label">Ride Quality <span class="sl-slider-val" id="sl-ride-val">5</span></label>
-              <input type="range" id="sl-ride-quality" class="sl-range" min="1" max="10" value="5">
-              <span class="sl-slider-desc" id="sl-ride-desc">One critical turn</span>
+              <input type="range" id="sl-ride-quality" class="sl-range" min="0" max="10" value="5">
+              <span class="sl-slider-desc" id="sl-ride-desc"></span>
             </div>
           </div>
 
@@ -351,18 +363,18 @@
             <div class="sl-ratings-row">
               <div class="sl-slider-group">
                 <label class="sl-label">Size <span class="sl-slider-val" id="fb-size-val">5</span></label>
-                <input type="range" id="fb-size" class="sl-range" min="1" max="10" value="5">
-                <span class="sl-slider-desc" id="fb-size-desc">Waist</span>
+                <input type="range" id="fb-size" class="sl-range" min="0" max="10" value="5">
+                <span class="sl-slider-desc" id="fb-size-desc"></span>
               </div>
               <div class="sl-slider-group">
                 <label class="sl-label">Wind Quality <span class="sl-slider-val" id="fb-wind-val">5</span></label>
-                <input type="range" id="fb-wind-quality" class="sl-range" min="1" max="10" value="5">
-                <span class="sl-slider-desc" id="fb-wind-desc">Choppy but enjoyable</span>
+                <input type="range" id="fb-wind-quality" class="sl-range" min="0" max="10" value="5">
+                <span class="sl-slider-desc" id="fb-wind-desc"></span>
               </div>
               <div class="sl-slider-group">
                 <label class="sl-label">Ride Quality <span class="sl-slider-val" id="fb-ride-val">5</span></label>
-                <input type="range" id="fb-ride-quality" class="sl-range" min="1" max="10" value="5">
-                <span class="sl-slider-desc" id="fb-ride-desc">One critical turn</span>
+                <input type="range" id="fb-ride-quality" class="sl-range" min="0" max="10" value="5">
+                <span class="sl-slider-desc" id="fb-ride-desc"></span>
               </div>
             </div>
             <textarea id="fb-notes" class="sl-textarea" rows="2" placeholder="Quick notes..."></textarea>
@@ -378,7 +390,14 @@
     </footer>
   </div>
 
+  <!-- Firebase SDK (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="firebase-config.js"></script>
   <script src="app.js"></script>
+  <div id="toast-container" class="toast-container"></div>
 </body>
 </html>

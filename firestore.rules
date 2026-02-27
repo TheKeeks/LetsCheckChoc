@@ -1,0 +1,18 @@
+// Firestore Security Rules
+// Paste these into Firebase Console → Firestore Database → Rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // surf_logs: users can manage their own session entries
+    match /surf_logs/{docId} {
+      allow create, update: if request.auth != null
+                            && request.resource.data.userId == request.auth.uid;
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
+    }
+  }
+}

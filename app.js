@@ -3,6 +3,7 @@
 // Multi-buoy surf forecast dashboard
 // ════════════════════════════════════════════════
 
+
 'use strict';
 
 // ── Surf Log Constants ──────────────────────────────
@@ -104,7 +105,7 @@ function directionArrow(deg) {
   // Meteorological: deg is "from" direction.
   // Arrow points where wind is blowing TO: N wind (0°) → ↓ (southward).
   const arrows = ['↓','↙','←','↖','↑','↗','→','↘'];
-  const idx = Math.round(((deg % 360 + 360) % 360) / 45) % 8;
+  const idx = Math.round((((deg) % 360 + 360) % 360) / 45) % 8;
   return arrows[idx];
 }
 
@@ -2428,14 +2429,85 @@ function buildHourlyTable(marine, wind, lat, lon) {
 }
 
 // ════════════════════════════════════════════════
+// Auth UI & toast notifications
+// ════════════════════════════════════════════════
+
+function showToast(message, type) {
+  var container = el('toast-container');
+  if (!container) return;
+  var toast = document.createElement('div');
+  toast.className = 'toast' + (type ? ' toast-' + type : '');
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(function() {
+    toast.classList.add('toast-fade');
+    setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 450);
+  }, 3500);
+}
+
+function updateAuthUI(user) {
+  var signinBtn = el('auth-signin-btn');
+  var signoutBtn = el('auth-signout-btn');
+  var userName = el('auth-user-name');
+  var authPrompt = el('sl-auth-prompt');
+  if (user && !user.isAnonymous) {
+    if (signinBtn) signinBtn.style.display = 'none';
+    if (signoutBtn) signoutBtn.style.display = '';
+    if (userName) {
+      userName.textContent = user.displayName || user.email || '';
+      userName.style.display = '';
+    }
+    if (authPrompt) authPrompt.style.display = 'none';
+  } else {
+    if (signinBtn) signinBtn.style.display = '';
+    if (signoutBtn) signoutBtn.style.display = 'none';
+    if (userName) userName.style.display = 'none';
+  }
+  updateStorageNote();
+}
+
+async function migrateAnonDataToUser() {
+  var entriesToMigrate = STATE.surfLog ? STATE.surfLog.slice() : [];
+  if (entriesToMigrate.length > 0) {
+    var count = 0;
+    for (var i = 0; i < entriesToMigrate.length; i++) {
+      try {
+        await saveLogEntryToFirebase(entriesToMigrate[i]);
+        count++;
+      } catch(e) {
+        console.warn('Migration failed for entry:', e);
+      }
+    }
+    if (count > 0) {
+      showToast(count + ' session' + (count !== 1 ? 's' : '') + ' synced to your account', 'success');
+    }
+  }
+  try {
+    await loadLogsFromFirebase();
+  } catch(e) {
+    console.warn('Post-migration Firebase load failed:', e);
+  }
+  updateStorageNote();
+}
+
+// ════════════════════════════════════════════════
 // SURF LOG — Storage
 // ════════════════════════════════════════════════
 
-function loadSurfLog() {
+async function loadSurfLog() {
   try {
-    const raw = localStorage.getItem('lcc_surfLog');
-    STATE.surfLog = raw ? JSON.parse(raw) : [];
-  } catch (e) { STATE.surfLog = []; }
+    // Wait for Firebase auth to settle (avoid querying with anonymous UID)
+    if (window._fbAuthReady) {
+      await window._fbAuthReady;
+    }
+    await loadLogsFromFirebase();
+  } catch(e) {
+    console.warn('Firebase load failed, falling back to localStorage:', e);
+    try {
+      const raw = localStorage.getItem('lcc_surfLog');
+      STATE.surfLog = raw ? JSON.parse(raw) : [];
+    } catch (e2) { STATE.surfLog = []; }
+  }
 }
 
 function saveSurfLog() {
@@ -2445,34 +2517,147 @@ function saveSurfLog() {
   } catch (e) { alert('Storage full — try removing photos or exporting.'); }
 }
 
-function addLogEntry(entry) {
+async function addLogEntry(entry) {
   entry.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   STATE.surfLog.unshift(entry);
   saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
+  try {
+    await saveLogEntryToFirebase(entry);
+  } catch(e) {
+    console.warn('Firebase save failed (entry saved locally):', e);
+    showToast('\u26a0 Saved locally \u2014 sync failed', 'warn');
+  }
 }
 
-function updateLogEntry(id, updates) {
+async function updateLogEntry(id, updates) {
   const idx = STATE.surfLog.findIndex(e => e.id === id);
   if (idx < 0) return;
   Object.assign(STATE.surfLog[idx], updates);
   saveSurfLog(); slRetrain(); renderSurfLogTable();
+  try {
+    await saveLogEntryToFirebase(STATE.surfLog[idx]);
+  } catch(e) {
+    console.warn('Firebase save failed (entry saved locally):', e);
+    showToast('\u26a0 Saved locally \u2014 sync failed', 'warn');
+  }
 }
 
-function deleteLogEntry(id) {
+async function deleteLogEntry(id) {
   STATE.surfLog = STATE.surfLog.filter(e => e.id !== id);
+  if (window._fbUserId) {
+    try { await fbFirestore.collection('surf_logs').doc(id).delete(); } catch(e) { console.warn('Firestore delete failed:', e); }
+  }
   saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
 }
 
 function updateStorageNote() {
   const noteEl = el('sl-storage-note');
   if (!noteEl) return;
-  const raw = localStorage.getItem('lcc_surfLog') || '';
-  const kb = (new Blob([raw]).size / 1024).toFixed(0);
-  noteEl.textContent = STATE.surfLog.length + ' entries \u00b7 ' + kb + ' KB';
-  if (new Blob([raw]).size > 4 * 1024 * 1024) {
-    noteEl.textContent += ' (storage nearly full!)';
-    noteEl.style.color = 'var(--red-m)';
+  const count = STATE.surfLog.length;
+  const synced = window._fbUserIsAnon === false;
+  noteEl.textContent = count + ' entries \u00b7 ' + (synced ? '\u2713 Synced to cloud' : '\u26a0 Local only \u2014 sign in to sync');
+  noteEl.classList.toggle('note-synced', synced);
+  noteEl.classList.toggle('note-local', !synced);
+}
+
+// ════════════════════════════════════════════════
+// SURF LOG — Firebase persistence helpers
+// ════════════════════════════════════════════════
+
+function photoUrl(p) {
+  if (!p) return '';
+  if (typeof p === 'string') return p;
+  if (p.url) return p.url;
+  return '';
+}
+
+async function saveLogEntryToFirebase(entry) {
+  if (!window._fbUserId) {
+    await new Promise(function(resolve) {
+      let attempts = 0;
+      const check = setInterval(function() {
+        attempts++;
+        if (window._fbUserId || attempts > 150) { clearInterval(check); resolve(); }
+      }, 100);
+    });
   }
+  if (!window._fbUserId) {
+    throw new Error('Not authenticated — cannot sync to cloud');
+  }
+  const d = new Date(entry.timestamp);
+  const YYYY = d.getFullYear();
+  const MM = String(d.getMonth() + 1).padStart(2, '0');
+  const ts = Date.now();
+  const processedPhotos = [];
+  for (let i = 0; i < (entry.photos || []).length; i++) {
+    const p = entry.photos[i];
+    if (typeof p === 'object' && p.url) {
+      processedPhotos.push(p);
+    } else if (typeof p === 'string' && p.startsWith('http')) {
+      processedPhotos.push({ url: p, path: '' });
+    } else if (typeof p === 'string' && p.startsWith('data:')) {
+      try {
+        const path = 'surf-photos/raw/' + window._fbUserId + '/' + YYYY + '/' + MM + '/' + ts + '_' + i + '.jpg';
+        const ref = fbStorage.ref(path);
+        const file = _slPhotoFiles && _slPhotoFiles[i] ? _slPhotoFiles[i] : null;
+        if (file) {
+          await ref.put(file);
+        } else {
+          const res = await fetch(p);
+          const blob = await res.blob();
+          await ref.put(blob, { contentType: 'image/jpeg' });
+        }
+        const url = await ref.getDownloadURL();
+        processedPhotos.push({ url: url, path: path });
+      } catch (err) {
+        console.warn('Photo upload failed:', err);
+        processedPhotos.push({ url: p, path: '' });
+      }
+    } else {
+      processedPhotos.push({ url: typeof p === 'string' ? p : '', path: '' });
+    }
+  }
+  entry.photos = processedPhotos;
+  await fbFirestore.collection('surf_logs').doc(entry.id).set({
+    id: entry.id,
+    userId: window._fbUserId,
+    timestamp: entry.timestamp,
+    photos: processedPhotos,
+    ratings: entry.ratings,
+    notes: entry.notes || '',
+    conditions: entry.conditions || null,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+async function loadLogsFromFirebase() {
+  if (!window._fbUserId) {
+    await new Promise(function(resolve) {
+      var attempts = 0;
+      var check = setInterval(function() {
+        attempts++;
+        if (window._fbUserId || attempts > 150) { clearInterval(check); resolve(); }
+      }, 100);
+    });
+  }
+  if (!window._fbUserId) throw new Error('Not authenticated');
+
+  // Don't query Firestore with anonymous UID — data is only stored under real user IDs
+  if (window._fbUserIsAnon) {
+    console.log('loadLogsFromFirebase: skipping — user is anonymous');
+    return;
+  }
+
+  const snap = await fbFirestore.collection('surf_logs')
+    .where('userId', '==', window._fbUserId)
+    .orderBy('createdAt', 'desc')
+    .get();
+  STATE.surfLog = snap.docs.map(function(doc) {
+    const d = doc.data();
+    return { id: d.id, timestamp: d.timestamp, photos: d.photos || [], ratings: d.ratings, notes: d.notes || '', conditions: d.conditions || null };
+  });
+  saveSurfLog();
+  slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
 }
 
 // ════════════════════════════════════════════════
@@ -2491,7 +2676,13 @@ function switchTab(tab) {
   const vF = el('view-forecast'), vS = el('view-surflog');
   if (vF) vF.style.display = tab === 'forecast' ? '' : 'none';
   if (vS) vS.style.display = tab === 'surflog' ? '' : 'none';
-  if (tab === 'surflog') { renderSurfLogTable(); renderWeightsPanel(); }
+  if (tab === 'surflog') {
+    renderSurfLogTable(); renderWeightsPanel();
+    const authPrompt = el('sl-auth-prompt');
+    if (authPrompt && window._fbUserIsAnon !== false) {
+      authPrompt.style.display = '';
+    }
+  }
 }
 
 function updateTabBarVisibility() {
@@ -2505,6 +2696,7 @@ function updateTabBarVisibility() {
 // ════════════════════════════════════════════════
 
 let _slPhotos = [];
+let _slPhotoFiles = [];
 
 function resizeImageFile(file, maxW, quality) {
   return new Promise(resolve => {
@@ -2539,10 +2731,46 @@ function renderPhotoGallery() {
     img.onerror = () => { thumb.classList.add('sl-photo-thumb-broken'); img.style.display = 'none'; thumb.textContent = '?'; };
     const rm = document.createElement('button');
     rm.className = 'sl-photo-remove'; rm.textContent = '\u00d7';
-    rm.addEventListener('click', () => { _slPhotos.splice(i, 1); renderPhotoGallery(); });
+    rm.addEventListener('click', () => { _slPhotos.splice(i, 1); _slPhotoFiles.splice(i, 1); renderPhotoGallery(); });
     thumb.append(img, rm);
     gallery.appendChild(thumb);
   });
+}
+
+// ════════════════════════════════════════════════
+// SURF LOG — Slider Descriptions
+// ════════════════════════════════════════════════
+
+function getSizeDesc(val) {
+  const v = parseInt(val);
+  if (v === 0) return 'Flat';
+  if (v === 1) return 'Ankle high';
+  if (v === 2) return 'Knee high';
+  if (v === 3) return 'Knee to thigh';
+  if (v === 4) return 'Waist high';
+  if (v === 5) return 'Waist to chest';
+  if (v === 6) return 'Chest high';
+  if (v === 7) return 'Head high';
+  if (v === 8) return 'Overhead';
+  if (v === 9) return '1.5x OH';
+  return '2X OH';
+}
+
+function getWindDesc(val) {
+  const v = parseInt(val);
+  if (v <= 2) return 'Unmanageable (blown out mess)';
+  if (v <= 4) return 'Choppy';
+  if (v <= 6) return 'Choppy but enjoyable';
+  return 'Glassy to light offshore (clean, perfectly groomed)';
+}
+
+function getRideDesc(val) {
+  const v = parseInt(val);
+  if (v <= 1) return 'Breaking inside out (negative peeling)';
+  if (v <= 3) return 'Go straight (mushy shoulder)';
+  if (v <= 5) return 'One critical turn possible';
+  if (v <= 7) return 'Connecting sections to the beach';
+  return 'Reeling perfect lines to the beach';
 }
 
 // ════════════════════════════════════════════════
@@ -2552,6 +2780,31 @@ function renderPhotoGallery() {
 function fmtDate(d) { return d.toISOString().split('T')[0]; }
 
 function angularDist(a, b) { let d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+
+// Wave group velocity approximation: speed (knots) ≈ SWELL_SPEED_KTS_PER_PERIOD × period (seconds)
+// This is the standard surf forecaster rule (deep-water group velocity ~1.5 × period).
+const SWELL_SPEED_KTS_PER_PERIOD = 1.5;
+
+// Estimate swell travel lag from buoy to Chocomount.
+// Algorithm: average primary swell period in the window [T-5h, T-2h] to represent
+// the swell arriving at session time T; then lag = distance / (SWELL_SPEED_KTS_PER_PERIOD × avgPeriod).
+function getSwellLagHours(marineData, dateStr) {
+  if (!marineData?.hourly?.time) return 0;
+  const times = marineData.hourly.time;
+  const periods = marineData.hourly.swell_wave_period || marineData.hourly.wave_period || [];
+  const T = new Date(dateStr).getTime();
+  const windowStart = T - 5 * 3600000;
+  const windowEnd = T - 2 * 3600000;
+  let sum = 0, count = 0;
+  for (let i = 0; i < times.length; i++) {
+    const t = new Date(times[i]).getTime();
+    if (t >= windowStart && t <= windowEnd && periods[i] > 0) { sum += periods[i]; count++; }
+  }
+  const avgPeriod = count > 0 ? sum / count : 0;
+  if (avgPeriod <= 0) return 0;
+  const speedKts = SWELL_SPEED_KTS_PER_PERIOD * avgPeriod;
+  return CONFIG.chocomount.buoyDistanceMiles / speedKts;
+}
 
 async function fetchHistoricalWind(dateStr) {
   const target = new Date(dateStr);
@@ -2657,18 +2910,10 @@ async function lookupHistoricalConditions(dateStr) {
       if (display) display.innerHTML = '<span class="sl-hint">Historical data not available for this date.</span>';
       return null;
     }
-
-    // Compute swell travel lag: what time was this swell at the buoy?
-    const lagMinutes = estimateSwellLag(marine, dateStr);
-    const lagMs = lagMinutes * 60000;
-    const sessionT = new Date(dateStr).getTime();
-    const buoyTimeStr = new Date(sessionT - lagMs).toISOString();
-
-    // Use lagged time for swell data (reads buoy conditions at the time swell departed)
-    const swellIdx = findNearestHour(marine.hourly.time, buoyTimeStr);
-    // Use session time for wind (wind is local, no lag)
+    const lagHours = getSwellLagHours(marine, dateStr);
+    const laggedDateStr = lagHours > 0 ? new Date(new Date(dateStr).getTime() - lagHours * 3600000).toISOString() : dateStr;
+    const swellIdx = findNearestHour(marine.hourly.time, laggedDateStr);
     const wIdx = findNearestHour(wind.hourly.time, dateStr);
-
     const swH = marine.hourly.swell_wave_height?.[swellIdx] ?? marine.hourly.wave_height?.[swellIdx] ?? 0;
     const swD = marine.hourly.swell_wave_direction?.[swellIdx] ?? marine.hourly.wave_direction?.[swellIdx] ?? 0;
     const swP = marine.hourly.swell_wave_period?.[swellIdx] ?? marine.hourly.wave_period?.[swellIdx] ?? 0;
@@ -2687,10 +2932,12 @@ async function lookupHistoricalConditions(dateStr) {
       blown_water_index: computeBlownWaterIndex(wind, dateStr),
       wind_offshore_score: computeWindOffshoreScore(wDir)
     };
-    if (secH > 0.3) {
-      // Secondary swell also gets lag (may differ slightly but we use same avg lag)
-      conditions.swell.secondary = { height: Math.round(secH*10)/10, direction: Math.round(secD), period: Math.round(secP*10)/10 };
+    if (lagHours > 0) {
+      conditions.swellLagHours = Math.round(lagHours * 10) / 10;
+      conditions.originalLoggedTime = dateStr;
+      conditions.calculatedFromBuoyTime = laggedDateStr;
     }
+    if (secH > 0.3) conditions.swell.secondary = { height: Math.round(secH*10)/10, direction: Math.round(secD), period: Math.round(secP*10)/10 };
     renderConditionsDisplay(conditions);
     return conditions;
   } catch (err) {
@@ -2716,6 +2963,9 @@ function renderConditionsDisplay(cond) {
   h += hl('Offshore Score:', cond.wind_offshore_score.toFixed(2));
   h += hl('Blown Water Idx:', cond.blown_water_index.toFixed(2));
   h += '</div>';
+  if (cond.swellLagHours > 0) {
+    h += `<div class="sl-cond-row"><span class="sl-hint">Using swell from ~${cond.swellLagHours}h ago at buoy (travel time estimate)</span></div>`;
+  }
   display.innerHTML = h;
 }
 
@@ -2748,21 +2998,29 @@ function initSurfLogForm() {
   // Main form sliders
   [['sl-size','sl-size-val','sl-size-desc'],['sl-wind-quality','sl-wind-val','sl-wind-desc'],['sl-ride-quality','sl-ride-val','sl-ride-desc']].forEach(([id,vid,did]) => {
     const s = el(id);
-    s?.addEventListener('input', () => { el(vid).textContent = s.value; updateSliderDesc(id, did, s.value); });
+    const vid = id === 'sl-size' ? 'sl-size-val' : id === 'sl-wind-quality' ? 'sl-wind-val' : 'sl-ride-val';
+    const did = id === 'sl-size' ? 'sl-size-desc' : id === 'sl-wind-quality' ? 'sl-wind-desc' : 'sl-ride-desc';
+    const descFn = id === 'sl-size' ? getSizeDesc : id === 'sl-wind-quality' ? getWindDesc : getRideDesc;
+    s?.addEventListener('input', () => { el(vid).textContent = s.value; if(el(did)) el(did).textContent = descFn(s.value); });
+    if (s && el(did)) el(did).textContent = descFn(s.value);
   });
   // Feedback sliders in modal
   [['fb-size','fb-size-val','fb-size-desc'],['fb-wind-quality','fb-wind-val','fb-wind-desc'],['fb-ride-quality','fb-ride-val','fb-ride-desc']].forEach(([id,vid,did]) => {
     const s = el(id);
-    s?.addEventListener('input', () => { el(vid).textContent = s.value; updateSliderDesc(id, did, s.value); });
+    const vid = id === 'fb-size' ? 'fb-size-val' : id === 'fb-wind-quality' ? 'fb-wind-val' : 'fb-ride-val';
+    const did = id === 'fb-size' ? 'fb-size-desc' : id === 'fb-wind-quality' ? 'fb-wind-desc' : 'fb-ride-desc';
+    const descFn = id === 'fb-size' ? getSizeDesc : id === 'fb-wind-quality' ? getWindDesc : getRideDesc;
+    s?.addEventListener('input', () => { el(vid).textContent = s.value; if(el(did)) el(did).textContent = descFn(s.value); });
+    if (s && el(did)) el(did).textContent = descFn(s.value);
   });
   el('sl-add-url')?.addEventListener('click', () => {
     const input = el('sl-photo-url'), url = (input.value||'').trim();
-    if (url) { _slPhotos.push(url); input.value = ''; renderPhotoGallery(); }
+    if (url) { _slPhotos.push(url); _slPhotoFiles.push(null); input.value = ''; renderPhotoGallery(); }
   });
   el('sl-photo-file')?.addEventListener('change', async e => {
     for (const f of Array.from(e.target.files)) {
       const uri = await resizeImageFile(f, 800, 0.7);
-      if (uri) _slPhotos.push(uri);
+      if (uri) { _slPhotos.push(uri); _slPhotoFiles.push(f); }
     }
     e.target.value = ''; renderPhotoGallery();
   });
@@ -2773,7 +3031,7 @@ function initSurfLogForm() {
     _slConditions = await lookupHistoricalConditions(dt);
     btn.disabled = false; btn.textContent = 'Lookup Historical Conditions';
   });
-  el('sl-save-btn')?.addEventListener('click', () => {
+  el('sl-save-btn')?.addEventListener('click', async () => {
     const dt = el('sl-datetime')?.value;
     if (!dt) { alert('Set a date and time.'); return; }
     const entry = {
@@ -2781,13 +3039,19 @@ function initSurfLogForm() {
       ratings: { size: parseInt(el('sl-size')?.value||'5'), windQuality: parseInt(el('sl-wind-quality')?.value||'5'), rideQuality: parseInt(el('sl-ride-quality')?.value||'5') },
       notes: el('sl-notes')?.value || '', conditions: _slConditions || null
     };
-    if (STATE.surfLogEditId) {
-      updateLogEntry(STATE.surfLogEditId, entry);
-      STATE.surfLogEditId = null;
-      el('sl-cancel-edit-btn').style.display = 'none';
-      el('sl-save-btn').textContent = 'Save Entry';
-    } else { addLogEntry(entry); }
-    resetSurfLogForm();
+    try {
+      if (STATE.surfLogEditId) {
+        await updateLogEntry(STATE.surfLogEditId, entry);
+        STATE.surfLogEditId = null;
+        el('sl-cancel-edit-btn').style.display = 'none';
+        el('sl-save-btn').textContent = 'Save Entry';
+      } else { await addLogEntry(entry); }
+      resetSurfLogForm();
+      showToast('✓ Session saved!', 'success');
+    } catch(e) {
+      console.error('Save entry failed:', e);
+      alert('Entry saved locally but cloud sync failed. It will sync when connection is restored.');
+    }
   });
   el('sl-cancel-edit-btn')?.addEventListener('click', () => {
     STATE.surfLogEditId = null; el('sl-cancel-edit-btn').style.display = 'none';
@@ -2807,13 +3071,15 @@ function resetSurfLogForm() {
   if (el('sl-datetime')) el('sl-datetime').value = now.toISOString().slice(0, 16);
   ['sl-size','sl-wind-quality','sl-ride-quality'].forEach(id => { if(el(id)) el(id).value = 5; });
   ['sl-size-val','sl-wind-val','sl-ride-val'].forEach(id => { if(el(id)) el(id).textContent = '5'; });
-  updateSliderDesc('sl-size','sl-size-desc',5);
-  updateSliderDesc('sl-wind-quality','sl-wind-desc',5);
-  updateSliderDesc('sl-ride-quality','sl-ride-desc',5);
+  if (el('sl-size-desc')) el('sl-size-desc').textContent = getSizeDesc(5);
+  if (el('sl-wind-desc')) el('sl-wind-desc').textContent = getWindDesc(5);
+  if (el('sl-ride-desc')) el('sl-ride-desc').textContent = getRideDesc(5);
   if (el('sl-notes')) el('sl-notes').value = '';
-  _slPhotos = []; _slConditions = null; renderPhotoGallery();
+  _slPhotos = []; _slPhotoFiles = []; _slConditions = null; renderPhotoGallery();
   const d = el('sl-conditions-display');
   if (d) d.innerHTML = '<span class="sl-hint">Click "Lookup" to auto-fill from historical data</span>';
+  const formEl = el('panel-surflog-form');
+  if (formEl) formEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function editLogEntry(id) {
@@ -2823,11 +3089,11 @@ function editLogEntry(id) {
   el('sl-cancel-edit-btn').style.display = '';
   el('sl-save-btn').textContent = 'Update Entry';
   if (el('sl-datetime')) el('sl-datetime').value = e.timestamp;
-  if (el('sl-size')) { el('sl-size').value = e.ratings.size; el('sl-size-val').textContent = e.ratings.size; updateSliderDesc('sl-size','sl-size-desc',e.ratings.size); }
-  if (el('sl-wind-quality')) { el('sl-wind-quality').value = e.ratings.windQuality; el('sl-wind-val').textContent = e.ratings.windQuality; updateSliderDesc('sl-wind-quality','sl-wind-desc',e.ratings.windQuality); }
-  if (el('sl-ride-quality')) { el('sl-ride-quality').value = e.ratings.rideQuality; el('sl-ride-val').textContent = e.ratings.rideQuality; updateSliderDesc('sl-ride-quality','sl-ride-desc',e.ratings.rideQuality); }
+  if (el('sl-size')) { el('sl-size').value = e.ratings.size; el('sl-size-val').textContent = e.ratings.size; if(el('sl-size-desc')) el('sl-size-desc').textContent = getSizeDesc(e.ratings.size); }
+  if (el('sl-wind-quality')) { el('sl-wind-quality').value = e.ratings.windQuality; el('sl-wind-val').textContent = e.ratings.windQuality; if(el('sl-wind-desc')) el('sl-wind-desc').textContent = getWindDesc(e.ratings.windQuality); }
+  if (el('sl-ride-quality')) { el('sl-ride-quality').value = e.ratings.rideQuality; el('sl-ride-val').textContent = e.ratings.rideQuality; if(el('sl-ride-desc')) el('sl-ride-desc').textContent = getRideDesc(e.ratings.rideQuality); }
   if (el('sl-notes')) el('sl-notes').value = e.notes || '';
-  _slPhotos = [...(e.photos||[])]; _slConditions = e.conditions || null;
+  _slPhotos = (e.photos||[]).map(p => photoUrl(p) || p).filter(Boolean); _slPhotoFiles = new Array(_slPhotos.length).fill(null); _slConditions = e.conditions || null;
   renderPhotoGallery();
   if (_slConditions) renderConditionsDisplay(_slConditions);
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2860,16 +3126,20 @@ function exportCSV() {
 function importJSON(ev) {
   const file = ev.target.files[0]; if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     try {
       const data = JSON.parse(e.target.result);
       if (!Array.isArray(data)) throw new Error('Not an array');
       let imported = 0;
-      data.forEach(entry => {
-        if (!entry.timestamp || !entry.ratings) return;
+      for (const entry of data) {
+        if (!entry.timestamp || !entry.ratings) continue;
         if (!entry.id) entry.id = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
-        if (!STATE.surfLog.find(x => x.id === entry.id)) { STATE.surfLog.push(entry); imported++; }
-      });
+        if (!STATE.surfLog.find(x => x.id === entry.id)) {
+          STATE.surfLog.push(entry);
+          await saveLogEntryToFirebase(entry);
+          imported++;
+        }
+      }
       STATE.surfLog.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
       saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
       alert('Imported ' + imported + ' entries.');
@@ -2916,7 +3186,7 @@ function renderSurfLogTable() {
     const avg = ((entry.ratings.size+entry.ratings.windQuality+entry.ratings.rideQuality)/3).toFixed(1);
     const photos = (entry.photos||[]).slice(0,3);
     const photoHtml = photos.length > 0
-      ? '<div class="sl-row-photos">'+photos.map(p=>'<img src="'+p+'" alt="" onerror="this.style.display=\'none\'">').join('')+'</div>'
+      ? '<div class="sl-row-photos">'+photos.map(p=>'<img src="'+photoUrl(p)+'" alt="" onerror="this.style.display=\'none\'">').join('')+'</div>'
       : '<span style="color:var(--ink4)">\u2014</span>';
     const notes = (entry.notes||'').slice(0,30) + ((entry.notes||'').length>30?'...':'');
     tr.innerHTML = '<td style="white-space:nowrap">'+dateStr+'<br><span style="color:var(--ink4);font-size:0.65rem">'+timeStr+'</span></td>'
@@ -3172,7 +3442,7 @@ function renderPersonalMatchCards() {
   let h = '<div class="pm-cards-row">';
   matches.slice(0,7).forEach(m => {
     const dl = new Date(m.day).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-    const thumb = m.entry.photos?.[0] || '';
+    const thumb = m.entry.photos?.[0] ? photoUrl(m.entry.photos[0]) : '';
     const imgH = thumb ? '<img class="pm-card-img" src="'+thumb+'" alt="" onerror="this.style.display=\'none\'">' : '<div class="pm-card-img" style="display:flex;align-items:center;justify-content:center;color:var(--ink4);font-family:var(--mono);font-size:0.7rem">No photo</div>';
     const waveLine = '<span class="pm-score-wave">Wave: '+(m.waveRating?m.waveRating.toFixed(1):'--')+'</span>';
     const condLine = '<span class="pm-score-cond">Cond: '+(m.condRating?m.condRating.toFixed(1):'--')+'</span>';
@@ -3218,7 +3488,7 @@ function updateModalCarousel(photos, idx) {
   const img=el('modal-carousel-img'), dots=el('modal-carousel-dots'), prev=el('modal-carousel-prev'), next=el('modal-carousel-next');
   if (!img) return;
   if (!photos.length) { img.src=''; prev.style.display='none'; next.style.display='none'; dots.innerHTML=''; return; }
-  img.src = photos[idx];
+  img.src = photoUrl(photos[idx]);
   prev.style.display = photos.length>1?'':'none';
   next.style.display = photos.length>1?'':'none';
   dots.innerHTML = photos.map((_,i)=>'<span class="dot'+(i===idx?' active':'')+'"></span>').join('');
@@ -3235,12 +3505,17 @@ function initMatchModal() {
     if(!STATE.matchModalData) return; const p=STATE.matchModalData.entry.photos||[];
     STATE.matchModalPhotoIdx=(STATE.matchModalPhotoIdx+1)%p.length; updateModalCarousel(p,STATE.matchModalPhotoIdx);
   });
-  el('fb-save-btn')?.addEventListener('click', () => {
+  el('fb-save-btn')?.addEventListener('click', async () => {
     if(!STATE.matchModalData) return;
     const fc = buildForecastConditions(STATE._cachedMarine,STATE._cachedWind,STATE._cachedTideHiLo,STATE.matchModalData.forecastHourIdx);
-    addLogEntry({ timestamp: new Date().toISOString().slice(0,16), photos:[], ratings:{size:parseInt(el('fb-size')?.value||'5'),windQuality:parseInt(el('fb-wind-quality')?.value||'5'),rideQuality:parseInt(el('fb-ride-quality')?.value||'5')}, notes:el('fb-notes')?.value||'', conditions:fc });
-    el('match-modal').style.display='none'; STATE.matchModalData=null; el('fb-notes').value='';
-    alert('Session logged! Model improving.');
+    try {
+      await addLogEntry({ timestamp: new Date().toISOString().slice(0,16), photos:[], ratings:{size:parseInt(el('fb-size')?.value||'5'),windQuality:parseInt(el('fb-wind-quality')?.value||'5'),rideQuality:parseInt(el('fb-ride-quality')?.value||'5')}, notes:el('fb-notes')?.value||'', conditions:fc });
+      el('match-modal').style.display='none'; STATE.matchModalData=null; el('fb-notes').value='';
+      alert('Session logged! Model improving.');
+    } catch(e) {
+      console.error('Save feedback entry failed:', e);
+      alert('Entry saved locally but cloud sync failed. It will sync when connection is restored.');
+    }
   });
 }
 
@@ -3269,12 +3544,27 @@ async function initApp() {
   initAdvancedToggle();
 
   // Wire surf log
-  loadSurfLog();
+  await loadSurfLog();
   initTabBar();
   initSurfLogForm();
   initPersonalMatchToggle();
   initMatchModal();
   slRetrain();
+
+  // Wire auth buttons
+  el('auth-signin-btn')?.addEventListener('click', function() {
+    if (typeof signInWithGoogle === 'function') signInWithGoogle();
+  });
+  el('auth-signout-btn')?.addEventListener('click', function() {
+    if (typeof signOutUser === 'function') signOutUser();
+  });
+  el('sl-auth-prompt-signin')?.addEventListener('click', function() {
+    if (typeof signInWithGoogle === 'function') signInWithGoogle();
+  });
+  el('sl-auth-prompt-dismiss')?.addEventListener('click', function() {
+    const authPrompt = el('sl-auth-prompt');
+    if (authPrompt) authPrompt.style.display = 'none';
+  });
 
   // Default: if gate passed (not by boat), load Chocomount
   if (STATE.boatGatePassed) {
