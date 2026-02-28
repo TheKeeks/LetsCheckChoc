@@ -406,11 +406,16 @@ function initGate() {
   }
 
   el('gate-yes').addEventListener('click', () => {
-    sessionStorage.setItem('lcc-gate', 'yes');
-    STATE.boatGatePassed = false;
-    el('gate-overlay').classList.add('hidden');
-    el('app').classList.remove('hidden');
-    initApp();
+    el('gate-question').classList.add('hidden');
+    // Replace go-home element with a fresh clone to re-trigger the CSS animation
+    const goHome = el('gate-go-home');
+    const clone = goHome.cloneNode(true);
+    clone.classList.remove('hidden');
+    goHome.replaceWith(clone);
+    setTimeout(() => {
+      el('gate-go-home').classList.add('hidden');
+      el('gate-question').classList.remove('hidden');
+    }, 2000);
   });
 
   el('gate-no').addEventListener('click', () => {
