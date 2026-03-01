@@ -3229,11 +3229,20 @@ function toggleEntryDetail(entry, tr) {
 // SURF LOG — Linear Regression (Normal Equation)
 // ════════════════════════════════════════════════
 
-// Wave Score features (target: avg of size + rideQuality)
+// Wave Score features (target: 0.75×size + 0.25×rideQuality)
+// Primary swell direction encoded as two window-relative features instead of raw sin/cos:
+//   swell_dir_alignment  — 1.0 at window center (136.5°), 0.0 at edges & outside [0,1]
+//   swell_dir_outside_deg — degrees beyond the nearer window edge, capped at 45° [0,45]
+// Together these let the regression reveal whether the window acts as a hard gate,
+// a gradual ramp, or both, and the outside_deg coefficient directly answers
+// "how many degrees outside the window before a drastic score drop?"
+// Secondary swell direction simplified to a binary in-window flag (substitutes for
+// primary only when primary fails the window test — can't fully model that interaction
+// in a linear model, but this is the best single-feature approximation).
 // blown_water_index disabled for now — kept in code for future use
 const WAVE_FEATURE_NAMES = [
-  'swell_height','swell_period','swell_dir_sin','swell_dir_cos',
-  'sec_swell_height','sec_swell_period','sec_dir_sin','sec_dir_cos',
+  'swell_height','swell_period','swell_dir_alignment','swell_dir_outside_deg',
+  'sec_swell_height','sec_swell_period','sec_dir_in_window',
   'tide_height','tide_stage'
   // ,'blown_water_index'  // available but disabled
 ];
@@ -3249,11 +3258,27 @@ function extractWaveFeatures(cond) {
   const s = cond.swell, t = cond.tide||{height:0,stage:'rising'};
   const sec = s.secondary||{height:0,direction:0,period:0};
   const ts = t.stage === 'rising' ? 1 : -1;
+
+  // Swell window constants (Chocomount: 115°–158°, center 136.5°, half-width 21.5°)
+  const WIN_MIN = CONFIG.chocomount.swellWindowMin;          // 115
+  const WIN_MAX = CONFIG.chocomount.swellWindowMax;          // 158
+  const WIN_CENTER = (WIN_MIN + WIN_MAX) / 2;                // 136.5
+  const WIN_HALF   = (WIN_MAX - WIN_MIN) / 2;                // 21.5
+
+  const dir = s.direction || 0;
+  // Linear alignment score: 1 at window center, 0 at edges and outside
+  const dirAlignment  = Math.max(0, 1 - Math.abs(dir - WIN_CENTER) / WIN_HALF);
+  // Degrees outside the nearer window edge; 0 if in-window, capped at 45°
+  const dirOutside    = Math.min(45, Math.max(0, WIN_MIN - dir, dir - WIN_MAX));
+
+  const secDir = sec.direction || 0;
+  const secInWindow = (secDir >= WIN_MIN && secDir <= WIN_MAX) ? 1 : 0;
+
   return [
     s.height||0, s.period||0,
-    Math.sin(degToRad(s.direction||0)), Math.cos(degToRad(s.direction||0)),
+    dirAlignment, dirOutside,
     sec.height||0, sec.period||0,
-    Math.sin(degToRad(sec.direction||0)), Math.cos(degToRad(sec.direction||0)),
+    secInWindow,
     t.height||0, ts
     // , cond.blown_water_index||0  // disabled
   ];
@@ -3301,8 +3326,10 @@ function trainModel(entries, featureExtractor, targetFn) {
 
 function slRetrain() {
   const entries = STATE.surfLog.filter(e => e.conditions?.swell);
-  // Wave model: target = (size + rideQuality) / 2
-  const wave = trainModel(entries, extractWaveFeatures, e => (e.ratings.size + e.ratings.rideQuality) / 2);
+  // Wave model: target = 0.75×size + 0.25×rideQuality
+  // Weighted toward size (physical swell energy reaching beach) while retaining
+  // ride quality's contribution (directional fit to beach shape, tide interaction).
+  const wave = trainModel(entries, extractWaveFeatures, e => 0.75 * e.ratings.size + 0.25 * e.ratings.rideQuality);
   STATE.surfLogWaveWeights = wave?.weights || null;
   STATE.surfLogWaveStats = wave?.stats || null;
   // Conditions model: target = windQuality
