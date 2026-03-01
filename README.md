@@ -65,9 +65,9 @@ All data is fetched browser-side (no server needed) except the ndbc fallback pip
 
 The app shows a "Are you coming by boat today?" prompt on first visit.
 - "No" → full access including Chocomount star on the map
-- "Yes" → Chocomount is hidden, user sees the generic multi-buoy app
+- "Yes" → "Go Home" message is displayed (beach access is for land visitors)
 
-This is stored in a session cookie (resets when browser closes).
+The answer is stored in sessionStorage (resets when the browser tab is closed).
 
 ## Customization
 
