@@ -1,16 +1,16 @@
 {
-  "fetch_time": "2026-03-01T05:31:35.188991+00:00",
+  "fetch_time": "2026-03-01T07:04:08.967940+00:00",
   "buoy_id": "44097",
   "buoy_name": "Block Island, RI",
   "buoy_lat": 40.969,
   "buoy_lon": -71.124,
   "buoy": {
-    "time": "2026-03-01 04:56 UTC",
-    "wave_height": 2.62,
+    "time": "2026-03-01 06:26 UTC",
+    "wave_height": 2.3,
     "dominant_period": 8.0,
     "average_period": 5.6,
-    "mean_wave_direction": 162.0,
-    "water_temp": 36.9,
+    "mean_wave_direction": 148.0,
+    "water_temp": 36.5,
     "wind_speed": null,
     "wind_direction": null,
     "wind_gust": null,
@@ -18,8 +18,8 @@
     "air_temp": null
   },
   "spectral_summary": {
-    "significant_wave_height_m": 0.8,
-    "swell_height_m": 0.1,
+    "significant_wave_height_m": 0.7,
+    "swell_height_m": 0.2,
     "swell_period": 10.5,
     "swell_direction": 0.7,
     "wind_wave_height_m": 7.7,
