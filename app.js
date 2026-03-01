@@ -2825,14 +2825,16 @@ async function fetchHistoricalWind(dateStr) {
 
 async function fetchHistoricalMarine(dateStr) {
   const target = new Date(dateStr);
+  const dayBefore = new Date(target); dayBefore.setDate(dayBefore.getDate() - 1);
   const diffDays = (Date.now() - target.getTime()) / 86400000;
   const vars = 'wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_direction,swell_wave_period,secondary_swell_wave_height,secondary_swell_wave_direction,secondary_swell_wave_period';
   if (diffDays <= 5) {
     const p = new URLSearchParams({ latitude: CONFIG.chocomount.forecastLat, longitude: CONFIG.chocomount.forecastLon, hourly: vars, length_unit: 'imperial', timezone: 'auto', past_days: 7, forecast_days: 1 });
     return fetchJSON(CONFIG.api.openMeteoMarine + '?' + p);
   }
-  const d = fmtDate(target);
-  const p = new URLSearchParams({ latitude: CONFIG.chocomount.forecastLat, longitude: CONFIG.chocomount.forecastLon, hourly: vars, length_unit: 'imperial', timezone: 'auto', start_date: d, end_date: d });
+  // Fetch day-before through target (matching wind fetch) so the swell lag window
+  // [T-5h, T-2h] has data even for early-morning sessions.
+  const p = new URLSearchParams({ latitude: CONFIG.chocomount.forecastLat, longitude: CONFIG.chocomount.forecastLon, hourly: vars, length_unit: 'imperial', timezone: 'auto', start_date: fmtDate(dayBefore), end_date: fmtDate(target) });
   return fetchJSON(CONFIG.api.openMeteoMarine + '?' + p);
 }
 
@@ -2919,9 +2921,15 @@ async function lookupHistoricalConditions(dateStr) {
     const laggedDateStr = lagHours > 0 ? new Date(new Date(dateStr).getTime() - lagHours * 3600000).toISOString() : dateStr;
     const swellIdx = findNearestHour(marine.hourly.time, laggedDateStr);
     const wIdx = findNearestHour(wind.hourly.time, dateStr);
-    const swH = marine.hourly.swell_wave_height?.[swellIdx] ?? marine.hourly.wave_height?.[swellIdx] ?? 0;
-    const swD = marine.hourly.swell_wave_direction?.[swellIdx] ?? marine.hourly.wave_direction?.[swellIdx] ?? 0;
-    const swP = marine.hourly.swell_wave_period?.[swellIdx] ?? marine.hourly.wave_period?.[swellIdx] ?? 0;
+    const swH = marine.hourly.swell_wave_height?.[swellIdx] ?? marine.hourly.wave_height?.[swellIdx] ?? null;
+    const swD = marine.hourly.swell_wave_direction?.[swellIdx] ?? marine.hourly.wave_direction?.[swellIdx] ?? null;
+    const swP = marine.hourly.swell_wave_period?.[swellIdx] ?? marine.hourly.wave_period?.[swellIdx] ?? null;
+    // If the marine model returned no wave data for this date (all nulls), surface a clear
+    // message rather than silently storing 0ft / North / 0s as if it were real data.
+    if (swH === null && swP === null) {
+      if (display) display.innerHTML = '<span class="sl-hint">Wave model data is unavailable for this date. You can enter conditions manually below.</span>';
+      return null;
+    }
     const secH = marine.hourly.secondary_swell_wave_height?.[swellIdx] ?? 0;
     const secD = marine.hourly.secondary_swell_wave_direction?.[swellIdx] ?? 0;
     const secP = marine.hourly.secondary_swell_wave_period?.[swellIdx] ?? 0;
@@ -2930,7 +2938,7 @@ async function lookupHistoricalConditions(dateStr) {
     const tideInfo = parseTideAtTime(tide, dateStr);
 
     const conditions = {
-      swell: { height: Math.round(swH*10)/10, direction: Math.round(swD), period: Math.round(swP*10)/10, lagHours: lagHours },
+      swell: { height: Math.round((swH??0)*10)/10, direction: Math.round(swD??0), period: Math.round((swP??0)*10)/10, lagHours: lagHours },
       wind: { speed: Math.round(wSpd), direction: Math.round(wDir) },
       tide: { height: Math.round(tideInfo.height*10)/10, stage: tideInfo.stage, timeToNearest: tideInfo.timeToNearest },
       blown_water_index: computeBlownWaterIndex(wind, dateStr),
