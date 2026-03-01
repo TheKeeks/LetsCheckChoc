@@ -577,6 +577,94 @@ async function fetchNDBCSpectral(buoyId) {
   return { spec, dataSpec, swdir, swdir2, swr1, swr2 };
 }
 
+// ── NDBC historical archive (gzip) ───────────────
+// Fetches a gzip-compressed URL through the CORS proxy and returns decompressed
+// plain text. Uses the native DecompressionStream API (Chrome 80+, Firefox 113+,
+// Safari 16.4+) — no external library required.
+async function fetchAndDecompressGz(url, timeout = 30000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const resp = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const ds = new DecompressionStream('gzip');
+    const reader = resp.body.pipeThrough(ds).getReader();
+    const chunks = [];
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    const total = chunks.reduce((n, c) => n + c.length, 0);
+    const buf = new Uint8Array(total);
+    let off = 0;
+    for (const c of chunks) { buf.set(c, off); off += c.length; }
+    return new TextDecoder().decode(buf);
+  } catch (err) {
+    clearTimeout(timer);
+    console.warn('fetchAndDecompressGz failed:', url, err.message);
+    return null;
+  }
+}
+
+// Fetch the annual NDBC historical stdmet archive for buoy 44097, find the row
+// nearest to the target UTC date+hour, and return wave data in display units.
+// NDBC stdmet columns: #YY MM DD hh mm WDIR WSPD GST WVHT DPD APD MWD ...
+// WVHT = total significant wave height (m), DPD = dominant period (s),
+// MWD = mean wave direction (°). These are total-wave parameters (not
+// swell-decomposed). Returned waveHeight is in feet; period in seconds.
+async function fetchNDBCHistoricalForDate(dateStr) {
+  const d    = new Date(dateStr);
+  const year = d.getUTCFullYear();
+  const archiveUrl = 'https://www.ndbc.noaa.gov/download_data.php?filename=' +
+    CONFIG.chocomount.buoyId + 'h' + year + '.txt.gz&dir=data/historical/stdmet/';
+  const text = await fetchAndDecompressGz(CONFIG.api.ndbcProxy + encodeURIComponent(archiveUrl));
+  if (!text) return null;
+
+  const lines = text.split('\n');
+  // Parse header once to get column positions (robust to any column reordering).
+  const headers = lines[0].replace('#', '').trim().split(/\s+/);
+  const iYY   = headers.findIndex(h => h === 'YY');
+  const iMM   = headers.indexOf('MM');
+  const iDD   = headers.indexOf('DD');
+  const iHH   = headers.indexOf('hh');
+  const iWVHT = headers.indexOf('WVHT');
+  const iDPD  = headers.indexOf('DPD');
+  const iMWD  = headers.indexOf('MWD');
+  if ([iYY, iMM, iDD, iHH, iWVHT, iDPD].some(i => i < 0)) return null;
+
+  const targetMs = d.getTime();
+  let bestCols = null, bestDelta = Infinity;
+  for (let i = 2; i < lines.length; i++) {
+    const cols = lines[i].trim().split(/\s+/);
+    if (cols.length < 10) continue;
+    const rowMs = Date.UTC(
+      parseInt(cols[iYY], 10), parseInt(cols[iMM], 10) - 1,
+      parseInt(cols[iDD], 10), parseInt(cols[iHH], 10), 0, 0
+    );
+    if (isNaN(rowMs)) continue;
+    const delta = Math.abs(rowMs - targetMs);
+    if (delta < bestDelta) { bestDelta = delta; bestCols = cols; }
+    // File is chronological — stop scanning once we've passed the target by >30 min.
+    if (rowMs > targetMs + 1800000) break;
+  }
+  if (!bestCols) return null;
+
+  const raw = (i) => bestCols[i];
+  const wvht = raw(iWVHT) === 'MM' ? NaN : parseFloat(raw(iWVHT));
+  const dpd  = raw(iDPD)  === 'MM' ? NaN : parseFloat(raw(iDPD));
+  const mwd  = (iMWD >= 0 && raw(iMWD) !== 'MM') ? parseFloat(raw(iMWD)) : NaN;
+  if (isNaN(wvht) || wvht >= 99) return null;
+  if (isNaN(dpd)  || dpd  >= 99) return null;
+
+  return {
+    waveHeight: Math.round(wvht * 3.28084 * 10) / 10,
+    period:     Math.round(dpd  * 10) / 10,
+    direction:  isNaN(mwd) || mwd >= 999 ? 0 : Math.round(mwd)
+  };
+}
+
 // ── API: NWS wind (Chocomount) ───────────────────
 async function fetchNWSWind(lat, lon) {
   const meta = await fetchJSON(`${CONFIG.api.nws}${lat.toFixed(4)},${lon.toFixed(4)}`);
@@ -2924,18 +3012,32 @@ async function lookupHistoricalConditions(dateStr) {
     const swH = marine.hourly.swell_wave_height?.[swellIdx] ?? marine.hourly.wave_height?.[swellIdx] ?? null;
     const swD = marine.hourly.swell_wave_direction?.[swellIdx] ?? marine.hourly.wave_direction?.[swellIdx] ?? null;
     const swP = marine.hourly.swell_wave_period?.[swellIdx] ?? marine.hourly.wave_period?.[swellIdx] ?? null;
-    // If the marine model returned no wave data for this date (all nulls), surface a clear
-    // message rather than silently storing 0ft / North / 0s as if it were real data.
+    // Hoist wind + tide: needed by both the normal path and the NDBC fallback below.
+    const wSpd     = wind.hourly.wind_speed_10m?.[wIdx]     ?? 0;
+    const wDir     = wind.hourly.wind_direction_10m?.[wIdx] ?? 0;
+    const tideInfo = parseTideAtTime(tide, dateStr);
+    // If the marine model returned no wave data for this date (Open-Meteo archive gap),
+    // fall back to the NDBC buoy 44097 annual historical stdmet archive.
     if (swH === null && swP === null) {
-      if (display) display.innerHTML = '<span class="sl-hint">Wave model data is unavailable for this date. You can enter conditions manually below.</span>';
+      if (display) display.innerHTML = '<span class="sl-hint">Trying NDBC buoy archive...</span>';
+      const ndbc = await fetchNDBCHistoricalForDate(dateStr);
+      if (ndbc) {
+        const conditions = {
+          swell: { height: ndbc.waveHeight, direction: ndbc.direction, period: ndbc.period, lagHours: 0, source: 'NDBC 44097 buoy archive' },
+          wind:  { speed: Math.round(wSpd), direction: Math.round(wDir) },
+          tide:  { height: Math.round(tideInfo.height*10)/10, stage: tideInfo.stage, timeToNearest: tideInfo.timeToNearest },
+          blown_water_index: computeBlownWaterIndex(wind, dateStr),
+          wind_offshore_score: computeWindOffshoreScore(wDir)
+        };
+        renderConditionsDisplay(conditions);
+        return conditions;
+      }
+      if (display) display.innerHTML = '<span class="sl-hint">Wave data unavailable for this date. You can enter conditions manually below.</span>';
       return null;
     }
     const secH = marine.hourly.secondary_swell_wave_height?.[swellIdx] ?? 0;
     const secD = marine.hourly.secondary_swell_wave_direction?.[swellIdx] ?? 0;
     const secP = marine.hourly.secondary_swell_wave_period?.[swellIdx] ?? 0;
-    const wSpd = wind.hourly.wind_speed_10m?.[wIdx] ?? 0;
-    const wDir = wind.hourly.wind_direction_10m?.[wIdx] ?? 0;
-    const tideInfo = parseTideAtTime(tide, dateStr);
 
     const conditions = {
       swell: { height: Math.round((swH??0)*10)/10, direction: Math.round(swD??0), period: Math.round((swP??0)*10)/10, lagHours: lagHours },
@@ -2965,8 +3067,9 @@ function renderConditionsDisplay(cond) {
   const dl = (l,v) => '<span class="sl-cond-label">'+l+'</span> <span class="sl-cond-val">'+v+'</span>';
   const hl = (l,v) => '<span class="sl-cond-label">'+l+'</span> <span class="sl-cond-highlight">'+v+'</span>';
   const lagNote = cond.swell.lagHours ? ' ('+cond.swell.lagHours+'h buoy lag)' : '';
+  const srcNote = cond.swell.source ? ' \u00b7 '+cond.swell.source : '';
   let h = '<div class="sl-cond-row">';
-  h += dl('Swell'+lagNote+':', cond.swell.height+'ft '+cond.swell.period+'s '+directionLabel(cond.swell.direction)+' ('+cond.swell.direction+'\u00b0)');
+  h += dl('Swell'+lagNote+srcNote+':', cond.swell.height+'ft '+cond.swell.period+'s '+directionLabel(cond.swell.direction)+' ('+cond.swell.direction+'\u00b0)');
   if (cond.swell.secondary) h += dl('2nd:', cond.swell.secondary.height+'ft '+(cond.swell.secondary.period||'')+'s '+directionLabel(cond.swell.secondary.direction));
   h += '</div><div class="sl-cond-row">';
   h += dl('Wind:', cond.wind.speed+' mph '+directionLabel(cond.wind.direction)+' ('+cond.wind.direction+'\u00b0)');
@@ -2977,6 +3080,9 @@ function renderConditionsDisplay(cond) {
   h += '</div>';
   if (cond.swellLagHours > 0) {
     h += `<div class="sl-cond-row"><span class="sl-hint">Using swell from ~${cond.swellLagHours}h ago at buoy (travel time estimate)</span></div>`;
+  }
+  if (cond.swell.source) {
+    h += `<div class="sl-cond-row"><span class="sl-hint">Total wave height (not swell-decomposed) \u2014 slightly higher than swell-only values used by other sessions</span></div>`;
   }
   display.innerHTML = h;
 }
