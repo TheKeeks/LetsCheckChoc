@@ -2929,7 +2929,6 @@ async function lookupHistoricalConditions(dateStr) {
     const wDir = wind.hourly.wind_direction_10m?.[wIdx] ?? 0;
     const tideInfo = parseTideAtTime(tide, dateStr);
 
-    const lagHours = Math.round(lagMinutes / 60 * 10) / 10;
     const conditions = {
       swell: { height: Math.round(swH*10)/10, direction: Math.round(swD), period: Math.round(swP*10)/10, lagHours: lagHours },
       wind: { speed: Math.round(wSpd), direction: Math.round(wDir) },
