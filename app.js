@@ -938,7 +938,7 @@ async function loadAllData(buoy) {
   }
 
   // ── Current conditions cards ──
-  updateSwellCard(buoyParsed, marine, buoy);
+  updateSwellCard(buoyParsed, marine, buoy, pipelineData?.spectral_summary);
   updateWindCard(wind, buoyParsed, isChoc, displayLat, displayLon);
   updateWaterTempCard(buoyParsed, marine, isChoc);
   updateDaylightCard(displayLat, displayLon);
@@ -1126,27 +1126,37 @@ async function loadPinData(lat, lon) {
 // UPDATE CONDITION CARDS
 // ════════════════════════════════════════════════
 
-function updateSwellCard(buoyParsed, marine, buoy) {
+function updateSwellCard(buoyParsed, marine, buoy, spectralSummary) {
   const isChoc = STATE.isChocomount;
   const card = el('card-swell');
   card.classList.remove('quality-good', 'quality-fair', 'quality-poor');
 
   // Prefer buoy data for current swell
   if (buoyParsed && buoyParsed.waveHeight != null) {
-    const h = buoyParsed.waveHeight;
-    const p = buoyParsed.dominantPeriod;
+    const totalH = buoyParsed.waveHeight;  // WVHT total (ft) — swell + wind waves
     const d = buoyParsed.meanDirection;
-    // Add card border accent based on wave height
-    if (h >= 3) card.classList.add('quality-good');
-    else if (h >= 1.5) card.classList.add('quality-fair');
+
+    // Use spectral swell-only height when available (consistent with ML model variable)
+    const specSwellM = spectralSummary?.swell_height_m;
+    const swellFt = (specSwellM != null && specSwellM < 90)
+      ? Math.round(specSwellM * 3.28084 * 10) / 10 : null;
+    const displayP = (swellFt != null && spectralSummary?.swell_period != null)
+      ? spectralSummary.swell_period : buoyParsed.dominantPeriod;
+
+    // Card accent based on total wave height
+    if (totalH >= 3) card.classList.add('quality-good');
+    else if (totalH >= 1.5) card.classList.add('quality-fair');
     else card.classList.add('quality-poor');
-    el('val-swell-height').textContent = `${h.toFixed(1)} ft`;
+
+    el('val-swell-height').textContent = swellFt != null
+      ? `${swellFt.toFixed(1)} ft swell`
+      : `${totalH.toFixed(1)} ft`;
     el('val-swell-height').className = `condition-value ${swellDirClass(d)}`;
-    el('val-swell-detail').textContent = `${p ? p.toFixed(0) + 's' : '—'} · ${directionLabel(d)} (${d != null ? d + '°' : '—'})`;
+    el('val-swell-detail').textContent = `${displayP ? displayP.toFixed(0) + 's' : '—'} · ${directionLabel(d)} (${d != null ? d + '°' : '—'})${swellFt != null ? ' · ' + totalH.toFixed(1) + ' ft total' : ''}`;
 
     // Swell arrival estimator (Chocomount only)
-    if (isChoc && p) {
-      const arrival = swellArrivalTime(p, CONFIG.chocomount.buoyDistanceMiles);
+    if (isChoc && displayP) {
+      const arrival = swellArrivalTime(displayP, CONFIG.chocomount.buoyDistanceMiles);
       if (arrival) {
         el('val-swell-arrival').style.display = '';
         el('val-swell-arrival').textContent = `Swell arriving from ~${CONFIG.chocomount.buoyDistanceMiles} miles away: ${arrival.label}`;
@@ -1160,11 +1170,11 @@ function updateSwellCard(buoyParsed, marine, buoy) {
     setFooter('footer-swell', buoyLabel, buoyUrl, 'ndbc station page');
 
   } else if (marine && marine.current) {
-    // Fallback to Open-Meteo current
+    // Fallback to Open-Meteo current — use swell-only variables for consistency with ML model
     const c = marine.current;
-    const h = c.wave_height;
-    const p = c.wave_period;
-    const d = c.wave_direction;
+    const h = c.swell_wave_height ?? c.wave_height;
+    const p = c.swell_wave_period ?? c.wave_period;
+    const d = c.swell_wave_direction ?? c.wave_direction;
     el('val-swell-height').textContent = h != null ? `${h.toFixed(1)} ft` : '—';
     el('val-swell-height').className = 'condition-value';
     el('val-swell-detail').textContent = `${p ? p.toFixed(0) + 's' : '—'} · ${directionLabel(d)}`;
@@ -1527,7 +1537,7 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
   const plotH = H - pad.top - pad.bottom;
 
   const allTimes = marine.hourly.time.map(t => new Date(t));
-  const heights = marine.hourly.wave_height || [];
+  const heights = marine.hourly.swell_wave_height || marine.hourly.wave_height || [];
   const swellDirs = marine.hourly.swell_wave_direction || [];
   const wavePeriods = marine.hourly.wave_period || [];
   const windSpeeds = wind && wind.hourly ? wind.hourly.wind_speed_10m || [] : [];
@@ -2384,9 +2394,9 @@ function buildHourlyTable(marine, wind, lat, lon) {
   tbody.innerHTML = '';
 
   const times = marine.hourly.time;
-  const waveH = marine.hourly.wave_height || [];
-  const waveP = marine.hourly.wave_period || [];
-  const waveD = marine.hourly.wave_direction || [];
+  const waveH = marine.hourly.swell_wave_height || marine.hourly.wave_height || [];
+  const waveP = marine.hourly.swell_wave_period || marine.hourly.wave_period || [];
+  const waveD = marine.hourly.swell_wave_direction || marine.hourly.wave_direction || [];
   const windS = wind.hourly.wind_speed_10m || [];
   const windG = wind.hourly.wind_gusts_10m || [];
 
@@ -2934,7 +2944,8 @@ async function lookupHistoricalConditions(dateStr) {
       wind: { speed: Math.round(wSpd), direction: Math.round(wDir) },
       tide: { height: Math.round(tideInfo.height*10)/10, stage: tideInfo.stage, timeToNearest: tideInfo.timeToNearest },
       blown_water_index: computeBlownWaterIndex(wind, dateStr),
-      wind_offshore_score: computeWindOffshoreScore(wDir)
+      wind_offshore_score: computeWindOffshoreScore(wDir),
+      source: 'openmeteo'
     };
     if (lagHours > 0) {
       conditions.swellLagHours = Math.round(lagHours * 10) / 10;
