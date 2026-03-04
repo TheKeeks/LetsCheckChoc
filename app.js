@@ -2560,10 +2560,15 @@ function saveSurfLog() {
 
 async function addLogEntry(entry) {
   entry.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  entry.userId = window._fbUserId || '';
+  entry.displayName = window._fbDisplayName || '';
   STATE.surfLog.unshift(entry);
   saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
   try {
     await saveLogEntryToFirebase(entry);
+    // Re-save after Firebase upload replaces data-URI photos with Storage URLs
+    saveSurfLog();
+    renderSurfLogTable();
   } catch(e) {
     console.warn('Firebase save failed (entry saved locally):', e);
     showToast('\u26a0 Saved locally \u2014 sync failed', 'warn');
@@ -2577,6 +2582,9 @@ async function updateLogEntry(id, updates) {
   saveSurfLog(); slRetrain(); renderSurfLogTable();
   try {
     await saveLogEntryToFirebase(STATE.surfLog[idx]);
+    // Re-save after Firebase upload replaces data-URI photos with Storage URLs
+    saveSurfLog();
+    renderSurfLogTable();
   } catch(e) {
     console.warn('Firebase save failed (entry saved locally):', e);
     showToast('\u26a0 Saved locally \u2014 sync failed', 'warn');
@@ -2652,6 +2660,7 @@ async function saveLogEntryToFirebase(entry) {
         processedPhotos.push({ url: url, path: path });
       } catch (err) {
         console.warn('Photo upload failed:', err);
+        showToast('\u26a0 A photo failed to upload', 'warn');
         // Do NOT store raw base64 in Firestore — it exceeds the 1MB document limit
         // and gets truncated, producing broken images. Skip the photo instead.
       }
