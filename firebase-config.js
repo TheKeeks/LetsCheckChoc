@@ -17,9 +17,10 @@ var fbAuth      = firebase.auth();
 var fbFirestore = firebase.firestore();
 var fbStorage   = firebase.storage();
 
-// Track authenticated user ID and type globally
+// Track authenticated user ID, type, and display name globally
 window._fbUserId = null;
 window._fbUserIsAnon = true;
+window._fbDisplayName = '';
 
 var _authReadyResolve;
 window._fbAuthReady = new Promise(function(resolve) { _authReadyResolve = resolve; });
@@ -36,6 +37,7 @@ fbAuth.onAuthStateChanged(function(user) {
     var justBecameReal = wasAnon && !user.isAnonymous;
     window._fbUserId = user.uid;
     window._fbUserIsAnon = user.isAnonymous;
+    window._fbDisplayName = user.displayName || user.email || '';
     _prevUserWasAnon = user.isAnonymous;
 
     if (justBecameReal && !_migrationDone && typeof migrateAnonDataToUser === 'function') {

@@ -1001,9 +1001,13 @@ async function loadAllData(buoy) {
       const spectral = await fetchNDBCSpectral(buoy.id);
       const parsed = parseNDBCSpectral(spectral);
       if (parsed && parsed.bins && parsed.bins.length > 0) {
+        STATE.lastSpectral = parsed;
         showSpectralCharts();
-        drawCompassRose(parsed);
-        drawSpectrum(parsed);
+        // Defer drawing so DOM has correct dimensions (canvas may be in collapsed section)
+        requestAnimationFrame(() => {
+          drawCompassRose(parsed);
+          drawSpectrum(parsed);
+        });
         setFooter('footer-compass',
           `ndbc ${buoy.id} · ${buoy.name} · ${buoy.lat}°N, ${Math.abs(buoy.lon)}°W`,
           `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}`,
@@ -1397,6 +1401,13 @@ function initAdvancedToggle() {
       sections.classList.add('expanded');
       icon.classList.add('open');
       localStorage.setItem('lcc-advanced', 'open');
+      // Redraw spectral charts after DOM has laid out (canvas was size=0 while collapsed)
+      requestAnimationFrame(() => {
+        if (STATE.lastSpectral) {
+          drawCompassRose(STATE.lastSpectral);
+          drawSpectrum(STATE.lastSpectral);
+        }
+      });
     }
   });
 }
@@ -1562,7 +1573,7 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
   const extStart = Math.max(0, firstPageIdx - 1);
   const extEnd = Math.min(allTimes.length - 1, lastPageIdx + 1);
 
-  const maxY = 20;
+  const maxY = 15;
   const yStep = 2;
 
   function xPos(time) { return pad.left + ((time.getTime() - t0) / tRange) * plotW; }
@@ -2223,7 +2234,12 @@ function drawCompassRose(spectral) {
   const canvas = el('compass-canvas');
   const container = canvas.parentElement;
   const dpr = window.devicePixelRatio || 1;
-  const size = Math.min(container.clientWidth, container.clientHeight);
+  // Use offsetWidth/Height as fallback when clientWidth is 0 (hidden container)
+  const size = Math.min(
+    container.clientWidth || container.offsetWidth || 260,
+    container.clientHeight || container.offsetHeight || 260
+  );
+  if (size <= 0) return;
   canvas.width = size * dpr;
   canvas.height = size * dpr;
   canvas.style.width = size + 'px';
@@ -2239,14 +2255,23 @@ function drawCompassRose(spectral) {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, size, size);
 
-  // Compass circles
-  ctx.strokeStyle = '#eae6e0';
-  ctx.lineWidth = 0.5;
-  for (let i = 1; i <= 4; i++) {
+  // Period rings: 5s, 10s, 15s, 20s mapped to r*0.25, r*0.5, r*0.75, r
+  const MAX_PERIOD = 20;
+  const periodRings = [5, 10, 15, 20];
+  ctx.font = '9px "DM Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  periodRings.forEach(p => {
+    const ringR = (p / MAX_PERIOD) * r;
+    ctx.strokeStyle = '#eae6e0';
+    ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.arc(cx, cy, (r / 4) * i, 0, Math.PI * 2);
+    ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
     ctx.stroke();
-  }
+    // Label at 12 o'clock
+    ctx.fillStyle = '#b0a89e';
+    ctx.fillText(`${p}s`, cx, cy - ringR + 1);
+  });
 
   // Cardinal labels
   ctx.fillStyle = '#8a827a';
@@ -2283,26 +2308,27 @@ function drawCompassRose(spectral) {
     ctx.globalAlpha = 1;
   }
 
-  // Plot spectral energy by direction
+  // Plot spectral bins: radius = period, angle = direction, size+opacity = energy
   if (spectral && spectral.bins) {
     const maxEnergy = Math.max(...spectral.bins.map(b => b.energy));
     if (maxEnergy > 0) {
       spectral.bins.forEach(bin => {
-        if (bin.energy <= 0 || bin.freq <= 0) return;
-        const dir = bin.dir1;
-        const mag = (bin.energy / maxEnergy) * r * 0.85;
-        const rad = degToRad(dir - 90);
+        if (bin.energy <= 0 || bin.freq <= 0 || bin.period <= 0) return;
+        const energyRatio = bin.energy / maxEnergy;
+        const mag = (Math.min(bin.period, MAX_PERIOD) / MAX_PERIOD) * r * 0.95;
+        const rad = degToRad(bin.dir1 - 90);
         const x = cx + Math.cos(rad) * mag;
         const y = cy + Math.sin(rad) * mag;
-        const dotSize = Math.max(2, Math.min(6, bin.period / 4));
+        // Dot size scales with energy (area ∝ energy)
+        const dotSize = Math.max(2, Math.min(9, 2 + energyRatio * 7));
 
-        ctx.fillStyle = swellDirColor(dir);
-        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = swellDirColor(bin.dir1);
+        ctx.globalAlpha = 0.35 + 0.65 * energyRatio;
         ctx.beginPath();
         ctx.arc(x, y, dotSize, 0, Math.PI * 2);
         ctx.fill();
-        ctx.globalAlpha = 1;
       });
+      ctx.globalAlpha = 1;
     }
   }
 }
@@ -2626,16 +2652,17 @@ async function saveLogEntryToFirebase(entry) {
         processedPhotos.push({ url: url, path: path });
       } catch (err) {
         console.warn('Photo upload failed:', err);
-        processedPhotos.push({ url: p, path: '' });
+        // Do NOT store raw base64 in Firestore — it exceeds the 1MB document limit
+        // and gets truncated, producing broken images. Skip the photo instead.
       }
-    } else {
-      processedPhotos.push({ url: typeof p === 'string' ? p : '', path: '' });
     }
+    // Other formats (unknown objects without .url, etc.) are silently dropped
   }
   entry.photos = processedPhotos;
   await fbFirestore.collection('surf_logs').doc(entry.id).set({
     id: entry.id,
     userId: window._fbUserId,
+    displayName: window._fbDisplayName || '',
     timestamp: entry.timestamp,
     photos: processedPhotos,
     ratings: entry.ratings,
@@ -2663,13 +2690,23 @@ async function loadLogsFromFirebase() {
     return;
   }
 
+  // Fetch all entries (community log — all authenticated users see all sessions)
   const snap = await fbFirestore.collection('surf_logs')
-    .where('userId', '==', window._fbUserId)
     .orderBy('createdAt', 'desc')
+    .limit(200)
     .get();
   STATE.surfLog = snap.docs.map(function(doc) {
     const d = doc.data();
-    return { id: d.id, timestamp: d.timestamp, photos: d.photos || [], ratings: d.ratings, notes: d.notes || '', conditions: d.conditions || null };
+    return {
+      id: d.id,
+      timestamp: d.timestamp,
+      photos: (d.photos || []).filter(function(p) { return p && (p.url || typeof p === 'string'); }),
+      ratings: d.ratings,
+      notes: d.notes || '',
+      conditions: d.conditions || null,
+      userId: d.userId || '',
+      displayName: d.displayName || ''
+    };
   });
   saveSurfLog();
   slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
@@ -2786,6 +2823,172 @@ function getRideDesc(val) {
   if (v <= 5) return 'One critical turn possible';
   if (v <= 7) return 'Connecting sections to the beach';
   return 'Reeling perfect lines to the beach';
+}
+
+// ════════════════════════════════════════════════
+// SURF LOG — NDBC Historical Buoy Data
+// ════════════════════════════════════════════════
+
+// Cache parsed NDBC yearly stdmet data so we don't re-download for multiple entries
+const _ndbcYearCache = {};
+
+async function fetchNDBCHistoricalYear(buoyId, year) {
+  const cacheKey = buoyId + '-' + year;
+  if (_ndbcYearCache[cacheKey]) return _ndbcYearCache[cacheKey];
+
+  const url = 'https://www.ndbc.noaa.gov/data/historical/stdmet/' + buoyId + 'h' + year + '.txt.gz';
+  const proxyUrl = CONFIG.api.ndbcProxy + encodeURIComponent(url);
+
+  const response = await fetch(proxyUrl);
+  if (!response.ok) throw new Error('NDBC historical fetch failed: HTTP ' + response.status);
+
+  let text;
+  if (typeof DecompressionStream !== 'undefined') {
+    // Modern browsers: decompress the gzip stream client-side
+    const ds = new DecompressionStream('gzip');
+    const stream = response.body.pipeThrough(ds);
+    const reader = stream.getReader();
+    const chunks = [];
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    const totalLen = chunks.reduce(function(s, c) { return s + c.length; }, 0);
+    const merged = new Uint8Array(totalLen);
+    let off = 0;
+    for (const c of chunks) { merged.set(c, off); off += c.length; }
+    text = new TextDecoder().decode(merged);
+  } else {
+    // Fallback: the CORS proxy may have auto-decompressed it
+    text = await response.text();
+  }
+
+  const rows = _parseNDBCHistoricalText(text);
+  _ndbcYearCache[cacheKey] = rows;
+  return rows;
+}
+
+function _parseNDBCHistoricalText(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 3) return [];
+  const headers = lines[0].replace(/^#/, '').trim().split(/\s+/);
+  const rows = [];
+  for (let i = 2; i < lines.length; i++) {
+    const parts = lines[i].trim().split(/\s+/);
+    if (parts.length < 10) continue;
+    const obj = {};
+    headers.forEach(function(h, j) { obj[h] = parts[j]; });
+    try {
+      let yr = parseInt(obj.YY || obj.YYYY || 0);
+      if (yr < 100) yr += 2000;
+      const t = new Date(Date.UTC(yr, parseInt(obj.MM) - 1, parseInt(obj.DD), parseInt(obj.hh), parseInt(obj.mm || '0')));
+      const wvht = parseFloat(obj.WVHT); const dpd = parseFloat(obj.DPD);
+      const mwd = parseFloat(obj.MWD);   const wspd = parseFloat(obj.WSPD);
+      const wdir = parseFloat(obj.WDIR); const gst = parseFloat(obj.GST);
+      rows.push({
+        t,
+        waveHeight: (isNaN(wvht) || wvht >= 99) ? null : wvht * 3.28084,  // m → ft
+        period:     (isNaN(dpd)  || dpd  >= 99) ? null : dpd,
+        direction:  (isNaN(mwd)  || mwd  >= 999) ? null : mwd,
+        windSpeed:  (isNaN(wspd) || wspd >= 99) ? null : wspd * 2.237,    // m/s → mph
+        windDir:    (isNaN(wdir) || wdir >= 999) ? null : wdir,
+        windGust:   (isNaN(gst)  || gst  >= 99) ? null : gst  * 2.237
+      });
+    } catch (_) { /* skip malformed rows */ }
+  }
+  return rows;
+}
+
+function _findNearestNDBCRow(rows, targetMs, requireWave) {
+  let best = null, bestDiff = Infinity;
+  for (const row of rows) {
+    if (requireWave && row.waveHeight === null) continue;
+    const diff = Math.abs(row.t.getTime() - targetMs);
+    if (diff < bestDiff) { bestDiff = diff; best = row; }
+  }
+  return best;
+}
+
+async function lookupNDBCHistoricalConditions(dateStr) {
+  const display = el('sl-conditions-display');
+  const sessionMs = new Date(dateStr).getTime();
+  const buoyId = CONFIG.chocomount.buoyId;
+  const year = new Date(dateStr).getUTCFullYear();
+
+  if (display) display.innerHTML = '<span class="sl-hint">Loading NDBC buoy ' + buoyId + ' (' + year + ')…</span>';
+
+  try {
+    const [rows, tide] = await Promise.all([
+      fetchNDBCHistoricalYear(buoyId, year),
+      fetchHistoricalTide(dateStr)
+    ]);
+
+    if (!rows || rows.length === 0) {
+      if (display) display.innerHTML = '<span class="sl-hint">NDBC historical data not available for ' + year + '.</span>';
+      return null;
+    }
+
+    // Compute swell travel lag using buoy period observations in the window [T-5h, T-2h]
+    const windowStart = sessionMs - 5 * 3600000;
+    const windowEnd   = sessionMs - 2 * 3600000;
+    const lagPeriods = rows.filter(function(r) {
+      return r.t.getTime() >= windowStart && r.t.getTime() <= windowEnd && r.period > 0;
+    }).map(function(r) { return r.period; });
+    const avgPeriod = lagPeriods.length > 0 ? lagPeriods.reduce(function(s, p) { return s + p; }, 0) / lagPeriods.length : 0;
+    const lagHours = avgPeriod > 0 ? CONFIG.chocomount.buoyDistanceMiles / (SWELL_SPEED_KTS_PER_PERIOD * avgPeriod) : 0;
+    const laggedMs = lagHours > 0 ? sessionMs - lagHours * 3600000 : sessionMs;
+
+    // Wave observation at lagged time (buoy reading that arrived at beach by session time)
+    const swellRow = _findNearestNDBCRow(rows, laggedMs, true);
+    // Wind at session time (local, no lag)
+    const windRow  = _findNearestNDBCRow(rows.filter(function(r) { return r.windSpeed !== null; }), sessionMs, false);
+
+    if (!swellRow) {
+      if (display) display.innerHTML = '<span class="sl-hint">No NDBC wave observations found near this date.</span>';
+      return null;
+    }
+
+    const tideInfo = parseTideAtTime(tide, dateStr);
+    const wSpd = windRow ? (windRow.windSpeed || 0) : 0;
+    const wDir = windRow ? (windRow.windDir  || 0) : 0;
+
+    // Blown-water index: easterly wind component averaged over the 24h before session
+    const bwiRows = rows.filter(function(r) {
+      return r.t.getTime() >= sessionMs - 86400000 && r.t.getTime() <= sessionMs && r.windSpeed !== null && r.windDir !== null;
+    });
+    const bwi = bwiRows.length > 0 ? Math.round(
+      bwiRows.reduce(function(s, r) { return s + Math.max(0, r.windSpeed * Math.cos(degToRad(r.windDir - 90))); }, 0)
+      / bwiRows.length * 100
+    ) / 100 : 0;
+
+    const conditions = {
+      swell: {
+        height: Math.round((swellRow.waveHeight || 0) * 10) / 10,
+        direction: Math.round(swellRow.direction || 0),
+        period: Math.round((swellRow.period || 0) * 10) / 10,
+        lagHours: Math.round(lagHours * 10) / 10
+      },
+      wind: { speed: Math.round(wSpd), direction: Math.round(wDir) },
+      tide: { height: Math.round(tideInfo.height * 10) / 10, stage: tideInfo.stage, timeToNearest: tideInfo.timeToNearest },
+      blown_water_index: bwi,
+      wind_offshore_score: computeWindOffshoreScore(wDir),
+      source: 'ndbc'
+    };
+
+    if (lagHours > 0) {
+      conditions.swellLagHours = Math.round(lagHours * 10) / 10;
+      conditions.originalLoggedTime = dateStr;
+      conditions.calculatedFromBuoyTime = new Date(laggedMs).toISOString();
+    }
+
+    renderConditionsDisplay(conditions);
+    return conditions;
+  } catch (err) {
+    console.warn('NDBC historical lookup failed:', err);
+    if (display) display.innerHTML = '<span class="sl-hint">NDBC lookup failed (' + err.message + '). Try entering conditions manually.</span>';
+    return null;
+  }
 }
 
 // ════════════════════════════════════════════════
@@ -2919,6 +3122,14 @@ function estimateSwellLag(marine, sessionDateStr) {
 async function lookupHistoricalConditions(dateStr) {
   const display = el('sl-conditions-display');
   if (display) display.innerHTML = '<span class="sl-hint">Looking up conditions...</span>';
+
+  // Dates older than 5 days: use actual NDBC buoy observations (Chocomount only)
+  // Open-Meteo Marine API does not reliably provide historical swell for these dates
+  const diffDays = (Date.now() - new Date(dateStr).getTime()) / 86400000;
+  if (diffDays > 5 && STATE.isChocomount) {
+    return lookupNDBCHistoricalConditions(dateStr);
+  }
+
   try {
     const [wind, marine, tide] = await Promise.all([fetchHistoricalWind(dateStr), fetchHistoricalMarine(dateStr), fetchHistoricalTide(dateStr)]);
     if (!wind?.hourly || !marine?.hourly) {
@@ -2980,6 +3191,10 @@ function renderConditionsDisplay(cond) {
   h += '</div>';
   if (cond.swellLagHours > 0) {
     h += `<div class="sl-cond-row"><span class="sl-hint">Using swell from ~${cond.swellLagHours}h ago at buoy (travel time estimate)</span></div>`;
+  }
+  if (cond.source) {
+    const srcLabel = cond.source === 'ndbc' ? 'NDBC buoy 44097 (measured)' : 'Open-Meteo marine API';
+    h += '<div class="sl-cond-row"><span class="sl-hint">Source: ' + srcLabel + '</span></div>';
   }
   display.innerHTML = h;
 }
@@ -3195,19 +3410,24 @@ function renderSurfLogTable() {
     const dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'});
     const timeStr = d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
     const avg = ((entry.ratings.size+entry.ratings.windQuality+entry.ratings.rideQuality)/3).toFixed(1);
-    const photos = (entry.photos||[]).slice(0,3);
-    const photoHtml = photos.length > 0
-      ? '<div class="sl-row-photos">'+photos.map(p=>'<img src="'+photoUrl(p)+'" alt="" onerror="this.style.display=\'none\'">').join('')+'</div>'
+    const validPhotos = (entry.photos||[]).map(p=>photoUrl(p)).filter(Boolean).slice(0,3);
+    const photoHtml = validPhotos.length > 0
+      ? '<div class="sl-row-photos">'+validPhotos.map(url=>'<img src="'+url+'" alt="" onerror="this.style.display=\'none\'">').join('')+'</div>'
       : '<span style="color:var(--ink4)">\u2014</span>';
     const notes = (entry.notes||'').slice(0,30) + ((entry.notes||'').length>30?'...':'');
-    tr.innerHTML = '<td style="white-space:nowrap">'+dateStr+'<br><span style="color:var(--ink4);font-size:0.65rem">'+timeStr+'</span></td>'
+    const isOwn = entry.userId === window._fbUserId;
+    const attribution = (!isOwn && entry.displayName) ? '<br><span style="color:var(--ink4);font-size:0.6rem">'+entry.displayName+'</span>' : '';
+    const actionHtml = isOwn
+      ? '<button class="sl-btn sl-btn-sm sl-edit-btn" data-id="'+entry.id+'">Edit</button> <button class="sl-btn sl-btn-sm sl-btn-danger sl-delete-btn" data-id="'+entry.id+'">Del</button>'
+      : '<span style="color:var(--ink4);font-size:0.65rem">community</span>';
+    tr.innerHTML = '<td style="white-space:nowrap">'+dateStr+'<br><span style="color:var(--ink4);font-size:0.65rem">'+timeStr+'</span>'+attribution+'</td>'
       +'<td>'+photoHtml+'</td>'
       +'<td>'+ratingBadge(entry.ratings.size)+'</td>'
       +'<td>'+ratingBadge(entry.ratings.windQuality)+'</td>'
       +'<td>'+ratingBadge(entry.ratings.rideQuality)+'</td>'
       +'<td>'+ratingBadge(parseFloat(avg))+'</td>'
       +'<td style="max-width:120px;overflow:hidden;text-overflow:ellipsis">'+(notes||'<span style="color:var(--ink4)">\u2014</span>')+'</td>'
-      +'<td style="white-space:nowrap"><button class="sl-btn sl-btn-sm sl-edit-btn" data-id="'+entry.id+'">Edit</button> <button class="sl-btn sl-btn-sm sl-btn-danger sl-delete-btn" data-id="'+entry.id+'">Del</button></td>';
+      +'<td style="white-space:nowrap">'+actionHtml+'</td>';
     tr.style.cursor = 'pointer';
     tr.addEventListener('click', ev => { if (!ev.target.closest('button')) toggleEntryDetail(entry, tr); });
     tbody.appendChild(tr);
