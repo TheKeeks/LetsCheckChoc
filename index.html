@@ -158,6 +158,31 @@
         <div class="panel-footer" id="footer-tides"></div>
       </section>
 
+      <!-- Spectral summary table -->
+      <section class="panel" id="panel-spectral-summary" style="display:none;">
+        <h3 class="panel-title">Wave Spectra</h3>
+        <div id="spectral-summary-table"></div>
+        <div class="panel-footer" id="footer-spectral-summary"></div>
+      </section>
+
+      <!-- Compass rose + wave energy spectrum side by side -->
+      <section class="panel-row" id="panel-spectral-row" style="display:none;">
+        <div class="panel panel-half" id="panel-compass">
+          <h3 class="panel-title">Spectral Compass Rose</h3>
+          <div class="chart-container chart-container-sq">
+            <canvas id="compass-canvas"></canvas>
+          </div>
+          <div class="panel-footer" id="footer-compass"></div>
+        </div>
+        <div class="panel panel-half" id="panel-spectrum">
+          <h3 class="panel-title">Wave Energy Spectrum</h3>
+          <div class="chart-container chart-container-sq">
+            <canvas id="spectrum-canvas"></canvas>
+          </div>
+          <div class="panel-footer" id="footer-spectrum"></div>
+        </div>
+      </section>
+
       <!-- Advanced data toggle -->
       <div class="advanced-toggle-wrap" id="advanced-toggle-wrap">
         <button class="advanced-toggle-btn" id="advanced-toggle-btn">
@@ -168,24 +193,6 @@
 
       <!-- Advanced data sections (hidden by default) -->
       <div id="advanced-sections" class="advanced-sections collapsed">
-        <!-- Compass rose + wave energy spectrum side by side -->
-        <section class="panel-row" id="panel-spectral-row" style="display:none;">
-          <div class="panel panel-half" id="panel-compass">
-            <h3 class="panel-title">Spectral Compass Rose</h3>
-            <div class="chart-container chart-container-sq">
-              <canvas id="compass-canvas"></canvas>
-            </div>
-            <div class="panel-footer" id="footer-compass"></div>
-          </div>
-          <div class="panel panel-half" id="panel-spectrum">
-            <h3 class="panel-title">Wave Energy Spectrum</h3>
-            <div class="chart-container chart-container-sq">
-              <canvas id="spectrum-canvas"></canvas>
-            </div>
-            <div class="panel-footer" id="footer-spectrum"></div>
-          </div>
-        </section>
-
         <!-- Hourly forecast detail -->
         <section class="panel" id="panel-hourly">
           <h3 class="panel-title">Hourly Forecast Detail</h3>
