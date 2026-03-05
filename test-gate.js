@@ -67,6 +67,49 @@ test('gate shows when no sessionStorage value present', function() {
   assert(shouldShowGate === true, 'gate should be shown when no value saved');
 });
 
+// ── Test 6: ndbcProxies is an array with at least 2 entries ─
+test('CONFIG.api.ndbcProxies is an array with multiple proxies', function() {
+  const code = fs.readFileSync('app.js', 'utf8');
+  assert(code.includes('ndbcProxies: ['), 'should have ndbcProxies array');
+  const match = code.match(/ndbcProxies:\s*\[([\s\S]*?)\]/);
+  assert(match, 'should be able to extract ndbcProxies array');
+  const proxyCount = (match[1].match(/prefix:/g) || []).length;
+  assert(proxyCount >= 2, 'should have at least 2 proxy entries, found ' + proxyCount);
+});
+
+// ── Test 7: parseNDBCSpectral only requires dataSpec ────
+test('parseNDBCSpectral only requires dataSpec (not swdir)', function() {
+  const code = fs.readFileSync('app.js', 'utf8');
+  // Find the parseNDBCSpectral function
+  const fnMatch = code.match(/function parseNDBCSpectral\([\s\S]*?return \{ freqs, bins \};\s*\}/);
+  assert(fnMatch, 'should find parseNDBCSpectral function');
+  const fnBody = fnMatch[0];
+  // Should NOT require swdir in the initial guard
+  assert(!fnBody.match(/if\s*\(!spectralData\.dataSpec\s*\|\|\s*!spectralData\.swdir\)/),
+    'should not require both dataSpec AND swdir');
+  // Should require only dataSpec
+  assert(fnBody.includes('if (!spectralData.dataSpec) return null'),
+    'should only require dataSpec');
+  // dir1 should handle null swdir with default 0
+  assert(fnBody.includes('dir1 ? dir1.values[i]'),
+    'should use conditional for dir1 values');
+});
+
+// ── Test 8: fetchTextWithProxies exists ─────────────────
+test('fetchTextWithProxies helper function exists', function() {
+  const code = fs.readFileSync('app.js', 'utf8');
+  assert(code.includes('async function fetchTextWithProxies('), 'should define fetchTextWithProxies');
+  assert(code.includes('CONFIG.api.ndbcProxies'), 'should iterate ndbcProxies');
+});
+
+// ── Test 9: Pipeline spectral fallback in orchestration ──
+test('spectral orchestration uses pipeline fallback', function() {
+  const code = fs.readFileSync('app.js', 'utf8');
+  assert(code.includes('fetchPipelineBuoy'), 'should reference fetchPipelineBuoy');
+  assert(code.includes('spectral_bins'), 'should reference spectral_bins from pipeline');
+  assert(code.includes('isStale'), 'should track stale data state');
+});
+
 // ── Summary ──────────────────────────────────────────────
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed > 0) process.exit(1);

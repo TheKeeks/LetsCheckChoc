@@ -38,7 +38,10 @@ const CONFIG = {
     openMeteoArchive: 'https://archive-api.open-meteo.com/v1/archive',
     coops: 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter',
     nws: 'https://api.weather.gov/points/',
-    ndbcProxy: 'https://corsproxy.io/?',
+    ndbcProxies: [
+      { prefix: 'https://corsproxy.io/?', encode: true },
+      { prefix: 'https://api.allorigins.win/raw?url=', encode: true }
+    ],
     ndbcBase: 'https://www.ndbc.noaa.gov/data/realtime2/'
   },
   map: {
@@ -459,6 +462,17 @@ async function fetchText(url, timeout = 10000) {
   }
 }
 
+async function fetchTextWithProxies(rawUrl, timeout = 15000) {
+  for (const proxy of CONFIG.api.ndbcProxies) {
+    const url = proxy.encode
+      ? proxy.prefix + encodeURIComponent(rawUrl)
+      : proxy.prefix + rawUrl;
+    const result = await fetchText(url, timeout);
+    if (result) return result;
+  }
+  return null;
+}
+
 // ── API: Open-Meteo Marine ───────────────────────
 async function fetchMarineForecast(lat, lon) {
   const params = new URLSearchParams({
@@ -559,20 +573,18 @@ async function fetchWaterTemp(stationId) {
 
 // ── API: NDBC via CORS proxy ─────────────────────
 async function fetchNDBCStdmet(buoyId) {
-  const url = CONFIG.api.ndbcProxy + encodeURIComponent(CONFIG.api.ndbcBase + buoyId + '.txt');
-  return fetchText(url, 15000);
+  return fetchTextWithProxies(CONFIG.api.ndbcBase + buoyId + '.txt', 15000);
 }
 
 async function fetchNDBCSpectral(buoyId) {
   const base = CONFIG.api.ndbcBase + buoyId;
-  const proxy = CONFIG.api.ndbcProxy;
   const [spec, dataSpec, swdir, swdir2, swr1, swr2] = await Promise.all([
-    fetchText(proxy + encodeURIComponent(base + '.spec'), 15000),
-    fetchText(proxy + encodeURIComponent(base + '.data_spec'), 15000),
-    fetchText(proxy + encodeURIComponent(base + '.swdir'), 15000),
-    fetchText(proxy + encodeURIComponent(base + '.swdir2'), 15000),
-    fetchText(proxy + encodeURIComponent(base + '.swr1'), 15000),
-    fetchText(proxy + encodeURIComponent(base + '.swr2'), 15000)
+    fetchTextWithProxies(base + '.spec', 15000),
+    fetchTextWithProxies(base + '.data_spec', 15000),
+    fetchTextWithProxies(base + '.swdir', 15000),
+    fetchTextWithProxies(base + '.swdir2', 15000),
+    fetchTextWithProxies(base + '.swr1', 15000),
+    fetchTextWithProxies(base + '.swr2', 15000)
   ]);
   return { spec, dataSpec, swdir, swdir2, swr1, swr2 };
 }
@@ -626,7 +638,7 @@ function parseNDBCStdmet(text) {
 
 // ── Parse NDBC spectral data ─────────────────────
 function parseNDBCSpectral(spectralData) {
-  if (!spectralData.dataSpec || !spectralData.swdir) return null;
+  if (!spectralData.dataSpec) return null;
 
   function parseSpectralFile(text) {
     if (!text) return null;
@@ -641,19 +653,19 @@ function parseNDBCSpectral(spectralData) {
   }
 
   const energy = parseSpectralFile(spectralData.dataSpec);
+  if (!energy) return null;
+
   const dir1 = parseSpectralFile(spectralData.swdir);
   const dir2 = parseSpectralFile(spectralData.swdir2);
   const r1 = parseSpectralFile(spectralData.swr1);
   const r2 = parseSpectralFile(spectralData.swr2);
-
-  if (!energy || !dir1) return null;
 
   const freqs = energy.freqs;
   const bins = freqs.map((f, i) => ({
     freq: f,
     period: f > 0 ? 1 / f : 0,
     energy: energy.values[i] || 0,
-    dir1: dir1.values[i] || 0,
+    dir1: dir1 ? dir1.values[i] || 0 : 0,
     dir2: dir2 ? dir2.values[i] || 0 : 0,
     r1: r1 ? r1.values[i] || 0 : 0.5,
     r2: r2 ? r2.values[i] || 0 : 0.25
@@ -997,37 +1009,70 @@ async function loadAllData(buoy) {
   // ── Spectral data (compass rose + spectrum) ──
   if (buoy.spectral) {
     el('panel-spectral-row').style.display = '';
+    el('panel-spectral-summary').style.display = '';
+    let parsed = null;
+    let spectralRaw = null;
+    let isStale = false;
+
+    // Try live CORS fetch first
     try {
-      const spectral = await fetchNDBCSpectral(buoy.id);
-      const parsed = parseNDBCSpectral(spectral);
-      if (parsed && parsed.bins && parsed.bins.length > 0) {
-        STATE.lastSpectral = parsed;
-        showSpectralCharts();
-        // Defer drawing so DOM has correct dimensions (canvas may be in collapsed section)
-        requestAnimationFrame(() => {
-          drawCompassRose(parsed);
-          drawSpectrum(parsed);
-        });
-        setFooter('footer-compass',
-          `ndbc ${buoy.id} · ${buoy.name} · ${buoy.lat}°N, ${Math.abs(buoy.lon)}°W`,
-          `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}`,
-          'ndbc station page'
-        );
-        setFooter('footer-spectrum',
-          `ndbc ${buoy.id} spectral data`,
-          `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}`,
-          'ndbc station page'
-        );
-      } else {
-        console.warn('Spectral parse returned no bins for buoy', buoy.id);
-        showSpectralEmpty(buoy.id);
-      }
+      spectralRaw = await fetchNDBCSpectral(buoy.id);
+      parsed = parseNDBCSpectral(spectralRaw);
     } catch (err) {
-      console.warn('Spectral fetch error for buoy', buoy.id, err);
+      console.warn('Spectral CORS fetch failed:', buoy.id, err);
+    }
+
+    // Fallback to pipeline data
+    if (!parsed || !parsed.bins || parsed.bins.length === 0) {
+      try {
+        const pData = await fetchPipelineBuoy();
+        if (pData && pData.spectral_bins && pData.spectral_bins.length > 0) {
+          parsed = { freqs: pData.spectral_bins.map(b => b.freq), bins: pData.spectral_bins };
+          isStale = true;
+          // Use pipeline spectral summary for the summary table
+          if (pData.spectral_summary) {
+            spectralRaw = spectralRaw || {};
+            spectralRaw._pipelineSummary = pData.spectral_summary;
+            spectralRaw._fetchTime = pData.fetch_time;
+          }
+        }
+      } catch (err) {
+        console.warn('Pipeline spectral fallback failed:', err);
+      }
+    }
+
+    if (parsed && parsed.bins && parsed.bins.length > 0) {
+      STATE.lastSpectral = parsed;
+      showSpectralCharts();
+      renderSpectralSummary(spectralRaw, buoyParsed);
+      requestAnimationFrame(() => {
+        drawCompassRose(parsed, buoyParsed);
+        drawSpectrum(parsed);
+      });
+      const staleNote = isStale ? ' · pipeline fallback' : '';
+      setFooter('footer-compass',
+        `ndbc ${buoy.id} · ${buoy.name} · ${buoy.lat}°N, ${Math.abs(buoy.lon)}°W${staleNote}`,
+        `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}`,
+        'ndbc station page'
+      );
+      setFooter('footer-spectrum',
+        `ndbc ${buoy.id} spectral data${staleNote}`,
+        `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}`,
+        'ndbc station page'
+      );
+      if (isStale && spectralRaw && spectralRaw._fetchTime) {
+        setFooter('footer-spectral-summary',
+          `pipeline fallback · fetched ${new Date(spectralRaw._fetchTime).toLocaleString()}`
+        );
+      }
+    } else {
+      console.warn('Spectral parse returned no bins for buoy', buoy.id);
       showSpectralEmpty(buoy.id);
+      el('panel-spectral-summary').style.display = 'none';
     }
   } else {
     el('panel-spectral-row').style.display = '';
+    el('panel-spectral-summary').style.display = 'none';
     showSpectralEmpty();
   }
 
@@ -2191,6 +2236,81 @@ function drawTideChart(predictions) {
 }
 
 // ════════════════════════════════════════════════
+// SPECTRAL SUMMARY TABLE
+// ════════════════════════════════════════════════
+
+function parseSpecSummaryFromText(specText) {
+  if (!specText) return null;
+  const lines = specText.trim().split('\n');
+  if (lines.length < 3) return null;
+  const data = lines[2].split(/\s+/);
+  if (data.length < 15) return null;
+  function sf(idx, invalid) {
+    try { const v = parseFloat(data[idx]); return v < (invalid || 99) ? v : null; } catch { return null; }
+  }
+  return {
+    hs: sf(5),
+    swellHt: sf(6),
+    swellPeriod: sf(7),
+    swellDir: sf(8, 999),
+    windHt: sf(9),
+    windPeriod: sf(10),
+    windDir: sf(11, 999)
+  };
+}
+
+function renderSpectralSummary(spectralRaw, buoyParsed) {
+  const container = el('spectral-summary-table');
+  if (!container) return;
+  container.innerHTML = '';
+
+  let summary = null;
+  if (spectralRaw && spectralRaw.spec) {
+    summary = parseSpecSummaryFromText(spectralRaw.spec);
+  }
+  if (!summary && spectralRaw && spectralRaw._pipelineSummary) {
+    const ps = spectralRaw._pipelineSummary;
+    summary = {
+      hs: ps.significant_wave_height_m,
+      swellHt: ps.swell_height_m,
+      swellPeriod: ps.swell_period,
+      swellDir: ps.swell_direction,
+      windHt: ps.wind_wave_height_m,
+      windPeriod: ps.wind_wave_period,
+      windDir: ps.wind_wave_direction
+    };
+  }
+  if (!summary) {
+    container.innerHTML = '<div class="spectral-empty-msg">Spectral summary unavailable</div>';
+    return;
+  }
+
+  const mToFt = v => v != null ? (v * 3.28084).toFixed(1) : '—';
+  const fmtP = v => v != null ? v.toFixed(1) : '—';
+  const fmtDir = v => v != null ? `${directionLabel(v)} (${Math.round(v)}°)` : '—';
+
+  // Calculate total Hs from buoy data or summary
+  let hsFt = '—';
+  if (summary.hs != null) hsFt = mToFt(summary.hs);
+  else if (buoyParsed && buoyParsed.waveHeight != null) hsFt = buoyParsed.waveHeight.toFixed(1);
+
+  const rows = [
+    { label: 'Primary Swell', ht: mToFt(summary.swellHt), period: fmtP(summary.swellPeriod), dir: fmtDir(summary.swellDir) },
+    { label: 'Wind Waves', ht: mToFt(summary.windHt), period: fmtP(summary.windPeriod), dir: fmtDir(summary.windDir) },
+    { label: 'Significant Hs', ht: hsFt, period: '—', dir: '—' }
+  ];
+
+  const table = document.createElement('table');
+  table.className = 'spectral-summary-tbl';
+  const thead = '<thead><tr><th>Component</th><th>Height (ft)</th><th>Period (s)</th><th>Direction</th></tr></thead>';
+  const tbody = rows.map(r =>
+    `<tr><td>${r.label}</td><td>${r.ht}</td><td>${r.period}</td><td>${r.dir}</td></tr>`
+  ).join('');
+  table.innerHTML = thead + '<tbody>' + tbody + '</tbody>';
+  container.appendChild(table);
+}
+
+// ════════════════════════════════════════════════
 // SPECTRAL EMPTY STATE HELPERS
 // ════════════════════════════════════════════════
 
@@ -2230,11 +2350,10 @@ function showSpectralCharts() {
 // COMPASS ROSE (Canvas 2D)
 // ════════════════════════════════════════════════
 
-function drawCompassRose(spectral) {
+function drawCompassRose(spectral, buoyParsed) {
   const canvas = el('compass-canvas');
   const container = canvas.parentElement;
   const dpr = window.devicePixelRatio || 1;
-  // Use offsetWidth/Height as fallback when clientWidth is 0 (hidden container)
   const size = Math.min(
     container.clientWidth || container.offsetWidth || 260,
     container.clientHeight || container.offsetHeight || 260
@@ -2255,7 +2374,7 @@ function drawCompassRose(spectral) {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, size, size);
 
-  // Period rings: 5s, 10s, 15s, 20s mapped to r*0.25, r*0.5, r*0.75, r
+  // Period rings: 5s, 10s, 15s, 20s
   const MAX_PERIOD = 20;
   const periodRings = [5, 10, 15, 20];
   ctx.font = '9px "DM Mono", monospace';
@@ -2268,7 +2387,6 @@ function drawCompassRose(spectral) {
     ctx.beginPath();
     ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
     ctx.stroke();
-    // Label at 12 o'clock
     ctx.fillStyle = '#b0a89e';
     ctx.fillText(`${p}s`, cx, cy - ringR + 1);
   });
@@ -2283,7 +2401,7 @@ function drawCompassRose(spectral) {
   ctx.fillText('E', cx + r + 14, cy);
   ctx.fillText('W', cx - r - 14, cy);
 
-  // Swell window lines (Chocomount only)
+  // Swell window (Chocomount only)
   if (STATE.isChocomount) {
     const min = CONFIG.chocomount.swellWindowMin;
     const max = CONFIG.chocomount.swellWindowMax;
@@ -2306,9 +2424,30 @@ function drawCompassRose(spectral) {
     ctx.closePath();
     ctx.fill();
     ctx.globalAlpha = 1;
+    // Swell window degree labels
+    ctx.font = '8px "DM Mono", monospace';
+    ctx.fillStyle = '#3a7d56';
+    ctx.globalAlpha = 0.6;
+    [min, max].forEach(deg => {
+      const rad = degToRad(deg - 90);
+      const lx = cx + Math.cos(rad) * (r + 8);
+      const ly = cy + Math.sin(rad) * (r + 8);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${deg}°`, lx, ly);
+    });
+    // "swell window" label along the arc midpoint
+    const midDeg = (min + max) / 2;
+    const midRad = degToRad(midDeg - 90);
+    const labelR = r * 0.55;
+    ctx.font = '7px "DM Mono", monospace';
+    ctx.fillStyle = '#3a7d56';
+    ctx.globalAlpha = 0.5;
+    ctx.fillText('swell window', cx + Math.cos(midRad) * labelR, cy + Math.sin(midRad) * labelR);
+    ctx.globalAlpha = 1;
   }
 
-  // Plot spectral bins: radius = period, angle = direction, size+opacity = energy
+  // Plot spectral bins
   if (spectral && spectral.bins) {
     const maxEnergy = Math.max(...spectral.bins.map(b => b.energy));
     if (maxEnergy > 0) {
@@ -2319,7 +2458,6 @@ function drawCompassRose(spectral) {
         const rad = degToRad(bin.dir1 - 90);
         const x = cx + Math.cos(rad) * mag;
         const y = cy + Math.sin(rad) * mag;
-        // Dot size scales with energy (area ∝ energy)
         const dotSize = Math.max(2, Math.min(9, 2 + energyRatio * 7));
 
         ctx.fillStyle = swellDirColor(bin.dir1);
@@ -2331,6 +2469,55 @@ function drawCompassRose(spectral) {
       ctx.globalAlpha = 1;
     }
   }
+
+  // Hs value at center
+  let hsVal = null;
+  if (buoyParsed && buoyParsed.waveHeight != null) {
+    hsVal = buoyParsed.waveHeight.toFixed(1);
+  } else if (spectral && spectral.bins) {
+    // Calculate Hs from spectral bins: Hs = 4 * sqrt(m0), m0 = sum(energy * df)
+    let m0 = 0;
+    const bins = spectral.bins;
+    for (let i = 0; i < bins.length; i++) {
+      const df = i < bins.length - 1
+        ? Math.abs(bins[i + 1].freq - bins[i].freq)
+        : (i > 0 ? Math.abs(bins[i].freq - bins[i - 1].freq) : 0.005);
+      m0 += bins[i].energy * df;
+    }
+    if (m0 > 0) hsVal = (4 * Math.sqrt(m0) * 3.28084).toFixed(1);
+  }
+  if (hsVal) {
+    ctx.font = 'bold 14px "DM Mono", monospace';
+    ctx.fillStyle = '#2c2825';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${hsVal} ft`, cx, cy);
+    ctx.font = '8px "DM Mono", monospace';
+    ctx.fillStyle = '#8a827a';
+    ctx.fillText('Hs', cx, cy + 14);
+  }
+
+  // Period-color legend (bottom-right)
+  const legendX = size - 8;
+  const legendY = size - 8;
+  const legendItems = [
+    { label: '0-6s', color: '#5a7fa0' },
+    { label: '6-10s', color: '#3a7d7d' },
+    { label: '10-15s', color: '#3a7d56' },
+    { label: '15s+', color: '#b87a2e' }
+  ];
+  ctx.font = '7px "DM Mono", monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  legendItems.forEach((item, i) => {
+    const ly = legendY - (legendItems.length - 1 - i) * 12;
+    ctx.fillStyle = item.color;
+    ctx.globalAlpha = 0.7;
+    ctx.fillRect(legendX - 44, ly - 4, 8, 8);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#8a827a';
+    ctx.fillText(item.label, legendX, ly);
+  });
 }
 
 // ════════════════════════════════════════════════
@@ -2343,6 +2530,7 @@ function drawSpectrum(spectral) {
   const dpr = window.devicePixelRatio || 1;
   const W = container.clientWidth;
   const H = container.clientHeight;
+  if (W <= 0 || H <= 0) return;
   canvas.width = W * dpr;
   canvas.height = H * dpr;
   canvas.style.width = W + 'px';
@@ -2350,7 +2538,7 @@ function drawSpectrum(spectral) {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  const pad = { top: 12, right: 16, bottom: 36, left: 44 };
+  const pad = { top: 12, right: 16, bottom: 36, left: 52 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top - pad.bottom;
 
@@ -2361,21 +2549,77 @@ function drawSpectrum(spectral) {
 
   const maxE = Math.max(...bins.map(b => b.energy));
 
+  // Background
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, W, H);
 
-  // Bars
-  const barW = Math.max(2, plotW / bins.length - 1);
+  // Y-axis grid lines first (behind the fill)
+  ctx.fillStyle = '#8a827a';
+  ctx.font = '9px "DM Mono", monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  const eStep = maxE > 10 ? Math.ceil(maxE / 5) : maxE > 1 ? 1 : 0.5;
+  for (let e = 0; e <= maxE; e += eStep) {
+    const y = pad.top + plotH - (e / maxE) * plotH;
+    ctx.fillText(e.toFixed(e < 1 ? 1 : 0), pad.left - 6, y);
+    ctx.strokeStyle = '#eae6e0';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(pad.left + plotW, y);
+    ctx.stroke();
+  }
+
+  // Filled area chart — per-bin vertical strips colored by direction
+  const baseline = pad.top + plotH;
+  let peakIdx = 0;
+  let peakE = 0;
   bins.forEach((bin, i) => {
-    const x = pad.left + (i / bins.length) * plotW;
+    if (bin.energy > peakE) { peakE = bin.energy; peakIdx = i; }
+    const x0 = pad.left + (i / bins.length) * plotW;
+    const x1 = pad.left + ((i + 1) / bins.length) * plotW;
     const h = (bin.energy / maxE) * plotH;
-    const y = pad.top + plotH - h;
+    const y = baseline - h;
 
     ctx.fillStyle = swellDirColor(bin.dir1);
-    ctx.globalAlpha = 0.6;
-    ctx.fillRect(x, y, barW, h);
+    ctx.globalAlpha = 0.45;
+    ctx.fillRect(x0, y, x1 - x0, h);
     ctx.globalAlpha = 1;
   });
+
+  // Smooth line on top of area
+  ctx.beginPath();
+  ctx.strokeStyle = '#5c554d';
+  ctx.lineWidth = 1.5;
+  bins.forEach((bin, i) => {
+    const x = pad.left + ((i + 0.5) / bins.length) * plotW;
+    const y = baseline - (bin.energy / maxE) * plotH;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Peak period annotation (vertical dashed line)
+  if (peakE > 0) {
+    const peakX = pad.left + ((peakIdx + 0.5) / bins.length) * plotW;
+    const peakY = baseline - (peakE / maxE) * plotH;
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = '#2c2825';
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(peakX, pad.top);
+    ctx.lineTo(peakX, baseline);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    // Peak label
+    ctx.font = '8px "DM Mono", monospace';
+    ctx.fillStyle = '#2c2825';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    const peakPeriod = bins[peakIdx].period;
+    ctx.fillText(`${peakPeriod.toFixed(1)}s peak`, peakX, peakY - 4);
+  }
 
   // X-axis: period labels
   ctx.fillStyle = '#8a827a';
@@ -2388,28 +2632,55 @@ function drawSpectrum(spectral) {
     const idx = bins.findIndex(b => b.freq >= f);
     if (idx >= 0) {
       const x = pad.left + (idx / bins.length) * plotW;
-      ctx.fillText(`${p}s`, x, pad.top + plotH + 8);
+      ctx.fillText(`${p}s`, x, baseline + 8);
     }
   });
 
   // X-axis title
-  ctx.fillText('period', pad.left + plotW / 2, pad.top + plotH + 22);
+  ctx.fillText('period', pad.left + plotW / 2, baseline + 22);
 
-  // Y-axis
-  ctx.textAlign = 'right';
+  // Y-axis label (rotated)
+  ctx.save();
+  ctx.translate(10, pad.top + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.font = '8px "DM Mono", monospace';
+  ctx.fillStyle = '#8a827a';
+  ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const eStep = maxE > 10 ? Math.ceil(maxE / 5) : maxE > 1 ? 1 : 0.5;
-  for (let e = 0; e <= maxE; e += eStep) {
-    const y = pad.top + plotH - (e / maxE) * plotH;
-    ctx.fillText(e.toFixed(e < 1 ? 1 : 0), pad.left - 4, y);
-    ctx.strokeStyle = '#eae6e0';
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(pad.left, y);
-    ctx.lineTo(pad.left + plotW, y);
-    ctx.stroke();
-  }
+  ctx.fillText('Energy (m\u00B2/Hz)', 0, 0);
+  ctx.restore();
 }
+
+// ════════════════════════════════════════════════
+// SPECTRAL RESIZE OBSERVER
+// ════════════════════════════════════════════════
+
+(function initSpectralResizeObserver() {
+  let resizeTimer = null;
+  const observer = new ResizeObserver(() => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (STATE.lastSpectral) {
+        drawCompassRose(STATE.lastSpectral);
+        drawSpectrum(STATE.lastSpectral);
+      }
+    }, 250);
+  });
+  // Observe once DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      const cc = el('compass-canvas');
+      const sc = el('spectrum-canvas');
+      if (cc && cc.parentElement) observer.observe(cc.parentElement);
+      if (sc && sc.parentElement) observer.observe(sc.parentElement);
+    });
+  } else {
+    const cc = el('compass-canvas');
+    const sc = el('spectrum-canvas');
+    if (cc && cc.parentElement) observer.observe(cc.parentElement);
+    if (sc && sc.parentElement) observer.observe(sc.parentElement);
+  }
+})();
 
 // ════════════════════════════════════════════════
 // HOURLY TABLE
