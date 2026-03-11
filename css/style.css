@@ -1,0 +1,342 @@
+/* ============================================
+   NZ Travel Blog — Windows 98 / Web 1.0 Style
+   ============================================ */
+
+body {
+  background-color: #c0c0c0;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 13px;
+  color: #000000;
+  margin: 0;
+  padding: 0;
+}
+
+a:link { color: #0000EE; }
+a:visited { color: #551A8B; }
+a:active { color: #FF0000; }
+
+/* Page container — centered dialog look */
+.page-container {
+  width: 760px;
+  margin: 10px auto;
+  background-color: #ffffff;
+  border-top: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
+  border-bottom: 2px solid #808080;
+  border-right: 2px solid #808080;
+  padding: 0;
+}
+
+/* Title bar */
+.title-bar {
+  background-color: #000080;
+  color: #ffffff;
+  font-weight: bold;
+  font-size: 14px;
+  padding: 4px 8px;
+  margin: 0;
+}
+
+/* Header area */
+.header {
+  background-color: #c0c0c0;
+  padding: 10px;
+  text-align: center;
+  border-bottom: 2px solid #808080;
+}
+
+.header h1 {
+  margin: 0 0 4px 0;
+  font-size: 22px;
+  color: #000000;
+}
+
+.header .last-updated {
+  font-style: italic;
+  font-size: 11px;
+  color: #333333;
+  margin: 0 0 6px 0;
+}
+
+/* Marquee bar */
+.marquee-bar {
+  border: 1px solid #808080;
+  background-color: #d4d0c8;
+  padding: 2px 4px;
+  font-size: 11px;
+  margin: 6px 10px;
+}
+
+.marquee-bar marquee {
+  margin: 0;
+  padding: 0;
+}
+
+/* Layout table */
+.layout-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.layout-table td {
+  vertical-align: top;
+  padding: 8px;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 180px;
+  border-right: 2px solid #808080;
+  background-color: #d4d0c8;
+  font-size: 12px;
+}
+
+.sidebar-section {
+  margin-bottom: 12px;
+  padding: 6px;
+  border: 2px inset #c0c0c0;
+  background-color: #ffffff;
+}
+
+.sidebar-section h3 {
+  margin: 0 0 4px 0;
+  font-size: 12px;
+  background-color: #000080;
+  color: #ffffff;
+  padding: 2px 4px;
+}
+
+.sidebar-section p {
+  margin: 4px 0;
+  font-size: 11px;
+}
+
+.sidebar-section ul {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0;
+}
+
+.sidebar-section ul li {
+  padding: 2px 0;
+}
+
+.sidebar-section ul li a {
+  font-size: 11px;
+}
+
+/* Hit counter box */
+.hit-counter-box {
+  text-align: center;
+}
+
+.hit-counter-box img {
+  margin-top: 4px;
+}
+
+/* Instagram sidebar embed */
+.instagram-sidebar iframe {
+  border: 2px inset #c0c0c0;
+  width: 170px;
+  height: 400px;
+}
+
+/* Main content area */
+.main-content {
+  padding: 4px;
+}
+
+/* Post cards */
+.post-card {
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid #808080;
+  background-color: #fffff0;
+}
+
+.post-card .post-meta {
+  font-size: 11px;
+  color: #555555;
+  margin-bottom: 4px;
+}
+
+.post-card h2 {
+  margin: 4px 0 6px 0;
+  font-size: 16px;
+  color: #000000;
+}
+
+.post-card .post-body {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.post-card .post-body p {
+  margin: 6px 0;
+}
+
+.post-separator {
+  border: none;
+  border-top: 1px solid #808080;
+  margin: 12px 0;
+}
+
+/* Buttons — Windows 98 beveled style */
+.btn {
+  background-color: #d4d0c8;
+  border-top: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
+  border-bottom: 2px solid #808080;
+  border-right: 2px solid #808080;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: Arial, Helvetica, sans-serif;
+  cursor: pointer;
+}
+
+.btn:active {
+  border-top: 2px solid #808080;
+  border-left: 2px solid #808080;
+  border-bottom: 2px solid #ffffff;
+  border-right: 2px solid #ffffff;
+}
+
+/* Footer */
+.footer {
+  background-color: #c0c0c0;
+  border-top: 2px solid #808080;
+  padding: 8px;
+  text-align: center;
+  font-size: 11px;
+  color: #333333;
+}
+
+/* Guestbook section */
+.guestbook-section {
+  margin-top: 16px;
+  padding: 10px;
+  border: 2px inset #c0c0c0;
+  background-color: #ffffff;
+}
+
+.guestbook-section h2 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  background-color: #000080;
+  color: #ffffff;
+  padding: 4px 6px;
+}
+
+/* ===========================
+   Admin Page Styles
+   =========================== */
+
+.admin-container {
+  width: 600px;
+  margin: 20px auto;
+  background-color: #d4d0c8;
+  border-top: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
+  border-bottom: 2px solid #808080;
+  border-right: 2px solid #808080;
+  padding: 0;
+}
+
+.admin-title-bar {
+  background-color: #000080;
+  color: #ffffff;
+  font-weight: bold;
+  font-size: 13px;
+  padding: 4px 8px;
+}
+
+.admin-body {
+  padding: 12px;
+}
+
+.admin-section {
+  border: 2px inset #c0c0c0;
+  background-color: #ffffff;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.admin-section h2 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #000000;
+}
+
+.admin-section label {
+  display: block;
+  font-size: 12px;
+  font-weight: bold;
+  margin-bottom: 2px;
+  margin-top: 8px;
+}
+
+.admin-section input[type="text"],
+.admin-section input[type="date"] {
+  width: 95%;
+  padding: 2px 4px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12px;
+  border: 2px inset #c0c0c0;
+}
+
+.admin-section textarea {
+  width: 95%;
+  height: 200px;
+  padding: 4px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12px;
+  border: 2px inset #c0c0c0;
+  resize: vertical;
+}
+
+.admin-buttons {
+  margin-top: 8px;
+}
+
+.admin-buttons .btn {
+  margin-right: 6px;
+}
+
+/* Preview box */
+.preview-box {
+  border: 2px inset #c0c0c8;
+  background-color: #fffff0;
+  padding: 10px;
+  margin-top: 8px;
+  font-size: 13px;
+  display: none;
+}
+
+.preview-box.visible {
+  display: block;
+}
+
+/* Status bar */
+.status-bar {
+  background-color: #d4d0c8;
+  border-top: 2px solid #808080;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: #333333;
+}
+
+/* Existing posts list in admin */
+.existing-posts {
+  margin-top: 8px;
+}
+
+.existing-posts .post-item {
+  padding: 4px;
+  border-bottom: 1px solid #c0c0c0;
+  font-size: 11px;
+}
+
+.existing-posts .post-item:hover {
+  background-color: #000080;
+  color: #ffffff;
+}
