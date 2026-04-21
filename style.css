@@ -441,6 +441,90 @@ a:hover { text-decoration: underline; }
   margin: 0;
 }
 
+/* ── Spectral rose: header, scale toggle, period legend ── */
+.rose-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 0;
+  gap: 8px;
+}
+
+.rose-header .panel-title {
+  padding: 0;
+}
+
+.rose-scale-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+
+.rose-scale-chip {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  line-height: 1;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--ink3);
+  border: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.rose-scale-chip + .rose-scale-chip {
+  border-left: 1px solid var(--border);
+}
+
+.rose-scale-chip:hover {
+  color: var(--ink);
+}
+
+.rose-scale-chip.is-active {
+  background: var(--ink);
+  color: var(--bg-card);
+}
+
+.rose-legend {
+  padding: 6px 14px 10px;
+  user-select: none;
+}
+
+.rose-legend-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    #5a7fa0 0%,
+    #3a7d7d 25%,
+    #3a7d56 45%,
+    #b87a2e 70%,
+    #8a3a2e 100%
+  );
+}
+
+.rose-legend-ticks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--ink3);
+}
+
+.rose-legend-caption {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  color: var(--ink4);
+  text-align: center;
+  margin-top: 2px;
+  letter-spacing: 0.02em;
+}
+
 /* ── Hourly table ─────────────────────────────── */
 .hourly-table-wrap {
   max-height: 480px;

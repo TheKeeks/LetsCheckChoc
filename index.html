@@ -168,9 +168,24 @@
       <!-- Compass rose + wave energy spectrum side by side -->
       <section class="panel-row" id="panel-spectral-row" style="display:none;">
         <div class="panel panel-half" id="panel-compass">
-          <h3 class="panel-title">Spectral Compass Rose</h3>
+          <div class="rose-header">
+            <h3 class="panel-title">Spectral Compass Rose</h3>
+            <div class="rose-scale-toggle" role="group" aria-label="Radial scale">
+              <button type="button" class="rose-scale-chip" data-scale="linear">Linear</button>
+              <button type="button" class="rose-scale-chip" data-scale="sqrt">&radic;</button>
+            </div>
+          </div>
           <div class="chart-container chart-container-sq">
             <canvas id="compass-canvas"></canvas>
+          </div>
+          <div class="rose-legend" aria-hidden="true">
+            <div class="rose-legend-bar"></div>
+            <div class="rose-legend-ticks">
+              <span>2s</span>
+              <span>11s</span>
+              <span>22s+</span>
+            </div>
+            <div class="rose-legend-caption">Swell period</div>
           </div>
           <div class="panel-footer" id="footer-compass"></div>
         </div>
