@@ -655,38 +655,48 @@ function parseNDBCStdmet(text) {
 }
 
 // ── Parse NDBC spectral data ─────────────────────
-function parseNDBCSpectral(spectralData) {
-  if (!spectralData.dataSpec) return null;
-
-  function parseSpectralFile(text) {
-    if (!text) return null;
-    const lines = text.trim().split('\n');
-    if (lines.length < 3) return null;
-    const freqLine = lines[0].trim().split(/\s+/).slice(5);
-    const dataLine = lines[2].trim().split(/\s+/).slice(5);
-    return {
-      freqs: freqLine.map(Number),
-      values: dataLine.map(Number)
-    };
+// NDBC realtime2 spectral files interleave each value with its frequency in
+// parens:  YY MM DD hh mm [sep_freq] v1 (f1) v2 (f2) v3 (f3) ...
+// data_spec has the extra sep_freq scalar before the pairs; swdir/swdir2/
+// swr1/swr2 do not.
+function parseSpectralFile(text, hasSepFreq) {
+  if (!text) return null;
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return null;
+  const row = lines[1].trim().split(/\s+/);
+  let i = 5 + (hasSepFreq ? 1 : 0);
+  const freqs = [], values = [];
+  while (i + 1 < row.length) {
+    const v = Number(row[i]);
+    const f = Number(row[i + 1].replace(/[()]/g, ''));
+    if (!Number.isFinite(v) || !Number.isFinite(f)) break;
+    values.push(v);
+    freqs.push(f);
+    i += 2;
   }
+  return freqs.length ? { freqs, values } : null;
+}
 
-  const energy = parseSpectralFile(spectralData.dataSpec);
+function parseNDBCSpectral(spectralData) {
+  if (!spectralData || !spectralData.dataSpec) return null;
+
+  const energy = parseSpectralFile(spectralData.dataSpec, true);
   if (!energy) return null;
 
-  const dir1 = parseSpectralFile(spectralData.swdir);
-  const dir2 = parseSpectralFile(spectralData.swdir2);
-  const r1 = parseSpectralFile(spectralData.swr1);
-  const r2 = parseSpectralFile(spectralData.swr2);
+  const dir1 = parseSpectralFile(spectralData.swdir, false);
+  const dir2 = parseSpectralFile(spectralData.swdir2, false);
+  const r1 = parseSpectralFile(spectralData.swr1, false);
+  const r2 = parseSpectralFile(spectralData.swr2, false);
 
   const freqs = energy.freqs;
   const bins = freqs.map((f, i) => ({
     freq: f,
     period: f > 0 ? 1 / f : 0,
     energy: energy.values[i] || 0,
-    dir1: dir1 ? dir1.values[i] || 0 : 0,
-    dir2: dir2 ? dir2.values[i] || 0 : 0,
-    r1: r1 ? r1.values[i] || 0 : 0.5,
-    r2: r2 ? r2.values[i] || 0 : 0.25
+    dir1: dir1 && dir1.values[i] != null ? dir1.values[i] : 0,
+    dir2: dir2 && dir2.values[i] != null ? dir2.values[i] : 0,
+    r1: r1 && r1.values[i] != null ? r1.values[i] : 0.5,
+    r2: r2 && r2.values[i] != null ? r2.values[i] : 0.25
   }));
 
   return { freqs, bins };
@@ -2257,24 +2267,60 @@ function drawTideChart(predictions) {
 // SPECTRAL SUMMARY TABLE
 // ════════════════════════════════════════════════
 
+const COMPASS_TO_DEG = {
+  'N': 0, 'NNE': 22.5, 'NE': 45, 'ENE': 67.5,
+  'E': 90, 'ESE': 112.5, 'SE': 135, 'SSE': 157.5,
+  'S': 180, 'SSW': 202.5, 'SW': 225, 'WSW': 247.5,
+  'W': 270, 'WNW': 292.5, 'NW': 315, 'NNW': 337.5
+};
+
+// Parse NDBC .spec summary row.
+// Columns: YY MM DD hh mm WVHT SwH SwP WWH WWP SwD WWD STEEPNESS APD MWD
+// Indices: 0  1  2  3  4  5    6   7   8   9   10  11  12        13  14
+// SwD and WWD are text compass (e.g. "SE", "SSE"); MWD is numeric degrees.
 function parseSpecSummaryFromText(specText) {
   if (!specText) return null;
   const lines = specText.trim().split('\n');
   if (lines.length < 3) return null;
-  const data = lines[2].split(/\s+/);
+  const data = lines[2].trim().split(/\s+/);
   if (data.length < 15) return null;
-  function sf(idx, invalid) {
-    try { const v = parseFloat(data[idx]); return v < (invalid || 99) ? v : null; } catch { return null; }
-  }
+  const sf = (idx, invalid) => {
+    const v = parseFloat(data[idx]);
+    if (!Number.isFinite(v)) return null;
+    return v < (invalid || 99) ? v : null;
+  };
+  const compass = idx => {
+    const t = data[idx];
+    return t ? (COMPASS_TO_DEG[t.toUpperCase()] ?? null) : null;
+  };
   return {
     hs: sf(5),
     swellHt: sf(6),
     swellPeriod: sf(7),
-    swellDir: sf(8, 999),
-    windHt: sf(9),
-    windPeriod: sf(10),
-    windDir: sf(11, 999)
+    windHt: sf(8),
+    windPeriod: sf(9),
+    swellDir: compass(10),
+    windDir: compass(11),
+    meanDir: sf(14, 999)
   };
+}
+
+// Energy-weighted circular mean of dir1 over bins in the swell band (>=8s).
+// Falls back to all positive-energy bins if the swell band is empty.
+function computePrimarySwellDir(bins) {
+  if (!bins || !bins.length) return null;
+  const swell = bins.filter(b => b.period >= 8 && b.energy > 0);
+  const pool = swell.length ? swell : bins.filter(b => b.energy > 0);
+  if (!pool.length) return null;
+  let sx = 0, sy = 0, wsum = 0;
+  for (const b of pool) {
+    const rad = b.dir1 * Math.PI / 180;
+    sx += Math.cos(rad) * b.energy;
+    sy += Math.sin(rad) * b.energy;
+    wsum += b.energy;
+  }
+  if (wsum === 0) return null;
+  return (Math.atan2(sy / wsum, sx / wsum) * 180 / Math.PI + 360) % 360;
 }
 
 function renderSpectralSummary(spectralRaw, buoyParsed) {
@@ -2302,6 +2348,12 @@ function renderSpectralSummary(spectralRaw, buoyParsed) {
     container.innerHTML = '<div class="spectral-empty-msg">Spectral summary unavailable</div>';
     return;
   }
+
+  // Prefer the energy-weighted direction from the bins when available — more
+  // precise than the 22.5° compass value in the .spec summary.
+  const bins = STATE.lastSpectral && STATE.lastSpectral.bins;
+  const derivedDir = computePrimarySwellDir(bins);
+  if (derivedDir != null) summary.swellDir = derivedDir;
 
   const mToFt = v => v != null ? (v * 3.28084).toFixed(1) : '—';
   const fmtP = v => v != null ? v.toFixed(1) : '—';
@@ -2384,18 +2436,20 @@ function drawCompassRose(spectral, buoyParsed) {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
+  const compact = size < 380;
+  const padLabel = compact ? 10 : 14;
   const cx = size / 2;
   const cy = size / 2;
-  const r = size / 2 - 30;
+  const r = size / 2 - (compact ? 22 : 30);
 
   // Background
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, size, size);
 
-  // Period rings: 5s, 10s, 15s, 20s
+  // Period rings
   const MAX_PERIOD = 20;
   const periodRings = [5, 10, 15, 20];
-  ctx.font = '9px "DM Mono", monospace';
+  ctx.font = (compact ? '8px' : '9px') + ' "DM Mono", monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
   periodRings.forEach(p => {
@@ -2411,13 +2465,13 @@ function drawCompassRose(spectral, buoyParsed) {
 
   // Cardinal labels
   ctx.fillStyle = '#8a827a';
-  ctx.font = '10px "DM Mono", monospace';
+  ctx.font = (compact ? '9px' : '10px') + ' "DM Mono", monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('N', cx, cy - r - 12);
-  ctx.fillText('S', cx, cy + r + 12);
-  ctx.fillText('E', cx + r + 14, cy);
-  ctx.fillText('W', cx - r - 14, cy);
+  ctx.fillText('N', cx, cy - r - padLabel);
+  ctx.fillText('S', cx, cy + r + padLabel);
+  ctx.fillText('E', cx + r + padLabel + 2, cy);
+  ctx.fillText('W', cx - r - padLabel - 2, cy);
 
   // Swell window (Chocomount only)
   if (STATE.isChocomount) {
@@ -2465,26 +2519,76 @@ function drawCompassRose(spectral, buoyParsed) {
     ctx.globalAlpha = 1;
   }
 
-  // Plot spectral bins
-  if (spectral && spectral.bins) {
-    const maxEnergy = Math.max(...spectral.bins.map(b => b.energy));
-    if (maxEnergy > 0) {
-      spectral.bins.forEach(bin => {
-        if (bin.energy <= 0 || bin.freq <= 0 || bin.period <= 0) return;
-        const energyRatio = bin.energy / maxEnergy;
-        const mag = (Math.min(bin.period, MAX_PERIOD) / MAX_PERIOD) * r * 0.95;
-        const rad = degToRad(bin.dir1 - 90);
-        const x = cx + Math.cos(rad) * mag;
-        const y = cy + Math.sin(rad) * mag;
-        const dotSize = Math.max(2, Math.min(9, 2 + energyRatio * 7));
+  // Binned polar-area rose: 16 direction sectors × 4 period bands,
+  // stacked radially. Each cell's radial thickness is proportional to its
+  // share of total energy × bandwidth.
+  const N_SECTORS = 16;
+  const SECTOR_DEG = 360 / N_SECTORS;   // 22.5°
+  const BAND_BOUNDS = [0, 6, 10, 14, Infinity];   // seconds: <6, 6-10, 10-14, 14+
+  const BAND_COLORS = ['#5a7fa0', '#3a7d7d', '#3a7d56', '#b87a2e'];
+  const N_BANDS = BAND_COLORS.length;
 
-        ctx.fillStyle = swellDirColor(bin.dir1);
-        ctx.globalAlpha = 0.35 + 0.65 * energyRatio;
-        ctx.beginPath();
-        ctx.arc(x, y, dotSize, 0, Math.PI * 2);
-        ctx.fill();
-      });
-      ctx.globalAlpha = 1;
+  if (spectral && spectral.bins && spectral.bins.length) {
+    const bins = spectral.bins;
+    const grid = Array.from({ length: N_SECTORS }, () => new Array(N_BANDS).fill(0));
+
+    // Accumulate energy*bandwidth per (sector, band) cell
+    for (let i = 0; i < bins.length; i++) {
+      const b = bins[i];
+      if (!(b.energy > 0) || !(b.period > 0) || !Number.isFinite(b.dir1)) continue;
+      const dir = ((b.dir1 % 360) + 360) % 360;
+      const sector = Math.floor(((dir + SECTOR_DEG / 2) % 360) / SECTOR_DEG);
+      let band = N_BANDS - 1;
+      for (let k = 0; k < N_BANDS; k++) {
+        if (b.period >= BAND_BOUNDS[k] && b.period < BAND_BOUNDS[k + 1]) { band = k; break; }
+      }
+      // Frequency-interval width as a proxy for bandwidth; falls back to the
+      // typical 0.005 Hz NDBC bin spacing at the ends.
+      const df = i < bins.length - 1
+        ? Math.abs(bins[i + 1].freq - b.freq)
+        : (i > 0 ? Math.abs(b.freq - bins[i - 1].freq) : 0.005);
+      grid[sector][band] += b.energy * df;
+    }
+
+    // Total per sector determines its outer radius; maxSectorTotal maps to the
+    // 20s ring so the rose sits within the same frame as the period rings.
+    const sectorTotals = grid.map(bands => bands.reduce((s, v) => s + v, 0));
+    const maxSectorTotal = Math.max(...sectorTotals);
+
+    if (maxSectorTotal > 0) {
+      const rMax = r * 0.95;
+      ctx.lineWidth = 0.5;
+      ctx.strokeStyle = '#ffffff';
+
+      for (let s = 0; s < N_SECTORS; s++) {
+        const total = sectorTotals[s];
+        if (total <= 0) continue;
+        const sectorRadius = (total / maxSectorTotal) * rMax;
+        // Sector spans from (s - 0.5) to (s + 0.5) of SECTOR_DEG, centered on
+        // compass heading s*SECTOR_DEG. Subtract 90° to align N with screen up.
+        const centerDeg = s * SECTOR_DEG;
+        const startAngle = degToRad(centerDeg - SECTOR_DEG / 2 - 90);
+        const endAngle = degToRad(centerDeg + SECTOR_DEG / 2 - 90);
+
+        let rInner = 0;
+        for (let bnd = 0; bnd < N_BANDS; bnd++) {
+          const cell = grid[s][bnd];
+          if (cell <= 0) continue;
+          const rOuter = rInner + (cell / total) * sectorRadius;
+
+          ctx.fillStyle = BAND_COLORS[bnd];
+          ctx.globalAlpha = 0.55 + 0.35 * (cell / maxSectorTotal);
+          ctx.beginPath();
+          ctx.arc(cx, cy, rOuter, startAngle, endAngle);
+          ctx.arc(cx, cy, rInner, endAngle, startAngle, true);
+          ctx.closePath();
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.stroke();
+
+          rInner = rOuter;
+        }
+      }
     }
   }
 
@@ -2515,14 +2619,14 @@ function drawCompassRose(spectral, buoyParsed) {
     ctx.fillText('Hs', cx, cy + 14);
   }
 
-  // Period-color legend (bottom-right)
+  // Period-color legend (bottom-right) — matches BAND_BOUNDS / BAND_COLORS
   const legendX = size - 8;
   const legendY = size - 8;
   const legendItems = [
-    { label: '0-6s', color: '#5a7fa0' },
-    { label: '6-10s', color: '#3a7d7d' },
-    { label: '10-15s', color: '#3a7d56' },
-    { label: '15s+', color: '#b87a2e' }
+    { label: '<6s',    color: BAND_COLORS[0] },
+    { label: '6-10s',  color: BAND_COLORS[1] },
+    { label: '10-14s', color: BAND_COLORS[2] },
+    { label: '14s+',   color: BAND_COLORS[3] }
   ];
   ctx.font = '7px "DM Mono", monospace';
   ctx.textAlign = 'right';
@@ -2639,12 +2743,14 @@ function drawSpectrum(spectral) {
     ctx.fillText(`${peakPeriod.toFixed(1)}s peak`, peakX, peakY - 4);
   }
 
-  // X-axis: period labels
+  // X-axis: period labels (thin out on narrow screens to avoid overlap)
   ctx.fillStyle = '#8a827a';
   ctx.font = '9px "DM Mono", monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  const labelPeriods = [4, 6, 8, 10, 12, 14, 16, 18, 20];
+  const labelPeriods = W < 360
+    ? [4, 8, 12, 16, 20]
+    : [4, 6, 8, 10, 12, 14, 16, 18, 20];
   labelPeriods.forEach(p => {
     const f = 1 / p;
     const idx = bins.findIndex(b => b.freq >= f);
