@@ -473,6 +473,24 @@ async function fetchTextWithProxies(rawUrl, timeout = 15000) {
   return null;
 }
 
+async function fetchWithProxies(rawUrl, timeout = 15000) {
+  for (const proxy of CONFIG.api.ndbcProxies) {
+    const url = proxy.encode
+      ? proxy.prefix + encodeURIComponent(rawUrl)
+      : proxy.prefix + rawUrl;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const resp = await fetch(url, { signal: controller.signal });
+      clearTimeout(timer);
+      if (resp.ok) return resp;
+    } catch (_) {
+      clearTimeout(timer);
+    }
+  }
+  return null;
+}
+
 // ── API: Open-Meteo Marine ───────────────────────
 async function fetchMarineForecast(lat, lon) {
   const params = new URLSearchParams({
@@ -3117,10 +3135,8 @@ async function fetchNDBCHistoricalYear(buoyId, year) {
   if (_ndbcYearCache[cacheKey]) return _ndbcYearCache[cacheKey];
 
   const url = 'https://www.ndbc.noaa.gov/data/historical/stdmet/' + buoyId + 'h' + year + '.txt.gz';
-  const proxyUrl = CONFIG.api.ndbcProxy + encodeURIComponent(url);
-
-  const response = await fetch(proxyUrl);
-  if (!response.ok) throw new Error('NDBC historical fetch failed: HTTP ' + response.status);
+  const response = await fetchWithProxies(url, 20000);
+  if (!response) throw new Error('NDBC historical fetch failed: all proxies failed');
 
   let text;
   if (typeof DecompressionStream !== 'undefined') {
