@@ -81,7 +81,10 @@ const STATE = {
   activeTab: 'forecast',
   personalMatchesOpen: false,
   matchModalData: null,
-  matchModalPhotoIdx: 0
+  matchModalPhotoIdx: 0,
+  lastSpectral: null,
+  lastBuoyParsed: null,
+  roseScaleMode: 'linear'   // 'linear' | 'sqrt'; persisted to localStorage
 };
 
 // ── Utility functions ────────────────────────────
@@ -1071,6 +1074,7 @@ async function loadAllData(buoy) {
 
     if (parsed && parsed.bins && parsed.bins.length > 0) {
       STATE.lastSpectral = parsed;
+      STATE.lastBuoyParsed = buoyParsed;
       showSpectralCharts();
       renderSpectralSummary(spectralRaw, buoyParsed);
       requestAnimationFrame(() => {
@@ -1477,7 +1481,7 @@ function initAdvancedToggle() {
       // Redraw spectral charts after DOM has laid out (canvas was size=0 while collapsed)
       requestAnimationFrame(() => {
         if (STATE.lastSpectral) {
-          drawCompassRose(STATE.lastSpectral);
+          drawCompassRose(STATE.lastSpectral, STATE.lastBuoyParsed);
           drawSpectrum(STATE.lastSpectral);
         }
       });
@@ -2420,6 +2424,41 @@ function showSpectralCharts() {
 // COMPASS ROSE (Canvas 2D)
 // ════════════════════════════════════════════════
 
+// Period (s) → [R,G,B] anchor stops. Colors keyed to the app's earth-tone
+// palette, re-purposed as a continuous period ramp. Short = wind chop;
+// long = long-period groundswell.
+const PERIOD_COLOR_STOPS = [
+  [2,  [90, 127, 160]],   // #5a7fa0 steel blue
+  [7,  [58, 125, 125]],   // #3a7d7d teal
+  [11, [58, 125,  86]],   // #3a7d56 sage
+  [16, [184, 122, 46]],   // #b87a2e burnt orange
+  [22, [138,  58, 46]]    // #8a3a2e deep rust
+];
+
+function periodColorRGBA(period, alpha) {
+  const stops = PERIOD_COLOR_STOPS;
+  if (!(period > 0) || period <= stops[0][0]) {
+    const c = stops[0][1];
+    return `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
+  }
+  if (period >= stops[stops.length - 1][0]) {
+    const c = stops[stops.length - 1][1];
+    return `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
+  }
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [p0, c0] = stops[i];
+    const [p1, c1] = stops[i + 1];
+    if (period >= p0 && period <= p1) {
+      const t = (period - p0) / (p1 - p0);
+      const rr = Math.round(c0[0] + (c1[0] - c0[0]) * t);
+      const gg = Math.round(c0[1] + (c1[1] - c0[1]) * t);
+      const bb = Math.round(c0[2] + (c1[2] - c0[2]) * t);
+      return `rgba(${rr},${gg},${bb},${alpha})`;
+    }
+  }
+  return `rgba(128,128,128,${alpha})`;
+}
+
 function drawCompassRose(spectral, buoyParsed) {
   const canvas = el('compass-canvas');
   const container = canvas.parentElement;
@@ -2446,21 +2485,15 @@ function drawCompassRose(spectral, buoyParsed) {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, size, size);
 
-  // Period rings
-  const MAX_PERIOD = 20;
-  const periodRings = [5, 10, 15, 20];
-  ctx.font = (compact ? '8px' : '9px') + ' "DM Mono", monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'bottom';
-  periodRings.forEach(p => {
-    const ringR = (p / MAX_PERIOD) * r;
+  // Concentric reference rings (geometric scaffolding only; radial axis now
+  // encodes wave energy density, so no period labels).
+  const guideRings = [0.25, 0.5, 0.75, 1.0];
+  guideRings.forEach(frac => {
     ctx.strokeStyle = '#eae6e0';
     ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+    ctx.arc(cx, cy, frac * r, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.fillStyle = '#b0a89e';
-    ctx.fillText(`${p}s`, cx, cy - ringR + 1);
   });
 
   // Cardinal labels
@@ -2519,75 +2552,54 @@ function drawCompassRose(spectral, buoyParsed) {
     ctx.globalAlpha = 1;
   }
 
-  // Binned polar-area rose: 16 direction sectors × 4 period bands,
-  // stacked radially. Each cell's radial thickness is proportional to its
-  // share of total energy × bandwidth.
-  const N_SECTORS = 16;
-  const SECTOR_DEG = 360 / N_SECTORS;   // 22.5°
-  const BAND_BOUNDS = [0, 6, 10, 14, Infinity];   // seconds: <6, 6-10, 10-14, 14+
-  const BAND_COLORS = ['#5a7fa0', '#3a7d7d', '#3a7d56', '#b87a2e'];
-  const N_BANDS = BAND_COLORS.length;
-
+  // Hopewaves-style directional wave spectrum. One wedge per NDBC
+  // frequency bin, centered on that bin's mean direction (dir1). Radial
+  // length encodes wave energy density S(f); color encodes period; angular
+  // half-width follows the directional-spread parameter r1. All wedges
+  // originate at center and overlap at a fixed alpha so distinct swell
+  // trains remain visually separable.
   if (spectral && spectral.bins && spectral.bins.length) {
-    const bins = spectral.bins;
-    const grid = Array.from({ length: N_SECTORS }, () => new Array(N_BANDS).fill(0));
+    const rMax = r * 0.95;
+    const compressed = STATE.roseScaleMode === 'sqrt';
+    const scaleFn = compressed ? Math.sqrt : (v => v);
 
-    // Accumulate energy*bandwidth per (sector, band) cell
-    for (let i = 0; i < bins.length; i++) {
-      const b = bins[i];
+    const wedges = [];
+    let maxScaled = 0;
+    for (const b of spectral.bins) {
       if (!(b.energy > 0) || !(b.period > 0) || !Number.isFinite(b.dir1)) continue;
-      const dir = ((b.dir1 % 360) + 360) % 360;
-      const sector = Math.floor(((dir + SECTOR_DEG / 2) % 360) / SECTOR_DEG);
-      let band = N_BANDS - 1;
-      for (let k = 0; k < N_BANDS; k++) {
-        if (b.period >= BAND_BOUNDS[k] && b.period < BAND_BOUNDS[k + 1]) { band = k; break; }
-      }
-      // Frequency-interval width as a proxy for bandwidth; falls back to the
-      // typical 0.005 Hz NDBC bin spacing at the ends.
-      const df = i < bins.length - 1
-        ? Math.abs(bins[i + 1].freq - b.freq)
-        : (i > 0 ? Math.abs(b.freq - bins[i - 1].freq) : 0.005);
-      grid[sector][band] += b.energy * df;
+      const scaled = scaleFn(b.energy);
+      if (scaled > maxScaled) maxScaled = scaled;
+      wedges.push({
+        period: b.period,
+        dir: ((b.dir1 % 360) + 360) % 360,
+        r1: Number.isFinite(b.r1) ? Math.max(0, Math.min(1, b.r1)) : null,
+        scaled
+      });
     }
 
-    // Total per sector determines its outer radius; maxSectorTotal maps to the
-    // 20s ring so the rose sits within the same frame as the period rings.
-    const sectorTotals = grid.map(bands => bands.reduce((s, v) => s + v, 0));
-    const maxSectorTotal = Math.max(...sectorTotals);
+    if (maxScaled > 0) {
+      // Render largest wedges first so small ones stay visible on top.
+      wedges.sort((a, b) => b.scaled - a.scaled);
 
-    if (maxSectorTotal > 0) {
-      const rMax = r * 0.95;
-      ctx.lineWidth = 0.5;
-      ctx.strokeStyle = '#ffffff';
+      const ALPHA = 0.55;
+      for (const w of wedges) {
+        const rOuter = (w.scaled / maxScaled) * rMax;
+        if (rOuter <= 0.5) continue;
+        // Angular half-width: σ_θ = sqrt(2·(1 − r1)) radians, converted to
+        // degrees and clamped to a legible range. Narrow r1 (tight beam) →
+        // thin wedge; diffuse sea → wider.
+        const halfDeg = w.r1 == null
+          ? 6
+          : Math.max(3, Math.min(25, Math.sqrt(2 * (1 - w.r1)) * (180 / Math.PI)));
+        const startAngle = degToRad(w.dir - halfDeg - 90);
+        const endAngle = degToRad(w.dir + halfDeg - 90);
 
-      for (let s = 0; s < N_SECTORS; s++) {
-        const total = sectorTotals[s];
-        if (total <= 0) continue;
-        const sectorRadius = (total / maxSectorTotal) * rMax;
-        // Sector spans from (s - 0.5) to (s + 0.5) of SECTOR_DEG, centered on
-        // compass heading s*SECTOR_DEG. Subtract 90° to align N with screen up.
-        const centerDeg = s * SECTOR_DEG;
-        const startAngle = degToRad(centerDeg - SECTOR_DEG / 2 - 90);
-        const endAngle = degToRad(centerDeg + SECTOR_DEG / 2 - 90);
-
-        let rInner = 0;
-        for (let bnd = 0; bnd < N_BANDS; bnd++) {
-          const cell = grid[s][bnd];
-          if (cell <= 0) continue;
-          const rOuter = rInner + (cell / total) * sectorRadius;
-
-          ctx.fillStyle = BAND_COLORS[bnd];
-          ctx.globalAlpha = 0.55 + 0.35 * (cell / maxSectorTotal);
-          ctx.beginPath();
-          ctx.arc(cx, cy, rOuter, startAngle, endAngle);
-          ctx.arc(cx, cy, rInner, endAngle, startAngle, true);
-          ctx.closePath();
-          ctx.fill();
-          ctx.globalAlpha = 1;
-          ctx.stroke();
-
-          rInner = rOuter;
-        }
+        ctx.fillStyle = periodColorRGBA(w.period, ALPHA);
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, rOuter, startAngle, endAngle);
+        ctx.closePath();
+        ctx.fill();
       }
     }
   }
@@ -2618,28 +2630,6 @@ function drawCompassRose(spectral, buoyParsed) {
     ctx.fillStyle = '#8a827a';
     ctx.fillText('Hs', cx, cy + 14);
   }
-
-  // Period-color legend (bottom-right) — matches BAND_BOUNDS / BAND_COLORS
-  const legendX = size - 8;
-  const legendY = size - 8;
-  const legendItems = [
-    { label: '<6s',    color: BAND_COLORS[0] },
-    { label: '6-10s',  color: BAND_COLORS[1] },
-    { label: '10-14s', color: BAND_COLORS[2] },
-    { label: '14s+',   color: BAND_COLORS[3] }
-  ];
-  ctx.font = '7px "DM Mono", monospace';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  legendItems.forEach((item, i) => {
-    const ly = legendY - (legendItems.length - 1 - i) * 12;
-    ctx.fillStyle = item.color;
-    ctx.globalAlpha = 0.7;
-    ctx.fillRect(legendX - 44, ly - 4, 8, 8);
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = '#8a827a';
-    ctx.fillText(item.label, legendX, ly);
-  });
 }
 
 // ════════════════════════════════════════════════
@@ -2785,26 +2775,53 @@ function drawSpectrum(spectral) {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       if (STATE.lastSpectral) {
-        drawCompassRose(STATE.lastSpectral);
+        drawCompassRose(STATE.lastSpectral, STATE.lastBuoyParsed);
         drawSpectrum(STATE.lastSpectral);
       }
     }, 250);
   });
-  // Observe once DOM is ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      const cc = el('compass-canvas');
-      const sc = el('spectrum-canvas');
-      if (cc && cc.parentElement) observer.observe(cc.parentElement);
-      if (sc && sc.parentElement) observer.observe(sc.parentElement);
-    });
-  } else {
+  function attach() {
     const cc = el('compass-canvas');
     const sc = el('spectrum-canvas');
     if (cc && cc.parentElement) observer.observe(cc.parentElement);
     if (sc && sc.parentElement) observer.observe(sc.parentElement);
+    initRoseScaleToggle();
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attach);
+  } else {
+    attach();
   }
 })();
+
+function initRoseScaleToggle() {
+  try {
+    const saved = localStorage.getItem('lcc-rose-scale');
+    if (saved === 'linear' || saved === 'sqrt') STATE.roseScaleMode = saved;
+  } catch (_) { /* localStorage unavailable */ }
+
+  const chips = document.querySelectorAll('.rose-scale-chip');
+  if (!chips.length) return;
+
+  const sync = () => {
+    chips.forEach(c => {
+      c.classList.toggle('is-active', c.dataset.scale === STATE.roseScaleMode);
+    });
+  };
+  sync();
+
+  chips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      const mode = chip.dataset.scale;
+      if (mode !== 'linear' && mode !== 'sqrt') return;
+      if (STATE.roseScaleMode === mode) return;
+      STATE.roseScaleMode = mode;
+      try { localStorage.setItem('lcc-rose-scale', mode); } catch (_) {}
+      sync();
+      if (STATE.lastSpectral) drawCompassRose(STATE.lastSpectral, STATE.lastBuoyParsed);
+    });
+  });
+}
 
 // ════════════════════════════════════════════════
 // HOURLY TABLE
