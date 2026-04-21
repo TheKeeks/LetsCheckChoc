@@ -130,6 +130,10 @@
             </button>
           </div>
         </div>
+        <details class="widget-help">
+          <summary>What is this?</summary>
+          <p>A rolling 72-hour projection of three sea-surface parameters — wave height, wave period, and wind speed — rendered on a shared time axis so their interactions are visible at a glance.</p>
+        </details>
         <div class="chart-container" id="forecast-chart-container">
           <canvas id="forecast-canvas"></canvas>
         </div>
@@ -151,6 +155,10 @@
       <!-- Tides -->
       <section class="panel" id="panel-tides" style="display:none;">
         <h3 class="panel-title">Tides</h3>
+        <details class="widget-help">
+          <summary>What is this?</summary>
+          <p>Predicted water-level curve derived from NOAA CO-OPS harmonic constants for the selected station. Peaks mark high tides, troughs mark low tides, and the dashed vertical line marks the current moment.</p>
+        </details>
         <div class="chart-container chart-container-sm">
           <canvas id="tide-canvas"></canvas>
         </div>
@@ -161,6 +169,15 @@
       <!-- Spectral summary table -->
       <section class="panel" id="panel-spectral-summary" style="display:none;">
         <h3 class="panel-title">Wave Spectra</h3>
+        <details class="widget-help">
+          <summary>What is this?</summary>
+          <p>A decomposition of the buoy's raw wave spectrum into three interpretable rows:</p>
+          <ul>
+            <li><strong>Primary Swell</strong> — the dominant long-period wave train the spectrum can isolate, typically a distant-storm groundswell.</li>
+            <li><strong>Wind Waves</strong> — the shorter-period train driven by the local wind at the buoy.</li>
+            <li><strong>Significant Hs</strong> — the total significant wave height of the sea state (mean of the highest one-third of waves); the combined energy of every ripple, chop, and groundswell currently present.</li>
+          </ul>
+        </details>
         <div id="spectral-summary-table"></div>
         <div class="panel-footer" id="footer-spectral-summary"></div>
       </section>
@@ -175,6 +192,10 @@
               <button type="button" class="rose-scale-chip" data-scale="sqrt">&radic;</button>
             </div>
           </div>
+          <details class="widget-help">
+            <summary>What is this?</summary>
+            <p>Polar plot of wave energy by arrival direction. Radial distance from the center encodes energy magnitude; hue encodes the period of that energy band, so directionality and period can be read together.</p>
+          </details>
           <div class="chart-container chart-container-sq">
             <canvas id="compass-canvas"></canvas>
           </div>
@@ -191,6 +212,10 @@
         </div>
         <div class="panel panel-half" id="panel-spectrum">
           <h3 class="panel-title">Wave Energy Spectrum</h3>
+          <details class="widget-help">
+            <summary>What is this?</summary>
+            <p>Spectral energy density plotted as a function of wave period. Each peak is a distinct wave train present in the sea state; peak height indicates that train's share of total energy.</p>
+          </details>
           <div class="chart-container chart-container-sq">
             <canvas id="spectrum-canvas"></canvas>
           </div>
@@ -211,6 +236,10 @@
         <!-- Hourly forecast detail -->
         <section class="panel" id="panel-hourly">
           <h3 class="panel-title">Hourly Forecast Detail</h3>
+          <details class="widget-help">
+            <summary>What is this?</summary>
+            <p>Tabular form of the forecast chart above: every hour for the next ~3 days, with wave height, period, direction, wind speed, and gust listed explicitly for precise lookup.</p>
+          </details>
           <div class="hourly-table-wrap">
             <table id="hourly-table" class="hourly-table">
               <thead>

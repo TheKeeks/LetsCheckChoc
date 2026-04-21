@@ -193,6 +193,45 @@ a:hover { text-decoration: underline; }
   color: var(--ink2);
 }
 
+/* ── Widget help (collapsible glossary) ───────── */
+.widget-help {
+  margin: 0;
+  padding: 2px 14px 8px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+}
+
+.widget-help > summary {
+  color: var(--ink4);
+  cursor: pointer;
+  list-style: none;
+  padding: 4px 0;
+  user-select: none;
+  letter-spacing: 0.01em;
+}
+
+.widget-help > summary::-webkit-details-marker { display: none; }
+
+.widget-help > summary::before {
+  content: "▶";
+  display: inline-block;
+  font-size: 0.55rem;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+
+.widget-help[open] > summary::before { transform: rotate(90deg); }
+
+.widget-help > p,
+.widget-help > ul {
+  margin: 4px 0 2px;
+  color: var(--ink3);
+  line-height: 1.5;
+}
+
+.widget-help ul { padding-left: 14px; }
+.widget-help li { margin-bottom: 2px; }
+
 /* ── Map containers ───────────────────────────── */
 .map-container {
   height: 320px;
