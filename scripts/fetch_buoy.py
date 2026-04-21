@@ -74,8 +74,21 @@ def parse_stdmet(text):
     }
 
 
+COMPASS_TO_DEG = {
+    'N': 0, 'NNE': 22.5, 'NE': 45, 'ENE': 67.5,
+    'E': 90, 'ESE': 112.5, 'SE': 135, 'SSE': 157.5,
+    'S': 180, 'SSW': 202.5, 'SW': 225, 'WSW': 247.5,
+    'W': 270, 'WNW': 292.5, 'NW': 315, 'NNW': 337.5,
+}
+
+
 def parse_spectral_summary(text):
-    """Parse NDBC .spec spectral summary file."""
+    """Parse NDBC .spec spectral summary file.
+
+    Column order: YY MM DD hh mm WVHT SwH SwP WWH WWP SwD WWD STEEPNESS APD MWD
+    Indices:      0  1  2  3  4  5    6   7   8   9   10  11  12        13  14
+    SwD and WWD are text compass (e.g. "SE", "SSE"); MWD is numeric degrees.
+    """
     if not text:
         return None
     lines = text.strip().split("\n")
@@ -93,40 +106,77 @@ def parse_spectral_summary(text):
         except (ValueError, IndexError):
             return None
 
+    def compass(idx):
+        try:
+            return COMPASS_TO_DEG.get(data[idx].upper())
+        except IndexError:
+            return None
+
     return {
         "significant_wave_height_m": sf(5),
         "swell_height_m": sf(6),
         "swell_period": sf(7),
-        "swell_direction": sf(8, invalid=999),
-        "wind_wave_height_m": sf(9),
-        "wind_wave_period": sf(10),
-        "wind_wave_direction": sf(11, invalid=999),
+        "wind_wave_height_m": sf(8),
+        "wind_wave_period": sf(9),
+        "swell_direction": compass(10),
+        "wind_wave_direction": compass(11),
+        "mean_wave_direction": sf(14, invalid=999),
     }
 
 
-def parse_spectral_file(text):
+def parse_spectral_file(text, has_sep_freq=False):
     """Parse an NDBC spectral data file (data_spec, swdir, swdir2, swr1, swr2).
-    Returns list of floats (frequency bin values) or None."""
+
+    NDBC realtime2 format interleaves each value with its frequency in parens:
+        YY MM DD hh mm [sep_freq] v1 (f1) v2 (f2) v3 (f3) ...
+    data_spec has the extra sep_freq scalar before the pairs; the directional
+    files (swdir, swdir2, swr1, swr2) do not.
+    """
     if not text:
         return None
     lines = text.strip().split("\n")
-    if len(lines) < 3:
+    if len(lines) < 2:
         return None
-    # Header line (row 0) has freq values after first 5 cols
-    freq_parts = lines[0].strip().split()[5:]
-    # Data line (row 2) has values after first 5 cols
-    data_parts = lines[2].strip().split()[5:]
-    try:
-        freqs = [float(x) for x in freq_parts]
-        values = [float(x) for x in data_parts]
-        return {"freqs": freqs, "values": values}
-    except (ValueError, IndexError):
+    row = lines[1].split()
+    i = 5 + (1 if has_sep_freq else 0)
+    freqs, values = [], []
+    while i + 1 < len(row):
+        try:
+            v = float(row[i])
+            f = float(row[i + 1].strip("()"))
+        except ValueError:
+            break
+        values.append(v)
+        freqs.append(f)
+        i += 2
+    return {"freqs": freqs, "values": values} if freqs else None
+
+
+def compute_primary_swell_dir(bins):
+    """Energy-weighted circular mean of dir1, restricted to swell band (>=8s).
+    Falls back to all positive-energy bins if the swell band is empty."""
+    if not bins:
         return None
+    import math
+    swell = [b for b in bins if b["period"] >= 8 and b["energy"] > 0]
+    pool = swell if swell else [b for b in bins if b["energy"] > 0]
+    if not pool:
+        return None
+    sx = sy = wsum = 0.0
+    for b in pool:
+        rad = math.radians(b["dir1"])
+        sx += math.cos(rad) * b["energy"]
+        sy += math.sin(rad) * b["energy"]
+        wsum += b["energy"]
+    if wsum == 0:
+        return None
+    deg = (math.degrees(math.atan2(sy / wsum, sx / wsum)) + 360) % 360
+    return round(deg, 1)
 
 
 def build_spectral_bins(data_spec_text, swdir_text, swdir2_text, swr1_text, swr2_text):
     """Build spectral bin data from raw NDBC spectral files."""
-    energy = parse_spectral_file(data_spec_text)
+    energy = parse_spectral_file(data_spec_text, has_sep_freq=True)
     if not energy:
         return None
     dir1 = parse_spectral_file(swdir_text)
@@ -176,6 +226,13 @@ def main():
         spectral_texts.get("swr1"),
         spectral_texts.get("swr2"),
     )
+
+    # Energy-weighted swell direction from bins overrides the coarse 22.5°
+    # compass value from .spec when bin data is available.
+    if spectral_bins and spectral:
+        derived = compute_primary_swell_dir(spectral_bins)
+        if derived is not None:
+            spectral["swell_direction"] = derived
 
     # Build output
     output = {

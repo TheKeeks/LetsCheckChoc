@@ -87,12 +87,106 @@ test('parseNDBCSpectral only requires dataSpec (not swdir)', function() {
   // Should NOT require swdir in the initial guard
   assert(!fnBody.match(/if\s*\(!spectralData\.dataSpec\s*\|\|\s*!spectralData\.swdir\)/),
     'should not require both dataSpec AND swdir');
-  // Should require only dataSpec
-  assert(fnBody.includes('if (!spectralData.dataSpec) return null'),
-    'should only require dataSpec');
-  // dir1 should handle null swdir with default 0
-  assert(fnBody.includes('dir1 ? dir1.values[i]'),
-    'should use conditional for dir1 values');
+  // Should require only dataSpec (after the null-guard against spectralData itself)
+  assert(fnBody.includes('!spectralData.dataSpec'),
+    'should check spectralData.dataSpec');
+  // dir1 lookup should tolerate missing swdir file (null fallback)
+  assert(/dir1\s*&&/.test(fnBody),
+    'should conditionally read dir1 values');
+});
+
+// ── Helper: load selected functions from app.js into a sandbox ──
+function loadSpectralFns() {
+  const code = fs.readFileSync('app.js', 'utf8');
+  // Extract the specific functions we want to exercise. These are top-level
+  // named function declarations in app.js, so regex matching is sufficient.
+  const grab = name => {
+    const re = new RegExp('function\\s+' + name + '\\s*\\([\\s\\S]*?\\n\\}\\n', 'm');
+    const m = code.match(re);
+    assert(m, 'could not find function ' + name);
+    return m[0];
+  };
+  const src = [
+    'const COMPASS_TO_DEG = ' + JSON.stringify({
+      N: 0, NNE: 22.5, NE: 45, ENE: 67.5, E: 90, ESE: 112.5, SE: 135, SSE: 157.5,
+      S: 180, SSW: 202.5, SW: 225, WSW: 247.5, W: 270, WNW: 292.5, NW: 315, NNW: 337.5
+    }) + ';',
+    grab('parseSpectralFile'),
+    grab('parseNDBCSpectral'),
+    grab('parseSpecSummaryFromText'),
+    grab('computePrimarySwellDir'),
+    'module.exports = { parseSpectralFile, parseNDBCSpectral, parseSpecSummaryFromText, computePrimarySwellDir };'
+  ].join('\n');
+  const sandbox = { module: { exports: {} } };
+  vm.createContext(sandbox);
+  new vm.Script(src).runInContext(sandbox);
+  return sandbox.module.exports;
+}
+
+// ── Test 7b: parseSpectralFile handles NDBC interleaved format ──
+test('parseSpectralFile parses interleaved "value (freq)" format', function() {
+  const { parseSpectralFile } = loadSpectralFns();
+  // data_spec has a leading sep_freq scalar
+  const dataSpecSample =
+    '#YY  MM DD hh mm Sep_Freq  < spec_1 (freq_1) ...\n' +
+    '2026 04 21 17 00 9.999 0.100 (0.025) 0.200 (0.030) 0.300 (0.035)\n';
+  const r1 = parseSpectralFile(dataSpecSample, true);
+  assert(r1 !== null, 'should return non-null for valid data_spec');
+  assert(r1.values.length === 3, 'expected 3 values, got ' + r1.values.length);
+  assert(r1.freqs[0] === 0.025, 'first freq should be 0.025');
+  assert(r1.values[1] === 0.2, 'second value should be 0.2');
+  // swdir/swr files have no sep_freq
+  const swdirSample =
+    '#YY  MM DD hh mm alpha1_1 (freq_1) ...\n' +
+    '2026 04 21 17 00 164.0 (0.025) 148.0 (0.030)\n';
+  const r2 = parseSpectralFile(swdirSample, false);
+  assert(r2 !== null && r2.values.length === 2, 'swdir sample should yield 2 bins');
+  assert(r2.values[0] === 164, 'first dir should be 164');
+  // Malformed / null input
+  assert(parseSpectralFile(null) === null, 'null input returns null');
+  assert(parseSpectralFile('') === null, 'empty input returns null');
+  assert(parseSpectralFile('just one line\n') === null, 'too-short input returns null');
+});
+
+// ── Test 7c: parseSpecSummaryFromText handles compass-text columns ──
+test('parseSpecSummaryFromText converts SwD/WWD text to degrees', function() {
+  const { parseSpecSummaryFromText } = loadSpectralFns();
+  const sample =
+    '#YY  MM DD hh mm WVHT  SwH  SwP  WWH  WWP SwD WWD  STEEPNESS  APD MWD\n' +
+    '#yr  mo dy hr mn    m    m  sec    m  sec  -  degT     -      sec degT\n' +
+    '2026 04 21 17 56  1.0  0.4 10.5  0.9  4.2  SE ENE    AVERAGE  7.3 149\n';
+  const s = parseSpecSummaryFromText(sample);
+  assert(s !== null, 'should parse valid .spec sample');
+  assert(s.hs === 1.0, 'hs should be 1.0');
+  assert(s.swellHt === 0.4, 'swellHt should be 0.4');
+  assert(s.swellPeriod === 10.5, 'swellPeriod should be 10.5');
+  assert(s.windHt === 0.9, 'windHt should be 0.9 (not 9.9)');
+  assert(s.windPeriod === 4.2, 'windPeriod should be 4.2 (not null)');
+  assert(s.swellDir === 135, 'SwD "SE" should map to 135°, got ' + s.swellDir);
+  assert(s.windDir === 67.5, 'WWD "ENE" should map to 67.5°, got ' + s.windDir);
+  assert(s.meanDir === 149, 'MWD should be 149° numeric');
+});
+
+// ── Test 7d: computePrimarySwellDir is energy-weighted and swell-banded ──
+test('computePrimarySwellDir returns energy-weighted swell direction', function() {
+  const { computePrimarySwellDir } = loadSpectralFns();
+  // Strong 10s swell concentrated near 140°, weak 4s noise at 300°
+  const bins = [
+    { period: 10, dir1: 140, energy: 1.0 },
+    { period: 10, dir1: 138, energy: 0.8 },
+    { period: 10, dir1: 142, energy: 0.8 },
+    { period: 4,  dir1: 300, energy: 0.3 }  // should be excluded (<8s)
+  ];
+  const dir = computePrimarySwellDir(bins);
+  assert(dir != null, 'should return a direction');
+  assert(Math.abs(dir - 140) < 5, 'expected ~140°, got ' + dir);
+  // Empty / null cases
+  assert(computePrimarySwellDir(null) === null, 'null input');
+  assert(computePrimarySwellDir([]) === null, 'empty array');
+  // Fallback when no swell-band energy
+  const onlyWind = [{ period: 4, dir1: 200, energy: 1.0 }];
+  const fb = computePrimarySwellDir(onlyWind);
+  assert(fb != null && Math.abs(fb - 200) < 1, 'should fall back to all bins when swell band empty');
 });
 
 // ── Test 8: fetchTextWithProxies exists ─────────────────
