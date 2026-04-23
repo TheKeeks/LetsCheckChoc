@@ -283,7 +283,7 @@ const PLOT_WIDTH = PLOT_RIGHT - PLOT_LEFT;
 const PLOT_HEIGHT = PLOT_BOTTOM - PLOT_TOP;
 const STRIP_TOP = PLOT_BOTTOM + 6;
 const STRIP_HEIGHT = 22;
-const Y_MAX = 7;
+const Y_MAX = 14;
 
 function xForIdx(i, n) {
   if (n <= 1) return PLOT_LEFT;
@@ -509,7 +509,7 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
     return { nightRuns: runs, sunLines: lines };
   }, [hours, n]);
 
-  const yTicks = [2, 4, 6];
+  const yTicks = [0, 2, 4, 6, 8, 10, 12, 14];
 
   const handleMove = (e) => {
     const svg = e.currentTarget;
