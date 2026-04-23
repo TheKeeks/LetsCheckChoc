@@ -444,6 +444,108 @@ function Tooltip({ hours, hoveredIdx, wrapWidth }) {
   );
 }
 
+function HoverBanner({ hours, hoveredIdx, wrapWidth }) {
+  if (hoveredIdx == null || !hours[hoveredIdx] || !wrapWidth) return null;
+  const h = hours[hoveredIdx];
+  const n = hours.length;
+  const q = windQ(h.windDir);
+  const color = QUALITY_COLORS[q];
+  const qualityLabel = q === 'good' ? 'OFFSHORE' : q === 'fair' ? 'X-SHORE' : 'ONSHORE';
+
+  const innerW = Math.max(0, wrapWidth - 24);
+  const pxX = 12 + (xForIdx(hoveredIdx, n) / 800) * innerW;
+  const W = 288;
+  const leftPx = Math.max(8, Math.min(wrapWidth - W - 8, pxX - W / 2));
+
+  const t = new Date(h.time);
+  const dayStr = t.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+  const hr = t.getHours();
+  const hourStr = hr === 0 ? '12AM' : hr === 12 ? '12PM' : hr < 12 ? hr + 'AM' : (hr - 12) + 'PM';
+  const headerStr = dayStr + ' · ' + hourStr;
+
+  const swellRot = h.swellDir != null ? h.swellDir : 0;
+  const windRot = h.windDir != null ? h.windDir : 0;
+  const showGust = h.gustMph != null && h.windMph != null && h.gustMph > h.windMph;
+
+  const style = {
+    position: 'absolute',
+    left: leftPx + 'px',
+    top: '14px',
+    width: W + 'px',
+    background: '#0f1120',
+    borderLeft: '2px solid ' + color,
+    clipPath: 'polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% calc(100% - 12px), calc(100% - 12px) 100%, 12px 100%, 0 calc(100% - 12px), 0 12px)',
+    padding: '14px 18px',
+    fontFamily: 'Noto Sans, sans-serif',
+    color: '#e6e8f2',
+    pointerEvents: 'none',
+    zIndex: 3,
+    boxShadow: '0 12px 32px rgba(0,0,0,0.65)',
+  };
+
+  const labelStyle = {
+    fontFamily: 'Barlow Condensed, sans-serif',
+    fontWeight: 700,
+    fontSize: '11px',
+    letterSpacing: '0.14em',
+    color: '#6c7091',
+    textTransform: 'uppercase',
+    minWidth: '44px',
+  };
+
+  const needlePath = 'M 0 -5 L 3 4 L 0 2 L -3 4 Z';
+
+  return (
+    <div style={style}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+        <div style={{ fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, fontSize: '14px', letterSpacing: '0.14em', color: '#cfd3e6' }}>
+          {headerStr}
+        </div>
+        <span style={{
+          background: color,
+          color: '#0a0c18',
+          fontFamily: 'Barlow Condensed, sans-serif',
+          fontWeight: 700,
+          fontSize: '11px',
+          letterSpacing: '0.12em',
+          padding: '2px 10px',
+          borderRadius: '10px',
+        }}>{qualityLabel}</span>
+      </div>
+      <div style={{ marginTop: '8px', fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 900, fontStyle: 'italic', fontSize: '28px', color: '#f5c518', lineHeight: 1 }}>
+        {h.waveFt != null ? h.waveFt.toFixed(1) : '–'} FT
+        <span style={{ fontSize: '16px', color: '#a9b0c7', fontWeight: 700, fontStyle: 'italic', marginLeft: '8px', letterSpacing: '0.04em' }}>
+          @ {h.period != null ? h.period.toFixed(0) + 's' : '–'}
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', fontSize: '13px' }}>
+        <span style={labelStyle}>SWELL</span>
+        <svg width="14" height="14" viewBox="-7 -7 14 14" style={{ transform: 'rotate(' + swellRot + 'deg)' }}>
+          <path d={needlePath} fill="#cfd3e6" />
+        </svg>
+        <span style={{ color: '#e6e8f2', fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, letterSpacing: '0.06em' }}>
+          {degToCompass(h.swellDir) || '–'}
+          {h.swellDir != null ? ' ' + Math.round(h.swellDir) + '°' : ''}
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', fontSize: '13px' }}>
+        <span style={labelStyle}>WIND</span>
+        <svg width="14" height="14" viewBox="-7 -7 14 14" style={{ transform: 'rotate(' + windRot + 'deg)' }}>
+          <path d={needlePath} fill="#cfd3e6" />
+        </svg>
+        <span style={{ color: '#e6e8f2', fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, letterSpacing: '0.06em' }}>
+          {degToCompass(h.windDir) || '–'}
+          {h.windDir != null ? ' ' + Math.round(h.windDir) + '°' : ''}
+        </span>
+        <span style={{ color: '#e6e8f2', marginLeft: '6px', fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, letterSpacing: '0.06em' }}>
+          {h.windMph != null ? Math.round(h.windMph) : '–'} MPH
+          {showGust ? ' G' + Math.round(h.gustMph) : ''}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function SwellChart({ hours, hoveredIdx, onHover }) {
   const n = hours.length;
   const wrapRef = useRef(null);
@@ -670,6 +772,7 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
         )}
       </svg>
       <Tooltip hours={hours} hoveredIdx={hoveredIdx} wrapWidth={wrapWidth} />
+      <HoverBanner hours={hours} hoveredIdx={hoveredIdx} wrapWidth={wrapWidth} />
     </div>
   );
 }
