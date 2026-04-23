@@ -81,6 +81,7 @@
     background: #0a0c18;
     border: 1px solid #1a1d33;
     padding: 12px;
+    touch-action: none;
   }
   .fn-chart-wrap svg { display: block; width: 100%; height: auto; }
   .fn-legend {
@@ -655,10 +656,44 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
 
   const yTicks = [0, 2, 4, 6, 8, 10, 12, 14];
 
+  const nowIdx = useMemo(() => {
+    if (!n) return null;
+    const nowMs = Date.now();
+    let best = 0;
+    let bestDelta = Infinity;
+    for (let i = 0; i < n; i++) {
+      const d = Math.abs(new Date(hours[i].time).getTime() - nowMs);
+      if (d < bestDelta) { bestDelta = d; best = i; }
+    }
+    return best;
+  }, [hours, n]);
+
+  const peakIdx = useMemo(() => {
+    if (!n) return null;
+    let best = -1;
+    let bestVal = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const v = hours[i].waveFt;
+      if (v != null && v > bestVal) { bestVal = v; best = i; }
+    }
+    return best >= 0 ? best : null;
+  }, [hours, n]);
+
   const handleMove = (e) => {
     const svg = e.currentTarget;
     const rect = svg.getBoundingClientRect();
     const vbX = ((e.clientX - rect.left) / rect.width) * 800;
+    if (vbX < PLOT_LEFT || vbX > PLOT_RIGHT) { onHover(null); return; }
+    const frac = (vbX - PLOT_LEFT) / PLOT_WIDTH;
+    const i = Math.max(0, Math.min(n - 1, Math.round(frac * (n - 1))));
+    onHover(i);
+  };
+
+  const handleTouch = (e) => {
+    if (!e.touches || e.touches.length === 0) return;
+    const svg = e.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const vbX = ((e.touches[0].clientX - rect.left) / rect.width) * 800;
     if (vbX < PLOT_LEFT || vbX > PLOT_RIGHT) { onHover(null); return; }
     const frac = (vbX - PLOT_LEFT) / PLOT_WIDTH;
     const i = Math.max(0, Math.min(n - 1, Math.round(frac * (n - 1))));
@@ -673,7 +708,10 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
     <div className="fn-chart-wrap" ref={wrapRef} style={{ position: 'relative' }}>
       <svg viewBox="0 0 800 300" preserveAspectRatio="xMidYMid meet"
            onMouseMove={handleMove}
-           onMouseLeave={() => onHover(null)}>
+           onMouseLeave={() => onHover(null)}
+           onTouchStart={handleTouch}
+           onTouchMove={handleTouch}
+           onTouchEnd={() => onHover(null)}>
         <defs>
           <mask id="crescentMask" maskContentUnits="objectBoundingBox">
             <circle cx="0.5" cy="0.5" r="0.5" fill="#fff" />
@@ -745,6 +783,22 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
           </g>
         ))}
 
+        {nowIdx != null && (
+          <g pointerEvents="none">
+            <line x1={xForIdx(nowIdx, n)} x2={xForIdx(nowIdx, n)}
+                  y1={PLOT_TOP} y2={PLOT_BOTTOM}
+                  stroke="#f5c518" strokeOpacity="0.6"
+                  strokeWidth="1" />
+            <text x={xForIdx(nowIdx, n)} y={PLOT_TOP - 2}
+                  fontFamily="Barlow Condensed, sans-serif"
+                  fontWeight="700" fontSize="10"
+                  fill="#f5c518" textAnchor="middle"
+                  letterSpacing="1">
+              NOW
+            </text>
+          </g>
+        )}
+
         <rect x={PLOT_LEFT} y={STRIP_TOP}
               width={PLOT_WIDTH} height={STRIP_HEIGHT}
               fill="#06080f" stroke="#1a1d33" strokeWidth="1" />
@@ -770,6 +824,28 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
                     fill="#f5c518" stroke="#0a0c18" strokeWidth="1.5" />
           </g>
         )}
+
+        {peakIdx != null && hours[peakIdx].waveFt != null && (() => {
+          const px = xForIdx(peakIdx, n);
+          const py = yForFt(hours[peakIdx].waveFt);
+          const label = 'PEAK ' + hours[peakIdx].waveFt.toFixed(1) + ' FT';
+          const halfLabel = 30;
+          const labelX = Math.max(PLOT_LEFT + halfLabel, Math.min(PLOT_RIGHT - halfLabel, px));
+          const labelY = Math.max(PLOT_TOP + 10, py - 8);
+          return (
+            <g pointerEvents="none">
+              <circle cx={px} cy={py} r="4"
+                      fill="#f5c518" stroke="#0a0c18" strokeWidth="1" />
+              <text x={labelX} y={labelY}
+                    fontFamily="Barlow Condensed, sans-serif"
+                    fontWeight="700" fontSize="10"
+                    fill="#f5c518" textAnchor="middle"
+                    letterSpacing="1">
+                {label}
+              </text>
+            </g>
+          );
+        })()}
       </svg>
       <Tooltip hours={hours} hoveredIdx={hoveredIdx} wrapWidth={wrapWidth} />
       <HoverBanner hours={hours} hoveredIdx={hoveredIdx} wrapWidth={wrapWidth} />
