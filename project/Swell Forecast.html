@@ -325,6 +325,7 @@ async function fetchForecastData() {
     + '?latitude=' + LAT_MARINE
     + '&longitude=' + LON_MARINE
     + '&hourly=swell_wave_height,swell_wave_direction,swell_wave_period'
+    + ',secondary_swell_wave_height,secondary_swell_wave_period,secondary_swell_wave_direction'
     + '&length_unit=imperial'
     + '&timezone=auto'
     + '&forecast_days=7';
@@ -364,6 +365,9 @@ async function fetchForecastData() {
       waveFt:   mh.swell_wave_height ? mh.swell_wave_height[i] : null,
       period:   mh.swell_wave_period ? mh.swell_wave_period[i] : null,
       swellDir: mh.swell_wave_direction ? mh.swell_wave_direction[i] : null,
+      secondarySwellHeight:    mh.secondary_swell_wave_height    ? mh.secondary_swell_wave_height[i]    : null,
+      secondarySwellPeriod:    mh.secondary_swell_wave_period    ? mh.secondary_swell_wave_period[i]    : null,
+      secondarySwellDirection: mh.secondary_swell_wave_direction ? mh.secondary_swell_wave_direction[i] : null,
       windMph:  wh.wind_speed_10m ? wh.wind_speed_10m[i] : null,
       windDir:  wh.wind_direction_10m ? wh.wind_direction_10m[i] : null,
       gustMph:  wh.wind_gusts_10m ? wh.wind_gusts_10m[i] : null,
@@ -1116,16 +1120,6 @@ function LineupOverlay({ hours, hoveredIdx }) {
   const windColor = ARROW_COLORS[windKlass];
   const swellColor = ARROW_COLORS.swell;
 
-  // Firing: wind offshore (windToDeg in [110,200]) AND swell in-window
-  const windToDeg = h.windDir != null
-    ? (((h.windDir + 180) % 360) + 360) % 360
-    : null;
-  const windOffshore = windToDeg != null && windToDeg >= 110 && windToDeg <= 200;
-  const swellInWindow = h.swellDir != null
-    && h.swellDir >= SWELL_WINDOW_MIN
-    && h.swellDir <= SWELL_WINDOW_MAX;
-  const firing = windOffshore && swellInWindow;
-
   // Arrow lengths
   const windLen = h.windMph != null
     ? clamp(h.windMph * K_WIND, ARROW_MIN_LEN, ARROW_MAX_LEN)
@@ -1136,6 +1130,38 @@ function LineupOverlay({ hours, hoveredIdx }) {
   const swellLen = swellEnergy > 0
     ? clamp(Math.sqrt(swellEnergy) * K_SWELL, ARROW_MIN_LEN, ARROW_MAX_LEN)
     : ARROW_MIN_LEN;
+
+  // Secondary swell threshold: suppress nulls, tiny heights, and near-duplicate
+  // partitions the model sometimes emits at almost the same direction as primary.
+  const sHeight = h.secondarySwellHeight;
+  const sPeriod = h.secondarySwellPeriod;
+  const sDir    = h.secondarySwellDirection;
+  const showSecondary = sHeight != null
+    && sPeriod != null
+    && sDir != null
+    && sHeight >= 1
+    && (h.waveFt == null || sHeight >= 0.25 * h.waveFt);
+  const secondaryEnergy = showSecondary ? sHeight * sHeight * sPeriod : 0;
+  const secondaryLen = showSecondary
+    ? clamp(Math.sqrt(secondaryEnergy) * K_SWELL, ARROW_MIN_LEN, ARROW_MAX_LEN)
+    : ARROW_MIN_LEN;
+  const secondaryOpacityMod = (showSecondary && swellEnergy > 0)
+    ? Math.min(1, Math.sqrt(secondaryEnergy) / Math.sqrt(swellEnergy))
+    : 1;
+  const secondaryOpacity = 0.55 * secondaryOpacityMod;
+
+  // Firing: wind offshore (windToDeg in [110,200]) AND at least one swell train in-window
+  const windToDeg = h.windDir != null
+    ? (((h.windDir + 180) % 360) + 360) % 360
+    : null;
+  const windOffshore = windToDeg != null && windToDeg >= 110 && windToDeg <= 200;
+  const primarySwellInWindow = h.swellDir != null
+    && h.swellDir >= SWELL_WINDOW_MIN
+    && h.swellDir <= SWELL_WINDOW_MAX;
+  const secondarySwellInWindow = showSecondary
+    && sDir >= SWELL_WINDOW_MIN
+    && sDir <= SWELL_WINDOW_MAX;
+  const firing = windOffshore && (primarySwellInWindow || secondarySwellInWindow);
 
   // Reef heading dashed guide
   const reefRad = (REEF_HEADING_DEG * Math.PI) / 180;
@@ -1156,10 +1182,14 @@ function LineupOverlay({ hours, hoveredIdx }) {
   const conePath = `M 50 50 L ${coneX1.toFixed(2)} ${coneY1.toFixed(2)} `
     + `A ${coneRadius} ${coneRadius} 0 0 1 ${coneX2.toFixed(2)} ${coneY2.toFixed(2)} Z`;
 
-  // Shadow / glow (firing stacks green glow on top of base shadow)
+  // Shadow / glow (firing stacks green glow on top of base shadow). The glow
+  // attaches only to arrow(s) whose own swell train is in-window; the wind arrow
+  // tracks the overall firing predicate.
   const baseShadow = 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))';
   const firingShadow = 'drop-shadow(0 0 6px rgba(34, 197, 94, 0.9)) ' + baseShadow;
-  const arrowFilter = firing ? firingShadow : baseShadow;
+  const primaryArrowFilter   = (firing && primarySwellInWindow)   ? firingShadow : baseShadow;
+  const secondaryArrowFilter = (firing && secondarySwellInWindow) ? firingShadow : baseShadow;
+  const windArrowFilter      = firing                              ? firingShadow : baseShadow;
 
   const reefStroke = firing ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.3)';
   const coneFill = firing ? 'rgba(34, 197, 94, 0.2)' : 'rgba(103, 232, 249, 0.15)';
@@ -1172,6 +1202,11 @@ function LineupOverlay({ hours, hoveredIdx }) {
   const swellFtText = h.waveFt != null ? h.waveFt.toFixed(1) : '–';
   const swellPerText = h.period != null ? h.period.toFixed(0) + 's' : '–';
   const swellLabel = `${swellFtText}ft @ ${swellPerText} ${swellCompass}`;
+
+  const secondaryCompass = degToCompass(sDir) || '–';
+  const secondaryFtText = sHeight != null ? sHeight.toFixed(1) : '–';
+  const secondaryPerText = sPeriod != null ? sPeriod.toFixed(0) + 's' : '–';
+  const secondaryLabel = `${secondaryFtText}ft @ ${secondaryPerText} ${secondaryCompass}`;
 
   return (
     <div className="fn-lineup">
@@ -1224,18 +1259,29 @@ function LineupOverlay({ hours, hoveredIdx }) {
               dominantBaseline="middle"
             >reef 335°</text>
 
+            {showSecondary && (
+              <ConvergingArrow
+                fromDeg={sDir}
+                length={secondaryLen}
+                color={swellColor}
+                filter={secondaryArrowFilter}
+                label={secondaryLabel}
+                opacity={secondaryOpacity}
+                fontSize={2.17}
+              />
+            )}
             <ConvergingArrow
               fromDeg={h.swellDir}
               length={swellLen}
               color={swellColor}
-              filter={arrowFilter}
+              filter={primaryArrowFilter}
               label={swellLabel}
             />
             <ConvergingArrow
               fromDeg={h.windDir}
               length={windLen}
               color={windColor}
-              filter={arrowFilter}
+              filter={windArrowFilter}
               label={windLabel}
             />
           </svg>
@@ -1248,7 +1294,7 @@ function LineupOverlay({ hours, hoveredIdx }) {
 // Renders an arrow with tip (head) at the apex (50,50) and shaft extending
 // outward toward the "from" direction, drawn directly in world coordinates.
 // fromDeg = compass bearing (0°=N, clockwise) the wind/swell is coming FROM.
-function ConvergingArrow({ fromDeg, length, color, filter, label }) {
+function ConvergingArrow({ fromDeg, length, color, filter, label, opacity = 1, fontSize = 2.6 }) {
   if (fromDeg == null) return null;
   const rad = (((fromDeg % 360) + 360) % 360) * Math.PI / 180;
   const ux = Math.sin(rad);       // forward (apex → origin) unit x
@@ -1268,7 +1314,7 @@ function ConvergingArrow({ fromDeg, length, color, filter, label }) {
   const cornerRY = headBaseY + HEAD_HALF_W * py;
 
   return (
-    <g style={{ filter, transition: 'filter 200ms' }}>
+    <g style={{ filter, transition: 'filter 200ms' }} opacity={opacity}>
       <line
         x1={headBaseX.toFixed(2)} y1={headBaseY.toFixed(2)}
         x2={originX.toFixed(2)} y2={originY.toFixed(2)}
@@ -1283,6 +1329,7 @@ function ConvergingArrow({ fromDeg, length, color, filter, label }) {
         originX={originX} originY={originY}
         perpX={px} perpY={py}
         color={color} text={label}
+        fontSize={fontSize}
       />
     </g>
   );
@@ -1290,14 +1337,13 @@ function ConvergingArrow({ fromDeg, length, color, filter, label }) {
 
 // Axis-aligned upright label pill anchored at arrow origin, offset
 // perpendicular to the shaft so it doesn't overlap the line.
-function ArrowLabel({ originX, originY, perpX, perpY, color, text }) {
+function ArrowLabel({ originX, originY, perpX, perpY, color, text, fontSize = 2.6 }) {
   const OFFSET = 1.8;
-  const FONT_SIZE = 2.6;
   const PAD_X = 1.2;
   const PAD_Y = 0.6;
-  const charW = 1.35;
+  const charW = fontSize * (1.35 / 2.6);
   const w = Math.max(6, text.length * charW + PAD_X * 2);
-  const h = FONT_SIZE + PAD_Y * 2;
+  const h = fontSize + PAD_Y * 2;
   // Place rect center at distance (OFFSET + w/2) from origin along perp dir,
   // so the nearest edge of the axis-aligned rect sits roughly OFFSET away.
   const cx = originX + (OFFSET + w / 2) * perpX;
@@ -1314,7 +1360,7 @@ function ArrowLabel({ originX, originY, perpX, perpY, color, text }) {
       />
       <text
         x={cx.toFixed(2)} y={cy.toFixed(2)}
-        fontSize={FONT_SIZE}
+        fontSize={fontSize}
         fill={color}
         fontFamily="Barlow Condensed, sans-serif"
         fontWeight="700"
