@@ -11,6 +11,7 @@
   html, body {
     margin: 0;
     padding: 0;
+    overflow-x: hidden;
     background: #07080f;
     font-family: 'Noto Sans', system-ui, sans-serif;
     color: #e6e8f2;
@@ -187,6 +188,20 @@
     text-decoration: none;
   }
   .fn-sources-link:hover { color: #f5c518; }
+
+  @media (pointer: coarse) {
+    #root { padding: 12px 0; }
+    .fn-card {
+      width: calc(100vw - 16px);
+      max-width: none;
+      margin: 0 8px;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+    .fn-card::before { height: 40px; }
+    .fn-header { margin-bottom: 12px; }
+    .fn-chart-wrap { padding: 52px 8px 8px; }
+  }
 </style>
 </head>
 <body>
@@ -551,11 +566,84 @@ function HoverBanner({ hours, hoveredIdx, wrapWidth }) {
   );
 }
 
+function MobileHoverBanner({ hours, hoveredIdx, wrapWidth }) {
+  if (hoveredIdx == null || !hours[hoveredIdx] || !wrapWidth) return null;
+  const h = hours[hoveredIdx];
+  const n = hours.length;
+  const q = windQ(h.windDir);
+  const color = QUALITY_COLORS[q];
+  const qualityLetter = q === 'good' ? 'G' : q === 'fair' ? 'F' : 'P';
+
+  const innerW = Math.max(0, wrapWidth - 16);
+  const pxX = 8 + (xForIdx(hoveredIdx, n) / 800) * innerW;
+  const W = 140;
+  const leftPx = Math.max(8, Math.min(wrapWidth - W - 8, pxX - W / 2));
+
+  const t = new Date(h.time);
+  const dayStr = t.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+  const hr = t.getHours();
+  const hourStr = hr === 0 ? '12AM' : hr === 12 ? '12PM' : hr < 12 ? hr + 'AM' : (hr - 12) + 'PM';
+  const headerStr = dayStr + ' · ' + hourStr;
+
+  const style = {
+    position: 'absolute',
+    left: leftPx + 'px',
+    top: '8px',
+    width: W + 'px',
+    background: '#0f1120',
+    borderLeft: '2px solid ' + color,
+    clipPath: 'polygon(6px 0, calc(100% - 6px) 0, 100% 6px, 100% calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 0 calc(100% - 6px), 0 6px)',
+    padding: '6px 8px',
+    fontFamily: 'Noto Sans, sans-serif',
+    color: '#e6e8f2',
+    pointerEvents: 'none',
+    zIndex: 3,
+    boxShadow: '0 8px 22px rgba(0,0,0,0.55)',
+  };
+
+  return (
+    <div style={style}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px',
+        fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, fontSize: '10px',
+        letterSpacing: '0.14em', color: '#6c7091', textTransform: 'uppercase',
+      }}>
+        <span>{headerStr}</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: color, display: 'inline-block' }}></span>
+          <span style={{ color: '#cfd3e6', fontSize: '10px' }}>{qualityLetter}</span>
+        </span>
+      </div>
+      <div style={{
+        marginTop: '2px',
+        fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 900, fontStyle: 'italic',
+        fontSize: '14px', color: '#f5c518', lineHeight: 1.1, letterSpacing: '0.02em',
+      }}>
+        {h.waveFt != null ? h.waveFt.toFixed(1) : '–'} FT
+        <span style={{ fontSize: '11px', color: '#a9b0c7', fontWeight: 700, marginLeft: '4px' }}>
+          @ {h.period != null ? h.period.toFixed(0) + 's' : '–'}
+        </span>
+      </div>
+      <div style={{
+        marginTop: '3px', fontSize: '11px', color: '#e6e8f2',
+        fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, letterSpacing: '0.04em',
+      }}>
+        {h.windMph != null ? Math.round(h.windMph) : '–'}mph {degToCompass(h.windDir) || '–'}
+      </div>
+      <div style={{
+        marginTop: '1px', fontSize: '11px', color: '#e6e8f2',
+        fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, letterSpacing: '0.04em',
+      }}>
+        {degToCompass(h.swellDir) || '–'}{h.swellDir != null ? ' ' + Math.round(h.swellDir) + '°' : ''}
+      </div>
+    </div>
+  );
+}
+
 function SwellChart({ hours, hoveredIdx, onHover }) {
   const n = hours.length;
   const wrapRef = useRef(null);
   const [wrapWidth, setWrapWidth] = useState(0);
-  const [mode, setMode] = useState('scrub');
   useEffect(() => {
     const update = () => {
       if (wrapRef.current) setWrapWidth(wrapRef.current.clientWidth);
@@ -676,7 +764,6 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
   };
 
   const handleTouch = (e) => {
-    if (mode !== 'scrub') return;
     const touch = e.touches[0];
     if (!touch) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -691,40 +778,18 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
 
   const wrapStyle = {
     position: 'relative',
-    touchAction: IS_MOBILE ? (mode === 'pan' ? 'pan-x' : 'none') : undefined,
-  };
-
-  const toggleBtnStyle = {
-    position: 'absolute',
-    top: '8px',
-    right: '8px',
-    zIndex: 4,
-    background: '#0f1120',
-    border: '1px solid ' + (mode === 'pan' ? '#f5c518' : '#2a2e4a'),
-    color: mode === 'pan' ? '#f5c518' : '#cfd3e6',
-    padding: '4px 10px',
-    fontFamily: 'Barlow Condensed, sans-serif',
-    fontWeight: 700,
-    fontSize: '11px',
-    letterSpacing: '0.14em',
-    textTransform: 'uppercase',
-    cursor: 'pointer',
+    touchAction: IS_MOBILE ? 'none' : undefined,
   };
 
   return (
     <div className="fn-chart-wrap" ref={wrapRef} style={wrapStyle}>
-      {IS_MOBILE && (
-        <button type="button"
-                onClick={() => setMode(m => m === 'scrub' ? 'pan' : 'scrub')}
-                style={toggleBtnStyle}>
-          {mode === 'pan' ? '⇄ PAN' : '✛ SCRUB'}
-        </button>
-      )}
       <svg viewBox="0 0 800 300" preserveAspectRatio="xMidYMid meet"
            onMouseMove={handleMove}
            onMouseLeave={() => { if (!IS_MOBILE) onHover(null); }}
            onTouchStart={handleTouch}
-           onTouchMove={handleTouch}>
+           onTouchMove={handleTouch}
+           onTouchEnd={() => onHover(null)}
+           onTouchCancel={() => onHover(null)}>
         <defs>
           <mask id="crescentMask" maskContentUnits="objectBoundingBox">
             <circle cx="0.5" cy="0.5" r="0.5" fill="#fff" />
@@ -822,8 +887,14 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
           </g>
         )}
       </svg>
-      <Tooltip hours={hours} hoveredIdx={hoveredIdx} wrapWidth={wrapWidth} />
-      <HoverBanner hours={hours} hoveredIdx={hoveredIdx} wrapWidth={wrapWidth} />
+      {IS_MOBILE ? (
+        <MobileHoverBanner hours={hours} hoveredIdx={hoveredIdx} wrapWidth={wrapWidth} />
+      ) : (
+        <>
+          <Tooltip hours={hours} hoveredIdx={hoveredIdx} wrapWidth={wrapWidth} />
+          <HoverBanner hours={hours} hoveredIdx={hoveredIdx} wrapWidth={wrapWidth} />
+        </>
+      )}
     </div>
   );
 }
@@ -935,17 +1006,6 @@ function App() {
     return () => { alive = false; };
   }, []);
 
-  useEffect(() => {
-    if (!IS_MOBILE || !hours || !hours.length || hoveredIdx != null) return;
-    const now = Date.now();
-    let nearest = 0;
-    let best = Infinity;
-    for (let i = 0; i < hours.length; i++) {
-      const diff = Math.abs(new Date(hours[i].time).getTime() - now);
-      if (diff < best) { best = diff; nearest = i; }
-    }
-    setHoveredIdx(nearest);
-  }, [hours]);
 
   if (error) return <ErrorCard message={error} />;
   if (!hours) return <LoadingCard />;
