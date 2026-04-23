@@ -435,8 +435,8 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
     const runs = [];
     let start = null;
     for (let i = 0; i < n; i++) {
-      if (night[i] && start == null) start = i;
-      if ((!night[i] || i === n - 1) && start != null) {
+      if (night[i] && start === null) start = i;
+      if ((!night[i] || i === n - 1) && start !== null) {
         const end = night[i] && i === n - 1 ? i : i - 1;
         runs.push({ x: xStartFor(start), w: xEndFor(end) - xStartFor(start) });
         start = null;
