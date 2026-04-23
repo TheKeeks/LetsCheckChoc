@@ -293,6 +293,43 @@ function yForFt(ft) {
   return PLOT_BOTTOM - (v / Y_MAX) * PLOT_HEIGHT;
 }
 
+function sunTimes(date, lat) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const toDeg = (r) => (r * 180) / Math.PI;
+  const norm360 = (v) => ((v % 360) + 360) % 360;
+  const norm24 = (v) => ((v % 24) + 24) % 24;
+  const y = date.getFullYear();
+  const m = date.getMonth();
+  const d = date.getDate();
+  const day = Math.floor((Date.UTC(y, m, d) - Date.UTC(y, 0, 0)) / 86400000);
+  const lngHour = LON_WIND / 15;
+  const latRad = toRad(lat);
+  const zenithCos = Math.cos(toRad(90.833));
+  const calc = (isRise) => {
+    const t = day + ((isRise ? 6 : 18) - lngHour) / 24;
+    const M = 0.9856 * t - 3.289;
+    let L = M + 1.916 * Math.sin(toRad(M)) + 0.02 * Math.sin(toRad(2 * M)) + 282.634;
+    L = norm360(L);
+    let RA = toDeg(Math.atan(0.91764 * Math.tan(toRad(L))));
+    RA = norm360(RA);
+    const Lquad = Math.floor(L / 90) * 90;
+    const RAquad = Math.floor(RA / 90) * 90;
+    RA = (RA + (Lquad - RAquad)) / 15;
+    const sinDec = 0.39782 * Math.sin(toRad(L));
+    const cosDec = Math.cos(Math.asin(sinDec));
+    const cosH = (zenithCos - sinDec * Math.sin(latRad)) / (cosDec * Math.cos(latRad));
+    if (cosH > 1) return 0;
+    if (cosH < -1) return 12;
+    let H = isRise ? 360 - toDeg(Math.acos(cosH)) : toDeg(Math.acos(cosH));
+    H /= 15;
+    const T = H + RA - 0.06571 * t - 6.622;
+    const UT = norm24(T - lngHour);
+    const tz = -new Date(y, m, d, 12, 0, 0, 0).getTimezoneOffset() / 60;
+    return norm24(UT + tz);
+  };
+  return { sunriseHr: calc(true), sunsetHr: calc(false) };
+}
+
 function buildSmoothPath(points) {
   if (points.length === 0) return '';
   if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
@@ -359,6 +396,55 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
     return divs;
   }, [hours, n]);
 
+  const { nightRuns, sunLines } = useMemo(() => {
+    if (!n) return { nightRuns: [], sunLines: [] };
+    const xAt = (ms) => {
+      const firstMs = new Date(hours[0].time).getTime();
+      const lastMs = new Date(hours[n - 1].time).getTime();
+      if (ms <= firstMs) return PLOT_LEFT;
+      if (ms >= lastMs) return PLOT_RIGHT;
+      for (let i = 0; i < n - 1; i++) {
+        const a = new Date(hours[i].time).getTime();
+        const b = new Date(hours[i + 1].time).getTime();
+        if (ms >= a && ms <= b) {
+          const f = (ms - a) / (b - a || 1);
+          return xForIdx(i, n) + (xForIdx(i + 1, n) - xForIdx(i, n)) * f;
+        }
+      }
+      return PLOT_RIGHT;
+    };
+    const dayMap = new Map();
+    const night = [];
+    const lines = [];
+    for (let i = 0; i < n; i++) {
+      const t = new Date(hours[i].time);
+      const key = `${t.getFullYear()}-${t.getMonth()}-${t.getDate()}`;
+      let sun = dayMap.get(key);
+      if (!sun) {
+        sun = sunTimes(t, LAT_WIND);
+        dayMap.set(key, sun);
+        const midnight = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
+        lines.push({ x: xAt(midnight + sun.sunriseHr * 3600000) });
+        lines.push({ x: xAt(midnight + sun.sunsetHr * 3600000) });
+      }
+      const hr = t.getHours() + t.getMinutes() / 60;
+      night.push(hr < sun.sunriseHr || hr >= sun.sunsetHr);
+    }
+    const xStartFor = (i) => i === 0 ? PLOT_LEFT : (xForIdx(i - 1, n) + xForIdx(i, n)) / 2;
+    const xEndFor = (i) => i === n - 1 ? PLOT_RIGHT : (xForIdx(i, n) + xForIdx(i + 1, n)) / 2;
+    const runs = [];
+    let start = null;
+    for (let i = 0; i < n; i++) {
+      if (night[i] && start === null) start = i;
+      if ((!night[i] || i === n - 1) && start !== null) {
+        const end = night[i] && i === n - 1 ? i : i - 1;
+        runs.push({ x: xStartFor(start), w: xEndFor(end) - xStartFor(start) });
+        start = null;
+      }
+    }
+    return { nightRuns: runs, sunLines: lines };
+  }, [hours, n]);
+
   const yTicks = [2, 4, 6];
 
   const handleMove = (e) => {
@@ -397,6 +483,13 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
           </g>
         ))}
 
+        {nightRuns.map((run, i) => (
+          <rect key={'night-' + i}
+                x={run.x} y={PLOT_TOP}
+                width={run.w} height={PLOT_HEIGHT}
+                fill="rgba(2,3,14,0.58)" />
+        ))}
+
         {areaSegments.map((seg, i) => (
           <path key={'area-' + i} d={seg.d}
                 fill={seg.color} fillOpacity="0.18" stroke="none" />
@@ -405,6 +498,14 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
         <path d={linePath} fill="none"
               stroke="#e6e8f2" strokeWidth="1.5"
               strokeLinejoin="round" strokeLinecap="round" />
+
+        {sunLines.map((sl, i) => (
+          <line key={'sun-' + i}
+                x1={sl.x} x2={sl.x}
+                y1={PLOT_TOP} y2={PLOT_BOTTOM}
+                stroke="#f5c518" strokeWidth="1"
+                strokeDasharray="3 3" />
+        ))}
 
         {dayDividers.map((dv, i) => (
           <g key={'dv-' + i}>
