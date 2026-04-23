@@ -313,8 +313,20 @@ const { useState, useEffect, useMemo, useRef } = React;
 // rot variables, etc.) — those are NOT the spot's facing direction and were left alone.
 // END BEARING AUDIT
 
+// SWELL WINDOW AUDIT
+// Grep run on project/Swell Forecast.html for: 115, 158, swellWindow, exposureMin,
+// exposureMax, windowStart, windowEnd.
+//
+// Matches found (pre-change): none. No prior constants or literals for the swell
+// exposure window existed in this file. Added SWELL_WINDOW_MIN = 115 and
+// SWELL_WINDOW_MAX = 158 as named constants below (bearings the swell must come
+// FROM to hit the reef; asymmetric around the reef's back-azimuth of 155°).
+// END SWELL WINDOW AUDIT
+
 const REEF_HEADING_DEG = 335;
 const OFFSHORE_CENTER = REEF_HEADING_DEG;
+const SWELL_WINDOW_MIN = 115; // SE bound (degrees, direction swell comes FROM)
+const SWELL_WINDOW_MAX = 158; // SE bound (degrees, direction swell comes FROM)
 const LAT_MARINE = 41.089152, LON_MARINE = -71.721050;
 const LAT_WIND   = 41.275693, LON_WIND   = -71.963310;
 
@@ -784,6 +796,22 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
 
   const dayDividers = useMemo(() => {
     const divs = [];
+    if (!n) return divs;
+    const xAt = (ms) => {
+      const firstMs = new Date(hours[0].time).getTime();
+      const lastMs = new Date(hours[n - 1].time).getTime();
+      if (ms <= firstMs) return PLOT_LEFT;
+      if (ms >= lastMs) return PLOT_RIGHT;
+      for (let i = 0; i < n - 1; i++) {
+        const a = new Date(hours[i].time).getTime();
+        const b = new Date(hours[i + 1].time).getTime();
+        if (ms >= a && ms <= b) {
+          const f = (ms - a) / (b - a || 1);
+          return xForIdx(i, n) + (xForIdx(i + 1, n) - xForIdx(i, n)) * f;
+        }
+      }
+      return PLOT_RIGHT;
+    };
     for (let i = 0; i < n; i++) {
       const t = new Date(hours[i].time);
       if (t.getHours() === 0 || i === 0) {
@@ -792,7 +820,13 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
           .toUpperCase()
           .replace(',', '')
           .replace(/\s+/, ' / ');
-        divs.push({ x, label, i });
+        const sun = sunTimes(t, LAT_WIND);
+        const midHour = (sun.sunsetHr > sun.sunriseHr)
+          ? (sun.sunriseHr + sun.sunsetHr) / 2
+          : 12;
+        const midnight = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
+        const labelX = xAt(midnight + midHour * 3600000);
+        divs.push({ x, label, i, labelX });
       }
     }
     return divs;
@@ -952,10 +986,10 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
                   y1={PLOT_TOP} y2={PLOT_BOTTOM}
                   stroke="#f5c518" strokeOpacity="0.18"
                   strokeWidth="1" strokeDasharray="3 3" />
-            <text x={dv.x + 4} y={PLOT_TOP + 12}
+            <text x={dv.labelX} y={PLOT_TOP + 12}
                   fontFamily="Barlow Condensed, sans-serif"
                   fontSize="10" fill="#cfa617"
-                  letterSpacing="1">
+                  letterSpacing="1" textAnchor="middle">
               {dv.label}
             </text>
           </g>
@@ -1142,6 +1176,21 @@ function LineupOverlay({ hours, hoveredIdx }) {
   const reefLabelX = 50 + (reefLen + 5) * Math.sin(reefRad);
   const reefLabelY = 50 - (reefLen + 5) * Math.cos(reefRad);
 
+  const coneRadius = 40;
+  const coneMinRad = (SWELL_WINDOW_MIN * Math.PI) / 180;
+  const coneMaxRad = (SWELL_WINDOW_MAX * Math.PI) / 180;
+  const coneX1 = 50 + coneRadius * Math.sin(coneMinRad);
+  const coneY1 = 50 - coneRadius * Math.cos(coneMinRad);
+  const coneX2 = 50 + coneRadius * Math.sin(coneMaxRad);
+  const coneY2 = 50 - coneRadius * Math.cos(coneMaxRad);
+  const coneLabelR = coneRadius + 4;
+  const coneLabelX1 = 50 + coneLabelR * Math.sin(coneMinRad);
+  const coneLabelY1 = 50 - coneLabelR * Math.cos(coneMinRad);
+  const coneLabelX2 = 50 + coneLabelR * Math.sin(coneMaxRad);
+  const coneLabelY2 = 50 - coneLabelR * Math.cos(coneMaxRad);
+  const conePath = `M 50 50 L ${coneX1.toFixed(2)} ${coneY1.toFixed(2)} `
+    + `A ${coneRadius} ${coneRadius} 0 0 1 ${coneX2.toFixed(2)} ${coneY2.toFixed(2)} Z`;
+
   return (
     <div className="fn-lineup">
       <div className="fn-lineup-frame">
@@ -1169,6 +1218,46 @@ function LineupOverlay({ hours, hoveredIdx }) {
               overflow: 'visible',
             }}
           >
+            {mode === 'swell' && (
+              <g>
+                <path
+                  d={conePath}
+                  fill="rgba(103, 232, 249, 0.15)"
+                  stroke="none"
+                />
+                <line
+                  x1="50" y1="50"
+                  x2={coneX1.toFixed(2)} y2={coneY1.toFixed(2)}
+                  stroke="rgba(103, 232, 249, 0.5)"
+                  strokeWidth="1"
+                  strokeDasharray="3 3"
+                />
+                <line
+                  x1="50" y1="50"
+                  x2={coneX2.toFixed(2)} y2={coneY2.toFixed(2)}
+                  stroke="rgba(103, 232, 249, 0.5)"
+                  strokeWidth="1"
+                  strokeDasharray="3 3"
+                />
+                <text
+                  x={coneLabelX1.toFixed(2)} y={coneLabelY1.toFixed(2)}
+                  style={{ fontSize: '9px' }}
+                  fill="rgba(255,255,255,0.5)"
+                  fontFamily="Barlow Condensed, sans-serif"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                >{SWELL_WINDOW_MIN}°</text>
+                <text
+                  x={coneLabelX2.toFixed(2)} y={coneLabelY2.toFixed(2)}
+                  style={{ fontSize: '9px' }}
+                  fill="rgba(255,255,255,0.5)"
+                  fontFamily="Barlow Condensed, sans-serif"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                >{SWELL_WINDOW_MAX}°</text>
+              </g>
+            )}
+
             <line
               x1="50" y1="50"
               x2={reefEndX.toFixed(2)} y2={reefEndY.toFixed(2)}
