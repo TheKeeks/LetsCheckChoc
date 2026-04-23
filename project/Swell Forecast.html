@@ -203,6 +203,10 @@ const OFFSHORE_CENTER = 340;
 const LAT_MARINE = 41.089152, LON_MARINE = -71.721050;
 const LAT_WIND   = 41.275693, LON_WIND   = -71.963310;
 
+const IS_MOBILE = typeof window !== 'undefined'
+  && window.matchMedia
+  && window.matchMedia('(pointer: coarse)').matches;
+
 const QUALITY_COLORS = {
   good: '#57e649',
   fair: '#f5c518',
@@ -550,6 +554,7 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
   const n = hours.length;
   const wrapRef = useRef(null);
   const [wrapWidth, setWrapWidth] = useState(0);
+  const [mode, setMode] = useState('scrub');
   useEffect(() => {
     const update = () => {
       if (wrapRef.current) setWrapWidth(wrapRef.current.clientWidth);
@@ -655,13 +660,27 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
 
   const yTicks = [0, 2, 4, 6, 8, 10, 12, 14];
 
-  const handleMove = (e) => {
-    const svg = e.currentTarget;
-    const rect = svg.getBoundingClientRect();
-    const vbX = ((e.clientX - rect.left) / rect.width) * 800;
-    if (vbX < PLOT_LEFT || vbX > PLOT_RIGHT) { onHover(null); return; }
+  const idxFromClientX = (clientX, rect) => {
+    const vbX = ((clientX - rect.left) / rect.width) * 800;
+    if (vbX < PLOT_LEFT || vbX > PLOT_RIGHT) return null;
     const frac = (vbX - PLOT_LEFT) / PLOT_WIDTH;
-    const i = Math.max(0, Math.min(n - 1, Math.round(frac * (n - 1))));
+    return Math.max(0, Math.min(n - 1, Math.round(frac * (n - 1))));
+  };
+
+  const handleMove = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const i = idxFromClientX(e.clientX, rect);
+    if (i == null) { onHover(null); return; }
+    onHover(i);
+  };
+
+  const handleTouch = (e) => {
+    if (mode !== 'scrub') return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const i = idxFromClientX(touch.clientX, rect);
+    if (i == null) return;
     onHover(i);
   };
 
@@ -669,11 +688,42 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
     ? { x: xForIdx(hoveredIdx, n), y: yForFt(hours[hoveredIdx].waveFt) }
     : null;
 
+  const wrapStyle = {
+    position: 'relative',
+    touchAction: IS_MOBILE ? (mode === 'pan' ? 'pan-x' : 'none') : undefined,
+  };
+
+  const toggleBtnStyle = {
+    position: 'absolute',
+    top: '8px',
+    right: '8px',
+    zIndex: 4,
+    background: '#0f1120',
+    border: '1px solid ' + (mode === 'pan' ? '#f5c518' : '#2a2e4a'),
+    color: mode === 'pan' ? '#f5c518' : '#cfd3e6',
+    padding: '4px 10px',
+    fontFamily: 'Barlow Condensed, sans-serif',
+    fontWeight: 700,
+    fontSize: '11px',
+    letterSpacing: '0.14em',
+    textTransform: 'uppercase',
+    cursor: 'pointer',
+  };
+
   return (
-    <div className="fn-chart-wrap" ref={wrapRef} style={{ position: 'relative' }}>
+    <div className="fn-chart-wrap" ref={wrapRef} style={wrapStyle}>
+      {IS_MOBILE && (
+        <button type="button"
+                onClick={() => setMode(m => m === 'scrub' ? 'pan' : 'scrub')}
+                style={toggleBtnStyle}>
+          {mode === 'pan' ? '⇄ PAN' : '✛ SCRUB'}
+        </button>
+      )}
       <svg viewBox="0 0 800 300" preserveAspectRatio="xMidYMid meet"
            onMouseMove={handleMove}
-           onMouseLeave={() => onHover(null)}>
+           onMouseLeave={() => { if (!IS_MOBILE) onHover(null); }}
+           onTouchStart={handleTouch}
+           onTouchMove={handleTouch}>
         <defs>
           <mask id="crescentMask" maskContentUnits="objectBoundingBox">
             <circle cx="0.5" cy="0.5" r="0.5" fill="#fff" />
@@ -883,6 +933,18 @@ function App() {
       .catch(err => { if (alive) setError(err.message || String(err)); });
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    if (!IS_MOBILE || !hours || !hours.length || hoveredIdx != null) return;
+    const now = Date.now();
+    let nearest = 0;
+    let best = Infinity;
+    for (let i = 0; i < hours.length; i++) {
+      const diff = Math.abs(new Date(hours[i].time).getTime() - now);
+      if (diff < best) { best = diff; nearest = i; }
+    }
+    setHoveredIdx(nearest);
+  }, [hours]);
 
   if (error) return <ErrorCard message={error} />;
   if (!hours) return <LoadingCard />;
