@@ -145,6 +145,48 @@
     text-align: center;
     padding: 24px 0;
   }
+  .fn-sources {
+    position: relative;
+    z-index: 1;
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(245, 197, 24, 0.35);
+  }
+  .fn-sources-header {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #a9b0c7;
+    padding: 2px 0;
+  }
+  .fn-sources-header:hover { color: #f5c518; }
+  .fn-sources-caret {
+    display: inline-block;
+    color: #f5c518;
+    font-size: 11px;
+    line-height: 1;
+  }
+  .fn-sources-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 0 2px;
+  }
+  .fn-sources-link {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    color: #a9b0c7;
+    text-decoration: none;
+  }
+  .fn-sources-link:hover { color: #f5c518; }
 </style>
 </head>
 <body>
@@ -683,6 +725,49 @@ function StatusBar({ hours, hoveredIdx }) {
   );
 }
 
+function Sources() {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="fn-sources">
+      <div
+        className="fn-sources-header"
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onClick={() => setExpanded(e => !e)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setExpanded(v => !v);
+          }
+        }}
+      >
+        <span>Sources</span>
+        <span className="fn-sources-caret">{expanded ? '▾' : '▸'}</span>
+      </div>
+      {expanded && (
+        <div className="fn-sources-list">
+          <a className="fn-sources-link"
+             href="https://open-meteo.com/en/docs/marine-weather-api"
+             target="_blank" rel="noopener noreferrer">
+            Open-Meteo Marine API
+          </a>
+          <a className="fn-sources-link"
+             href="https://open-meteo.com/en/docs"
+             target="_blank" rel="noopener noreferrer">
+            Open-Meteo Forecast API
+          </a>
+          <a className="fn-sources-link"
+             href="https://gml.noaa.gov/grad/solcalc/"
+             target="_blank" rel="noopener noreferrer">
+            NOAA Solar Calculator
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [hours, setHours] = useState(null);
   const [error, setError] = useState(null);
@@ -704,6 +789,7 @@ function App() {
       <SwellChart hours={hours} hoveredIdx={hoveredIdx} onHover={setHoveredIdx} />
       <Legend />
       <StatusBar hours={hours} hoveredIdx={hoveredIdx} />
+      <Sources />
     </CardShell>
   );
 }
