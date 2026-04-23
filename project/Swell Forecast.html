@@ -113,7 +113,31 @@
     font-size: 12px;
     color: #a9b0c7;
     min-height: 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
   }
+  .fn-status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #0a0c18;
+    border-radius: 2px;
+  }
+  .fn-status-key {
+    color: #6c7091;
+    text-transform: uppercase;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    margin-right: 4px;
+  }
+  .fn-status-val { color: #e6e8f2; font-weight: 600; }
   .fn-placeholder {
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 14px;
@@ -131,14 +155,92 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
 <script type="text/babel">
-const { useState } = React;
+const { useState, useEffect, useMemo } = React;
+
+const OFFSHORE_CENTER = 340;
+const LAT_MARINE = 41.089152, LON_MARINE = -71.721050;
+const LAT_WIND   = 41.275693, LON_WIND   = -71.963310;
+
+const QUALITY_COLORS = {
+  good: '#57e649',
+  fair: '#f5c518',
+  poor: '#ff4747',
+};
 
 const LEGEND = [
-  { label: 'Offshore', color: '#4ade80' },
-  { label: 'X-Shore',  color: '#f5c518' },
-  { label: 'Onshore',  color: '#ef4444' },
-  { label: 'Night',    color: '#1e2a5a' },
+  { label: 'Good',  color: QUALITY_COLORS.good },
+  { label: 'Fair',  color: QUALITY_COLORS.fair },
+  { label: 'Poor',  color: QUALITY_COLORS.poor },
 ];
+
+const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+function compassLabel(deg) {
+  const idx = Math.round(((deg % 360) + 360) % 360 / 22.5) % 16;
+  return COMPASS[idx];
+}
+
+function angularDist(a, b) {
+  return Math.abs(((a - b) % 360 + 540) % 360 - 180);
+}
+
+function windQ(dir) {
+  const d = angularDist(dir, OFFSHORE_CENTER);
+  if (d <= 45) return 'good';
+  if (d <= 90) return 'fair';
+  return 'poor';
+}
+
+async function fetchForecastData() {
+  const marineUrl = 'https://marine-api.open-meteo.com/v1/marine'
+    + '?latitude=' + LAT_MARINE
+    + '&longitude=' + LON_MARINE
+    + '&hourly=swell_wave_height,swell_wave_direction,swell_wave_period'
+    + '&length_unit=imperial'
+    + '&timezone=auto'
+    + '&forecast_days=7';
+
+  const windUrl = 'https://api.open-meteo.com/v1/forecast'
+    + '?latitude=' + LAT_WIND
+    + '&longitude=' + LON_WIND
+    + '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m'
+    + '&wind_speed_unit=mph'
+    + '&timezone=auto'
+    + '&forecast_days=7';
+
+  const [marineRes, windRes] = await Promise.all([
+    fetch(marineUrl),
+    fetch(windUrl),
+  ]);
+
+  if (!marineRes.ok) {
+    throw new Error('Marine API ' + marineRes.status + ' ' + marineRes.statusText);
+  }
+  if (!windRes.ok) {
+    throw new Error('Wind API ' + windRes.status + ' ' + windRes.statusText);
+  }
+
+  const marine = await marineRes.json();
+  const wind = await windRes.json();
+
+  const mh = marine.hourly || {};
+  const wh = wind.hourly || {};
+  const times = mh.time || [];
+  const count = Math.min(168, times.length);
+
+  const hours = [];
+  for (let i = 0; i < count; i++) {
+    hours.push({
+      time: times[i],
+      waveFt:   mh.swell_wave_height ? mh.swell_wave_height[i] : null,
+      period:   mh.swell_wave_period ? mh.swell_wave_period[i] : null,
+      swellDir: mh.swell_wave_direction ? mh.swell_wave_direction[i] : null,
+      windMph:  wh.wind_speed_10m ? wh.wind_speed_10m[i] : null,
+      windDir:  wh.wind_direction_10m ? wh.wind_direction_10m[i] : null,
+      gustMph:  wh.wind_gusts_10m ? wh.wind_gusts_10m[i] : null,
+    });
+  }
+  return hours;
+}
 
 function CardShell({ children }) {
   return (
@@ -172,12 +274,178 @@ function ErrorCard({ message }) {
   );
 }
 
-function SwellChart({ onHover }) {
+const PLOT_LEFT = 40;
+const PLOT_RIGHT = 760;
+const PLOT_TOP = 16;
+const PLOT_BOTTOM = 260;
+const PLOT_WIDTH = PLOT_RIGHT - PLOT_LEFT;
+const PLOT_HEIGHT = PLOT_BOTTOM - PLOT_TOP;
+const STRIP_TOP = PLOT_BOTTOM + 6;
+const STRIP_HEIGHT = 22;
+const Y_MAX = 7;
+
+function xForIdx(i, n) {
+  if (n <= 1) return PLOT_LEFT;
+  return PLOT_LEFT + (i / (n - 1)) * PLOT_WIDTH;
+}
+function yForFt(ft) {
+  const v = Math.max(0, Math.min(Y_MAX, ft || 0));
+  return PLOT_BOTTOM - (v / Y_MAX) * PLOT_HEIGHT;
+}
+
+function buildSmoothPath(points) {
+  if (points.length === 0) return '';
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i === 0 ? i : i - 1];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] || p2;
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+  }
+  return d;
+}
+
+function SwellChart({ hours, hoveredIdx, onHover }) {
+  const n = hours.length;
+  const points = useMemo(
+    () => hours.map((h, i) => ({ x: xForIdx(i, n), y: yForFt(h.waveFt) })),
+    [hours, n]
+  );
+
+  const linePath = useMemo(() => buildSmoothPath(points), [points]);
+
+  const areaSegments = useMemo(() => {
+    const segs = [];
+    if (points.length < 2) return segs;
+    for (let i = 0; i < points.length - 1; i++) {
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const p0 = points[i === 0 ? i : i - 1];
+      const p3 = points[i + 2] || p2;
+      const c1x = p1.x + (p2.x - p0.x) / 6;
+      const c1y = p1.y + (p2.y - p0.y) / 6;
+      const c2x = p2.x - (p3.x - p1.x) / 6;
+      const c2y = p2.y - (p3.y - p1.y) / 6;
+      const q = windQ(hours[i].windDir);
+      const d =
+        `M ${p1.x} ${PLOT_BOTTOM} ` +
+        `L ${p1.x} ${p1.y} ` +
+        `C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)} ` +
+        `L ${p2.x} ${PLOT_BOTTOM} Z`;
+      segs.push({ d, color: QUALITY_COLORS[q] });
+    }
+    return segs;
+  }, [points, hours]);
+
+  const dayDividers = useMemo(() => {
+    const divs = [];
+    for (let i = 0; i < n; i++) {
+      const t = new Date(hours[i].time);
+      if (t.getHours() === 0 || i === 0) {
+        const x = xForIdx(i, n);
+        const label = t.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: '2-digit' })
+          .toUpperCase()
+          .replace(',', '')
+          .replace(/\s+/, ' / ');
+        divs.push({ x, label, i });
+      }
+    }
+    return divs;
+  }, [hours, n]);
+
+  const yTicks = [2, 4, 6];
+
+  const handleMove = (e) => {
+    const svg = e.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const vbX = ((e.clientX - rect.left) / rect.width) * 800;
+    if (vbX < PLOT_LEFT || vbX > PLOT_RIGHT) { onHover(null); return; }
+    const frac = (vbX - PLOT_LEFT) / PLOT_WIDTH;
+    const i = Math.max(0, Math.min(n - 1, Math.round(frac * (n - 1))));
+    onHover(i);
+  };
+
+  const hovered = hoveredIdx != null && hoveredIdx >= 0 && hoveredIdx < n
+    ? { x: xForIdx(hoveredIdx, n), y: yForFt(hours[hoveredIdx].waveFt) }
+    : null;
+
   return (
     <div className="fn-chart-wrap">
-      <svg viewBox="0 0 800 340" preserveAspectRatio="xMidYMid meet"
+      <svg viewBox="0 0 800 300" preserveAspectRatio="xMidYMid meet"
+           onMouseMove={handleMove}
            onMouseLeave={() => onHover(null)}>
-        {/* chart geometry will be drawn here */}
+        <rect x={PLOT_LEFT} y={PLOT_TOP}
+              width={PLOT_WIDTH} height={PLOT_HEIGHT}
+              fill="#0a0c18" />
+
+        {yTicks.map(ft => (
+          <g key={'yt-' + ft}>
+            <line x1={PLOT_LEFT} x2={PLOT_RIGHT}
+                  y1={yForFt(ft)} y2={yForFt(ft)}
+                  stroke="#1a1d33" strokeWidth="1" />
+            <text x={PLOT_LEFT - 6} y={yForFt(ft) + 4}
+                  fontFamily="Barlow Condensed, sans-serif"
+                  fontSize="11" fill="#6c7091" textAnchor="end">
+              {ft} FT
+            </text>
+          </g>
+        ))}
+
+        {areaSegments.map((seg, i) => (
+          <path key={'area-' + i} d={seg.d}
+                fill={seg.color} fillOpacity="0.18" stroke="none" />
+        ))}
+
+        <path d={linePath} fill="none"
+              stroke="#e6e8f2" strokeWidth="1.5"
+              strokeLinejoin="round" strokeLinecap="round" />
+
+        {dayDividers.map((dv, i) => (
+          <g key={'dv-' + i}>
+            <line x1={dv.x} x2={dv.x}
+                  y1={PLOT_TOP} y2={PLOT_BOTTOM}
+                  stroke="#f5c518" strokeOpacity="0.18"
+                  strokeWidth="1" strokeDasharray="3 3" />
+            <text x={dv.x + 4} y={PLOT_TOP + 12}
+                  fontFamily="Barlow Condensed, sans-serif"
+                  fontSize="10" fill="#cfa617"
+                  letterSpacing="1">
+              {dv.label}
+            </text>
+          </g>
+        ))}
+
+        <rect x={PLOT_LEFT} y={STRIP_TOP}
+              width={PLOT_WIDTH} height={STRIP_HEIGHT}
+              fill="#06080f" stroke="#1a1d33" strokeWidth="1" />
+        {hours.map((h, i) => {
+          const cellW = PLOT_WIDTH / n;
+          const x = PLOT_LEFT + i * cellW;
+          const q = windQ(h.windDir);
+          return (
+            <rect key={'q-' + i}
+                  x={x} y={STRIP_TOP + 1}
+                  width={cellW + 0.5} height={STRIP_HEIGHT - 2}
+                  fill={QUALITY_COLORS[q]} fillOpacity="0.72" />
+          );
+        })}
+
+        {hovered && (
+          <g pointerEvents="none">
+            <line x1={hovered.x} x2={hovered.x}
+                  y1={PLOT_TOP} y2={STRIP_TOP + STRIP_HEIGHT}
+                  stroke="#f5c518" strokeOpacity="0.55"
+                  strokeWidth="1" />
+            <circle cx={hovered.x} cy={hovered.y} r="4"
+                    fill="#f5c518" stroke="#0a0c18" strokeWidth="1.5" />
+          </g>
+        )}
       </svg>
     </div>
   );
@@ -196,20 +464,65 @@ function Legend() {
   );
 }
 
-function StatusBar({ hoveredIdx }) {
-  const text = hoveredIdx == null
-    ? 'Hover the chart for details'
-    : `Selected index: ${hoveredIdx}`;
-  return <div className="fn-statusbar">{text}</div>;
+function StatusBar({ hours, hoveredIdx }) {
+  if (hoveredIdx == null || !hours[hoveredIdx]) {
+    return <div className="fn-statusbar">Hover the chart for details</div>;
+  }
+  const h = hours[hoveredIdx];
+  const q = windQ(h.windDir);
+  const color = QUALITY_COLORS[q];
+  const t = new Date(h.time);
+  const when = t.toLocaleString('en-US', {
+    weekday: 'short', month: 'short', day: '2-digit',
+    hour: 'numeric', minute: '2-digit',
+  });
+  return (
+    <div className="fn-statusbar" style={{ borderLeftColor: color }}>
+      <span>
+        <span className="fn-status-key">When</span>
+        <span className="fn-status-val">{when}</span>
+      </span>
+      <span>
+        <span className="fn-status-key">Swell</span>
+        <span className="fn-status-val">
+          {h.waveFt != null ? h.waveFt.toFixed(1) : '–'} ft
+          {h.period != null ? ' @ ' + h.period.toFixed(0) + 's' : ''}
+        </span>
+      </span>
+      <span>
+        <span className="fn-status-key">Wind</span>
+        <span className="fn-status-val">
+          {h.windMph != null ? Math.round(h.windMph) : '–'} mph
+          {h.windDir != null ? ' ' + compassLabel(h.windDir) : ''}
+          {h.gustMph != null ? ' (g ' + Math.round(h.gustMph) + ')' : ''}
+        </span>
+      </span>
+      <span className="fn-status-badge" style={{ background: color }}>{q}</span>
+    </div>
+  );
 }
 
 function App() {
+  const [hours, setHours] = useState(null);
+  const [error, setError] = useState(null);
   const [hoveredIdx, setHoveredIdx] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetchForecastData()
+      .then(data => { if (alive) setHours(data); })
+      .catch(err => { if (alive) setError(err.message || String(err)); });
+    return () => { alive = false; };
+  }, []);
+
+  if (error) return <ErrorCard message={error} />;
+  if (!hours) return <LoadingCard />;
+
   return (
     <CardShell>
-      <SwellChart onHover={setHoveredIdx} />
+      <SwellChart hours={hours} hoveredIdx={hoveredIdx} onHover={setHoveredIdx} />
       <Legend />
-      <StatusBar hoveredIdx={hoveredIdx} />
+      <StatusBar hours={hours} hoveredIdx={hoveredIdx} />
     </CardShell>
   );
 }
