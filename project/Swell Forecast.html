@@ -183,50 +183,6 @@
     inset: 0;
     pointer-events: none;
   }
-  .fn-lineup-toggle {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    display: inline-flex;
-    gap: 4px;
-    pointer-events: auto;
-    z-index: 2;
-  }
-  .fn-lineup-pill {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-weight: 700;
-    font-size: 11px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    padding: 4px 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.55);
-    background: transparent;
-    color: rgba(255,255,255,0.85);
-    cursor: pointer;
-    line-height: 1;
-  }
-  .fn-lineup-pill.is-active {
-    background: rgba(255,255,255,0.92);
-    color: #0a0c18;
-    border-color: rgba(255,255,255,0.92);
-  }
-  .fn-lineup-label {
-    position: absolute;
-    bottom: 8px;
-    left: 8px;
-    background: rgba(0,0,0,0.5);
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-weight: 700;
-    font-size: 12px;
-    letter-spacing: 0.06em;
-    line-height: 1.1;
-    pointer-events: none;
-    z-index: 2;
-  }
-
   .fn-sources {
     position: relative;
     z-index: 1;
@@ -1142,40 +1098,54 @@ function classifyWind(windFromDeg) {
   return 'crossshore';
 }
 
+// Arrow length tuning (image viewBox is 100x100 units = percent of image width)
+const ARROW_MIN_LEN = 10;   // 10% of image width
+const ARROW_MAX_LEN = 35;   // 35% of image width
+const K_WIND  = 22 / 15;                  // 15 mph → ~22% of image width
+const K_SWELL = 22 / Math.sqrt(4 * 4 * 11); // 4ft @ 11s (sqrt(energy)≈13.27) → ~22% of image width
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
 function LineupOverlay({ hours, hoveredIdx }) {
-  const [mode, setMode] = useState('wind');
   const [imgFailed, setImgFailed] = useState(false);
 
   const activeIdx = hoveredIdx != null && hours[hoveredIdx] ? hoveredIdx : 0;
   const h = hours[activeIdx] || {};
 
-  const dirFrom = mode === 'wind' ? h.windDir : h.swellDir;
-  const arrowRot = dirFrom != null ? (((dirFrom + 180) % 360) + 360) % 360 : 0;
+  const windKlass = classifyWind(h.windDir);
+  const windColor = ARROW_COLORS[windKlass];
+  const swellColor = ARROW_COLORS.swell;
 
-  let arrowColor, labelText;
-  if (mode === 'wind') {
-    const klass = classifyWind(h.windDir);
-    arrowColor = ARROW_COLORS[klass];
-    const klassLabel = klass === 'crossshore' ? 'cross-shore' : klass;
-    const mph = h.windMph != null ? Math.round(h.windMph) : '–';
-    const compass = degToCompass(h.windDir) || '–';
-    labelText = `${klassLabel} · ${mph}mph ${compass}`;
-  } else {
-    arrowColor = ARROW_COLORS.swell;
-    const ft = h.waveFt != null ? h.waveFt.toFixed(1) : '–';
-    const per = h.period != null ? h.period.toFixed(0) + 's' : '–';
-    const compass = degToCompass(h.swellDir) || '–';
-    const degs = h.swellDir != null ? ' ' + Math.round(h.swellDir) + '°' : '';
-    labelText = `${ft}ft @ ${per} · ${compass}${degs}`;
-  }
+  // Firing: wind offshore (windToDeg in [110,200]) AND swell in-window
+  const windToDeg = h.windDir != null
+    ? (((h.windDir + 180) % 360) + 360) % 360
+    : null;
+  const windOffshore = windToDeg != null && windToDeg >= 110 && windToDeg <= 200;
+  const swellInWindow = h.swellDir != null
+    && h.swellDir >= SWELL_WINDOW_MIN
+    && h.swellDir <= SWELL_WINDOW_MAX;
+  const firing = windOffshore && swellInWindow;
 
+  // Arrow lengths
+  const windLen = h.windMph != null
+    ? clamp(h.windMph * K_WIND, ARROW_MIN_LEN, ARROW_MAX_LEN)
+    : ARROW_MIN_LEN;
+  const swellEnergy = (h.waveFt != null && h.period != null)
+    ? h.waveFt * h.waveFt * h.period
+    : 0;
+  const swellLen = swellEnergy > 0
+    ? clamp(Math.sqrt(swellEnergy) * K_SWELL, ARROW_MIN_LEN, ARROW_MAX_LEN)
+    : ARROW_MIN_LEN;
+
+  // Reef heading dashed guide
   const reefRad = (REEF_HEADING_DEG * Math.PI) / 180;
-  const reefLen = 27;
+  const reefLen = 15; // ~15% of image width
   const reefEndX = 50 + reefLen * Math.sin(reefRad);
   const reefEndY = 50 - reefLen * Math.cos(reefRad);
   const reefLabelX = 50 + (reefLen + 5) * Math.sin(reefRad);
   const reefLabelY = 50 - (reefLen + 5) * Math.cos(reefRad);
 
+  // Swell window cone
   const coneRadius = 40;
   const coneMinRad = (SWELL_WINDOW_MIN * Math.PI) / 180;
   const coneMaxRad = (SWELL_WINDOW_MAX * Math.PI) / 180;
@@ -1183,13 +1153,25 @@ function LineupOverlay({ hours, hoveredIdx }) {
   const coneY1 = 50 - coneRadius * Math.cos(coneMinRad);
   const coneX2 = 50 + coneRadius * Math.sin(coneMaxRad);
   const coneY2 = 50 - coneRadius * Math.cos(coneMaxRad);
-  const coneLabelR = coneRadius + 4;
-  const coneLabelX1 = 50 + coneLabelR * Math.sin(coneMinRad);
-  const coneLabelY1 = 50 - coneLabelR * Math.cos(coneMinRad);
-  const coneLabelX2 = 50 + coneLabelR * Math.sin(coneMaxRad);
-  const coneLabelY2 = 50 - coneLabelR * Math.cos(coneMaxRad);
   const conePath = `M 50 50 L ${coneX1.toFixed(2)} ${coneY1.toFixed(2)} `
     + `A ${coneRadius} ${coneRadius} 0 0 1 ${coneX2.toFixed(2)} ${coneY2.toFixed(2)} Z`;
+
+  // Shadow / glow (firing stacks green glow on top of base shadow)
+  const baseShadow = 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))';
+  const firingShadow = 'drop-shadow(0 0 6px rgba(34, 197, 94, 0.9)) ' + baseShadow;
+  const arrowFilter = firing ? firingShadow : baseShadow;
+
+  const reefStroke = firing ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.3)';
+  const coneFill = firing ? 'rgba(34, 197, 94, 0.2)' : 'rgba(103, 232, 249, 0.15)';
+
+  const windCompass = degToCompass(h.windDir) || '–';
+  const windMphText = h.windMph != null ? Math.round(h.windMph) : '–';
+  const windLabel = `${windMphText}mph ${windCompass}`;
+
+  const swellCompass = degToCompass(h.swellDir) || '–';
+  const swellFtText = h.waveFt != null ? h.waveFt.toFixed(1) : '–';
+  const swellPerText = h.period != null ? h.period.toFixed(0) + 's' : '–';
+  const swellLabel = `${swellFtText}ft @ ${swellPerText} ${swellCompass}`;
 
   return (
     <div className="fn-lineup">
@@ -1218,52 +1200,20 @@ function LineupOverlay({ hours, hoveredIdx }) {
               overflow: 'visible',
             }}
           >
-            {mode === 'swell' && (
-              <g>
-                <path
-                  d={conePath}
-                  fill="rgba(103, 232, 249, 0.15)"
-                  stroke="none"
-                />
-                <line
-                  x1="50" y1="50"
-                  x2={coneX1.toFixed(2)} y2={coneY1.toFixed(2)}
-                  stroke="rgba(103, 232, 249, 0.5)"
-                  strokeWidth="1"
-                  strokeDasharray="3 3"
-                />
-                <line
-                  x1="50" y1="50"
-                  x2={coneX2.toFixed(2)} y2={coneY2.toFixed(2)}
-                  stroke="rgba(103, 232, 249, 0.5)"
-                  strokeWidth="1"
-                  strokeDasharray="3 3"
-                />
-                <text
-                  x={coneLabelX1.toFixed(2)} y={coneLabelY1.toFixed(2)}
-                  style={{ fontSize: '9px' }}
-                  fill="rgba(255,255,255,0.5)"
-                  fontFamily="Barlow Condensed, sans-serif"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                >{SWELL_WINDOW_MIN}°</text>
-                <text
-                  x={coneLabelX2.toFixed(2)} y={coneLabelY2.toFixed(2)}
-                  style={{ fontSize: '9px' }}
-                  fill="rgba(255,255,255,0.5)"
-                  fontFamily="Barlow Condensed, sans-serif"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                >{SWELL_WINDOW_MAX}°</text>
-              </g>
-            )}
+            <path
+              d={conePath}
+              fill={coneFill}
+              stroke="none"
+              style={{ transition: 'fill 200ms' }}
+            />
 
             <line
               x1="50" y1="50"
               x2={reefEndX.toFixed(2)} y2={reefEndY.toFixed(2)}
-              stroke="rgba(255,255,255,0.3)"
+              stroke={reefStroke}
               strokeWidth="0.6"
               strokeDasharray="2 2"
+              style={{ transition: 'stroke 200ms' }}
             />
             <text
               x={reefLabelX.toFixed(2)} y={reefLabelY.toFixed(2)}
@@ -1274,45 +1224,104 @@ function LineupOverlay({ hours, hoveredIdx }) {
               dominantBaseline="middle"
             >reef 335°</text>
 
-            <g style={{
-              transformOrigin: '50px 50px',
-              transformBox: 'view-box',
-              transform: `rotate(${arrowRot}deg)`,
-              transition: 'transform 150ms ease-out',
-              filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))',
-            }}>
-              <line
-                x1="50" y1="68" x2="50" y2="38"
-                stroke={arrowColor} strokeWidth="2.4"
-                strokeLinecap="round"
-              />
-              <polygon
-                points="50,30 44,46 56,46"
-                fill={arrowColor}
-              />
-            </g>
+            <ConvergingArrow
+              fromDeg={h.swellDir}
+              length={swellLen}
+              color={swellColor}
+              filter={arrowFilter}
+              label={swellLabel}
+            />
+            <ConvergingArrow
+              fromDeg={h.windDir}
+              length={windLen}
+              color={windColor}
+              filter={arrowFilter}
+              label={windLabel}
+            />
           </svg>
-
-          <div className="fn-lineup-toggle">
-            <button
-              className={'fn-lineup-pill' + (mode === 'wind' ? ' is-active' : '')}
-              onClick={() => setMode('wind')}
-              type="button"
-            >Wind</button>
-            <button
-              className={'fn-lineup-pill' + (mode === 'swell' ? ' is-active' : '')}
-              onClick={() => setMode('swell')}
-              type="button"
-            >Swell</button>
-          </div>
-
-          <div
-            className="fn-lineup-label"
-            style={{ color: arrowColor }}
-          >{labelText}</div>
         </div>
       </div>
     </div>
+  );
+}
+
+// Renders an arrow with tip (head) at the apex (50,50) and shaft extending
+// outward toward the "from" direction, drawn directly in world coordinates.
+// fromDeg = compass bearing (0°=N, clockwise) the wind/swell is coming FROM.
+function ConvergingArrow({ fromDeg, length, color, filter, label }) {
+  if (fromDeg == null) return null;
+  const rad = (((fromDeg % 360) + 360) % 360) * Math.PI / 180;
+  const ux = Math.sin(rad);       // forward (apex → origin) unit x
+  const uy = -Math.cos(rad);      // forward unit y (screen y inverted)
+  const px = Math.cos(rad);       // perpendicular (90° CW of forward) x
+  const py = Math.sin(rad);       // perpendicular y
+
+  const HEAD_LEN = 5;
+  const HEAD_HALF_W = 3;
+  const originX = 50 + length * ux;
+  const originY = 50 + length * uy;
+  const headBaseX = 50 + HEAD_LEN * ux;
+  const headBaseY = 50 + HEAD_LEN * uy;
+  const cornerLX = headBaseX - HEAD_HALF_W * px;
+  const cornerLY = headBaseY - HEAD_HALF_W * py;
+  const cornerRX = headBaseX + HEAD_HALF_W * px;
+  const cornerRY = headBaseY + HEAD_HALF_W * py;
+
+  return (
+    <g style={{ filter, transition: 'filter 200ms' }}>
+      <line
+        x1={headBaseX.toFixed(2)} y1={headBaseY.toFixed(2)}
+        x2={originX.toFixed(2)} y2={originY.toFixed(2)}
+        stroke={color} strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <polygon
+        points={`50,50 ${cornerLX.toFixed(2)},${cornerLY.toFixed(2)} ${cornerRX.toFixed(2)},${cornerRY.toFixed(2)}`}
+        fill={color}
+      />
+      <ArrowLabel
+        originX={originX} originY={originY}
+        perpX={px} perpY={py}
+        color={color} text={label}
+      />
+    </g>
+  );
+}
+
+// Axis-aligned upright label pill anchored at arrow origin, offset
+// perpendicular to the shaft so it doesn't overlap the line.
+function ArrowLabel({ originX, originY, perpX, perpY, color, text }) {
+  const OFFSET = 1.8;
+  const FONT_SIZE = 2.6;
+  const PAD_X = 1.2;
+  const PAD_Y = 0.6;
+  const charW = 1.35;
+  const w = Math.max(6, text.length * charW + PAD_X * 2);
+  const h = FONT_SIZE + PAD_Y * 2;
+  // Place rect center at distance (OFFSET + w/2) from origin along perp dir,
+  // so the nearest edge of the axis-aligned rect sits roughly OFFSET away.
+  const cx = originX + (OFFSET + w / 2) * perpX;
+  const cy = originY + (OFFSET + w / 2) * perpY;
+  return (
+    <g>
+      <rect
+        x={(cx - w / 2).toFixed(2)}
+        y={(cy - h / 2).toFixed(2)}
+        width={w.toFixed(2)}
+        height={h.toFixed(2)}
+        rx="0.6" ry="0.6"
+        fill="rgba(0,0,0,0.6)"
+      />
+      <text
+        x={cx.toFixed(2)} y={cy.toFixed(2)}
+        fontSize={FONT_SIZE}
+        fill={color}
+        fontFamily="Barlow Condensed, sans-serif"
+        fontWeight="700"
+        textAnchor="middle"
+        dominantBaseline="middle"
+      >{text}</text>
+    </g>
   );
 }
 
