@@ -19,7 +19,8 @@
   }
   #root {
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
     padding: 48px 16px;
   }
   .fn-card {
@@ -146,6 +147,86 @@
     text-align: center;
     padding: 24px 0;
   }
+  .fn-lineup {
+    width: 860px;
+    max-width: 100%;
+    margin: 16px auto 0;
+    position: relative;
+    box-sizing: border-box;
+  }
+  .fn-lineup-frame {
+    position: relative;
+    width: 100%;
+    background: #1a1a1a;
+    line-height: 0;
+  }
+  .fn-lineup-img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .fn-lineup-placeholder {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6c7091;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .fn-lineup-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .fn-lineup-toggle {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: inline-flex;
+    gap: 4px;
+    pointer-events: auto;
+    z-index: 2;
+  }
+  .fn-lineup-pill {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.55);
+    background: transparent;
+    color: rgba(255,255,255,0.85);
+    cursor: pointer;
+    line-height: 1;
+  }
+  .fn-lineup-pill.is-active {
+    background: rgba(255,255,255,0.92);
+    color: #0a0c18;
+    border-color: rgba(255,255,255,0.92);
+  }
+  .fn-lineup-label {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    background: rgba(0,0,0,0.5);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    line-height: 1.1;
+    pointer-events: none;
+    z-index: 2;
+  }
+
   .fn-sources {
     position: relative;
     z-index: 1;
@@ -201,6 +282,11 @@
     .fn-card::before { height: 40px; }
     .fn-header { margin-bottom: 12px; }
     .fn-chart-wrap { padding: 52px 8px 8px; }
+    .fn-lineup {
+      width: calc(100vw - 16px);
+      max-width: none;
+      margin: 12px 8px 0;
+    }
   }
 </style>
 </head>
@@ -214,7 +300,21 @@
 <script type="text/babel">
 const { useState, useEffect, useMemo, useRef } = React;
 
-const OFFSHORE_CENTER = 340;
+// BEARING AUDIT
+// Grep run on project/Swell Forecast.html for: 340, 334, 334.25, 325, 335,
+// reefHeading, reefBearing, reefDirection, headingDegrees, OFFSHORE_CENTER, "reef".
+//
+// Matches found (pre-change):
+//   line 217: const OFFSHORE_CENTER = 340;            ← reef facing direction (offshore-center). NORMALIZED to 335.
+//   line 249: const d = angularDist(dir, OFFSHORE_CENTER);  ← consumer of the constant. Unchanged.
+//
+// No occurrences of: 334, 334.25, 325, reefHeading, reefBearing, reefDirection, headingDegrees.
+// Other bearing-related values in the file are dynamic per-hour data (h.windDir, h.swellDir,
+// rot variables, etc.) — those are NOT the spot's facing direction and were left alone.
+// END BEARING AUDIT
+
+const REEF_HEADING_DEG = 335;
+const OFFSHORE_CENTER = REEF_HEADING_DEG;
 const LAT_MARINE = 41.089152, LON_MARINE = -71.721050;
 const LAT_WIND   = 41.275693, LON_WIND   = -71.963310;
 
@@ -993,6 +1093,140 @@ function Sources() {
   );
 }
 
+const ARROW_COLORS = {
+  offshore: '#22c55e',
+  onshore: '#ef4444',
+  crossshore: '#eab308',
+  swell: '#67e8f9',
+};
+
+function classifyWind(windFromDeg) {
+  if (windFromDeg == null) return 'crossshore';
+  const to = (((windFromDeg + 180) % 360) + 360) % 360;
+  if (to >= 110 && to <= 200) return 'offshore';
+  if ((to >= 290 && to <= 360) || (to >= 0 && to <= 20)) return 'onshore';
+  return 'crossshore';
+}
+
+function LineupOverlay({ hours, hoveredIdx }) {
+  const [mode, setMode] = useState('wind');
+  const [imgFailed, setImgFailed] = useState(false);
+
+  const activeIdx = hoveredIdx != null && hours[hoveredIdx] ? hoveredIdx : 0;
+  const h = hours[activeIdx] || {};
+
+  const dirFrom = mode === 'wind' ? h.windDir : h.swellDir;
+  const arrowRot = dirFrom != null ? (((dirFrom + 180) % 360) + 360) % 360 : 0;
+
+  let arrowColor, labelText;
+  if (mode === 'wind') {
+    const klass = classifyWind(h.windDir);
+    arrowColor = ARROW_COLORS[klass];
+    const klassLabel = klass === 'crossshore' ? 'cross-shore' : klass;
+    const mph = h.windMph != null ? Math.round(h.windMph) : '–';
+    const compass = degToCompass(h.windDir) || '–';
+    labelText = `${klassLabel} · ${mph}mph ${compass}`;
+  } else {
+    arrowColor = ARROW_COLORS.swell;
+    const ft = h.waveFt != null ? h.waveFt.toFixed(1) : '–';
+    const per = h.period != null ? h.period.toFixed(0) + 's' : '–';
+    const compass = degToCompass(h.swellDir) || '–';
+    const degs = h.swellDir != null ? ' ' + Math.round(h.swellDir) + '°' : '';
+    labelText = `${ft}ft @ ${per} · ${compass}${degs}`;
+  }
+
+  const reefRad = (REEF_HEADING_DEG * Math.PI) / 180;
+  const reefLen = 27;
+  const reefEndX = 50 + reefLen * Math.sin(reefRad);
+  const reefEndY = 50 - reefLen * Math.cos(reefRad);
+  const reefLabelX = 50 + (reefLen + 5) * Math.sin(reefRad);
+  const reefLabelY = 50 - (reefLen + 5) * Math.cos(reefRad);
+
+  return (
+    <div className="fn-lineup">
+      <div className="fn-lineup-frame">
+        {imgFailed ? (
+          <div className="fn-lineup-placeholder">Lineup view unavailable</div>
+        ) : (
+          <img
+            className="fn-lineup-img"
+            src="assets/lineup.jpg"
+            alt="Lineup satellite view"
+            onError={() => setImgFailed(true)}
+          />
+        )}
+
+        <div className="fn-lineup-overlay">
+          <svg
+            viewBox="0 0 100 100"
+            preserveAspectRatio="xMidYMid meet"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              pointerEvents: 'none',
+              overflow: 'visible',
+            }}
+          >
+            <line
+              x1="50" y1="50"
+              x2={reefEndX.toFixed(2)} y2={reefEndY.toFixed(2)}
+              stroke="rgba(255,255,255,0.3)"
+              strokeWidth="0.6"
+              strokeDasharray="2 2"
+            />
+            <text
+              x={reefLabelX.toFixed(2)} y={reefLabelY.toFixed(2)}
+              fontSize="3"
+              fill="rgba(255,255,255,0.5)"
+              fontFamily="Barlow Condensed, sans-serif"
+              textAnchor="middle"
+              dominantBaseline="middle"
+            >reef 335°</text>
+
+            <g style={{
+              transformOrigin: '50px 50px',
+              transformBox: 'view-box',
+              transform: `rotate(${arrowRot}deg)`,
+              transition: 'transform 150ms ease-out',
+              filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))',
+            }}>
+              <line
+                x1="50" y1="68" x2="50" y2="38"
+                stroke={arrowColor} strokeWidth="2.4"
+                strokeLinecap="round"
+              />
+              <polygon
+                points="50,30 44,46 56,46"
+                fill={arrowColor}
+              />
+            </g>
+          </svg>
+
+          <div className="fn-lineup-toggle">
+            <button
+              className={'fn-lineup-pill' + (mode === 'wind' ? ' is-active' : '')}
+              onClick={() => setMode('wind')}
+              type="button"
+            >Wind</button>
+            <button
+              className={'fn-lineup-pill' + (mode === 'swell' ? ' is-active' : '')}
+              onClick={() => setMode('swell')}
+              type="button"
+            >Swell</button>
+          </div>
+
+          <div
+            className="fn-lineup-label"
+            style={{ color: arrowColor }}
+          >{labelText}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [hours, setHours] = useState(null);
   const [error, setError] = useState(null);
@@ -1011,12 +1245,15 @@ function App() {
   if (!hours) return <LoadingCard />;
 
   return (
-    <CardShell>
-      <SwellChart hours={hours} hoveredIdx={hoveredIdx} onHover={setHoveredIdx} />
-      <Legend />
-      <StatusBar hours={hours} hoveredIdx={hoveredIdx} />
-      <Sources />
-    </CardShell>
+    <>
+      <CardShell>
+        <SwellChart hours={hours} hoveredIdx={hoveredIdx} onHover={setHoveredIdx} />
+        <Legend />
+        <StatusBar hours={hours} hoveredIdx={hoveredIdx} />
+        <Sources />
+      </CardShell>
+      <LineupOverlay hours={hours} hoveredIdx={hoveredIdx} />
+    </>
   );
 }
 
