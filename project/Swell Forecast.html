@@ -155,7 +155,7 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
 <script type="text/babel">
-const { useState, useEffect, useMemo } = React;
+const { useState, useEffect, useMemo, useRef } = React;
 
 const OFFSHORE_CENTER = 340;
 const LAT_MARINE = 41.089152, LON_MARINE = -71.721050;
@@ -174,7 +174,8 @@ const LEGEND = [
 ];
 
 const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-function compassLabel(deg) {
+function degToCompass(deg) {
+  if (deg == null) return '';
   const idx = Math.round(((deg % 360) + 360) % 360 / 22.5) % 16;
   return COMPASS[idx];
 }
@@ -348,8 +349,71 @@ function buildSmoothPath(points) {
   return d;
 }
 
+function Tooltip({ hours, hoveredIdx, wrapWidth }) {
+  if (hoveredIdx == null || !hours[hoveredIdx] || !wrapWidth) return null;
+  const h = hours[hoveredIdx];
+  const n = hours.length;
+  const color = QUALITY_COLORS[windQ(h.windDir)];
+  const innerW = Math.max(0, wrapWidth - 24);
+  const pxX = 12 + (xForIdx(hoveredIdx, n) / 800) * innerW;
+  const W = 170;
+  const leftPx = Math.max(8, Math.min(wrapWidth - W - 8, pxX - W / 2));
+  const style = {
+    position: 'absolute',
+    left: leftPx + 'px',
+    top: '14px',
+    width: W + 'px',
+    background: '#0f1120',
+    borderLeft: '3px solid ' + color,
+    clipPath: 'polygon(8px 0, calc(100% - 8px) 0, 100% 8px, 100% calc(100% - 8px), calc(100% - 8px) 100%, 8px 100%, 0 calc(100% - 8px), 0 8px)',
+    padding: '10px 14px',
+    fontFamily: 'Noto Sans, sans-serif',
+    fontSize: '12px',
+    color: '#e6e8f2',
+    pointerEvents: 'none',
+    zIndex: 2,
+    boxShadow: '0 8px 22px rgba(0,0,0,0.55)',
+  };
+  const rot = h.swellDir != null ? h.swellDir : 0;
+  return (
+    <div style={style}>
+      <div style={{ fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 900, fontStyle: 'italic', fontSize: '24px', color: '#f5c518', lineHeight: 1 }}>
+        {h.waveFt != null ? h.waveFt.toFixed(1) : '–'} ft
+      </div>
+      <div style={{ fontFamily: 'Barlow Condensed, sans-serif', fontSize: '13px', color: '#a9b0c7', letterSpacing: '0.08em', marginTop: '2px' }}>
+        {h.period != null ? h.period.toFixed(0) + 's' : '–'}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
+        <svg width="14" height="14" viewBox="-7 -7 14 14" style={{ transform: 'rotate(' + rot + 'deg)' }}>
+          <path d="M 0 -5 L 3 4 L 0 2 L -3 4 Z" fill="#cfd3e6" />
+        </svg>
+        <span style={{ color: '#cfd3e6' }}>{degToCompass(h.swellDir) || '–'}</span>
+      </div>
+      <div style={{ marginTop: '6px' }}>
+        <span style={{ color: '#6c7091', fontFamily: 'Barlow Condensed, sans-serif', fontSize: '11px', letterSpacing: '0.1em' }}>WIND </span>
+        {h.windMph != null ? Math.round(h.windMph) : '–'} mph
+        {h.windDir != null ? ' ' + degToCompass(h.windDir) : ''}
+      </div>
+      <div>
+        <span style={{ color: '#6c7091', fontFamily: 'Barlow Condensed, sans-serif', fontSize: '11px', letterSpacing: '0.1em' }}>GUST </span>
+        {h.gustMph != null ? Math.round(h.gustMph) : '–'} mph
+      </div>
+    </div>
+  );
+}
+
 function SwellChart({ hours, hoveredIdx, onHover }) {
   const n = hours.length;
+  const wrapRef = useRef(null);
+  const [wrapWidth, setWrapWidth] = useState(0);
+  useEffect(() => {
+    const update = () => {
+      if (wrapRef.current) setWrapWidth(wrapRef.current.clientWidth);
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
   const points = useMemo(
     () => hours.map((h, i) => ({ x: xForIdx(i, n), y: yForFt(h.waveFt) })),
     [hours, n]
@@ -462,10 +526,16 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
     : null;
 
   return (
-    <div className="fn-chart-wrap">
+    <div className="fn-chart-wrap" ref={wrapRef} style={{ position: 'relative' }}>
       <svg viewBox="0 0 800 300" preserveAspectRatio="xMidYMid meet"
            onMouseMove={handleMove}
            onMouseLeave={() => onHover(null)}>
+        <defs>
+          <mask id="crescentMask" maskContentUnits="objectBoundingBox">
+            <circle cx="0.5" cy="0.5" r="0.5" fill="#fff" />
+            <circle cx="0.72" cy="0.5" r="0.45" fill="#000" />
+          </mask>
+        </defs>
         <rect x={PLOT_LEFT} y={PLOT_TOP}
               width={PLOT_WIDTH} height={PLOT_HEIGHT}
               fill="#0a0c18" />
@@ -488,6 +558,15 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
                 x={run.x} y={PLOT_TOP}
                 width={run.w} height={PLOT_HEIGHT}
                 fill="rgba(2,3,14,0.58)" />
+        ))}
+
+        {nightRuns.map((run, i) => (
+          <circle key={'moon-' + i}
+                  cx={run.x + run.w / 2}
+                  cy={(PLOT_TOP + PLOT_BOTTOM) / 2}
+                  r="8"
+                  fill="#f4f1e3"
+                  mask="url(#crescentMask)" />
         ))}
 
         {areaSegments.map((seg, i) => (
@@ -548,6 +627,7 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
           </g>
         )}
       </svg>
+      <Tooltip hours={hours} hoveredIdx={hoveredIdx} wrapWidth={wrapWidth} />
     </div>
   );
 }
@@ -594,7 +674,7 @@ function StatusBar({ hours, hoveredIdx }) {
         <span className="fn-status-key">Wind</span>
         <span className="fn-status-val">
           {h.windMph != null ? Math.round(h.windMph) : '–'} mph
-          {h.windDir != null ? ' ' + compassLabel(h.windDir) : ''}
+          {h.windDir != null ? ' ' + degToCompass(h.windDir) : ''}
           {h.gustMph != null ? ' (g ' + Math.round(h.gustMph) + ')' : ''}
         </span>
       </span>
