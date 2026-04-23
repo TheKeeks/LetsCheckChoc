@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Swell Forecast — Chocomount Beach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,700;0,900;1,900&family=Noto+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #07080f;
+    font-family: 'Noto Sans', system-ui, sans-serif;
+    color: #e6e8f2;
+    min-height: 100vh;
+  }
+  #root {
+    display: flex;
+    justify-content: center;
+    padding: 48px 16px;
+  }
+  .fn-card {
+    position: relative;
+    width: 860px;
+    max-width: 100%;
+    background: #0f1120;
+    border-top: 3px solid #f5c518;
+    padding: 28px 32px 24px;
+    clip-path: polygon(
+      16px 0, calc(100% - 16px) 0, 100% 16px,
+      100% calc(100% - 16px), calc(100% - 16px) 100%,
+      16px 100%, 0 calc(100% - 16px), 0 16px
+    );
+    box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+  }
+  .fn-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 68px;
+    background-image: repeating-linear-gradient(
+      135deg,
+      rgba(245,197,24,0.08) 0 10px,
+      rgba(245,197,24,0) 10px 22px
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+  .fn-header {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+  .fn-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 900;
+    font-style: italic;
+    font-size: 25px;
+    letter-spacing: 0.04em;
+    color: #f5c518;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+  .fn-subtitle {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 400;
+    font-size: 14px;
+    letter-spacing: 0.12em;
+    color: #a9b0c7;
+    text-transform: uppercase;
+  }
+  .fn-chart-wrap {
+    position: relative;
+    z-index: 1;
+    background: #0a0c18;
+    border: 1px solid #1a1d33;
+    padding: 12px;
+  }
+  .fn-chart-wrap svg { display: block; width: 100%; height: auto; }
+  .fn-legend {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #cfd3e6;
+  }
+  .fn-legend-item { display: inline-flex; align-items: center; gap: 8px; }
+  .fn-legend-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    display: inline-block;
+  }
+  .fn-statusbar {
+    position: relative;
+    z-index: 1;
+    margin-top: 12px;
+    padding: 8px 10px;
+    background: #0a0c18;
+    border-left: 2px solid #f5c518;
+    font-family: 'Noto Sans', sans-serif;
+    font-size: 12px;
+    color: #a9b0c7;
+    min-height: 18px;
+  }
+  .fn-placeholder {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    color: #6c7091;
+    text-align: center;
+    padding: 24px 0;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState } = React;
+
+const LEGEND = [
+  { label: 'Offshore', color: '#4ade80' },
+  { label: 'X-Shore',  color: '#f5c518' },
+  { label: 'Onshore',  color: '#ef4444' },
+  { label: 'Night',    color: '#1e2a5a' },
+];
+
+function CardShell({ children }) {
+  return (
+    <div className="fn-card">
+      <div className="fn-header">
+        <div className="fn-title">Swell Forecast</div>
+        <div className="fn-subtitle">Chocomount Beach</div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function LoadingCard() {
+  return (
+    <CardShell>
+      <div className="fn-chart-wrap">
+        <div className="fn-placeholder">Loading forecast…</div>
+      </div>
+    </CardShell>
+  );
+}
+
+function ErrorCard({ message }) {
+  return (
+    <CardShell>
+      <div className="fn-chart-wrap">
+        <div className="fn-placeholder">Error: {message || 'unable to load forecast'}</div>
+      </div>
+    </CardShell>
+  );
+}
+
+function SwellChart({ onHover }) {
+  return (
+    <div className="fn-chart-wrap">
+      <svg viewBox="0 0 800 340" preserveAspectRatio="xMidYMid meet"
+           onMouseLeave={() => onHover(null)}>
+        {/* chart geometry will be drawn here */}
+      </svg>
+    </div>
+  );
+}
+
+function Legend() {
+  return (
+    <div className="fn-legend">
+      {LEGEND.map(item => (
+        <span key={item.label} className="fn-legend-item">
+          <span className="fn-legend-dot" style={{ background: item.color }}></span>
+          {item.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function StatusBar({ hoveredIdx }) {
+  const text = hoveredIdx == null
+    ? 'Hover the chart for details'
+    : `Selected index: ${hoveredIdx}`;
+  return <div className="fn-statusbar">{text}</div>;
+}
+
+function App() {
+  const [hoveredIdx, setHoveredIdx] = useState(null);
+  return (
+    <CardShell>
+      <SwellChart onHover={setHoveredIdx} />
+      <Legend />
+      <StatusBar hoveredIdx={hoveredIdx} />
+    </CardShell>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
