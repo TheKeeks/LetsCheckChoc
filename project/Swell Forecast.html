@@ -21,67 +21,64 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 48px 16px;
+    padding: 48px 16px 64px;
+    gap: 0;
   }
   .fn-card {
     position: relative;
     width: 860px;
     max-width: 100%;
     background: #0f1120;
-    border-top: 3px solid #f5c518;
-    padding: 28px 32px 24px;
-    clip-path: polygon(
-      16px 0, calc(100% - 16px) 0, 100% 16px,
-      100% calc(100% - 16px), calc(100% - 16px) 100%,
-      16px 100%, 0 calc(100% - 16px), 0 16px
-    );
+    padding: 20px 24px 18px;
+    border-radius: 6px;
     box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+    box-sizing: border-box;
+    margin: 0 auto 16px;
   }
-  .fn-card::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 68px;
-    background-image: repeating-linear-gradient(
-      135deg,
-      rgba(245,197,24,0.08) 0 10px,
-      rgba(245,197,24,0) 10px 22px
-    );
-    pointer-events: none;
-    z-index: 0;
-  }
-  .fn-header {
-    position: relative;
-    z-index: 1;
+  .fn-section-head {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 18px;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 2px;
   }
-  .fn-title {
+  .fn-section-title {
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 900;
     font-style: italic;
-    font-size: 25px;
+    font-size: 22px;
     letter-spacing: 0.04em;
-    color: #f5c518;
+    color: #e6e8f2;
     text-transform: uppercase;
     line-height: 1;
   }
-  .fn-subtitle {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-weight: 400;
-    font-size: 14px;
-    letter-spacing: 0.12em;
-    color: #a9b0c7;
+  .fn-section-pill {
+    display: inline-block;
+    background: #ffffff;
+    color: #0a0c18;
+    font-family: 'Noto Sans', sans-serif;
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    padding: 3px 9px;
+    border-radius: 3px;
     text-transform: uppercase;
+  }
+  .fn-section-sub {
+    width: 100%;
+    font-family: 'Noto Sans', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: #8a90a8;
+    margin-top: 2px;
+    margin-bottom: 12px;
   }
   .fn-chart-wrap {
     position: relative;
     z-index: 1;
     background: #0a0c18;
     border: 1px solid #1a1d33;
+    border-radius: 4px;
     padding: 12px;
   }
   .fn-chart-wrap svg { display: block; width: 100%; height: auto; }
@@ -89,14 +86,13 @@
     position: relative;
     z-index: 1;
     display: flex;
-    gap: 22px;
+    gap: 20px;
     flex-wrap: wrap;
-    margin-top: 14px;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-weight: 700;
+    margin-top: 12px;
+    font-family: 'Noto Sans', sans-serif;
+    font-weight: 600;
     font-size: 12px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    letter-spacing: 0.02em;
     color: #cfd3e6;
   }
   .fn-legend-item { display: inline-flex; align-items: center; gap: 8px; }
@@ -107,13 +103,11 @@
   .fn-statusbar {
     position: relative;
     z-index: 1;
-    margin-top: 12px;
-    padding: 8px 10px;
-    background: #0a0c18;
-    border-left: 2px solid #f5c518;
+    margin-top: 10px;
+    padding: 6px 0;
     font-family: 'Noto Sans', sans-serif;
     font-size: 12px;
-    color: #a9b0c7;
+    color: #8a90a8;
     min-height: 18px;
     display: flex;
     align-items: center;
@@ -123,42 +117,82 @@
   .fn-status-badge {
     display: inline-block;
     padding: 2px 8px;
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: 'Noto Sans', sans-serif;
     font-weight: 700;
-    font-size: 11px;
+    font-size: 10px;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: #0a0c18;
-    border-radius: 2px;
+    border-radius: 3px;
   }
   .fn-status-key {
     color: #6c7091;
     text-transform: uppercase;
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: 'Noto Sans', sans-serif;
     font-size: 11px;
     letter-spacing: 0.1em;
     margin-right: 4px;
   }
   .fn-status-val { color: #e6e8f2; font-weight: 600; }
   .fn-placeholder {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 14px;
+    font-family: 'Noto Sans', sans-serif;
+    font-size: 13px;
     color: #6c7091;
     text-align: center;
     padding: 24px 0;
   }
+  .fn-inline-note {
+    font-family: 'Noto Sans', sans-serif;
+    font-size: 12px;
+    color: #8a90a8;
+  }
   .fn-lineup {
     width: 860px;
     max-width: 100%;
-    margin: 16px auto 0;
+    margin: 0 auto 16px;
     position: relative;
     box-sizing: border-box;
+    background: #0f1120;
+    padding: 20px 24px 18px;
+    border-radius: 6px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.55);
   }
   .fn-lineup-frame {
     position: relative;
     width: 100%;
     background: #1a1a1a;
     line-height: 0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .fn-lineup-legend {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    font-family: 'Noto Sans', sans-serif;
+    font-size: 12px;
+    color: #cfd3e6;
+  }
+  .fn-lineup-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .fn-lineup-legend-swatch {
+    display: inline-block;
+    width: 16px; height: 2px;
+    position: relative;
+    vertical-align: middle;
+  }
+  .fn-lineup-legend-swatch::after {
+    content: "";
+    position: absolute;
+    right: -4px; top: -3px;
+    border-left: 5px solid currentColor;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
   }
   .fn-lineup-img {
     display: block;
@@ -173,10 +207,9 @@
     align-items: center;
     justify-content: center;
     color: #6c7091;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 14px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
+    font-family: 'Noto Sans', sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.02em;
   }
   .fn-lineup-overlay {
     position: absolute;
@@ -186,9 +219,9 @@
   .fn-sources {
     position: relative;
     z-index: 1;
-    margin-top: 14px;
+    margin-top: 12px;
     padding-top: 10px;
-    border-top: 1px solid rgba(245, 197, 24, 0.35);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
   .fn-sources-header {
     display: inline-flex;
@@ -196,18 +229,18 @@
     gap: 6px;
     cursor: pointer;
     user-select: none;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-weight: 700;
-    font-size: 12px;
-    letter-spacing: 0.1em;
+    font-family: 'Noto Sans', sans-serif;
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: #a9b0c7;
+    color: #8a90a8;
     padding: 2px 0;
   }
-  .fn-sources-header:hover { color: #f5c518; }
+  .fn-sources-header:hover { color: #cfd3e6; }
   .fn-sources-caret {
     display: inline-block;
-    color: #f5c518;
+    color: #8a90a8;
     font-size: 11px;
     line-height: 1;
   }
@@ -218,27 +251,22 @@
     padding: 8px 0 2px;
   }
   .fn-sources-link {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 13px;
-    letter-spacing: 0.04em;
+    font-family: 'Noto Sans', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.02em;
     color: #a9b0c7;
     text-decoration: none;
   }
-  .fn-sources-link:hover { color: #f5c518; }
+  .fn-sources-link:hover { color: #cfd3e6; text-decoration: underline; }
 
   .fn-rose-card {
     position: relative;
     width: 860px;
     max-width: 100%;
-    margin: 16px auto 0;
+    margin: 0 auto 16px;
     background: #0f1120;
-    border-top: 3px solid #ffffff;
     padding: 20px 24px 18px;
-    clip-path: polygon(
-      16px 0, calc(100% - 16px) 0, 100% 16px,
-      100% calc(100% - 16px), calc(100% - 16px) 100%,
-      16px 100%, 0 calc(100% - 16px), 0 16px
-    );
+    border-radius: 6px;
     box-shadow: 0 12px 40px rgba(0,0,0,0.55);
     box-sizing: border-box;
   }
@@ -253,12 +281,12 @@
     display: inline-block;
     background: #ffffff;
     color: #0a0c18;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-weight: 900;
-    font-size: 11px;
-    letter-spacing: 0.18em;
+    font-family: 'Noto Sans', sans-serif;
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: 0.16em;
     padding: 3px 9px;
-    border-radius: 2px;
+    border-radius: 3px;
     text-transform: uppercase;
     position: relative;
   }
@@ -280,25 +308,27 @@
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 900;
     font-style: italic;
-    font-size: 20px;
+    font-size: 22px;
     letter-spacing: 0.04em;
     color: #e6e8f2;
     text-transform: uppercase;
     line-height: 1;
   }
   .fn-rose-station {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 13px;
-    letter-spacing: 0.1em;
-    color: #a9b0c7;
-    text-transform: uppercase;
-    margin-top: 4px;
+    font-family: 'Noto Sans', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: #8a90a8;
+    margin-top: 2px;
+    margin-bottom: 8px;
+    width: 100%;
   }
   .fn-rose-timestamp {
     font-family: 'Noto Sans', sans-serif;
     font-size: 12px;
     color: #cfd3e6;
-    margin-top: 6px;
+    margin-top: 2px;
+    margin-bottom: 4px;
   }
   .fn-rose-timestamp .fn-rose-rel {
     color: #6c7091;
@@ -329,24 +359,22 @@
     text-align: center;
   }
   .fn-rose-overlay-inner {
-    background: rgba(15, 17, 32, 0.92);
-    border-left: 3px solid #ff4747;
-    padding: 10px 14px;
+    background: rgba(15, 17, 32, 0.88);
+    padding: 8px 12px;
+    border-radius: 3px;
     font-family: 'Noto Sans', sans-serif;
     font-size: 12px;
-    color: #e6e8f2;
+    color: #8a90a8;
     max-width: 90%;
-    box-shadow: 0 8px 22px rgba(0,0,0,0.55);
   }
   .fn-rose-legend {
     display: flex;
     gap: 18px;
     flex-wrap: wrap;
     margin-top: 12px;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
+    font-family: 'Noto Sans', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.02em;
     color: #a9b0c7;
   }
   .fn-rose-legend-key { color: #6c7091; margin-right: 4px; }
@@ -391,13 +419,13 @@
     background: rgba(255, 71, 71, 0.16);
     border: 1px solid rgba(255, 71, 71, 0.55);
     color: #ff9b9b;
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: 'Noto Sans', sans-serif;
     font-weight: 700;
     font-size: 10px;
     letter-spacing: 0.16em;
     text-transform: uppercase;
     padding: 2px 7px;
-    border-radius: 2px;
+    border-radius: 3px;
   }
   .fn-rose-history-wrap {
     margin-top: 14px;
@@ -407,7 +435,7 @@
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: 'Noto Sans', sans-serif;
     font-size: 11px;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -496,9 +524,9 @@
     left: 50%; top: 12px;
     transform: translateX(-50%);
     background: rgba(15, 17, 32, 0.96);
-    border-left: 3px solid #ff4747;
-    color: #e6e8f2;
-    padding: 8px 14px;
+    border-radius: 3px;
+    color: #cfd3e6;
+    padding: 6px 12px;
     font-family: 'Noto Sans', sans-serif;
     font-size: 12px;
     z-index: 5;
@@ -516,22 +544,22 @@
     .fn-card {
       width: calc(100vw - 16px);
       max-width: none;
-      margin: 0 8px;
-      padding: 12px;
+      margin: 0 8px 12px;
+      padding: 12px 14px;
       box-sizing: border-box;
     }
-    .fn-card::before { height: 40px; }
-    .fn-header { margin-bottom: 12px; }
-    .fn-chart-wrap { padding: 52px 8px 8px; }
+    .fn-section-head { margin-bottom: 2px; }
+    .fn-chart-wrap { padding: 40px 8px 8px; }
     .fn-lineup {
       width: calc(100vw - 16px);
       max-width: none;
-      margin: 12px 8px 0;
+      margin: 0 8px 12px;
+      padding: 12px 14px;
     }
     .fn-rose-card {
       width: calc(100vw - 16px);
       max-width: none;
-      margin: 12px 8px 0;
+      margin: 0 8px 12px;
       padding: 14px 14px 12px;
     }
     .fn-rose-title { font-size: 17px; }
@@ -607,14 +635,20 @@ const IS_MOBILE = typeof window !== 'undefined'
 
 const QUALITY_COLORS = {
   good: '#57e649',
-  fair: '#f5c518',
+  fair: '#fb923c',
   poor: '#ff4747',
 };
 
+const QUALITY_LABELS = {
+  good: 'Offshore wind',
+  fair: 'Cross-shore wind',
+  poor: 'Onshore wind',
+};
+
 const LEGEND = [
-  { label: 'Good',  color: QUALITY_COLORS.good },
-  { label: 'Fair',  color: QUALITY_COLORS.fair },
-  { label: 'Poor',  color: QUALITY_COLORS.poor },
+  { label: QUALITY_LABELS.good, color: QUALITY_COLORS.good },
+  { label: QUALITY_LABELS.fair, color: QUALITY_COLORS.fair },
+  { label: QUALITY_LABELS.poor, color: QUALITY_COLORS.poor },
 ];
 
 const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
@@ -691,13 +725,26 @@ async function fetchForecastData() {
   return hours;
 }
 
+function SectionHeader({ title, pill, sub }) {
+  return (
+    <>
+      <div className="fn-section-head">
+        <span className="fn-section-title">{title}</span>
+        {pill && <span className="fn-section-pill">{pill}</span>}
+      </div>
+      {sub && <div className="fn-section-sub">{sub}</div>}
+    </>
+  );
+}
+
 function CardShell({ children }) {
   return (
     <div className="fn-card">
-      <div className="fn-header">
-        <div className="fn-title">Swell Forecast</div>
-        <div className="fn-subtitle">Chocomount Beach</div>
-      </div>
+      <SectionHeader
+        title="Swell Forecast"
+        pill="Forecast"
+        sub="Chocomount Beach"
+      />
       {children}
     </div>
   );
@@ -729,8 +776,6 @@ const PLOT_TOP = 16;
 const PLOT_BOTTOM = 260;
 const PLOT_WIDTH = PLOT_RIGHT - PLOT_LEFT;
 const PLOT_HEIGHT = PLOT_BOTTOM - PLOT_TOP;
-const STRIP_TOP = PLOT_BOTTOM + 6;
-const STRIP_HEIGHT = 22;
 const Y_MAX = 14;
 
 function xForIdx(i, n) {
@@ -1092,9 +1137,7 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
       if (t.getHours() === 0 || i === 0) {
         const x = xForIdx(i, n);
         const label = t.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: '2-digit' })
-          .toUpperCase()
-          .replace(',', '')
-          .replace(/\s+/, ' / ');
+          .replace(',', '');
         const sun = sunTimes(t, LAT_WIND);
         const midHour = (sun.sunsetHr > sun.sunriseHr)
           ? (sun.sunriseHr + sun.sunsetHr) / 2
@@ -1105,6 +1148,40 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
       }
     }
     return divs;
+  }, [hours, n]);
+
+  const sunMarkers = useMemo(() => {
+    if (!n) return [];
+    const xAt = (ms) => {
+      const firstMs = new Date(hours[0].time).getTime();
+      const lastMs = new Date(hours[n - 1].time).getTime();
+      if (ms <= firstMs) return PLOT_LEFT;
+      if (ms >= lastMs) return PLOT_RIGHT;
+      for (let i = 0; i < n - 1; i++) {
+        const a = new Date(hours[i].time).getTime();
+        const b = new Date(hours[i + 1].time).getTime();
+        if (ms >= a && ms <= b) {
+          const f = (ms - a) / (b - a || 1);
+          return xForIdx(i, n) + (xForIdx(i + 1, n) - xForIdx(i, n)) * f;
+        }
+      }
+      return PLOT_RIGHT;
+    };
+    const markers = [];
+    const seen = new Set();
+    for (let i = 0; i < n; i++) {
+      const t = new Date(hours[i].time);
+      const key = `${t.getFullYear()}-${t.getMonth()}-${t.getDate()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const sun = sunTimes(t, LAT_WIND);
+      const midHour = (sun.sunsetHr > sun.sunriseHr)
+        ? (sun.sunriseHr + sun.sunsetHr) / 2
+        : 12;
+      const midnight = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
+      markers.push({ x: xAt(midnight + midHour * 3600000) });
+    }
+    return markers;
   }, [hours, n]);
 
   const { nightRuns, sunLines } = useMemo(() => {
@@ -1192,19 +1269,13 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
 
   return (
     <div className="fn-chart-wrap" ref={wrapRef} style={wrapStyle}>
-      <svg viewBox="0 0 800 300" preserveAspectRatio="xMidYMid meet"
+      <svg viewBox="0 0 800 270" preserveAspectRatio="xMidYMid meet"
            onMouseMove={handleMove}
            onMouseLeave={() => { if (!IS_MOBILE) onHover(null); }}
            onTouchStart={handleTouch}
            onTouchMove={handleTouch}
            onTouchEnd={() => onHover(null)}
            onTouchCancel={() => onHover(null)}>
-        <defs>
-          <mask id="crescentMask" maskContentUnits="objectBoundingBox">
-            <circle cx="0.5" cy="0.5" r="0.5" fill="#fff" />
-            <circle cx="0.72" cy="0.5" r="0.45" fill="#000" />
-          </mask>
-        </defs>
         <rect x={PLOT_LEFT} y={PLOT_TOP}
               width={PLOT_WIDTH} height={PLOT_HEIGHT}
               fill="#0a0c18" />
@@ -1215,9 +1286,9 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
                   y1={yForFt(ft)} y2={yForFt(ft)}
                   stroke="#1a1d33" strokeWidth="1" />
             <text x={PLOT_LEFT - 6} y={yForFt(ft) + 4}
-                  fontFamily="Barlow Condensed, sans-serif"
-                  fontSize="11" fill="#6c7091" textAnchor="end">
-              {ft} FT
+                  fontFamily="Noto Sans, sans-serif"
+                  fontSize="10" fill="#8a90a8" textAnchor="end">
+              {ft} ft
             </text>
           </g>
         ))}
@@ -1229,18 +1300,25 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
                 fill="rgba(2,3,14,0.58)" />
         ))}
 
-        {nightRuns.map((run, i) => (
-          <circle key={'moon-' + i}
-                  cx={run.x + run.w / 2}
-                  cy={(PLOT_TOP + PLOT_BOTTOM) / 2}
-                  r="8"
-                  fill="#f4f1e3"
-                  mask="url(#crescentMask)" />
+        {sunMarkers.map((m, i) => (
+          <g key={'sun-icon-' + i} transform={`translate(${m.x.toFixed(2)}, ${(PLOT_TOP + 32)})`}>
+            <circle r="4.5" fill="#fde047" stroke="#facc15" strokeWidth="0.5" />
+            <g stroke="#fde047" strokeWidth="1.3" strokeLinecap="round">
+              <line x1="0" y1="-7" x2="0" y2="-9.5" />
+              <line x1="0" y1="7" x2="0" y2="9.5" />
+              <line x1="-7" y1="0" x2="-9.5" y2="0" />
+              <line x1="7" y1="0" x2="9.5" y2="0" />
+              <line x1="-5" y1="-5" x2="-6.9" y2="-6.9" />
+              <line x1="5" y1="-5" x2="6.9" y2="-6.9" />
+              <line x1="-5" y1="5" x2="-6.9" y2="6.9" />
+              <line x1="5" y1="5" x2="6.9" y2="6.9" />
+            </g>
+          </g>
         ))}
 
         {areaSegments.map((seg, i) => (
           <path key={'area-' + i} d={seg.d}
-                fill={seg.color} fillOpacity="0.18" stroke="none" />
+                fill={seg.color} fillOpacity="0.55" stroke="none" />
         ))}
 
         <path d={linePath} fill="none"
@@ -1248,11 +1326,11 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
               strokeLinejoin="round" strokeLinecap="round" />
 
         {sunLines.map((sl, i) => (
-          <line key={'sun-' + i}
+          <line key={'sunline-' + i}
                 x1={sl.x} x2={sl.x}
                 y1={PLOT_TOP} y2={PLOT_BOTTOM}
-                stroke="#f5c518" strokeWidth="1"
-                strokeDasharray="3 3" />
+                stroke="#f5c518" strokeOpacity="0.22"
+                strokeWidth="1" strokeDasharray="3 3" />
         ))}
 
         {dayDividers.map((dv, i) => (
@@ -1262,33 +1340,18 @@ function SwellChart({ hours, hoveredIdx, onHover }) {
                   stroke="#f5c518" strokeOpacity="0.18"
                   strokeWidth="1" strokeDasharray="3 3" />
             <text x={dv.labelX} y={PLOT_TOP + 12}
-                  fontFamily="Barlow Condensed, sans-serif"
-                  fontSize="10" fill="#cfa617"
-                  letterSpacing="1" textAnchor="middle">
+                  fontFamily="Noto Sans, sans-serif"
+                  fontSize="11" fontWeight="600"
+                  fill="#cfd3e6" textAnchor="middle">
               {dv.label}
             </text>
           </g>
         ))}
 
-        <rect x={PLOT_LEFT} y={STRIP_TOP}
-              width={PLOT_WIDTH} height={STRIP_HEIGHT}
-              fill="#06080f" stroke="#1a1d33" strokeWidth="1" />
-        {hours.map((h, i) => {
-          const cellW = PLOT_WIDTH / n;
-          const x = PLOT_LEFT + i * cellW;
-          const q = windQ(h.windDir);
-          return (
-            <rect key={'q-' + i}
-                  x={x} y={STRIP_TOP + 1}
-                  width={cellW + 0.5} height={STRIP_HEIGHT - 2}
-                  fill={QUALITY_COLORS[q]} fillOpacity="0.72" />
-          );
-        })}
-
         {hovered && (
           <g pointerEvents="none">
             <line x1={hovered.x} x2={hovered.x}
-                  y1={PLOT_TOP} y2={STRIP_TOP + STRIP_HEIGHT}
+                  y1={PLOT_TOP} y2={PLOT_BOTTOM}
                   stroke="#f5c518" strokeOpacity="0.55"
                   strokeWidth="1" />
             <circle cx={hovered.x} cy={hovered.y} r="4"
@@ -1334,7 +1397,7 @@ function StatusBar({ hours, hoveredIdx }) {
     hour: 'numeric', minute: '2-digit',
   });
   return (
-    <div className="fn-statusbar" style={{ borderLeftColor: color }}>
+    <div className="fn-statusbar">
       <span>
         <span className="fn-status-key">When</span>
         <span className="fn-status-val">{when}</span>
@@ -1354,12 +1417,28 @@ function StatusBar({ hours, hoveredIdx }) {
           {h.gustMph != null ? ' (g ' + Math.round(h.gustMph) + ')' : ''}
         </span>
       </span>
-      <span className="fn-status-badge" style={{ background: color }}>{q}</span>
+      <span className="fn-status-badge" style={{ background: color }}>{QUALITY_LABELS[q]}</span>
     </div>
   );
 }
 
-function Sources() {
+const FORECAST_SOURCES = [
+  { href: 'https://open-meteo.com/en/docs/marine-weather-api', label: 'Open-Meteo Marine API' },
+  { href: 'https://open-meteo.com/en/docs', label: 'Open-Meteo Forecast API' },
+  { href: 'https://gml.noaa.gov/grad/solcalc/', label: 'NOAA Solar Calculator' },
+];
+
+const MAP_SOURCES = [
+  { href: 'https://open-meteo.com/en/docs/marine-weather-api', label: 'Open-Meteo Marine API' },
+  { href: 'https://open-meteo.com/en/docs', label: 'Open-Meteo Forecast API' },
+];
+
+const SPECTRAL_SOURCES = [
+  { href: 'https://www.ndbc.noaa.gov/station_page.php?station=44097', label: 'NDBC Station 44097' },
+  { href: 'https://www.ndbc.noaa.gov/measdes.shtml', label: 'NDBC Spectral Wave Measurement Docs' },
+];
+
+function Sources({ links = FORECAST_SOURCES }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="fn-sources">
@@ -1381,21 +1460,13 @@ function Sources() {
       </div>
       {expanded && (
         <div className="fn-sources-list">
-          <a className="fn-sources-link"
-             href="https://open-meteo.com/en/docs/marine-weather-api"
-             target="_blank" rel="noopener noreferrer">
-            Open-Meteo Marine API
-          </a>
-          <a className="fn-sources-link"
-             href="https://open-meteo.com/en/docs"
-             target="_blank" rel="noopener noreferrer">
-            Open-Meteo Forecast API
-          </a>
-          <a className="fn-sources-link"
-             href="https://gml.noaa.gov/grad/solcalc/"
-             target="_blank" rel="noopener noreferrer">
-            NOAA Solar Calculator
-          </a>
+          {links.map(link => (
+            <a key={link.href} className="fn-sources-link"
+               href={link.href}
+               target="_blank" rel="noopener noreferrer">
+              {link.label}
+            </a>
+          ))}
         </div>
       )}
     </div>
@@ -1405,8 +1476,9 @@ function Sources() {
 const ARROW_COLORS = {
   offshore: '#22c55e',
   onshore: '#ef4444',
-  crossshore: '#eab308',
+  crossshore: '#fb923c',
   swell: '#67e8f9',
+  wind: '#fde047',
 };
 
 function classifyWind(windFromDeg) {
@@ -1431,8 +1503,7 @@ function LineupOverlay({ hours, hoveredIdx }) {
   const activeIdx = hoveredIdx != null && hours[hoveredIdx] ? hoveredIdx : 0;
   const h = hours[activeIdx] || {};
 
-  const windKlass = classifyWind(h.windDir);
-  const windColor = ARROW_COLORS[windKlass];
+  const windColor = ARROW_COLORS.wind;
   const swellColor = ARROW_COLORS.swell;
 
   // Arrow lengths
@@ -1525,6 +1596,11 @@ function LineupOverlay({ hours, hoveredIdx }) {
 
   return (
     <div className="fn-lineup">
+      <SectionHeader
+        title="Satellite Map"
+        pill="Lineup"
+        sub="Chocomount Beach"
+      />
       <div className="fn-lineup-frame">
         {imgFailed ? (
           <div className="fn-lineup-placeholder">Lineup view unavailable</div>
@@ -1569,7 +1645,7 @@ function LineupOverlay({ hours, hoveredIdx }) {
               x={reefLabelX.toFixed(2)} y={reefLabelY.toFixed(2)}
               fontSize="3"
               fill="rgba(255,255,255,0.5)"
-              fontFamily="Barlow Condensed, sans-serif"
+              fontFamily="Noto Sans, sans-serif"
               textAnchor="middle"
               dominantBaseline="middle"
             >reef 335°</text>
@@ -1602,6 +1678,19 @@ function LineupOverlay({ hours, hoveredIdx }) {
           </svg>
         </div>
       </div>
+      <div className="fn-lineup-legend" aria-label="Arrow legend">
+        <span className="fn-lineup-legend-item" style={{ color: swellColor }}>
+          <span className="fn-lineup-legend-swatch"
+                style={{ background: swellColor }}></span>
+          <span style={{ color: '#cfd3e6' }}>Swell direction</span>
+        </span>
+        <span className="fn-lineup-legend-item" style={{ color: windColor }}>
+          <span className="fn-lineup-legend-swatch"
+                style={{ background: windColor }}></span>
+          <span style={{ color: '#cfd3e6' }}>Wind direction</span>
+        </span>
+      </div>
+      <Sources links={MAP_SOURCES} />
     </div>
   );
 }
@@ -1651,16 +1740,15 @@ function ConvergingArrow({ fromDeg, length, color, filter, label, opacity = 1, f
 }
 
 // Axis-aligned upright label pill anchored at arrow origin, offset
-// perpendicular to the shaft so it doesn't overlap the line.
+// perpendicular to the shaft so it doesn't overlap the line. Styled to
+// match the "LIVE" pill — white chip with dark text, small border-radius.
 function ArrowLabel({ originX, originY, perpX, perpY, color, text, fontSize = 2.6 }) {
   const OFFSET = 1.8;
-  const PAD_X = 1.2;
-  const PAD_Y = 0.6;
+  const PAD_X = 1.4;
+  const PAD_Y = 0.7;
   const charW = fontSize * (1.35 / 2.6);
   const w = Math.max(6, text.length * charW + PAD_X * 2);
   const h = fontSize + PAD_Y * 2;
-  // Place rect center at distance (OFFSET + w/2) from origin along perp dir,
-  // so the nearest edge of the axis-aligned rect sits roughly OFFSET away.
   const cx = originX + (OFFSET + w / 2) * perpX;
   const cy = originY + (OFFSET + w / 2) * perpY;
   return (
@@ -1670,15 +1758,18 @@ function ArrowLabel({ originX, originY, perpX, perpY, color, text, fontSize = 2.
         y={(cy - h / 2).toFixed(2)}
         width={w.toFixed(2)}
         height={h.toFixed(2)}
-        rx="0.6" ry="0.6"
-        fill="rgba(0,0,0,0.6)"
+        rx="0.9" ry="0.9"
+        fill="#ffffff"
+        stroke={color}
+        strokeWidth="0.25"
       />
       <text
         x={cx.toFixed(2)} y={cy.toFixed(2)}
         fontSize={fontSize}
-        fill={color}
-        fontFamily="Barlow Condensed, sans-serif"
+        fill="#0a0c18"
+        fontFamily="Noto Sans, sans-serif"
         fontWeight="700"
+        letterSpacing="0.04em"
         textAnchor="middle"
         dominantBaseline="middle"
       >{text}</text>
@@ -1856,8 +1947,26 @@ function drawRoseOnCanvas(canvas, spectral) {
     ctx.stroke();
   });
 
+  // Numeric labels on each concentric ring, positioned along a radial
+  // that avoids the N/E/S/W compass labels and the SE swell-window cone.
+  // Radials show fraction of peak energy in the current reading.
   ctx.fillStyle = '#8a827a';
-  ctx.font = (compact ? '9px' : '10px') + ' "DM Mono", monospace';
+  ctx.font = (compact ? '8px' : '9px') + ' "Noto Sans", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const labelAngleRad = -Math.PI / 4; // ~NW (315°) — clear of swell window (SE)
+  [0.25, 0.5, 0.75, 1.0].forEach(frac => {
+    const lx = cx + Math.cos(labelAngleRad) * frac * r;
+    const ly = cy + Math.sin(labelAngleRad) * frac * r;
+    // white halo for legibility
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(lx - 11, ly - 6, 22, 12);
+    ctx.fillStyle = '#5a5550';
+    ctx.fillText(Math.round(frac * 100) + '%', lx, ly);
+  });
+
+  ctx.fillStyle = '#8a827a';
+  ctx.font = (compact ? '9px' : '10px') + ' "Noto Sans", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('N', cx, cy - r - padLabel);
@@ -2203,16 +2312,16 @@ function LiveSpectralPanel() {
 
   return (
     <div className="fn-rose-card">
-      <div className="fn-rose-head">
+      <div className="fn-section-head">
+        <span className="fn-section-title">Spectral Wave Observations</span>
         <span className={badgeClass} {...badgeProps}>
           {isHistoricalView ? 'Live · viewing history' : 'Live'}
         </span>
         {isHistoricalView && (
           <span className="fn-rose-viewing-pill">Viewing {offsetLabel}</span>
         )}
-        <span className="fn-rose-title">Spectral wave observations</span>
       </div>
-      <div className="fn-rose-station">
+      <div className="fn-section-sub">
         NDBC {SPECTRAL_BUOY_STATION} · {SPECTRAL_BUOY_NAME}
       </div>
       {observedLine}
@@ -2284,6 +2393,7 @@ function LiveSpectralPanel() {
       <div className="fn-rose-disclaimer">
         {disclaimer}
       </div>
+      <Sources links={SPECTRAL_SOURCES} />
     </div>
   );
 }
