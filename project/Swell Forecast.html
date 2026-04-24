@@ -371,6 +371,145 @@
     font-style: italic;
     line-height: 1.4;
   }
+  .fn-live-badge.fn-live-badge-dim {
+    background: #4a4d5e;
+    color: #d6d9ea;
+    cursor: pointer;
+  }
+  .fn-live-badge.fn-live-badge-dim::before {
+    background: #8a90a8;
+    animation: none;
+    opacity: 0.7;
+  }
+  .fn-live-badge.fn-live-badge-dim:hover,
+  .fn-live-badge.fn-live-badge-dim:focus {
+    background: #5a5d72;
+    outline: none;
+  }
+  .fn-rose-viewing-pill {
+    display: inline-block;
+    background: rgba(255, 71, 71, 0.16);
+    border: 1px solid rgba(255, 71, 71, 0.55);
+    color: #ff9b9b;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 2px;
+  }
+  .fn-rose-history-wrap {
+    margin-top: 14px;
+    padding: 0 6px;
+  }
+  .fn-rose-history-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #6c7091;
+    margin-bottom: 8px;
+  }
+  .fn-rose-history-time {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: #e6e8f2;
+    text-transform: none;
+  }
+  .fn-rose-slider {
+    position: relative;
+    height: 26px;
+    width: 100%;
+  }
+  .fn-rose-slider input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    position: absolute;
+    left: 0; top: 10px;
+    width: 100%; height: 4px;
+    background: #2a2d44;
+    border-radius: 2px;
+    outline: none;
+    margin: 0; padding: 0;
+    cursor: pointer;
+    z-index: 2;
+  }
+  .fn-rose-slider input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 2px solid #ff4747;
+    cursor: pointer;
+    margin-top: -6px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.55);
+  }
+  .fn-rose-slider input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 2px solid #ff4747;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.55);
+  }
+  .fn-rose-ticks {
+    position: absolute;
+    left: 0; right: 0; top: 16px;
+    height: 8px;
+    pointer-events: none;
+  }
+  .fn-rose-tick {
+    position: absolute;
+    top: 2px;
+    width: 1px;
+    height: 4px;
+    background: #4a5070;
+    transform: translateX(-50%);
+  }
+  .fn-rose-tick.fn-rose-tick-major {
+    top: 0;
+    height: 8px;
+    width: 2px;
+    background: #8a90b3;
+  }
+  .fn-rose-tick-labels {
+    position: relative;
+    height: 14px;
+    margin-top: 2px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: #8a90b3;
+  }
+  .fn-rose-tick-label {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+  .fn-rose-toast {
+    position: absolute;
+    left: 50%; top: 12px;
+    transform: translateX(-50%);
+    background: rgba(15, 17, 32, 0.96);
+    border-left: 3px solid #ff4747;
+    color: #e6e8f2;
+    padding: 8px 14px;
+    font-family: 'Noto Sans', sans-serif;
+    font-size: 12px;
+    z-index: 5;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.55);
+    animation: fn-rose-toast-in 250ms ease;
+    pointer-events: none;
+  }
+  @keyframes fn-rose-toast-in {
+    from { opacity: 0; transform: translate(-50%, -8px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+  }
 
   @media (pointer: coarse) {
     #root { padding: 12px 0; }
@@ -396,6 +535,14 @@
       padding: 14px 14px 12px;
     }
     .fn-rose-title { font-size: 17px; }
+    .fn-rose-slider input[type="range"]::-webkit-slider-thumb {
+      width: 22px; height: 22px; margin-top: -9px;
+    }
+    .fn-rose-slider input[type="range"]::-moz-range-thumb {
+      width: 22px; height: 22px;
+    }
+    .fn-rose-slider { height: 32px; }
+    .fn-rose-ticks { top: 18px; }
   }
 </style>
 </head>
@@ -1575,60 +1722,73 @@ async function fetchSpectralBundle(buoyId) {
   return { dataSpec, swdir, swdir2, swr1, swr2 };
 }
 
-// NDBC realtime2 spectral file parser — ported verbatim from app.js. The first
-// 5 fields of each data row are YY MM DD hh mm; data_spec has an extra
+// NDBC realtime2 spectral file parser. Returns the top `maxRows` data rows
+// (newest first, matching file order) as [{ ts, freqs, values }, …]. The
+// first 5 fields of each row are YY MM DD hh mm; data_spec has an extra
 // sep_freq scalar before the value/(freq) pairs, swdir/swdir2/swr1/swr2 don't.
-function parseSpectralFile(text, hasSepFreq) {
-  if (!text) return null;
+function parseSpectralFileRows(text, hasSepFreq, maxRows) {
+  if (!text) return [];
   const lines = text.trim().split('\n');
-  if (lines.length < 2) return null;
-  const row = lines[1].trim().split(/\s+/);
-  let i = 5 + (hasSepFreq ? 1 : 0);
-  const freqs = [], values = [];
-  while (i + 1 < row.length) {
-    const v = Number(row[i]);
-    const f = Number(row[i + 1].replace(/[()]/g, ''));
-    if (!Number.isFinite(v) || !Number.isFinite(f)) break;
-    values.push(v);
-    freqs.push(f);
-    i += 2;
+  if (lines.length < 2) return [];
+  const out = [];
+  const limit = Math.min(maxRows, lines.length - 1);
+  for (let li = 1; li <= limit; li++) {
+    const row = lines[li].trim().split(/\s+/);
+    if (row.length < 5) continue;
+    const yy = Number(row[0]), mm = Number(row[1]), dd = Number(row[2]);
+    const hh = Number(row[3]), mn = Number(row[4]);
+    if ([yy, mm, dd, hh, mn].some(n => !Number.isFinite(n))) continue;
+    const ts = new Date(Date.UTC(yy, mm - 1, dd, hh, mn));
+    let i = 5 + (hasSepFreq ? 1 : 0);
+    const freqs = [], values = [];
+    while (i + 1 < row.length) {
+      const v = Number(row[i]);
+      const f = Number(row[i + 1].replace(/[()]/g, ''));
+      if (!Number.isFinite(v) || !Number.isFinite(f)) break;
+      values.push(v);
+      freqs.push(f);
+      i += 2;
+    }
+    if (freqs.length) out.push({ ts, freqs, values });
   }
-  return freqs.length ? { freqs, values } : null;
+  return out;
 }
 
-function parseSpectralTimestamp(text) {
-  if (!text) return null;
-  const lines = text.trim().split('\n');
-  if (lines.length < 2) return null;
-  const row = lines[1].trim().split(/\s+/);
-  if (row.length < 5) return null;
-  const yy = Number(row[0]), mm = Number(row[1]), dd = Number(row[2]);
-  const hh = Number(row[3]), mn = Number(row[4]);
-  if ([yy, mm, dd, hh, mn].some(n => !Number.isFinite(n))) return null;
-  // NDBC times are UTC.
-  return new Date(Date.UTC(yy, mm - 1, dd, hh, mn));
+// Build the full spectrum (bins with energy + directional moments) for the
+// top `maxRows` readings. Aux files (swdir/swdir2/swr1/swr2) are matched to
+// the energy file by timestamp so an irregular gap in one file doesn't desync
+// the others. Returns [{ ts, freqs, bins }, …], newest first.
+function parseSpectralHistory(bundle, maxRows) {
+  if (!bundle || !bundle.dataSpec) return [];
+  const energyRows = parseSpectralFileRows(bundle.dataSpec, true, maxRows);
+  if (!energyRows.length) return [];
+  const byTs = (rows) => {
+    const m = new Map();
+    for (const r of rows) m.set(r.ts.getTime(), r);
+    return m;
+  };
+  const dir1Map = byTs(parseSpectralFileRows(bundle.swdir,  false, maxRows));
+  const dir2Map = byTs(parseSpectralFileRows(bundle.swdir2, false, maxRows));
+  const r1Map   = byTs(parseSpectralFileRows(bundle.swr1,   false, maxRows));
+  const r2Map   = byTs(parseSpectralFileRows(bundle.swr2,   false, maxRows));
+  return energyRows.map(er => {
+    const key = er.ts.getTime();
+    const d1 = dir1Map.get(key), d2 = dir2Map.get(key);
+    const rr1 = r1Map.get(key),  rr2 = r2Map.get(key);
+    const bins = er.freqs.map((f, i) => ({
+      freq: f,
+      period: f > 0 ? 1 / f : 0,
+      energy: er.values[i] || 0,
+      dir1: d1  && d1.values[i]  != null ? d1.values[i]  : 0,
+      dir2: d2  && d2.values[i]  != null ? d2.values[i]  : 0,
+      r1:   rr1 && rr1.values[i] != null ? rr1.values[i] : 0.5,
+      r2:   rr2 && rr2.values[i] != null ? rr2.values[i] : 0.25,
+    }));
+    return { ts: er.ts, freqs: er.freqs, bins };
+  });
 }
 
-function parseSpectral(bundle) {
-  if (!bundle || !bundle.dataSpec) return null;
-  const energy = parseSpectralFile(bundle.dataSpec, true);
-  if (!energy) return null;
-  const dir1 = parseSpectralFile(bundle.swdir, false);
-  const dir2 = parseSpectralFile(bundle.swdir2, false);
-  const r1   = parseSpectralFile(bundle.swr1, false);
-  const r2   = parseSpectralFile(bundle.swr2, false);
-  const freqs = energy.freqs;
-  const bins = freqs.map((f, i) => ({
-    freq: f,
-    period: f > 0 ? 1 / f : 0,
-    energy: energy.values[i] || 0,
-    dir1: dir1 && dir1.values[i] != null ? dir1.values[i] : 0,
-    dir2: dir2 && dir2.values[i] != null ? dir2.values[i] : 0,
-    r1:   r1   && r1.values[i]   != null ? r1.values[i]   : 0.5,
-    r2:   r2   && r2.values[i]   != null ? r2.values[i]   : 0.25,
-  }));
-  return { freqs, bins };
-}
+const SPECTRAL_HISTORY_ROWS = 13;  // current + 12 prior readings (≈6h at 30m cadence)
 
 // Period (s) → [R,G,B] ramp. Matches the palette used by the main app's rose.
 const PERIOD_COLOR_STOPS = [
@@ -1810,14 +1970,41 @@ function formatRelative(ms) {
   return Math.round(hrs / 24) + ' d ago';
 }
 
+// Format a minute-offset (≥0) for display under the slider thumb / pill.
+// 0 → "now", 30 → "-30m", 60 → "-1h", 90 → "-1.5h", etc.
+function formatHistoryOffset(min) {
+  const m = Math.max(0, Math.round(min));
+  if (m < 1) return 'now';
+  if (m < 60) return '-' + m + 'm';
+  const h = m / 60;
+  if (Math.abs(h - Math.round(h)) < 0.05) return '-' + Math.round(h) + 'h';
+  return '-' + h.toFixed(1) + 'h';
+}
+
+// Compact absolute time label, e.g. "2:02 PM ET". The timezone fragment relies
+// on `timeZoneName: 'short'` returning a localized abbreviation.
+function formatAbsoluteClock(ts) {
+  if (!ts) return '';
+  return ts.toLocaleString('en-US', {
+    hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+  });
+}
+
 function LiveSpectralPanel() {
-  const [spectral, setSpectral] = useState(null);
-  const [observedAt, setObservedAt] = useState(null);
+  // history is newest-first: history[0] is the latest reading, history[N-1] is
+  // the oldest in the 6-hour window.
+  const [history, setHistory] = useState([]);
   const [status, setStatus] = useState('loading'); // 'loading' | 'ok' | 'stale' | 'error'
   const [retryIn, setRetryIn] = useState(null);
   const [nowTick, setNowTick] = useState(Date.now());
+  // Slider parking: null = follow latest (rightmost). Otherwise the absolute
+  // timestamp the user is parked on. Stored by timestamp (not index) so a
+  // background refresh that shifts the array doesn't yank the view.
+  const [selectedTs, setSelectedTs] = useState(null);
+  const [resetToast, setResetToast] = useState(false);
   const canvasRef = useRef(null);
   const attemptRef = useRef(0);
+  const toastTimerRef = useRef(null);
 
   // Run the fetch + schedule the next attempt. Exponential backoff on failure
   // (2s, 4s, 8s, 16s, then hold at 16s), success → schedule next refresh in
@@ -1832,13 +2019,11 @@ function LiveSpectralPanel() {
         const bundle = await fetchSpectralBundle(SPECTRAL_BUOY_STATION);
         if (!alive) return;
         if (!bundle) throw new Error('buoy data unavailable');
-        const parsed = parseSpectral(bundle);
-        const ts = parseSpectralTimestamp(bundle.dataSpec);
-        if (!parsed || !ts) throw new Error('parse returned no bins');
+        const rows = parseSpectralHistory(bundle, SPECTRAL_HISTORY_ROWS);
+        if (!rows.length) throw new Error('parse returned no bins');
         attemptRef.current = 0;
-        setSpectral(parsed);
-        setObservedAt(ts);
-        const age = Date.now() - ts.getTime();
+        setHistory(rows);
+        const age = Date.now() - rows[0].ts.getTime();
         setStatus(age > SPECTRAL_STALE_MS ? 'stale' : 'ok');
         setRetryIn(null);
         timer = setTimeout(run, SPECTRAL_REFRESH_MS);
@@ -1875,17 +2060,84 @@ function LiveSpectralPanel() {
     return () => clearInterval(t);
   }, []);
 
-  // Redraw canvas whenever spectral changes, and on window resize.
+  // If a refresh shifted the parked timestamp out of the window, reset to
+  // the latest reading and surface a brief toast. Runs on every history /
+  // selection change; no-op when the parked timestamp is still present.
   useEffect(() => {
-    const redraw = () => drawRoseOnCanvas(canvasRef.current, spectral);
+    if (selectedTs == null || !history.length) return;
+    const target = selectedTs.getTime();
+    if (history.some(r => r.ts.getTime() === target)) return;
+    setSelectedTs(null);
+    setResetToast(true);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setResetToast(false), 4000);
+  }, [history, selectedTs]);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
+
+  // Resolve which history row to render. selectedIdx is an index into history
+  // (0 = newest). Falls back to 0 (latest) when the parked ts isn't present.
+  const N = history.length;
+  let selectedIdx = 0;
+  if (selectedTs != null && N > 0) {
+    const found = history.findIndex(h => h.ts.getTime() === selectedTs.getTime());
+    if (found >= 0) selectedIdx = found;
+  }
+  const currentReading = N > 0 ? history[selectedIdx] : null;
+  const latestReading = N > 0 ? history[0] : null;
+  const isHistoricalView = selectedIdx > 0;
+  const offsetMin = currentReading && latestReading
+    ? Math.round((latestReading.ts.getTime() - currentReading.ts.getTime()) / 60000)
+    : 0;
+
+  // Redraw canvas whenever the selected reading changes, and on window resize.
+  // Snap-render: no transitions so scrubbing reads as a clean trend.
+  useEffect(() => {
+    const redraw = () => drawRoseOnCanvas(canvasRef.current, currentReading);
     redraw();
     window.addEventListener('resize', redraw);
     return () => window.removeEventListener('resize', redraw);
-  }, [spectral]);
+  }, [currentReading]);
 
+  const observedAt = latestReading ? latestReading.ts : null;
   const age = observedAt ? nowTick - observedAt.getTime() : null;
   const isStale = status === 'stale' || (age != null && age > SPECTRAL_STALE_MS);
-  const hasData = !!spectral;
+  const hasData = !!latestReading;
+
+  // Slider value convention: rightmost = now. We map sliderValue v → history
+  // index (N-1) - v so v=N-1 picks history[0] (latest).
+  const sliderMax = Math.max(0, N - 1);
+  const sliderValue = sliderMax - selectedIdx;
+  const onSliderInput = (e) => {
+    const v = Number(e.target.value);
+    const newIdx = sliderMax - v;
+    if (newIdx <= 0) {
+      setSelectedTs(null); // follow latest across future refreshes
+    } else {
+      setSelectedTs(history[newIdx].ts);
+    }
+  };
+  const returnToNow = () => setSelectedTs(null);
+
+  // Build per-tick metadata using actual buoy timestamps so irregular gaps
+  // surface in the labels. Whole-hour ticks are bigger and labeled; half-hour
+  // ticks are visually marked but unlabeled.
+  const ticks = [];
+  for (let v = 0; v <= sliderMax; v++) {
+    const idx = sliderMax - v;
+    const r = history[idx];
+    const off = latestReading ? Math.round((latestReading.ts.getTime() - r.ts.getTime()) / 60000) : 0;
+    const isHour = Math.abs(off - Math.round(off / 60) * 60) <= 5;
+    ticks.push({
+      v,
+      pct: sliderMax === 0 ? 50 : (v / sliderMax) * 100,
+      offsetMin: off,
+      label: isHour ? formatHistoryOffset(off) : null,
+      isMajor: isHour,
+    });
+  }
 
   let observedLine = null;
   if (observedAt) {
@@ -1930,10 +2182,34 @@ function LiveSpectralPanel() {
     );
   }
 
+  const badgeClass = 'fn-live-badge' + (isHistoricalView ? ' fn-live-badge-dim' : '');
+  const badgeProps = isHistoricalView
+    ? { onClick: returnToNow, title: 'Return to current reading', role: 'button', tabIndex: 0,
+        onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); returnToNow(); } } }
+    : {};
+
+  const offsetLabel = formatHistoryOffset(offsetMin);
+  const absLabel = formatAbsoluteClock(currentReading && currentReading.ts);
+
+  let disclaimer;
+  if (isHistoricalView) {
+    const histAbs = currentReading.ts.toLocaleString('en-US', {
+      month: 'short', day: '2-digit', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+    });
+    disclaimer = 'Historical buoy reading from ' + histAbs + '. Drag slider to compare.';
+  } else {
+    disclaimer = 'Real-time buoy reading — does not match the forecast timeline above.';
+  }
+
   return (
     <div className="fn-rose-card">
       <div className="fn-rose-head">
-        <span className="fn-live-badge">Live</span>
+        <span className={badgeClass} {...badgeProps}>
+          {isHistoricalView ? 'Live · viewing history' : 'Live'}
+        </span>
+        {isHistoricalView && (
+          <span className="fn-rose-viewing-pill">Viewing {offsetLabel}</span>
+        )}
         <span className="fn-rose-title">Spectral wave observations</span>
       </div>
       <div className="fn-rose-station">
@@ -1943,7 +2219,52 @@ function LiveSpectralPanel() {
       <div className={'fn-rose-canvas-wrap' + (isStale && hasData ? ' fn-rose-faded' : '')}>
         <canvas ref={canvasRef} className="fn-rose-canvas"></canvas>
         {overlay}
+        {resetToast && (
+          <div className="fn-rose-toast" role="status">
+            History updated — returned to current reading.
+          </div>
+        )}
       </div>
+      {N > 1 && (
+        <div className="fn-rose-history-wrap">
+          <div className="fn-rose-history-head">
+            <span>Trend · last 6h</span>
+            <span className="fn-rose-history-time">
+              {absLabel}{isHistoricalView ? ' · ' + offsetLabel : ''}
+            </span>
+          </div>
+          <div className="fn-rose-slider">
+            <input
+              type="range"
+              min={0}
+              max={sliderMax}
+              step={1}
+              value={sliderValue}
+              onChange={onSliderInput}
+              onInput={onSliderInput}
+              aria-label="Scrub spectral observation history"
+            />
+            <div className="fn-rose-ticks" aria-hidden="true">
+              {ticks.map(t => (
+                <span
+                  key={t.v}
+                  className={'fn-rose-tick' + (t.isMajor ? ' fn-rose-tick-major' : '')}
+                  style={{ left: t.pct + '%' }}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="fn-rose-tick-labels" aria-hidden="true">
+            {ticks.filter(t => t.label).map(t => (
+              <span
+                key={t.v}
+                className="fn-rose-tick-label"
+                style={{ left: t.pct + '%' }}
+              >{t.label}</span>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="fn-rose-legend">
         <span>
           <span className="fn-rose-legend-key">Radial</span>
@@ -1961,7 +2282,7 @@ function LiveSpectralPanel() {
         </span>
       </div>
       <div className="fn-rose-disclaimer">
-        Real-time buoy reading — does not match the forecast timeline above.
+        {disclaimer}
       </div>
     </div>
   );
