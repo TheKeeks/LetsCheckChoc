@@ -1577,13 +1577,16 @@ function Sources({ links = FORECAST_SOURCES }) {
       </div>
       {expanded && (
         <div className="fn-sources-list">
-          {links.map(link => (
-            <a key={link.href} className="fn-sources-link"
-               href={link.href}
-               target="_blank" rel="noopener noreferrer">
-              {link.label}
-            </a>
-          ))}
+          {links.map((link, i) => link.href
+            ? (<a key={link.href} className="fn-sources-link"
+                  href={link.href}
+                  target="_blank" rel="noopener noreferrer">
+                {link.label}
+               </a>)
+            : (<span key={'note-' + i} className="fn-sources-link" style={{ color: '#8a90a8', fontStyle: 'italic' }}>
+                {link.label}
+               </span>)
+          )}
         </div>
       )}
     </div>
@@ -2850,6 +2853,432 @@ function logTrainSummary(bundle) {
   console.groupEnd();
 }
 
+// Map a 1-10 score to a y-coordinate in the same plot box used by SwellChart.
+function yForScore(score) {
+  if (score == null) return null;
+  const v = Math.max(1, Math.min(10, score));
+  return PLOT_BOTTOM - ((v - 1) / 9) * PLOT_HEIGHT;
+}
+
+function scoreBracketColor(score) {
+  if (score == null) return '#6c7091';
+  if (score >= 7) return QUALITY_COLORS.good;
+  if (score >= 5) return QUALITY_COLORS.fair;
+  return QUALITY_COLORS.poor;
+}
+
+// Replays the same nightRuns / sunLines / dayDividers / sunMarkers logic that
+// SwellChart computes inline, so the new prediction card lays out as a visual
+// sibling. Kept as a top-level helper rather than touching SwellChart.
+function computeChartGeometry(hours) {
+  const n = hours.length;
+  if (!n) return { nightRuns: [], sunLines: [], dayDividers: [], sunMarkers: [] };
+  const xAt = (ms) => {
+    const firstMs = new Date(hours[0].time).getTime();
+    const lastMs = new Date(hours[n - 1].time).getTime();
+    if (ms <= firstMs) return PLOT_LEFT;
+    if (ms >= lastMs) return PLOT_RIGHT;
+    for (let i = 0; i < n - 1; i++) {
+      const a = new Date(hours[i].time).getTime();
+      const b = new Date(hours[i + 1].time).getTime();
+      if (ms >= a && ms <= b) {
+        const f = (ms - a) / (b - a || 1);
+        return xForIdx(i, n) + (xForIdx(i + 1, n) - xForIdx(i, n)) * f;
+      }
+    }
+    return PLOT_RIGHT;
+  };
+  const dayMap = new Map();
+  const sunLines = [];
+  const sunMarkers = [];
+  const dayDividers = [];
+  const night = [];
+  const seenSun = new Set();
+  for (let i = 0; i < n; i++) {
+    const t = new Date(hours[i].time);
+    const key = t.getFullYear() + '-' + t.getMonth() + '-' + t.getDate();
+    let sun = dayMap.get(key);
+    if (!sun) {
+      sun = sunTimes(t, LAT_WIND);
+      dayMap.set(key, sun);
+      const midnight = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
+      sunLines.push({ x: xAt(midnight + sun.sunriseHr * 3600000) });
+      sunLines.push({ x: xAt(midnight + sun.sunsetHr * 3600000) });
+    }
+    const hr = t.getHours() + t.getMinutes() / 60;
+    night.push(hr < sun.sunriseHr || hr >= sun.sunsetHr);
+    if (!seenSun.has(key)) {
+      seenSun.add(key);
+      const midHour = (sun.sunsetHr > sun.sunriseHr) ? (sun.sunriseHr + sun.sunsetHr) / 2 : 12;
+      const midnight = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
+      sunMarkers.push({ x: xAt(midnight + midHour * 3600000) });
+    }
+    if (t.getHours() === 0 || i === 0) {
+      const x = xForIdx(i, n);
+      const label = t.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: '2-digit' }).replace(',', '');
+      const midHour = (sun.sunsetHr > sun.sunriseHr) ? (sun.sunriseHr + sun.sunsetHr) / 2 : 12;
+      const midnight = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
+      dayDividers.push({ x, label, i, labelX: xAt(midnight + midHour * 3600000) });
+    }
+  }
+  const xStartFor = (i) => i === 0 ? PLOT_LEFT : (xForIdx(i - 1, n) + xForIdx(i, n)) / 2;
+  const xEndFor = (i) => i === n - 1 ? PLOT_RIGHT : (xForIdx(i, n) + xForIdx(i + 1, n)) / 2;
+  const nightRuns = [];
+  let start = null;
+  for (let i = 0; i < n; i++) {
+    if (night[i] && start === null) start = i;
+    if ((!night[i] || i === n - 1) && start !== null) {
+      const end = night[i] && i === n - 1 ? i : i - 1;
+      nightRuns.push({ x: xStartFor(start), w: xEndFor(end) - xStartFor(start) });
+      start = null;
+    }
+  }
+  return { nightRuns, sunLines, dayDividers, sunMarkers };
+}
+
+// Per-segment colored bezier — same control-point math as SwellChart's
+// areaSegments, but stroke-only and colored by the bracket of the segment's
+// left point so the line itself reflects threshold crossings.
+function buildColoredScoreSegments(points) {
+  const segs = [];
+  if (points.length < 2) return segs;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p1 = points[i], p2 = points[i + 1];
+    if (p1.score == null || p2.score == null) continue;
+    const p0 = points[i === 0 ? i : i - 1];
+    const p3 = points[i + 2] || p2;
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    const d = 'M ' + p1.x + ' ' + p1.y +
+      ' C ' + c1x.toFixed(2) + ' ' + c1y.toFixed(2) +
+      ', ' + c2x.toFixed(2) + ' ' + c2y.toFixed(2) +
+      ', ' + p2.x.toFixed(2) + ' ' + p2.y.toFixed(2);
+    segs.push({ d, color: scoreBracketColor(p1.score) });
+  }
+  return segs;
+}
+
+const PRED_FORECAST_SOURCES = [
+  { href: 'https://open-meteo.com/en/docs/marine-weather-api', label: 'Open-Meteo Marine API' },
+  { href: 'https://open-meteo.com/en/docs', label: 'Open-Meteo Forecast API' },
+  { href: 'https://api.tidesandcurrents.noaa.gov/api/prod/', label: 'NOAA CO-OPS Tide Predictions' },
+  { label: 'Trained on your logged Chocomount sessions' }
+];
+const TRAINED_SOURCES = [
+  { label: 'Trained on your logged Chocomount sessions' }
+];
+
+function PredScoreHoverBanner({ hours, hoveredIdx, wrapWidth, scores }) {
+  if (hoveredIdx == null || !hours[hoveredIdx] || !wrapWidth) return null;
+  const h = hours[hoveredIdx];
+  const n = hours.length;
+  const innerW = Math.max(0, wrapWidth - 24);
+  const pxX = 12 + (xForIdx(hoveredIdx, n) / 800) * innerW;
+  const W = IS_MOBILE ? 168 : 230;
+  const leftPx = Math.max(8, Math.min(wrapWidth - W - 8, pxX - W / 2));
+
+  const t = new Date(h.time);
+  const dayStr = t.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+  const hr = t.getHours();
+  const hourStr = hr === 0 ? '12AM' : hr === 12 ? '12PM' : hr < 12 ? hr + 'AM' : (hr - 12) + 'PM';
+  const headerStr = dayStr + ' · ' + hourStr;
+
+  const fmt = (s) => s == null ? '–' : s.toFixed(1);
+  const rowStyle = {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+    fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700,
+    fontSize: '12px', letterSpacing: '0.06em', marginTop: '2px',
+  };
+  const labelStyle = { color: '#6c7091', fontSize: '10px', letterSpacing: '0.14em' };
+
+  const style = {
+    position: 'absolute',
+    left: leftPx + 'px',
+    top: '14px',
+    width: W + 'px',
+    background: '#0f1120',
+    borderLeft: '2px solid ' + scoreBracketColor(scores.wave != null ? scores.wave : scores.ride),
+    clipPath: 'polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% calc(100% - 12px), calc(100% - 12px) 100%, 12px 100%, 0 calc(100% - 12px), 0 12px)',
+    padding: '10px',
+    fontFamily: 'Noto Sans, sans-serif',
+    color: '#e6e8f2',
+    pointerEvents: 'none',
+    zIndex: 3,
+    boxShadow: '0 12px 32px rgba(0,0,0,0.65)',
+    overflow: 'hidden',
+  };
+
+  return (
+    <div style={style}>
+      <div style={{ fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, fontSize: '11px', letterSpacing: '0.14em', color: '#cfd3e6', marginBottom: '4px' }}>
+        {headerStr}
+      </div>
+      <div style={rowStyle}>
+        <span style={labelStyle}>WAVE</span>
+        <span style={{ color: scoreBracketColor(scores.wave) }}>{fmt(scores.wave)}</span>
+      </div>
+      <div style={rowStyle}>
+        <span style={labelStyle}>RIDE</span>
+        <span style={{ color: scoreBracketColor(scores.ride) }}>{fmt(scores.ride)}</span>
+      </div>
+      <div style={rowStyle}>
+        <span style={labelStyle}>COND</span>
+        <span style={{ color: scoreBracketColor(scores.cond) }}>{fmt(scores.cond)}</span>
+      </div>
+      <div style={{ marginTop: '8px', fontSize: '11px', color: '#a9b0c7' }}>
+        {h.waveFt != null ? h.waveFt.toFixed(1) : '–'} ft
+        {h.period != null ? ' @ ' + h.period.toFixed(0) + 's' : ''}
+        {h.swellDir != null ? ' · ' + degToCompass(h.swellDir) : ''}
+      </div>
+      <div style={{ fontSize: '11px', color: '#a9b0c7' }}>
+        Wind {h.windMph != null ? Math.round(h.windMph) : '–'} mph
+        {h.windDir != null ? ' ' + degToCompass(h.windDir) : ''}
+      </div>
+    </div>
+  );
+}
+
+function PredictedScoreTimeline({ hours, bundle, tideHiLo, modelStatus }) {
+  const n = hours.length;
+  const wrapRef = useRef(null);
+  const [wrapWidth, setWrapWidth] = useState(0);
+  const [hoveredIdx, setHoveredIdx] = useState(null);
+
+  useEffect(() => {
+    const update = () => { if (wrapRef.current) setWrapWidth(wrapRef.current.clientWidth); };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  // Predicted score per hour for each model. Skipped (null score) when the
+  // corresponding model isn't trained yet — those nulls become gaps in the
+  // line so the user can see at a glance which model is missing.
+  const series = useMemo(() => {
+    const wave = [], ride = [], cond = [];
+    if (!hours || !hours.length) return { wave, ride, cond };
+    const haveWave = bundle && bundle.wave && bundle.wave.weights;
+    const haveRide = bundle && bundle.ride && bundle.ride.weights;
+    const haveCond = bundle && bundle.cond && bundle.cond.weights;
+    for (let i = 0; i < hours.length; i++) {
+      const h = hours[i];
+      const c = buildForecastCond(h, tideHiLo || []);
+      let ws = null, rs = null, cs = null;
+      if (haveWave) {
+        const wf = extractWaveFeatures(c);
+        if (wf) ws = _predict(wf, bundle.wave.weights, bundle.wave.stats);
+      }
+      if (haveRide) {
+        const rf = extractRideFeatures(c);
+        if (rf) rs = _predict(rf, bundle.ride.weights, bundle.ride.stats);
+      }
+      if (haveCond) {
+        const cf = extractCondFeatures(c);
+        if (cf) cs = _predict(cf, bundle.cond.weights, bundle.cond.stats);
+      }
+      const x = xForIdx(i, n);
+      wave.push({ x, y: yForScore(ws), score: ws });
+      ride.push({ x, y: yForScore(rs), score: rs });
+      cond.push({ x, y: yForScore(cs), score: cs });
+    }
+    return { wave, ride, cond };
+  }, [hours, bundle, tideHiLo, n]);
+
+  const geometry = useMemo(() => computeChartGeometry(hours), [hours]);
+  const waveSegs = useMemo(() => buildColoredScoreSegments(series.wave), [series.wave]);
+  const rideSegs = useMemo(() => buildColoredScoreSegments(series.ride), [series.ride]);
+  const condSegs = useMemo(() => buildColoredScoreSegments(series.cond), [series.cond]);
+
+  const yTicks = [1, 4, 7, 10];
+
+  const idxFromClientX = (clientX, rect) => {
+    const vbX = ((clientX - rect.left) / rect.width) * 800;
+    if (vbX < PLOT_LEFT || vbX > PLOT_RIGHT) return null;
+    const frac = (vbX - PLOT_LEFT) / PLOT_WIDTH;
+    return Math.max(0, Math.min(n - 1, Math.round(frac * (n - 1))));
+  };
+  const handleMove = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const i = idxFromClientX(e.clientX, rect);
+    setHoveredIdx(i);
+  };
+  const handleTouch = (e) => {
+    const touch = e.touches[0]; if (!touch) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const i = idxFromClientX(touch.clientX, rect);
+    if (i != null) setHoveredIdx(i);
+  };
+
+  // Empty-state overlay logic.
+  const haveWave = bundle && bundle.wave && bundle.wave.weights;
+  const haveRide = bundle && bundle.ride && bundle.ride.weights;
+  const haveCond = bundle && bundle.cond && bundle.cond.weights;
+  const anyModel = haveWave || haveRide || haveCond;
+
+  let overlayMsg = null;
+  if (modelStatus === 'loading') overlayMsg = 'Training models from your logged sessions…';
+  else if (modelStatus === 'noAuth') overlayMsg = 'Sign in to see your model’s predictions';
+  else if (modelStatus === 'error') overlayMsg = 'Model unavailable. Refresh to retry.';
+  else if (modelStatus === 'ready' && !anyModel) {
+    const w = bundle && bundle.wave ? Math.max(0, (bundle.wave.minSamples || 16) - (bundle.wave.n || 0)) : 16;
+    const r = bundle && bundle.ride ? Math.max(0, (bundle.ride.minSamples || 12) - (bundle.ride.n || 0)) : 12;
+    const c = bundle && bundle.cond ? Math.max(0, (bundle.cond.minSamples || 12) - (bundle.cond.n || 0)) : 12;
+    overlayMsg = 'Need ' + Math.max(w, r, c) + ' more session' + (Math.max(w, r, c) === 1 ? '' : 's') + ' to train your models';
+  }
+
+  // Per-line "need N more" notes — only shown when at least one model trained
+  // (overlay covers the all-empty case).
+  const undertrained = [];
+  if (modelStatus === 'ready' && anyModel) {
+    if (!haveWave && bundle && bundle.wave) {
+      const need = Math.max(0, (bundle.wave.minSamples || 16) - (bundle.wave.n || 0));
+      if (need > 0) undertrained.push('Wave: ' + need + ' more session' + (need === 1 ? '' : 's'));
+    }
+    if (!haveRide && bundle && bundle.ride) {
+      const need = Math.max(0, (bundle.ride.minSamples || 12) - (bundle.ride.n || 0));
+      if (need > 0) undertrained.push('Ride: ' + need + ' more');
+    }
+    if (!haveCond && bundle && bundle.cond) {
+      const need = Math.max(0, (bundle.cond.minSamples || 12) - (bundle.cond.n || 0));
+      if (need > 0) undertrained.push('Cond: ' + need + ' more');
+    }
+  }
+
+  const hoverScores = hoveredIdx != null ? {
+    wave: series.wave[hoveredIdx] ? series.wave[hoveredIdx].score : null,
+    ride: series.ride[hoveredIdx] ? series.ride[hoveredIdx].score : null,
+    cond: series.cond[hoveredIdx] ? series.cond[hoveredIdx].score : null,
+  } : { wave: null, ride: null, cond: null };
+
+  const hoveredX = hoveredIdx != null ? xForIdx(hoveredIdx, n) : null;
+
+  const wrapStyle = {
+    position: 'relative',
+    touchAction: IS_MOBILE ? 'none' : undefined,
+  };
+
+  return (
+    <div className="fn-card">
+      <SectionHeader title="Predicted Score" pill="Model" sub="Chocomount Beach" />
+      <div className="fn-chart-wrap" ref={wrapRef} style={wrapStyle}>
+        <svg viewBox="0 0 800 270" preserveAspectRatio="xMidYMid meet"
+             onMouseMove={handleMove}
+             onMouseLeave={() => { if (!IS_MOBILE) setHoveredIdx(null); }}
+             onTouchStart={handleTouch}
+             onTouchMove={handleTouch}
+             onTouchEnd={() => setHoveredIdx(null)}
+             onTouchCancel={() => setHoveredIdx(null)}>
+          <rect x={PLOT_LEFT} y={PLOT_TOP} width={PLOT_WIDTH} height={PLOT_HEIGHT} fill="#0a0c18" />
+
+          {yTicks.map(s => (
+            <g key={'yp-' + s}>
+              <line x1={PLOT_LEFT} x2={PLOT_RIGHT} y1={yForScore(s)} y2={yForScore(s)}
+                    stroke="#1a1d33" strokeWidth="1" />
+              <text x={PLOT_LEFT - 6} y={yForScore(s) + 4}
+                    fontFamily="Noto Sans, sans-serif"
+                    fontSize="10" fill="#8a90a8" textAnchor="end">
+                {s}
+              </text>
+            </g>
+          ))}
+
+          {geometry.nightRuns.map((run, i) => (
+            <rect key={'pn-' + i}
+                  x={run.x} y={PLOT_TOP}
+                  width={run.w} height={PLOT_HEIGHT}
+                  fill="rgba(2,3,14,0.58)" />
+          ))}
+
+          {geometry.sunMarkers.map((m, i) => (
+            <g key={'psun-' + i} transform={'translate(' + m.x.toFixed(2) + ', ' + (PLOT_TOP + 32) + ')'}>
+              <circle r="4.5" fill="#fde047" stroke="#facc15" strokeWidth="0.5" />
+              <g stroke="#fde047" strokeWidth="1.3" strokeLinecap="round">
+                <line x1="0" y1="-7" x2="0" y2="-9.5" />
+                <line x1="0" y1="7" x2="0" y2="9.5" />
+                <line x1="-7" y1="0" x2="-9.5" y2="0" />
+                <line x1="7" y1="0" x2="9.5" y2="0" />
+              </g>
+            </g>
+          ))}
+
+          {haveCond && condSegs.map((seg, i) => (
+            <path key={'cseg-' + i} d={seg.d} fill="none" stroke={seg.color}
+                  strokeOpacity="0.85" strokeWidth="1.5"
+                  strokeLinejoin="round" strokeLinecap="round" />
+          ))}
+          {haveRide && rideSegs.map((seg, i) => (
+            <path key={'rseg-' + i} d={seg.d} fill="none" stroke={seg.color}
+                  strokeOpacity="0.95" strokeWidth="2"
+                  strokeLinejoin="round" strokeLinecap="round" />
+          ))}
+          {haveWave && waveSegs.map((seg, i) => (
+            <path key={'wseg-' + i} d={seg.d} fill="none" stroke={seg.color}
+                  strokeWidth="2.5"
+                  strokeLinejoin="round" strokeLinecap="round" />
+          ))}
+
+          {geometry.sunLines.map((sl, i) => (
+            <line key={'pslin-' + i} x1={sl.x} x2={sl.x}
+                  y1={PLOT_TOP} y2={PLOT_BOTTOM}
+                  stroke="#f5c518" strokeOpacity="0.22"
+                  strokeWidth="1" strokeDasharray="3 3" />
+          ))}
+          {geometry.dayDividers.map((dv, i) => (
+            <g key={'pdv-' + i}>
+              <line x1={dv.x} x2={dv.x} y1={PLOT_TOP} y2={PLOT_BOTTOM}
+                    stroke="#f5c518" strokeOpacity="0.18"
+                    strokeWidth="1" strokeDasharray="3 3" />
+              <text x={dv.labelX} y={PLOT_TOP + 12}
+                    fontFamily="Noto Sans, sans-serif"
+                    fontSize="11" fontWeight="600"
+                    fill="#cfd3e6" textAnchor="middle">
+                {dv.label}
+              </text>
+            </g>
+          ))}
+
+          {hoveredX != null && (
+            <line x1={hoveredX} x2={hoveredX}
+                  y1={PLOT_TOP} y2={PLOT_BOTTOM}
+                  stroke="#f5c518" strokeOpacity="0.55" strokeWidth="1"
+                  pointerEvents="none" />
+          )}
+        </svg>
+        {overlayMsg && (
+          <div className="fn-pred-overlay-msg">
+            <div className="fn-rose-overlay-inner">{overlayMsg}</div>
+          </div>
+        )}
+        {!overlayMsg && (
+          <PredScoreHoverBanner
+            hours={hours} hoveredIdx={hoveredIdx}
+            wrapWidth={wrapWidth} scores={hoverScores} />
+        )}
+      </div>
+
+      <div className="fn-legend">
+        <span className="fn-legend-item"><span className="fn-legend-dot" style={{ background: '#e6e8f2', height: '3px', borderRadius: 0 }}></span>Wave 2.5px</span>
+        <span className="fn-legend-item"><span className="fn-legend-dot" style={{ background: '#cfd3e6', height: '2px', borderRadius: 0 }}></span>Ride 2.0px</span>
+        <span className="fn-legend-item"><span className="fn-legend-dot" style={{ background: '#a9b0c7', height: '1.5px', borderRadius: 0 }}></span>Cond 1.5px</span>
+        <span className="fn-legend-item"><span className="fn-legend-dot" style={{ background: QUALITY_COLORS.good }}></span>≥7</span>
+        <span className="fn-legend-item"><span className="fn-legend-dot" style={{ background: QUALITY_COLORS.fair }}></span>≥5</span>
+        <span className="fn-legend-item"><span className="fn-legend-dot" style={{ background: QUALITY_COLORS.poor }}></span>&lt;5</span>
+      </div>
+
+      {undertrained.length > 0 && (
+        <div className="fn-statusbar" style={{ color: '#fb923c' }}>
+          <span className="fn-status-key">Pending</span>
+          <span className="fn-status-val">{undertrained.join(' · ')}</span>
+        </div>
+      )}
+
+      <Sources links={PRED_FORECAST_SOURCES} />
+    </div>
+  );
+}
+
 // modelStatus drives the empty-state overlays on the three new cards:
 //   'loading' → auth/logs/tide still in flight
 //   'noAuth'  → user is anonymous or sign-in didn't complete
@@ -2936,6 +3365,11 @@ function App() {
         <Sources />
       </CardShell>
       <LineupOverlay hours={hours} hoveredIdx={hoveredIdx} />
+      <PredictedScoreTimeline
+        hours={hours}
+        bundle={bundle}
+        tideHiLo={tideHiLo}
+        modelStatus={modelStatus} />
       <LiveSpectralPanel />
     </>
   );
