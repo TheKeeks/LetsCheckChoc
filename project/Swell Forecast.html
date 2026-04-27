@@ -2850,10 +2850,22 @@ function logTrainSummary(bundle) {
   console.groupEnd();
 }
 
+// modelStatus drives the empty-state overlays on the three new cards:
+//   'loading' → auth/logs/tide still in flight
+//   'noAuth'  → user is anonymous or sign-in didn't complete
+//   'ready'   → bundle is populated; per-card under-trained checks happen in
+//               the cards themselves (each model has its own minSamples gate)
+//   'error'   → load/train threw — cards render an error message
 function App() {
   const [hours, setHours] = useState(null);
   const [error, setError] = useState(null);
   const [hoveredIdx, setHoveredIdx] = useState(null);
+
+  // Surf-log model state. Decoupled from the forecast fetch so a Firestore /
+  // CO-OPS hiccup can't keep the forecast chart from rendering.
+  const [modelStatus, setModelStatus] = useState('loading');
+  const [bundle, setBundle] = useState(null);
+  const [tideHiLo, setTideHiLo] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -2862,6 +2874,54 @@ function App() {
       .catch(err => { if (alive) setError(err.message || String(err)); });
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        // window._fnAuthReady resolves once onAuthStateChanged fires for the
+        // first time (or after a 1.5s grace for restored sessions). See the
+        // standalone Firebase init at the top of the body.
+        const user = await (window._fnAuthReady || Promise.resolve(null));
+        if (!alive) return;
+        if (!user || user.isAnonymous) {
+          setModelStatus('noAuth');
+          return;
+        }
+        const [logs, tide] = await Promise.all([
+          loadLogsFromFirebase().catch(err => { console.warn('loadLogsFromFirebase failed', err); return []; }),
+          fetchTideHiLo(7).catch(err => { console.warn('fetchTideHiLo failed', err); return []; })
+        ]);
+        if (!alive) return;
+        setTideHiLo(tide);
+        const b = retrainAll(logs, window._fbUserId);
+        setBundle(b);
+        logTrainSummary(b);
+        setModelStatus('ready');
+      } catch (err) {
+        if (!alive) return;
+        console.warn('[swell-forecast] surf-log model init failed', err);
+        setModelStatus('error');
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Expose a refresh hook so a future "log a session from this page" button
+  // can re-pull Firestore + retrain without restructuring App. Returns the
+  // freshly trained bundle for callers that want to chain off it.
+  useEffect(() => {
+    window._fnRetrainSurfModel = async () => {
+      const logs = await loadLogsFromFirebase();
+      const tide = tideHiLo || await fetchTideHiLo(7).catch(() => []);
+      const b = retrainAll(logs, window._fbUserId);
+      setTideHiLo(tide);
+      setBundle(b);
+      logTrainSummary(b);
+      return b;
+    };
+    return () => { delete window._fnRetrainSurfModel; };
+  }, [tideHiLo]);
 
 
   if (error) return <ErrorCard message={error} />;
