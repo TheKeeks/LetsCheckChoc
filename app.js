@@ -75,6 +75,8 @@ const STATE = {
   surfLog: [],
   surfLogWaveWeights: null,
   surfLogWaveStats: null,
+  surfLogRideWeights: null,
+  surfLogRideStats: null,
   surfLogCondWeights: null,
   surfLogCondStats: null,
   surfLogEditId: null,
@@ -3879,58 +3881,90 @@ function toggleEntryDetail(entry, tr) {
 // SURF LOG — Linear Regression (Normal Equation)
 // ════════════════════════════════════════════════
 
-// Wave Score features (target: 0.75×size + 0.25×rideQuality)
-// Primary swell direction encoded as two window-relative features instead of raw sin/cos:
-//   swell_dir_alignment  — 1.0 at window center (136.5°), 0.0 at edges & outside [0,1]
-//   swell_dir_outside_deg — degrees beyond the nearer window edge, capped at 45° [0,45]
-// Together these let the regression reveal whether the window acts as a hard gate,
-// a gradual ramp, or both, and the outside_deg coefficient directly answers
-// "how many degrees outside the window before a drastic score drop?"
-// Secondary swell direction simplified to a binary in-window flag (substitutes for
-// primary only when primary fails the window test — can't fully model that interaction
-// in a linear model, but this is the best single-feature approximation).
-// blown_water_index disabled for now — kept in code for future use
+// Three independent models train on the same logged sessions:
+//   wave  — predicts ratings.size: did swell arrive at Choc with size (pure swell-arrival signal)
+//   ride  — predicts ratings.rideQuality: how cleanly the wave peeled (direction fit, period, tide phase)
+//   cond  — predicts ratings.windQuality: local wind quality
+// Splitting size off from ride lets each model isolate its physical signal.
+//
+// Direction encoded as two window-relative features (alignment + outside_deg) instead
+// of raw sin/cos so the regression can reveal whether the swell window acts as a hard
+// gate, a gradual ramp, or both.
+// blown_water_index disabled for now — kept in code for future use.
+
+// Wave features (target: ratings.size). period_x_alignment tests whether long
+// period only matters when direction lets it through.
 const WAVE_FEATURE_NAMES = [
   'swell_height','swell_period','swell_dir_alignment','swell_dir_outside_deg',
-  'sec_swell_height','sec_swell_period','sec_dir_in_window',
-  'tide_height','tide_stage'
-  // ,'blown_water_index'  // available but disabled
+  'period_x_alignment',
+  'sec_swell_height','sec_swell_period','sec_dir_in_window'
 ];
 
-// Conditions Score features (target: windQuality)
+// Ride features (target: ratings.rideQuality). Tide enters here, not in wave —
+// tide affects how the wave peels, not whether swell arrived.
+const RIDE_FEATURE_NAMES = [
+  'swell_dir_alignment','swell_dir_outside_deg','swell_period',
+  'tide_height','time_to_low','low_incoming'
+];
+
+// Conditions features (target: ratings.windQuality)
 const COND_FEATURE_NAMES = [
   'wind_speed','wind_offshore_score'
   // ,'blown_water_index'  // available but disabled
 ];
 
+// Median tide height (ft, MLLW) used by extractRideFeatures.low_incoming.
+// Refreshed at the start of slRetrain from logged-session tide heights so the
+// "below median" threshold reflects the user's actual surf history.
+let _TIDE_MEDIAN = 2.0;
+
+// Chocomount swell window: 115°–158°, center 136.5°, half-width 21.5°.
+function _windowGeometry() {
+  const min = CONFIG.chocomount.swellWindowMin;
+  const max = CONFIG.chocomount.swellWindowMax;
+  return { min, max, center: (min + max) / 2, half: (max - min) / 2 };
+}
+// 1.0 at window center, 0.0 at edges and outside.
+function _dirAlignment(dir, geo) { return Math.max(0, 1 - Math.abs(dir - geo.center) / geo.half); }
+// Degrees beyond the nearer window edge; 0 if in-window, capped at 45°.
+function _dirOutsideDeg(dir, geo) { return Math.min(45, Math.max(0, geo.min - dir, dir - geo.max)); }
+
 function extractWaveFeatures(cond) {
   if (!cond?.swell) return null;
-  const s = cond.swell, t = cond.tide||{height:0,stage:'rising'};
-  const sec = s.secondary||{height:0,direction:0,period:0};
-  const ts = t.stage === 'rising' ? 1 : -1;
-
-  // Swell window constants (Chocomount: 115°–158°, center 136.5°, half-width 21.5°)
-  const WIN_MIN = CONFIG.chocomount.swellWindowMin;          // 115
-  const WIN_MAX = CONFIG.chocomount.swellWindowMax;          // 158
-  const WIN_CENTER = (WIN_MIN + WIN_MAX) / 2;                // 136.5
-  const WIN_HALF   = (WIN_MAX - WIN_MIN) / 2;                // 21.5
-
+  const s = cond.swell;
+  const sec = s.secondary || { height: 0, direction: 0, period: 0 };
+  const geo = _windowGeometry();
   const dir = s.direction || 0;
-  // Linear alignment score: 1 at window center, 0 at edges and outside
-  const dirAlignment  = Math.max(0, 1 - Math.abs(dir - WIN_CENTER) / WIN_HALF);
-  // Degrees outside the nearer window edge; 0 if in-window, capped at 45°
-  const dirOutside    = Math.min(45, Math.max(0, WIN_MIN - dir, dir - WIN_MAX));
-
+  const period = s.period || 0;
+  const dirAlignment = _dirAlignment(dir, geo);
+  const dirOutside = _dirOutsideDeg(dir, geo);
   const secDir = sec.direction || 0;
-  const secInWindow = (secDir >= WIN_MIN && secDir <= WIN_MAX) ? 1 : 0;
-
+  const secInWindow = (secDir >= geo.min && secDir <= geo.max) ? 1 : 0;
   return [
-    s.height||0, s.period||0,
+    s.height || 0, period,
     dirAlignment, dirOutside,
-    sec.height||0, sec.period||0,
-    secInWindow,
-    t.height||0, ts
-    // , cond.blown_water_index||0  // disabled
+    period * dirAlignment,
+    sec.height || 0, sec.period || 0,
+    secInWindow
+  ];
+}
+
+function extractRideFeatures(cond) {
+  if (!cond?.swell) return null;
+  const s = cond.swell;
+  const t = cond.tide || { height: 0, stage: 'rising', timeToNearest: 0 };
+  const geo = _windowGeometry();
+  const dir = s.direction || 0;
+  const dirAlignment = _dirAlignment(dir, geo);
+  const dirOutside = _dirOutsideDeg(dir, geo);
+  // Signed hours to low: rising → low just passed (negative); falling → low upcoming (positive).
+  // Approximation: timeToNearest is to nearest H or L, so this conflates the two when
+  // we're closer to a high than the bracketing lows — acceptable since we mostly surf near low.
+  const timeToLow = t.stage === 'rising' ? -(t.timeToNearest || 0) : (t.timeToNearest || 0);
+  const lowIncoming = ((t.height || 0) < _TIDE_MEDIAN && t.stage === 'rising') ? 1 : 0;
+  return [
+    dirAlignment, dirOutside, s.period || 0,
+    t.height || 0, timeToLow, lowIncoming
   ];
 }
 
@@ -3966,8 +4000,11 @@ function normalEquation(X,y) {
 function trainModel(entries, featureExtractor, targetFn) {
   const X = [], y = [];
   entries.forEach(e => { const f = featureExtractor(e.conditions); if(f){ X.push(f); y.push(targetFn(e)); }});
-  if (X.length < 8) return null;
-  const nF = X[0].length, stats = { min:[], max:[], mean:[] };
+  if (!X.length) return null;
+  const nF = X[0].length;
+  const minSamples = Math.max(2 * nF, 12);
+  if (X.length < minSamples) return null;
+  const stats = { min:[], max:[], mean:[] };
   for (let j=0;j<nF;j++) { const col=X.map(r=>r[j]); stats.min[j]=Math.min(...col); stats.max[j]=Math.max(...col); stats.mean[j]=col.reduce((a,b)=>a+b,0)/col.length; }
   const Xn = X.map(row => row.map((v,j) => { const rng=stats.max[j]-stats.min[j]; return rng>1e-10?(v-stats.min[j])/rng:0; }));
   const weights = normalEquation(Xn, y);
@@ -3976,12 +4013,21 @@ function trainModel(entries, featureExtractor, targetFn) {
 
 function slRetrain() {
   const entries = STATE.surfLog.filter(e => e.conditions?.swell);
-  // Wave model: target = 0.75×size + 0.25×rideQuality
-  // Weighted toward size (physical swell energy reaching beach) while retaining
-  // ride quality's contribution (directional fit to beach shape, tide interaction).
-  const wave = trainModel(entries, extractWaveFeatures, e => 0.75 * e.ratings.size + 0.25 * e.ratings.rideQuality);
+  // Refresh tide median from logged tide heights so low_incoming reflects user's history.
+  const tideHeights = entries.map(e => e.conditions?.tide?.height).filter(h => typeof h === 'number');
+  if (tideHeights.length) {
+    const sorted = [...tideHeights].sort((a,b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    _TIDE_MEDIAN = sorted.length % 2 ? sorted[mid] : (sorted[mid-1] + sorted[mid]) / 2;
+  }
+  // Wave model: target = size (pure swell arrival, no peel quality mixed in).
+  const wave = trainModel(entries, extractWaveFeatures, e => e.ratings.size);
   STATE.surfLogWaveWeights = wave?.weights || null;
   STATE.surfLogWaveStats = wave?.stats || null;
+  // Ride model: target = rideQuality (how cleanly it peeled).
+  const ride = trainModel(entries, extractRideFeatures, e => e.ratings.rideQuality);
+  STATE.surfLogRideWeights = ride?.weights || null;
+  STATE.surfLogRideStats = ride?.stats || null;
   // Conditions model: target = windQuality
   const cond = trainModel(entries, extractCondFeatures, e => e.ratings.windQuality);
   STATE.surfLogCondWeights = cond?.weights || null;
@@ -3990,7 +4036,8 @@ function slRetrain() {
 }
 
 function renderWeightSection(weights, stats, featureNames) {
-  if (!weights) return '<span class="sl-hint">Need 8+ sessions to train.</span>';
+  const minSamples = Math.max(2 * featureNames.length, 12);
+  if (!weights) return '<span class="sl-hint">Need '+minSamples+'+ sessions to train.</span>';
   const tot = weights.reduce((s,v)=>s+Math.abs(v),0);
   if (tot===0) return '<span class="sl-hint">Not enough variance.</span>';
   return weights.map((v,i) => {
@@ -4002,10 +4049,12 @@ function renderWeightSection(weights, stats, featureNames) {
 function renderWeightsPanel() {
   const panel = el('panel-surflog-weights'), container = el('surflog-weights');
   if (!panel||!container) return;
-  if (!STATE.surfLogWaveWeights && !STATE.surfLogCondWeights) { panel.style.display='none'; return; }
+  if (!STATE.surfLogWaveWeights && !STATE.surfLogRideWeights && !STATE.surfLogCondWeights) { panel.style.display='none'; return; }
   panel.style.display = '';
   let h = '<div class="sl-weights-section"><h4 class="sl-weights-heading">Wave Score Weights</h4>';
   h += renderWeightSection(STATE.surfLogWaveWeights, STATE.surfLogWaveStats, WAVE_FEATURE_NAMES);
+  h += '</div><div class="sl-weights-section"><h4 class="sl-weights-heading">Ride Quality Score Weights</h4>';
+  h += renderWeightSection(STATE.surfLogRideWeights, STATE.surfLogRideStats, RIDE_FEATURE_NAMES);
   h += '</div><div class="sl-weights-section"><h4 class="sl-weights-heading">Conditions Score Weights</h4>';
   h += renderWeightSection(STATE.surfLogCondWeights, STATE.surfLogCondStats, COND_FEATURE_NAMES);
   h += '</div>';
@@ -4024,6 +4073,7 @@ function _matchPct(ef, ff, weights, stats) {
   return Math.round(Math.exp(-Math.sqrt(dist))*100);
 }
 function computeWaveMatch(ef, ff) { return _matchPct(ef, ff, STATE.surfLogWaveWeights, STATE.surfLogWaveStats); }
+function computeRideMatch(ef, ff) { return _matchPct(ef, ff, STATE.surfLogRideWeights, STATE.surfLogRideStats); }
 function computeCondMatch(ef, ff) { return _matchPct(ef, ff, STATE.surfLogCondWeights, STATE.surfLogCondStats); }
 
 function _predict(ff, weights, stats) {
@@ -4033,6 +4083,7 @@ function _predict(ff, weights, stats) {
   return Math.max(1,Math.min(10,Math.round(pred*10)/10));
 }
 function predictWaveRating(wf) { return _predict(wf, STATE.surfLogWaveWeights, STATE.surfLogWaveStats); }
+function predictRideRating(rf) { return _predict(rf, STATE.surfLogRideWeights, STATE.surfLogRideStats); }
 function predictCondRating(cf) { return _predict(cf, STATE.surfLogCondWeights, STATE.surfLogCondStats); }
 
 function simpleMatchPct(a,b) {
@@ -4062,30 +4113,33 @@ function findBestMatchPerDay(marine, wind, tideHiLo) {
   const entries = STATE.surfLog.filter(e=>e.conditions).map(e=>({
     entry:e,
     wf:extractWaveFeatures(e.conditions),
+    rf:extractRideFeatures(e.conditions),
     cf:extractCondFeatures(e.conditions)
-  })).filter(x=>x.wf);
+  })).filter(x=>x.wf&&x.rf);
   if (!entries.length) return [];
   const times = marine.hourly.time||[], dayMap={};
   times.forEach((t,i) => { const day=t.split('T')[0]; if(!dayMap[day]) dayMap[day]=[]; dayMap[day].push(i); });
   const results = [];
   Object.entries(dayMap).forEach(([day, idxs]) => {
-    let bestWM=0,bestCM=0,bestE=null,bestWP=null,bestCP=null,bestH=0;
+    let bestWM=0,bestRM=0,bestCM=0,bestE=null,bestWP=null,bestRP=null,bestCP=null,bestH=0;
     idxs.forEach(hi => {
       const fc=buildForecastConditions(marine,wind,tideHiLo,hi); if(!fc) return;
-      const fwf=extractWaveFeatures(fc), fcf=extractCondFeatures(fc);
-      if(!fwf) return;
-      entries.forEach(({entry,wf,cf}) => {
+      const fwf=extractWaveFeatures(fc), frf=extractRideFeatures(fc), fcf=extractCondFeatures(fc);
+      if(!fwf||!frf) return;
+      entries.forEach(({entry,wf,rf,cf}) => {
         const wPct=STATE.surfLogWaveWeights?computeWaveMatch(wf,fwf):simpleMatchPct(wf,fwf);
+        const rPct=STATE.surfLogRideWeights?computeRideMatch(rf,frf):simpleMatchPct(rf,frf);
         const cPct=STATE.surfLogCondWeights?computeCondMatch(cf,fcf):simpleMatchPct(cf,fcf);
-        const avg=(wPct+cPct)/2;
-        if(avg>((bestWM+bestCM)/2)){
-          bestWM=wPct;bestCM=cPct;bestE=entry;bestH=hi;
+        const avg=(wPct+rPct+cPct)/3;
+        if(avg>((bestWM+bestRM+bestCM)/3)){
+          bestWM=wPct;bestRM=rPct;bestCM=cPct;bestE=entry;bestH=hi;
           bestWP=STATE.surfLogWaveWeights?predictWaveRating(fwf):null;
+          bestRP=STATE.surfLogRideWeights?predictRideRating(frf):null;
           bestCP=STATE.surfLogCondWeights?predictCondRating(fcf):null;
         }
       });
     });
-    if(bestE) results.push({day,waveMatch:bestWM,condMatch:bestCM,entry:bestE,waveRating:bestWP,condRating:bestCP,hourIdx:bestH});
+    if(bestE) results.push({day,waveMatch:bestWM,rideMatch:bestRM,condMatch:bestCM,entry:bestE,waveRating:bestWP,rideRating:bestRP,condRating:bestCP,hourIdx:bestH});
   });
   return results;
 }
@@ -4122,9 +4176,10 @@ function renderPersonalMatchCards() {
     const thumb = m.entry.photos?.[0] ? photoUrl(m.entry.photos[0]) : '';
     const imgH = thumb ? '<img class="pm-card-img" src="'+thumb+'" alt="" onerror="this.style.display=\'none\'">' : '<div class="pm-card-img" style="display:flex;align-items:center;justify-content:center;color:var(--ink4);font-family:var(--mono);font-size:0.7rem">No photo</div>';
     const waveLine = '<span class="pm-score-wave">Wave: '+(m.waveRating?m.waveRating.toFixed(1):'--')+'</span>';
+    const rideLine = '<span class="pm-score-ride">Ride: '+(m.rideRating?m.rideRating.toFixed(1):'--')+'</span>';
     const condLine = '<span class="pm-score-cond">Cond: '+(m.condRating?m.condRating.toFixed(1):'--')+'</span>';
-    const matchLine = '<span class="pm-match-wave">W '+m.waveMatch+'%</span> <span class="pm-match-cond">C '+m.condMatch+'%</span>';
-    h += '<div class="pm-card" data-day="'+m.day+'" data-eid="'+m.entry.id+'" data-hi="'+m.hourIdx+'">'+imgH+'<div class="pm-card-body"><div class="pm-card-date">'+dl+'</div><div class="pm-card-scores">'+waveLine+' '+condLine+'</div><div class="pm-card-match">'+matchLine+'</div></div></div>';
+    const matchLine = '<span class="pm-match-wave">W '+m.waveMatch+'%</span> <span class="pm-match-ride">R '+m.rideMatch+'%</span> <span class="pm-match-cond">C '+m.condMatch+'%</span>';
+    h += '<div class="pm-card" data-day="'+m.day+'" data-eid="'+m.entry.id+'" data-hi="'+m.hourIdx+'">'+imgH+'<div class="pm-card-body"><div class="pm-card-date">'+dl+'</div><div class="pm-card-scores">'+waveLine+' '+rideLine+' '+condLine+'</div><div class="pm-card-match">'+matchLine+'</div></div></div>';
   });
   h += '</div>'; container.innerHTML = h;
   container.querySelectorAll('.pm-card').forEach(c => c.addEventListener('click', () => {
