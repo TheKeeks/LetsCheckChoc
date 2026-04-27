@@ -75,10 +75,13 @@ const STATE = {
   surfLog: [],
   surfLogWaveWeights: null,
   surfLogWaveStats: null,
+  surfLogWaveValidation: null,
   surfLogRideWeights: null,
   surfLogRideStats: null,
+  surfLogRideValidation: null,
   surfLogCondWeights: null,
   surfLogCondStats: null,
+  surfLogCondValidation: null,
   surfLogEditId: null,
   activeTab: 'forecast',
   personalMatchesOpen: false,
@@ -3997,6 +4000,25 @@ function normalEquation(X,y) {
   return matMul(inv, matMul(Xt, y.map(v=>[v]))).map(r=>r[0]);
 }
 
+// Z-score normalization keeps weights stable across retrains; min-max would
+// drift each time a new outlier session is logged, making the weights panel
+// hard to interpret over time.
+function _trainOnArrays(X, y) {
+  if (!X.length) return null;
+  const nF = X[0].length;
+  const stats = { mean: [], std: [] };
+  for (let j = 0; j < nF; j++) {
+    const col = X.map(r => r[j]);
+    const mean = col.reduce((a,b) => a+b, 0) / col.length;
+    const variance = col.reduce((a,b) => a + (b-mean)*(b-mean), 0) / col.length;
+    stats.mean[j] = mean;
+    stats.std[j] = Math.sqrt(variance);
+  }
+  const Xn = X.map(row => row.map((v,j) => stats.std[j] > 1e-10 ? (v - stats.mean[j]) / stats.std[j] : 0));
+  const weights = normalEquation(Xn, y);
+  return weights ? { weights, stats } : null;
+}
+
 function trainModel(entries, featureExtractor, targetFn) {
   const X = [], y = [];
   entries.forEach(e => { const f = featureExtractor(e.conditions); if(f){ X.push(f); y.push(targetFn(e)); }});
@@ -4004,15 +4026,41 @@ function trainModel(entries, featureExtractor, targetFn) {
   const nF = X[0].length;
   const minSamples = Math.max(2 * nF, 12);
   if (X.length < minSamples) return null;
-  const stats = { min:[], max:[], mean:[] };
-  for (let j=0;j<nF;j++) { const col=X.map(r=>r[j]); stats.min[j]=Math.min(...col); stats.max[j]=Math.max(...col); stats.mean[j]=col.reduce((a,b)=>a+b,0)/col.length; }
-  const Xn = X.map(row => row.map((v,j) => { const rng=stats.max[j]-stats.min[j]; return rng>1e-10?(v-stats.min[j])/rng:0; }));
-  const weights = normalEquation(Xn, y);
-  return weights ? { weights, stats } : null;
+  return _trainOnArrays(X, y);
+}
+
+// Train on all samples except `holdoutIdx`, predict the held-out target,
+// repeat for every sample, return RMSE across held-out predictions.
+function leaveOneOutRMSE(entries, featureExtractor, targetFn) {
+  const X = [], y = [];
+  entries.forEach(e => { const f = featureExtractor(e.conditions); if(f){ X.push(f); y.push(targetFn(e)); }});
+  if (!X.length) return null;
+  const nF = X[0].length;
+  const minSamples = Math.max(2 * nF, 12);
+  // Need one more than minSamples so each fold still has at least minSamples training rows.
+  if (X.length < minSamples + 1) return null;
+  let sse = 0, count = 0;
+  for (let h = 0; h < X.length; h++) {
+    const Xtr = X.slice(0, h).concat(X.slice(h+1));
+    const ytr = y.slice(0, h).concat(y.slice(h+1));
+    const m = _trainOnArrays(Xtr, ytr);
+    if (!m) continue;
+    let pred = 0;
+    for (let j = 0; j < nF; j++) {
+      const z = m.stats.std[j] > 1e-10 ? (X[h][j] - m.stats.mean[j]) / m.stats.std[j] : 0;
+      pred += m.weights[j] * z;
+    }
+    const err = pred - y[h];
+    sse += err * err; count++;
+  }
+  return count ? Math.sqrt(sse / count) : null;
 }
 
 function slRetrain() {
-  const entries = STATE.surfLog.filter(e => e.conditions?.swell);
+  // Calibrate to the current user's rating taste rather than mixing community ratings.
+  const uid = window._fbUserId;
+  const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
+  const entries = userScoped.filter(e => e.conditions?.swell);
   // Refresh tide median from logged tide heights so low_incoming reflects user's history.
   const tideHeights = entries.map(e => e.conditions?.tide?.height).filter(h => typeof h === 'number');
   if (tideHeights.length) {
@@ -4024,26 +4072,53 @@ function slRetrain() {
   const wave = trainModel(entries, extractWaveFeatures, e => e.ratings.size);
   STATE.surfLogWaveWeights = wave?.weights || null;
   STATE.surfLogWaveStats = wave?.stats || null;
+  STATE.surfLogWaveValidation = leaveOneOutRMSE(entries, extractWaveFeatures, e => e.ratings.size);
   // Ride model: target = rideQuality (how cleanly it peeled).
   const ride = trainModel(entries, extractRideFeatures, e => e.ratings.rideQuality);
   STATE.surfLogRideWeights = ride?.weights || null;
   STATE.surfLogRideStats = ride?.stats || null;
+  STATE.surfLogRideValidation = leaveOneOutRMSE(entries, extractRideFeatures, e => e.ratings.rideQuality);
   // Conditions model: target = windQuality
   const cond = trainModel(entries, extractCondFeatures, e => e.ratings.windQuality);
   STATE.surfLogCondWeights = cond?.weights || null;
   STATE.surfLogCondStats = cond?.stats || null;
+  STATE.surfLogCondValidation = leaveOneOutRMSE(entries, extractCondFeatures, e => e.ratings.windQuality);
   renderWeightsPanel();
+  _logRetrainSummary();
 }
 
-function renderWeightSection(weights, stats, featureNames) {
+function _pairWeights(weights, names) {
+  if (!weights) return null;
+  const out = {};
+  weights.forEach((w, i) => { out[names[i] || ('f'+i)] = Math.round(w * 1000) / 1000; });
+  return out;
+}
+function _logRetrainSummary() {
+  console.groupCollapsed('[surf-log] retrain — model weights & validation');
+  console.log('wave (target=size)',  { weights: _pairWeights(STATE.surfLogWaveWeights, WAVE_FEATURE_NAMES), rmse_loo: STATE.surfLogWaveValidation });
+  console.log('ride (target=rideQuality)', { weights: _pairWeights(STATE.surfLogRideWeights, RIDE_FEATURE_NAMES), rmse_loo: STATE.surfLogRideValidation });
+  console.log('cond (target=windQuality)', { weights: _pairWeights(STATE.surfLogCondWeights, COND_FEATURE_NAMES), rmse_loo: STATE.surfLogCondValidation });
+  console.groupEnd();
+}
+
+function renderWeightSection(weights, stats, featureNames, rmse) {
   const minSamples = Math.max(2 * featureNames.length, 12);
   if (!weights) return '<span class="sl-hint">Need '+minSamples+'+ sessions to train.</span>';
   const tot = weights.reduce((s,v)=>s+Math.abs(v),0);
   if (tot===0) return '<span class="sl-hint">Not enough variance.</span>';
-  return weights.map((v,i) => {
-    const pct = Math.round(Math.abs(v)/tot*100);
-    return '<div class="sl-weight-bar"><span class="sl-w-label">'+(featureNames[i]||'f'+i)+'</span><div class="sl-w-bar" style="width:'+Math.max(2,pct*1.5)+'px"></div><span class="sl-w-val">'+pct+'%</span></div>';
+  const bars = weights.map((v,i) => {
+    const pctAbs = Math.abs(v)/tot*100;
+    const pctRounded = Math.round(pctAbs);
+    const sign = v < 0 ? '−' : '+';
+    // Near-zero contributions (< 3%) shown gray regardless of sign.
+    const cls = pctAbs < 3 ? 'zero' : (v < 0 ? 'neg' : 'pos');
+    const w = Math.max(2, pctRounded * 1.5);
+    return '<div class="sl-weight-bar"><span class="sl-w-label">'+(featureNames[i]||'f'+i)+'</span><div class="sl-w-bar sl-w-'+cls+'" style="width:'+w+'px"></div><span class="sl-w-val sl-w-'+cls+'">'+sign+pctRounded+'%</span></div>';
   }).join('');
+  const v = rmse == null
+    ? '<div class="sl-w-rmse">Validation: not enough data</div>'
+    : '<div class="sl-w-rmse">Validation RMSE: '+rmse.toFixed(2)+' (leave-one-out)</div>';
+  return bars + v;
 }
 
 function renderWeightsPanel() {
@@ -4052,11 +4127,11 @@ function renderWeightsPanel() {
   if (!STATE.surfLogWaveWeights && !STATE.surfLogRideWeights && !STATE.surfLogCondWeights) { panel.style.display='none'; return; }
   panel.style.display = '';
   let h = '<div class="sl-weights-section"><h4 class="sl-weights-heading">Wave Score Weights</h4>';
-  h += renderWeightSection(STATE.surfLogWaveWeights, STATE.surfLogWaveStats, WAVE_FEATURE_NAMES);
+  h += renderWeightSection(STATE.surfLogWaveWeights, STATE.surfLogWaveStats, WAVE_FEATURE_NAMES, STATE.surfLogWaveValidation);
   h += '</div><div class="sl-weights-section"><h4 class="sl-weights-heading">Ride Quality Score Weights</h4>';
-  h += renderWeightSection(STATE.surfLogRideWeights, STATE.surfLogRideStats, RIDE_FEATURE_NAMES);
+  h += renderWeightSection(STATE.surfLogRideWeights, STATE.surfLogRideStats, RIDE_FEATURE_NAMES, STATE.surfLogRideValidation);
   h += '</div><div class="sl-weights-section"><h4 class="sl-weights-heading">Conditions Score Weights</h4>';
-  h += renderWeightSection(STATE.surfLogCondWeights, STATE.surfLogCondStats, COND_FEATURE_NAMES);
+  h += renderWeightSection(STATE.surfLogCondWeights, STATE.surfLogCondStats, COND_FEATURE_NAMES, STATE.surfLogCondValidation);
   h += '</div>';
   container.innerHTML = h;
 }
@@ -4069,7 +4144,12 @@ function _matchPct(ef, ff, weights, stats) {
   if (!stats) return 0;
   const w = weights || new Array(ef.length).fill(1);
   let dist = 0;
-  for (let i=0;i<ef.length;i++) { const rng=stats.max[i]-stats.min[i]; if(rng<1e-10) continue; dist+=Math.abs(w[i])*Math.pow((ef[i]-stats.min[i])/rng-(ff[i]-stats.min[i])/rng,2); }
+  for (let i=0;i<ef.length;i++) {
+    const sd = stats.std[i]; if (sd < 1e-10) continue;
+    const ze = (ef[i] - stats.mean[i]) / sd;
+    const zf = (ff[i] - stats.mean[i]) / sd;
+    dist += Math.abs(w[i]) * Math.pow(ze - zf, 2);
+  }
   return Math.round(Math.exp(-Math.sqrt(dist))*100);
 }
 function computeWaveMatch(ef, ff) { return _matchPct(ef, ff, STATE.surfLogWaveWeights, STATE.surfLogWaveStats); }
@@ -4079,7 +4159,7 @@ function computeCondMatch(ef, ff) { return _matchPct(ef, ff, STATE.surfLogCondWe
 function _predict(ff, weights, stats) {
   if (!weights||!stats) return null;
   let pred=0;
-  for(let i=0;i<ff.length;i++){ const rng=stats.max[i]-stats.min[i]; pred+=weights[i]*(rng>1e-10?(ff[i]-stats.min[i])/rng:0); }
+  for(let i=0;i<ff.length;i++){ const sd=stats.std[i]; pred += weights[i] * (sd>1e-10 ? (ff[i]-stats.mean[i])/sd : 0); }
   return Math.max(1,Math.min(10,Math.round(pred*10)/10));
 }
 function predictWaveRating(wf) { return _predict(wf, STATE.surfLogWaveWeights, STATE.surfLogWaveStats); }

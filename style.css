@@ -1505,10 +1505,25 @@ a:hover { text-decoration: underline; }
   transition: width 0.3s ease;
 }
 
+.sl-weight-bar .sl-w-bar.sl-w-pos  { background: var(--green); }
+.sl-weight-bar .sl-w-bar.sl-w-neg  { background: var(--red-m); }
+.sl-weight-bar .sl-w-bar.sl-w-zero { background: var(--ink4); }
+
 .sl-weight-bar .sl-w-val {
   color: var(--ink2);
   font-weight: 500;
   min-width: 36px;
+}
+.sl-weight-bar .sl-w-val.sl-w-pos  { color: var(--green); }
+.sl-weight-bar .sl-w-val.sl-w-neg  { color: var(--red-m); }
+.sl-weight-bar .sl-w-val.sl-w-zero { color: var(--ink4); }
+
+.sl-w-rmse {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--ink3);
+  margin-top: 4px;
+  padding-left: 126px;
 }
 
 /* ═══════════════════════════════════════════════════
