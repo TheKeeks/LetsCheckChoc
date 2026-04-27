@@ -539,6 +539,82 @@
     to   { opacity: 1; transform: translate(-50%, 0); }
   }
 
+  /* ── Tab pills (Cards 2 & 3 model selector) ── */
+  .fn-tab-pills {
+    display: inline-flex;
+    gap: 6px;
+    margin-top: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .fn-tab-pill {
+    background: #1a1d33;
+    color: #8a90a8;
+    font-family: 'Noto Sans', sans-serif;
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    padding: 4px 10px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border: 1px solid #1a1d33;
+    line-height: 1.4;
+  }
+  .fn-tab-pill:hover { background: #2a2d44; color: #cfd3e6; }
+  .fn-tab-pill.active {
+    background: #ffffff;
+    color: #0a0c18;
+    border-color: #ffffff;
+  }
+  .fn-tab-pill.active:hover { background: #ffffff; color: #0a0c18; }
+
+  /* ── Predicted Score Timeline overlay (mirrors live spectral) ── */
+  .fn-pred-overlay-msg {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    padding: 12px;
+    text-align: center;
+    z-index: 4;
+  }
+
+  /* ── Photo modal (used by scatter card on tap) ── */
+  .fn-photo-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(7, 8, 15, 0.92);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .fn-photo-modal img {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 4px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.65);
+  }
+  .fn-photo-modal-close {
+    position: absolute;
+    top: 16px; right: 16px;
+    background: rgba(15, 17, 32, 0.85);
+    color: #e6e8f2;
+    border: 1px solid #1a1d33;
+    border-radius: 3px;
+    font-family: 'Noto Sans', sans-serif;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    padding: 6px 12px;
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+
   @media (pointer: coarse) {
     #root { padding: 12px 0; }
     .fn-card {
@@ -576,6 +652,47 @@
 </head>
 <body>
 <div id="root"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
+  // Standalone Firebase init for this page. Project shares the parent app's
+  // firebase-config.js but that file invokes app.js helpers we don't have here,
+  // so we inline a minimal auth/firestore setup matching the same project.
+  firebase.initializeApp({
+    apiKey: "AIzaSyBWuLMPKGS91HSOzmQALinQl3w5FwkIdIs",
+    authDomain: "letscheckchoc.firebaseapp.com",
+    projectId: "letscheckchoc",
+    storageBucket: "letscheckchoc.firebasestorage.app",
+    messagingSenderId: "801516961544",
+    appId: "1:801516961544:web:c28584674e5be4643e36bd",
+    measurementId: "G-JFYS74CC6D"
+  });
+  window._fbAuth = firebase.auth();
+  window._fbFirestore = firebase.firestore();
+  window._fbUserId = null;
+  window._fbUserIsAnon = true;
+  var _fnAuthReadyResolve;
+  window._fnAuthReady = new Promise(function(r) { _fnAuthReadyResolve = r; });
+  var _fnFirstAuthEvent = true;
+  window._fbAuth.onAuthStateChanged(function(user) {
+    if (user) {
+      window._fbUserId = user.uid;
+      window._fbUserIsAnon = !!user.isAnonymous;
+    } else {
+      window._fbUserId = null;
+      window._fbUserIsAnon = true;
+    }
+    if (_fnFirstAuthEvent) {
+      _fnFirstAuthEvent = false;
+      // Allow restored sessions to surface before resolving.
+      if (user && !user.isAnonymous) _fnAuthReadyResolve(user);
+      else setTimeout(function() { _fnAuthReadyResolve(window._fbAuth.currentUser); }, 1500);
+    }
+    if (typeof window._fnNotifyAuthChange === 'function') window._fnNotifyAuthChange(user);
+  });
+</script>
 
 <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
