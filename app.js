@@ -3086,7 +3086,7 @@ async function saveLogEntryToFirebase(entry) {
     // Other formats (unknown objects without .url, etc.) are silently dropped
   }
   entry.photos = processedPhotos;
-  await fbFirestore.collection('surf_logs').doc(entry.id).set({
+  const payload = {
     id: entry.id,
     userId: window._fbUserId,
     displayName: window._fbDisplayName || '',
@@ -3096,7 +3096,12 @@ async function saveLogEntryToFirebase(entry) {
     notes: entry.notes || '',
     conditions: entry.conditions || null,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  });
+  };
+  if (Array.isArray(entry.repairedFields) && entry.repairedFields.length > 0) {
+    payload.repairedAt = firebase.firestore.FieldValue.serverTimestamp();
+    payload.repairedFields = entry.repairedFields;
+  }
+  await fbFirestore.collection('surf_logs').doc(entry.id).set(payload);
 }
 
 async function loadLogsFromFirebase() {
@@ -3697,6 +3702,13 @@ function initSurfLogForm() {
     }
   });
   el('sl-save-btn')?.addEventListener('click', async () => {
+    const repairCandidates = Array.isArray(STATE.surfLogEditRepairCandidates) ? STATE.surfLogEditRepairCandidates : [];
+    const formPanel = el('panel-surflog-form');
+    const flaggedCount = formPanel ? formPanel.querySelectorAll('.sl-needs-review').length : 0;
+    if (repairCandidates.length > 0 || flaggedCount > 0) {
+      showToast('Fill in the highlighted fields before updating.', 'warn');
+      return;
+    }
     const dt = el('sl-datetime')?.value;
     if (!dt) { alert('Set a date and time.'); return; }
     const entry = {
@@ -3704,6 +3716,10 @@ function initSurfLogForm() {
       ratings: { size: parseInt(el('sl-size')?.value||'5'), windQuality: parseInt(el('sl-wind-quality')?.value||'5'), rideQuality: parseInt(el('sl-ride-quality')?.value||'5') },
       notes: el('sl-notes')?.value || '', conditions: _slConditions || null
     };
+    const originalRepairFields = Array.isArray(STATE.surfLogEditOriginalRepairFields) ? STATE.surfLogEditOriginalRepairFields : [];
+    if (STATE.surfLogEditId && originalRepairFields.length > 0) {
+      entry.repairedFields = originalRepairFields.slice();
+    }
     try {
       if (STATE.surfLogEditId) {
         await updateLogEntry(STATE.surfLogEditId, entry);
@@ -3711,6 +3727,8 @@ function initSurfLogForm() {
         el('sl-cancel-edit-btn').style.display = 'none';
         el('sl-save-btn').textContent = 'Save Entry';
       } else { await addLogEntry(entry); }
+      STATE.surfLogEditRepairCandidates = [];
+      STATE.surfLogEditOriginalRepairFields = [];
       resetSurfLogForm();
       showToast('✓ Session saved!', 'success');
     } catch(e) {
@@ -3810,6 +3828,7 @@ function editLogEntry(id) {
   } else if (condDisplay) {
     condDisplay.innerHTML = '<span class="sl-hint">Click "Lookup" to auto-fill from historical data</span>';
   }
+  STATE.surfLogEditOriginalRepairFields = STATE.surfLogEditRepairCandidates.slice();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
