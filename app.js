@@ -3867,6 +3867,15 @@ function renderSurfLogTable() {
   if (toD) entries = entries.filter(e => e.timestamp <= toD + 'T23:59:59');
   if (minR > 0) entries = entries.filter(e => (e.ratings.size+e.ratings.windQuality+e.ratings.rideQuality)/3 >= minR);
 
+  // Partition into incomplete + complete so flagged rows surface at the top of the table.
+  const isIncomplete = (entry) => !!(window._llcIsLogEntryIncomplete && window._llcIsLogEntryIncomplete(entry));
+  const byDateDesc = (a, b) => new Date(b.timestamp) - new Date(a.timestamp);
+  const incomplete = entries.filter(isIncomplete).sort(byDateDesc);
+  const complete = entries.filter(e => !isIncomplete(e)).sort(byDateDesc);
+  entries = [...incomplete, ...complete];
+
+  renderIncompleteBanner(incomplete.length);
+
   const tableEl = el('surflog-table');
   if (entries.length === 0) {
     if (emptyEl) emptyEl.style.display = '';
@@ -3889,10 +3898,11 @@ function renderSurfLogTable() {
     const notes = (entry.notes||'').slice(0,30) + ((entry.notes||'').length>30?'...':'');
     const isOwn = entry.userId === window._fbUserId;
     const attribution = (!isOwn && entry.displayName) ? '<br><span style="color:var(--ink4);font-size:0.6rem">'+entry.displayName+'</span>' : '';
+    const incompletePill = isIncomplete(entry) ? '<br><span class="sl-incomplete-pill">\u26a0 incomplete</span>' : '';
     const actionHtml = isOwn
       ? '<button class="sl-btn sl-btn-sm sl-edit-btn" data-id="'+entry.id+'">Edit</button> <button class="sl-btn sl-btn-sm sl-btn-danger sl-delete-btn" data-id="'+entry.id+'">Del</button>'
       : '<span style="color:var(--ink4);font-size:0.65rem">community</span>';
-    tr.innerHTML = '<td style="white-space:nowrap">'+dateStr+'<br><span style="color:var(--ink4);font-size:0.65rem">'+timeStr+'</span>'+attribution+'</td>'
+    tr.innerHTML = '<td style="white-space:nowrap">'+dateStr+'<br><span style="color:var(--ink4);font-size:0.65rem">'+timeStr+'</span>'+attribution+incompletePill+'</td>'
       +'<td>'+photoHtml+'</td>'
       +'<td>'+ratingBadge(entry.ratings.size)+'</td>'
       +'<td>'+ratingBadge(entry.ratings.windQuality)+'</td>'
@@ -3909,6 +3919,27 @@ function renderSurfLogTable() {
   tbody.querySelectorAll('.sl-delete-btn').forEach(b => b.addEventListener('click', () => { if(confirm('Delete this session?')) deleteLogEntry(b.dataset.id); }));
   updateStorageNote();
   if (exportRow) exportRow.style.display = STATE.surfLog.length > 0 ? '' : 'none';
+}
+
+function renderIncompleteBanner(count) {
+  const existing = el('sl-incomplete-banner');
+  if (count <= 0) {
+    if (existing) existing.remove();
+    return;
+  }
+  const noun = count === 1 ? 'entry is' : 'entries are';
+  const text = count + ' ' + noun + ' incomplete and excluded from your model. Click Edit on flagged rows to repair.';
+  if (existing) {
+    existing.textContent = text;
+    return;
+  }
+  const tableWrap = document.querySelector('#panel-surflog-entries .surflog-table-wrap');
+  if (!tableWrap) return;
+  const banner = document.createElement('div');
+  banner.id = 'sl-incomplete-banner';
+  banner.className = 'sl-incomplete-banner';
+  banner.textContent = text;
+  tableWrap.parentNode.insertBefore(banner, tableWrap);
 }
 
 function toggleEntryDetail(entry, tr) {
