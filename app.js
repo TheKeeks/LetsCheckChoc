@@ -83,6 +83,7 @@ const STATE = {
   surfLogCondStats: null,
   surfLogCondValidation: null,
   surfLogEditId: null,
+  surfLogEditRepairCandidates: [],
   activeTab: 'forecast',
   personalMatchesOpen: false,
   matchModalData: null,
@@ -3650,10 +3651,14 @@ function initSurfLogForm() {
     dtInput.value = now.toISOString().slice(0, 16);
   }
   // Main form sliders
-  [['sl-size','sl-size-val','sl-size-desc'],['sl-wind-quality','sl-wind-val','sl-wind-desc'],['sl-ride-quality','sl-ride-val','sl-ride-desc']].forEach(([id,vid,did]) => {
+  [['sl-size','sl-size-val','sl-size-desc','size'],['sl-wind-quality','sl-wind-val','sl-wind-desc','windQuality'],['sl-ride-quality','sl-ride-val','sl-ride-desc','rideQuality']].forEach(([id,vid,did,fieldName]) => {
     const s = el(id);
     const descFn = id === 'sl-size' ? getSizeDesc : id === 'sl-wind-quality' ? getWindDesc : getRideDesc;
-    s?.addEventListener('input', () => { el(vid).textContent = s.value; if(el(did)) el(did).textContent = descFn(s.value); });
+    s?.addEventListener('input', () => {
+      el(vid).textContent = s.value; if(el(did)) el(did).textContent = descFn(s.value);
+      s.closest('.sl-slider-group')?.classList.remove('sl-needs-review');
+      if (Array.isArray(STATE.surfLogEditRepairCandidates)) STATE.surfLogEditRepairCandidates = STATE.surfLogEditRepairCandidates.filter(n => n !== fieldName);
+    });
     if (s && el(did)) el(did).textContent = descFn(s.value);
   });
   // Feedback sliders in modal
@@ -3680,6 +3685,16 @@ function initSurfLogForm() {
     const btn = el('sl-lookup-btn'); btn.disabled = true; btn.textContent = 'Looking up...';
     _slConditions = await lookupHistoricalConditions(dt);
     btn.disabled = false; btn.textContent = 'Lookup Historical Conditions';
+    if (_slConditions) {
+      const condDisplay = el('sl-conditions-display');
+      const condWrapper = condDisplay ? condDisplay.parentElement : null;
+      if (condWrapper) {
+        condWrapper.classList.remove('sl-needs-review');
+        const oldWarn = condWrapper.querySelector('.sl-conditions-warning');
+        if (oldWarn) oldWarn.remove();
+      }
+      if (Array.isArray(STATE.surfLogEditRepairCandidates)) STATE.surfLogEditRepairCandidates = STATE.surfLogEditRepairCandidates.filter(n => n !== 'swell');
+    }
   });
   el('sl-save-btn')?.addEventListener('click', async () => {
     const dt = el('sl-datetime')?.value;
@@ -3726,6 +3741,10 @@ function resetSurfLogForm() {
   if (el('sl-ride-desc')) el('sl-ride-desc').textContent = getRideDesc(5);
   if (el('sl-notes')) el('sl-notes').value = '';
   _slPhotos = []; _slPhotoFiles = []; _slConditions = null; renderPhotoGallery();
+  STATE.surfLogEditRepairCandidates = [];
+  document.querySelectorAll('#panel-surflog-form .sl-needs-review').forEach(elx => elx.classList.remove('sl-needs-review'));
+  const oldWarn = document.querySelector('#panel-surflog-form .sl-conditions-warning');
+  if (oldWarn) oldWarn.remove();
   const d = el('sl-conditions-display');
   if (d) d.innerHTML = '<span class="sl-hint">Click "Lookup" to auto-fill from historical data</span>';
   const formEl = el('panel-surflog-form');
@@ -3736,16 +3755,61 @@ function editLogEntry(id) {
   const e = STATE.surfLog.find(x => x.id === id);
   if (!e) return;
   STATE.surfLogEditId = id;
+  STATE.surfLogEditRepairCandidates = [];
   el('sl-cancel-edit-btn').style.display = '';
   el('sl-save-btn').textContent = 'Update Entry';
   if (el('sl-datetime')) el('sl-datetime').value = e.timestamp;
-  if (el('sl-size')) { el('sl-size').value = e.ratings.size; el('sl-size-val').textContent = e.ratings.size; if(el('sl-size-desc')) el('sl-size-desc').textContent = getSizeDesc(e.ratings.size); }
-  if (el('sl-wind-quality')) { el('sl-wind-quality').value = e.ratings.windQuality; el('sl-wind-val').textContent = e.ratings.windQuality; if(el('sl-wind-desc')) el('sl-wind-desc').textContent = getWindDesc(e.ratings.windQuality); }
-  if (el('sl-ride-quality')) { el('sl-ride-quality').value = e.ratings.rideQuality; el('sl-ride-val').textContent = e.ratings.rideQuality; if(el('sl-ride-desc')) el('sl-ride-desc').textContent = getRideDesc(e.ratings.rideQuality); }
+
+  const ratings = e.ratings || {};
+  const setupRatingSlider = (fieldName, sliderId, valId, descId, descFn) => {
+    const slider = el(sliderId);
+    if (!slider) return;
+    const wrapper = slider.closest('.sl-slider-group');
+    const stored = ratings[fieldName];
+    const isValid = typeof stored === 'number' && isFinite(stored) && stored >= 0 && stored <= 10;
+    if (isValid) {
+      slider.value = stored;
+      if (el(valId)) el(valId).textContent = stored;
+      if (el(descId)) el(descId).textContent = descFn(stored);
+      wrapper?.classList.remove('sl-needs-review');
+    } else {
+      const fallback = parseInt(slider.defaultValue, 10);
+      slider.value = isFinite(fallback) ? fallback : 5;
+      if (el(valId)) el(valId).textContent = slider.value;
+      if (el(descId)) el(descId).textContent = '⚠ previously blank — fill in';
+      wrapper?.classList.add('sl-needs-review');
+      STATE.surfLogEditRepairCandidates.push(fieldName);
+    }
+  };
+  setupRatingSlider('size', 'sl-size', 'sl-size-val', 'sl-size-desc', getSizeDesc);
+  setupRatingSlider('windQuality', 'sl-wind-quality', 'sl-wind-val', 'sl-wind-desc', getWindDesc);
+  setupRatingSlider('rideQuality', 'sl-ride-quality', 'sl-ride-val', 'sl-ride-desc', getRideDesc);
+
   if (el('sl-notes')) el('sl-notes').value = e.notes || '';
   _slPhotos = (e.photos||[]).map(p => photoUrl(p) || p).filter(Boolean); _slPhotoFiles = new Array(_slPhotos.length).fill(null); _slConditions = e.conditions || null;
   renderPhotoGallery();
-  if (_slConditions) renderConditionsDisplay(_slConditions);
+
+  const condDisplay = el('sl-conditions-display');
+  const condWrapper = condDisplay ? condDisplay.parentElement : null;
+  if (condWrapper) {
+    condWrapper.classList.remove('sl-needs-review');
+    const stale = condWrapper.querySelector('.sl-conditions-warning');
+    if (stale) stale.remove();
+  }
+  if (_slConditions) {
+    renderConditionsDisplay(_slConditions);
+    const sw = _slConditions.swell || {};
+    if (sw.height === 0 && sw.period === 0 && condDisplay && condWrapper) {
+      condWrapper.classList.add('sl-needs-review');
+      const warn = document.createElement('div');
+      warn.className = 'sl-conditions-warning';
+      warn.textContent = '⚠ swell data looks empty — re-Lookup recommended';
+      condDisplay.parentNode.insertBefore(warn, condDisplay);
+      STATE.surfLogEditRepairCandidates.push('swell');
+    }
+  } else if (condDisplay) {
+    condDisplay.innerHTML = '<span class="sl-hint">Click "Lookup" to auto-fill from historical data</span>';
+  }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
