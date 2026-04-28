@@ -1577,12 +1577,13 @@ function Sources({ links = FORECAST_SOURCES }) {
       </div>
       {expanded && (
         <div className="fn-sources-list">
-          {links.map(link => (
-            <a key={link.href} className="fn-sources-link"
-               href={link.href}
-               target="_blank" rel="noopener noreferrer">
-              {link.label}
-            </a>
+          {links.map((link, i) => (
+            link.href
+              ? <a key={i} className="fn-sources-link"
+                   href={link.href}
+                   target="_blank" rel="noopener noreferrer">{link.label}</a>
+              : <span key={i} className="fn-sources-link"
+                      style={{ cursor: 'default', textDecoration: 'none' }}>{link.label}</span>
           ))}
         </div>
       )}
@@ -2595,9 +2596,14 @@ function extractRideFeatures(cond) {
 
 function extractCondFeatures(cond) {
   const w = (cond && cond.wind) || { speed: 0 };
+  // Forecast hours pre-attach wind_offshore_score via buildForecastCond, but
+  // logged Firestore entries don't — fall back to computing from wind.direction
+  // so the cond model trains on history instead of silently zeroing the feature.
+  let offshore = (cond && cond.wind_offshore_score);
+  if (offshore == null && w.direction != null) offshore = computeWindOffshoreScore(w.direction);
   return [
     w.speed || 0,
-    (cond && cond.wind_offshore_score) || 0
+    offshore || 0
   ];
 }
 
