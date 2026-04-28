@@ -3644,12 +3644,22 @@ function _photoUrl(p) {
 
 function ScatterTooltip({ entry, pred, actual, x, y, plotW, plotH }) {
   if (!entry) return null;
-  const W = 200;
+  const W = 260;
   const left = Math.max(8, Math.min(plotW - W - 8, x - W / 2));
-  const top = Math.max(8, y - 110);
+  const top = Math.max(8, y - 200);
   const cond = entry.conditions || {};
   const swell = cond.swell || {};
+  const sec = swell.secondary || null;
   const wind = cond.wind || {};
+  const tide = cond.tide || {};
+  const ratings = entry.ratings || {};
+  const bwi = cond.blown_water_index;
+  const wos = cond.wind_offshore_score;
+  const lag = cond.swellLagHours != null ? cond.swellLagHours : swell.lagHours;
+  const muted = '#6c7091';
+  const body = '#a9b0c7';
+  const mono = { fontFamily: 'DM Mono, monospace', fontWeight: 700, color: '#e6e8f2' };
+  const rowStyle = { marginTop: '3px', fontSize: '11px', color: body };
   return (
     <div style={{
       position: 'absolute',
@@ -3670,18 +3680,62 @@ function ScatterTooltip({ entry, pred, actual, x, y, plotW, plotH }) {
         {_formatLogDate(entry)}
       </div>
       <div style={{ marginTop: '4px', display: 'flex', gap: '10px', fontSize: '12px' }}>
-        <span><span style={{ color: '#6c7091' }}>Pred</span> <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: 700 }}>{pred != null ? pred.toFixed(1) : '–'}</span></span>
-        <span><span style={{ color: '#6c7091' }}>Actual</span> <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: 700 }}>{actual != null ? actual.toFixed(1) : '–'}</span></span>
+        <span><span style={{ color: muted }}>Pred</span> <span style={mono}>{pred != null ? pred.toFixed(1) : '–'}</span></span>
+        <span><span style={{ color: muted }}>Actual</span> <span style={mono}>{actual != null ? actual.toFixed(1) : '–'}</span></span>
       </div>
-      <div style={{ marginTop: '4px', fontSize: '11px', color: '#a9b0c7' }}>
-        {swell.height != null ? swell.height.toFixed(1) + ' ft' : '–'}
-        {swell.period != null ? ' @ ' + Math.round(swell.period) + 's' : ''}
-        {swell.direction != null ? ' ' + degToCompass(swell.direction) : ''}
+      {(ratings.size != null || ratings.rideQuality != null || ratings.windQuality != null) && (
+        <div style={rowStyle}>
+          <span style={{ color: muted }}>Sz </span><span style={mono}>{ratings.size != null ? ratings.size : '–'}</span>
+          <span style={{ color: muted }}> · Rd </span><span style={mono}>{ratings.rideQuality != null ? ratings.rideQuality : '–'}</span>
+          <span style={{ color: muted }}> · Wn </span><span style={mono}>{ratings.windQuality != null ? ratings.windQuality : '–'}</span>
+        </div>
+      )}
+      <div style={rowStyle}>
+        <span style={{ color: muted }}>Swell </span>
+        <span style={mono}>
+          {swell.height != null ? swell.height.toFixed(1) + ' ft' : '–'}
+          {swell.period != null ? ' @ ' + Math.round(swell.period) + 's' : ''}
+          {swell.direction != null ? ' ' + degToCompass(swell.direction) + ' (' + Math.round(swell.direction) + '°)' : ''}
+        </span>
       </div>
-      <div style={{ marginTop: '2px', fontSize: '11px', color: '#a9b0c7' }}>
-        {wind.speed != null ? Math.round(wind.speed) + ' mph' : '–'}
-        {wind.direction != null ? ' ' + degToCompass(wind.direction) : ''}
+      {sec && (sec.height != null || sec.period != null || sec.direction != null) && (
+        <div style={rowStyle}>
+          <span style={{ color: muted }}>+ Sec </span>
+          <span style={mono}>
+            {sec.height != null ? sec.height.toFixed(1) + ' ft' : '–'}
+            {sec.period != null ? ' @ ' + Math.round(sec.period) + 's' : ''}
+            {sec.direction != null ? ' ' + degToCompass(sec.direction) : ''}
+          </span>
+        </div>
+      )}
+      <div style={rowStyle}>
+        <span style={{ color: muted }}>Wind </span>
+        <span style={mono}>
+          {wind.speed != null ? Math.round(wind.speed) + ' mph' : '–'}
+          {wind.direction != null ? ' ' + degToCompass(wind.direction) + ' (' + Math.round(wind.direction) + '°)' : ''}
+        </span>
       </div>
+      {(tide.height != null || tide.stage) && (
+        <div style={rowStyle}>
+          <span style={{ color: muted }}>Tide </span>
+          <span style={mono}>
+            {tide.height != null ? tide.height.toFixed(1) + ' ft' : '–'}
+            {tide.stage ? ' (' + tide.stage + ')' : ''}
+          </span>
+        </div>
+      )}
+      {(bwi != null || wos != null) && (
+        <div style={rowStyle}>
+          {bwi != null && (<><span style={{ color: muted }}>BWI </span><span style={mono}>{Number(bwi).toFixed(2)}</span></>)}
+          {bwi != null && wos != null && <span style={{ color: muted }}> · </span>}
+          {wos != null && (<><span style={{ color: muted }}>WOS </span><span style={mono}>{Number(wos).toFixed(2)}</span></>)}
+        </div>
+      )}
+      {lag != null && lag > 0 && (
+        <div style={{ marginTop: '3px', fontSize: '10px', color: muted, fontStyle: 'italic' }}>
+          swell lag {Number(lag).toFixed(1)}h
+        </div>
+      )}
     </div>
   );
 }
@@ -3708,6 +3762,7 @@ function PhotoModal({ photo, onClose }) {
 function PredVsActualScatter({ bundle, modelStatus }) {
   const [active, setActive] = useState('wave');
   const [selected, setSelected] = useState(null); // index into LOO arrays
+  const [hovered, setHovered] = useState(null);   // index into LOO arrays
   const [modalPhoto, setModalPhoto] = useState(null);
   const wrapRef = useRef(null);
   const [wrapWidth, setWrapWidth] = useState(0);
@@ -3719,9 +3774,9 @@ function PredVsActualScatter({ bundle, modelStatus }) {
     return () => window.removeEventListener('resize', update);
   }, []);
 
-  // Drop the parked selection when the active tab changes — selection is per
-  // tab and indexes into that tab's LOO arrays.
-  useEffect(() => { setSelected(null); }, [active]);
+  // Drop the parked selection/hover when the active tab changes — both index
+  // into the current tab's LOO arrays.
+  useEffect(() => { setSelected(null); setHovered(null); }, [active]);
 
   const model = _activeModel(bundle, active);
   const tabDef = TAB_DEFS.find(t => t.key === active);
@@ -3799,15 +3854,21 @@ function PredVsActualScatter({ bundle, modelStatus }) {
           <text x={14} y={PAD_T + innerH / 2} fontFamily="Noto Sans, sans-serif" fontSize="11" fill="#8a90a8" textAnchor="middle" transform={`rotate(-90, 14, ${PAD_T + innerH / 2})`}>Actual rating</text>
           {/* Dots */}
           {dots.map(d => (
-            <circle key={'sd-' + d.i} cx={d.px} cy={d.py} r={selected === d.i ? 6 : 4}
+            <circle key={'sd-' + d.i} cx={d.px} cy={d.py}
+                    r={(hovered === d.i || selected === d.i) ? 6 : 4}
                     fill={d.color} stroke="#0a0c18" strokeWidth="1"
                     style={{ cursor: 'pointer' }}
+                    onPointerEnter={() => setHovered(d.i)}
+                    onPointerLeave={() => setHovered(h => h === d.i ? null : h)}
                     onClick={() => onSelectDot(d.i)} />
           ))}
         </svg>
-        {selected != null && dots[selected] && (
-          <ScatterTooltipShim dot={dots[selected]} wrapWidth={wrapWidth} vbW={VB_W} vbH={VB_H} />
-        )}
+        {(() => {
+          const tipIdx = hovered != null ? hovered : selected;
+          return tipIdx != null && dots[tipIdx]
+            ? <ScatterTooltipShim dot={dots[tipIdx]} wrapWidth={wrapWidth} vbW={VB_W} vbH={VB_H} />
+            : null;
+        })()}
       </div>
     );
   }
