@@ -3338,6 +3338,163 @@ function PredictedScoreTimeline({ hours, bundle, tideHiLo, modelStatus }) {
   );
 }
 
+// ════════════════════════════════════════════════
+// CARD 2 — Feature Weights Forest Plot
+// Tab pills (Wave / Ride / Conditions) select which model's weights to show.
+// Each row is one feature; horizontal bar = signed weight (z-scored), with a
+// semi-transparent ±1σ band derived from LOO fold weights. A "?" suffix on
+// the % label flags features whose band crosses zero (sign-uncertain).
+// ════════════════════════════════════════════════
+
+const TAB_DEFS = [
+  { key: 'wave', label: 'Wave',       target: 'size'        },
+  { key: 'ride', label: 'Ride',       target: 'rideQuality' },
+  { key: 'cond', label: 'Conditions', target: 'windQuality' },
+];
+
+function _activeModel(bundle, key) {
+  if (!bundle) return null;
+  return bundle[key] || null;
+}
+
+// Color the RMSE chip: green <=1.5, orange <=2.0, red above. RMSE is in the
+// same 1-10 units as the rating target.
+function _rmseChipColor(rmse) {
+  if (rmse == null) return '#6c7091';
+  if (rmse > 2.0) return QUALITY_COLORS.poor;
+  if (rmse > 1.5) return QUALITY_COLORS.fair;
+  return QUALITY_COLORS.good;
+}
+
+// Color the R² chip: green >=0.5, orange >=0.3, red below.
+function _r2ChipColor(r2) {
+  if (r2 == null) return '#6c7091';
+  if (r2 >= 0.5) return QUALITY_COLORS.good;
+  if (r2 >= 0.3) return QUALITY_COLORS.fair;
+  return QUALITY_COLORS.poor;
+}
+
+function TabPills({ tabs, active, onSelect }) {
+  return (
+    <div className="fn-tab-pills" role="tablist">
+      {tabs.map(t => (
+        <button
+          key={t.key}
+          role="tab"
+          aria-selected={active === t.key}
+          className={'fn-tab-pill' + (active === t.key ? ' active' : '')}
+          onClick={() => onSelect(t.key)}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function FeatureWeightsForestPlot({ bundle, modelStatus }) {
+  const [active, setActive] = useState('wave');
+  const model = _activeModel(bundle, active);
+  const tabDef = TAB_DEFS.find(t => t.key === active);
+
+  let body;
+  if (modelStatus === 'noAuth') {
+    body = <div className="fn-placeholder">Sign in to see your trained feature weights.</div>;
+  } else if (modelStatus === 'loading') {
+    body = <div className="fn-placeholder">Training your surf-log model…</div>;
+  } else if (modelStatus === 'error') {
+    body = <div className="fn-placeholder">Surf-log model unavailable.</div>;
+  } else if (!model || !model.weights) {
+    const need = model ? Math.max(0, (model.minSamples || 12) - (model.n || 0)) : 0;
+    body = (
+      <div className="fn-placeholder">
+        {need > 0
+          ? 'Log ' + need + ' more session' + (need === 1 ? '' : 's') + ' to unlock the ' + tabDef.label + ' model.'
+          : 'Not enough usable sessions to train the ' + tabDef.label + ' model.'}
+      </div>
+    );
+  } else {
+    const names = model.featureNames || [];
+    const weights = model.weights || [];
+    const stds = foldWeightStds(model.loo) || weights.map(() => 0);
+    // Bar scale: pick the largest |weight + std| so even the band ends fit.
+    const maxAbs = Math.max(0.01, ...weights.map((w, i) => Math.abs(w) + (stds[i] || 0)));
+    const ROW_H = 26;
+    const LABEL_W = 200;
+    const BAR_AREA_X = LABEL_W;
+    const BAR_AREA_W = 360;
+    const PCT_X = LABEL_W + BAR_AREA_W + 16;
+    const W_PX = PCT_X + 60;
+    const H_PX = names.length * ROW_H + 12;
+    const center = BAR_AREA_X + BAR_AREA_W / 2;
+    const scale = (BAR_AREA_W / 2 - 6) / maxAbs;
+
+    body = (
+      <div className="fn-chart-wrap" style={{ overflowX: 'auto' }}>
+        <svg viewBox={`0 0 ${W_PX} ${H_PX}`} preserveAspectRatio="xMidYMid meet" style={{ minWidth: '420px' }}>
+          {/* Zero axis */}
+          <line x1={center} x2={center} y1={6} y2={H_PX - 6} stroke="#3a3f5a" strokeWidth="1" />
+          {names.map((nm, i) => {
+            const w = weights[i] || 0;
+            const std = stds[i] || 0;
+            const lo = w - std, hi = w + std;
+            const crossesZero = lo < 0 && hi > 0;
+            const barX = w >= 0 ? center : center + w * scale;
+            const barW = Math.abs(w * scale);
+            const bandX = center + lo * scale;
+            const bandW = Math.max(2, (hi - lo) * scale);
+            const fill = crossesZero ? '#6c7091' : (w >= 0 ? QUALITY_COLORS.good : QUALITY_COLORS.poor);
+            const pct = Math.round(w * 10);
+            const pctStr = (pct >= 0 ? '+' : '') + pct + '%' + (crossesZero ? ' ?' : '');
+            const y = 6 + i * ROW_H + ROW_H / 2;
+            return (
+              <g key={'fw-' + nm + '-' + i}>
+                <text x={LABEL_W - 12} y={y + 4} fontFamily="Noto Sans, sans-serif" fontSize="12" fill="#cfd3e6" textAnchor="end">
+                  {prettyFeature(nm)}
+                </text>
+                {/* Uncertainty band */}
+                <rect x={bandX} y={y - 8} width={bandW} height={16} fill={fill} fillOpacity="0.18" />
+                {/* Signed bar */}
+                <rect x={barX} y={y - 4} width={Math.max(1, barW)} height={8} fill={fill} />
+                <text x={PCT_X} y={y + 4} fontFamily="DM Mono, monospace" fontSize="12" fill={fill} textAnchor="start">
+                  {pctStr}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    );
+  }
+
+  // Status bar — always shown so the user can see N + RMSE for whichever tab
+  // they're on, even when an empty-state placeholder occupies the body.
+  const rmse = model && model.loo ? model.loo.rmse : null;
+  const rmseColor = _rmseChipColor(rmse);
+
+  return (
+    <div className="fn-card">
+      <SectionHeader
+        title="Feature Weights"
+        pill="Model Diagnostics"
+        sub="Δ predicted rating per 1σ change in feature, as % of the 10-pt scale. Bands span ±1σ of fold weights from leave-one-out cross-validation; “?” flags features whose band crosses zero."
+      />
+      <TabPills tabs={TAB_DEFS} active={active} onSelect={setActive} />
+      {body}
+      <div className="fn-statusbar">
+        <span><span className="fn-status-key">Target</span><span className="fn-status-val">{tabDef.target}</span></span>
+        <span><span className="fn-status-key">N</span><span className="fn-status-val">{model && model.n != null ? model.n : '–'}</span></span>
+        <span>
+          <span className="fn-status-key">RMSE (LOO)</span>
+          <span className="fn-status-val" style={{ color: rmseColor }}>
+            {rmse != null ? rmse.toFixed(2) : '–'}
+          </span>
+        </span>
+      </div>
+      <Sources links={MODEL_DIAG_SOURCES} />
+    </div>
+  );
+}
+
 // modelStatus drives the empty-state overlays on the three new cards:
 //   'loading' → auth/logs/tide still in flight
 //   'noAuth'  → user is anonymous or sign-in didn't complete

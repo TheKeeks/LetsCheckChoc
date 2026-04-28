@@ -25,8 +25,9 @@ at each commit; serves as a resume point if a session times out mid-flight.
 - [x] **Stage 2** — Card 1: PredictedScoreTimeline (800×270 SVG, 3 colored
       lines, hover banner desktop + mobile, empty-state overlays, sources).
       Component is *defined* but **not yet wired** into App() — that's Stage 5.
-- [ ] **Stage 3** — Card 2: FeatureWeightsForestPlot (tab pills, vertical
-      forest, uncertainty bands, signed % labels, RMSE status bar)
+- [x] **Stage 3** — Card 2: FeatureWeightsForestPlot (tab pills, vertical
+      forest, uncertainty bands, signed % labels, RMSE status bar). Component
+      defined; not yet wired into App() — that's Stage 5.
 - [ ] **Stage 4** — Card 3: PredVsActualScatter (tab pills, scatter w/
       diagonal, alignment-colored dots, hover/tap tooltip, photo modal,
       RMSE + R² status)
