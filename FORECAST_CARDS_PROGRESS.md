@@ -31,8 +31,16 @@ at each commit; serves as a resume point if a session times out mid-flight.
 - [x] **Stage 4** — Card 3: PredVsActualScatter (tab pills, scatter w/
       diagonal, alignment-colored dots, hover/tap tooltip, photo modal,
       RMSE + R² status). Component defined; not yet wired — Stage 5.
-- [ ] **Stage 5** — Wire all three into App() between LineupOverlay and
-      LiveSpectralPanel; verify HTML parses; final commit + push
+- [x] **Stage 5** — Wired all three into App() between LineupOverlay and
+      LiveSpectralPanel. Validated by `@babel/parser` (jsx plugin) — clean
+      parse. Body tag balance verified.
+
+## Done
+
+All three cards are live in the JSX tree, wired to the existing App-level
+state (bundle, tideHiLo, modelStatus, hours). No additional state plumbing
+needed — the bundle is already populated by the useEffect added in commit
+5b42b59.
 
 ## Out of scope today
 

@@ -3853,6 +3853,17 @@ function App() {
         <Sources />
       </CardShell>
       <LineupOverlay hours={hours} hoveredIdx={hoveredIdx} />
+      <PredictedScoreTimeline
+        hours={hours}
+        bundle={bundle}
+        tideHiLo={tideHiLo}
+        modelStatus={modelStatus} />
+      <FeatureWeightsForestPlot
+        bundle={bundle}
+        modelStatus={modelStatus} />
+      <PredVsActualScatter
+        bundle={bundle}
+        modelStatus={modelStatus} />
       <LiveSpectralPanel />
     </>
   );
