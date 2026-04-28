@@ -39,8 +39,9 @@ const CONFIG = {
     coops: 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter',
     nws: 'https://api.weather.gov/points/',
     ndbcProxies: [
-      { prefix: 'https://corsproxy.io/?', encode: true },
-      { prefix: 'https://api.allorigins.win/raw?url=', encode: true }
+      { name: 'corsproxy.io', wrap: function(url) { return 'https://corsproxy.io/?' + encodeURIComponent(url); } },
+      { name: 'allorigins',   wrap: function(url) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url); } },
+      { name: 'codetabs',     wrap: function(url) { return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url); } }
     ],
     ndbcBase: 'https://www.ndbc.noaa.gov/data/realtime2/'
   },
@@ -482,19 +483,42 @@ async function fetchTextWithProxies(rawUrl, timeout = 15000) {
   return null;
 }
 
-async function fetchWithProxies(rawUrl, timeout = 15000) {
-  for (const proxy of CONFIG.api.ndbcProxies) {
-    const url = proxy.encode
-      ? proxy.prefix + encodeURIComponent(rawUrl)
-      : proxy.prefix + rawUrl;
+// Proxy chain for the NDBC stdmet historical archive. Used only by
+// fetchNDBCHistoricalYear. Returns the response body as text (NDBC's
+// view_text_file.php endpoint serves plain text, so no decompression needed),
+// or null if every proxy failed. Per-attempt logging stays in place so the
+// next time a proxy rots we can tell from the console which one and how.
+async function fetchWithProxies(rawUrl, timeout = 10000) {
+  console.log(`[ndbc-fetch] target NDBC URL: ${rawUrl}`);
+  const proxies = CONFIG.api.ndbcProxies;
+  for (let i = 0; i < proxies.length; i++) {
+    const proxy = proxies[i];
+    const url = proxy.wrap(rawUrl);
+    console.log(`[ndbc-fetch] attempting proxy ${i + 1}/${proxies.length}: ${proxy.name}`);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
       const resp = await fetch(url, { signal: controller.signal });
       clearTimeout(timer);
-      if (resp.ok) return resp;
-    } catch (_) {
+      const bodyText = await resp.text();
+      console.log(`[ndbc-fetch] proxy ${proxy.name} → status ${resp.status}`, {
+        ok: resp.ok,
+        bodyLength: bodyText.length,
+        bodyPreview: bodyText.slice(0, 300)
+      });
+      if (!resp.ok) continue;
+      const head = bodyText.trimStart().slice(0, 500);
+      // Content-Type / body-shape guard: a proxy that returned its own HTML
+      // error page with status 200 will pass `resp.ok` but parse to garbage.
+      // NDBC stdmet headers contain `#YY` or `YYYY` near the top.
+      if (head.startsWith('<') || /<!DOCTYPE/i.test(head) || !/#YY|YYYY/.test(head)) {
+        console.log(`[ndbc-fetch] proxy ${proxy.name} body does not look like NDBC stdmet; falling through`);
+        continue;
+      }
+      return bodyText;
+    } catch (err) {
       clearTimeout(timer);
+      console.log(`[ndbc-fetch] proxy ${proxy.name} threw ${err.name}: ${err.message}`);
     }
   }
   return null;
@@ -3264,35 +3288,37 @@ function getRideDesc(val) {
 // Cache parsed NDBC yearly stdmet data so we don't re-download for multiple entries
 const _ndbcYearCache = {};
 
+// STOPGAP — proxy-chained fetch of NDBC stdmet historical archive.
+//
+// Pre-fix state (for the forthcoming Cloud Function migration brief):
+//   - URL was: https://www.ndbc.noaa.gov/data/historical/stdmet/{buoy}h{year}.txt.gz
+//     (raw binary gzip; decompressed client-side via DecompressionStream).
+//   - Proxies: corsproxy.io, api.allorigins.win — both struggled with binary
+//     gzip + Content-Encoding handling, producing intermittent failures
+//     (e.g. 2021-09-10 always failed with "all proxies failed").
+//
+// Current state:
+//   - URL is now view_text_file.php (NDBC decompresses server-side, returns plain text).
+//   - Proxies (in order): corsproxy.io, allorigins, codetabs — see CONFIG.api.ndbcProxies.
+//   - Parser format expectations (_parseNDBCHistoricalText):
+//       header = line 0 (strip leading '#'), units = line 1 (skipped), data = line 2+
+//       columns read: YY/YYYY, MM, DD, hh, mm, WVHT, DPD, MWD, WSPD, WDIR, GST
+//       sentinels: WVHT/DPD/WSPD/GST >= 99 → null; MWD/WDIR >= 999 → null
+//
+// The Cloud Function migration will replace fetchWithProxies entirely with
+// a server-side fetch from *.cloudfunctions.net, eliminating CORS, proxy
+// rot, HTML-error-page failures, and most network-firewall blocking.
+// TODO(cloud-fn): current-year-month observations live at
+//   https://www.ndbc.noaa.gov/data/stdmet/{Mon}/{buoy}.txt
+// — not the historical archive. Out of scope here; user's logged sessions
+// are all historical years.
 async function fetchNDBCHistoricalYear(buoyId, year) {
   const cacheKey = buoyId + '-' + year;
   if (_ndbcYearCache[cacheKey]) return _ndbcYearCache[cacheKey];
 
-  const url = 'https://www.ndbc.noaa.gov/data/historical/stdmet/' + buoyId + 'h' + year + '.txt.gz';
-  const response = await fetchWithProxies(url, 20000);
-  if (!response) throw new Error('NDBC historical fetch failed: all proxies failed');
-
-  let text;
-  if (typeof DecompressionStream !== 'undefined') {
-    // Modern browsers: decompress the gzip stream client-side
-    const ds = new DecompressionStream('gzip');
-    const stream = response.body.pipeThrough(ds);
-    const reader = stream.getReader();
-    const chunks = [];
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-    }
-    const totalLen = chunks.reduce(function(s, c) { return s + c.length; }, 0);
-    const merged = new Uint8Array(totalLen);
-    let off = 0;
-    for (const c of chunks) { merged.set(c, off); off += c.length; }
-    text = new TextDecoder().decode(merged);
-  } else {
-    // Fallback: the CORS proxy may have auto-decompressed it
-    text = await response.text();
-  }
+  const url = 'https://www.ndbc.noaa.gov/view_text_file.php?filename=' + buoyId + 'h' + year + '.txt.gz&dir=data/historical/stdmet/';
+  const text = await fetchWithProxies(url, 10000);
+  if (!text) throw new Error('NDBC historical fetch failed: all proxies failed');
 
   const rows = _parseNDBCHistoricalText(text);
   _ndbcYearCache[cacheKey] = rows;
@@ -3340,6 +3366,33 @@ function _findNearestNDBCRow(rows, targetMs, requireWave) {
   return best;
 }
 
+// Diagnostic: enumerate which logged sessions can/can't fetch historical conditions.
+// Run from DevTools: await window._llcDiagnoseHistoricalFetch()
+window._llcDiagnoseHistoricalFetch = async function() {
+  const entries = (STATE.surfLog || []).slice();
+  const buoyId = CONFIG.chocomount.buoyId;
+  const results = [];
+  for (const e of entries) {
+    const ts = e.timestamp;
+    try {
+      const year = new Date(ts).getUTCFullYear();
+      const rows = await fetchNDBCHistoricalYear(buoyId, year);
+      const swell = _findNearestNDBCRow(rows, new Date(ts).getTime(), true);
+      results.push({
+        id: e.id,
+        timestamp: ts,
+        ok: !!swell,
+        rows: rows.length,
+        waveHeightFt: swell ? Math.round(swell.waveHeight * 10) / 10 : null
+      });
+    } catch (err) {
+      results.push({ id: e.id, timestamp: ts, ok: false, error: err.message });
+    }
+  }
+  console.table(results);
+  return results;
+};
+
 async function lookupNDBCHistoricalConditions(dateStr) {
   const display = el('sl-conditions-display');
   const sessionMs = new Date(dateStr).getTime();
@@ -3369,15 +3422,23 @@ async function lookupNDBCHistoricalConditions(dateStr) {
     const lagHours = avgPeriod > 0 ? CONFIG.chocomount.buoyDistanceMiles / (SWELL_SPEED_KTS_PER_PERIOD * avgPeriod) : 0;
     const laggedMs = lagHours > 0 ? sessionMs - lagHours * 3600000 : sessionMs;
 
+    console.log(`[ndbc-parse] searching for swell row matching ${new Date(laggedMs).toISOString()} (lagged ${lagHours.toFixed(2)}h from session)`);
+    console.log(`[ndbc-parse] candidate rows in ±2hr window:`, rows.filter(function(r) { return Math.abs(r.t.getTime() - laggedMs) <= 2 * 3600000; }).length);
+
     // Wave observation at lagged time (buoy reading that arrived at beach by session time)
     const swellRow = _findNearestNDBCRow(rows, laggedMs, true);
     // Wind at session time (local, no lag)
     const windRow  = _findNearestNDBCRow(rows.filter(function(r) { return r.windSpeed !== null; }), sessionMs, false);
 
     if (!swellRow) {
+      const nearest = rows.slice().sort(function(a, b) {
+        return Math.abs(a.t.getTime() - laggedMs) - Math.abs(b.t.getTime() - laggedMs);
+      }).slice(0, 4);
+      console.log(`[ndbc-parse] no swell match — nearest 4 rows:`, nearest);
       if (display) display.innerHTML = '<span class="sl-hint">No NDBC wave observations found near this date.</span>';
       return null;
     }
+    console.log(`[ndbc-parse] swell match Δ=${Math.round(Math.abs(swellRow.t.getTime() - laggedMs) / 60000)}min`, swellRow);
 
     const tideInfo = parseTideAtTime(tide, dateStr);
     const wSpd = windRow ? (windRow.windSpeed || 0) : 0;
