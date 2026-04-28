@@ -1128,6 +1128,18 @@ a:hover { text-decoration: underline; }
   min-height: 1.1em;
 }
 
+.sl-needs-review {
+  outline: 1px solid #f5c518;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.sl-conditions-warning {
+  font-size: 0.78rem;
+  color: #b88400;
+  margin-bottom: 6px;
+}
+
 .sl-range {
   -webkit-appearance: none;
   appearance: none;
@@ -1410,6 +1422,36 @@ a:hover { text-decoration: underline; }
   text-align: center;
   padding: 30px 20px;
   line-height: 1.5;
+}
+
+/* Incomplete entries — data-state signal (yellow), distinct from
+   surf-quality color states (orange/red). */
+.sl-incomplete-pill {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 1px 6px;
+  border: 1px solid #f5c518;
+  border-radius: 999px;
+  background: rgba(245, 197, 24, 0.12);
+  color: #8a6a08;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.sl-incomplete-banner {
+  margin: 0 14px 8px;
+  padding: 8px 12px;
+  border: 1px solid #f5c518;
+  border-left: 3px solid #f5c518;
+  border-radius: 4px;
+  background: rgba(245, 197, 24, 0.10);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 0.78rem;
+  line-height: 1.45;
 }
 
 .sl-export-row {
