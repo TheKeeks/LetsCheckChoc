@@ -2539,11 +2539,24 @@ const RIDE_FEATURE_NAMES = [
   'swell_dir_alignment','swell_dir_outside_deg','swell_period',
   'tide_height','time_to_low','low_incoming'
 ];
+// wind_offshore is cos(angular gap to reef offshore bearing): +1 directly
+// offshore, 0 cross-shore, −1 directly onshore.
 const COND_FEATURE_NAMES = [
-  'wind_speed','wind_offshore_score'
+  'wind_speed','wind_offshore'
 ];
 
+const REEF_OFFSHORE_BEARING = 335;
+function windOffshoreness(windDir) {
+  if (windDir == null || isNaN(windDir)) return 0;
+  const raw = Math.abs(windDir - REEF_OFFSHORE_BEARING);
+  const diff = Math.min(raw, 360 - raw);
+  return Math.cos(diff * Math.PI / 180);
+}
+
 let _TIDE_MEDIAN = 2.0;
+// Median wind speed, refreshed in retrainAll. Used to fill missing windSpd
+// in the Conditions model only.
+let _COND_WIND_MEDIAN = 0;
 
 function _windowGeometry() {
   const min = SWELL_WINDOW_MIN, max = SWELL_WINDOW_MAX;
@@ -2595,15 +2608,13 @@ function extractRideFeatures(cond) {
 }
 
 function extractCondFeatures(cond) {
-  const w = (cond && cond.wind) || { speed: 0 };
-  // Forecast hours pre-attach wind_offshore_score via buildForecastCond, but
-  // logged Firestore entries don't — fall back to computing from wind.direction
-  // so the cond model trains on history instead of silently zeroing the feature.
-  let offshore = (cond && cond.wind_offshore_score);
-  if (offshore == null && w.direction != null) offshore = computeWindOffshoreScore(w.direction);
+  const w = (cond && cond.wind) || {};
+  // Median-fill missing windSpd, cross-shore (0) for missing windDir.
+  const haveSpd = w.speed != null && isFinite(w.speed);
+  const haveDir = w.direction != null && isFinite(w.direction);
   return [
-    w.speed || 0,
-    offshore || 0
+    haveSpd ? w.speed : _COND_WIND_MEDIAN,
+    haveDir ? windOffshoreness(w.direction) : 0
   ];
 }
 
@@ -2644,7 +2655,10 @@ function normalEquation(X, y) {
   return matMul(inv, matMul(Xt, y.map(v => [v]))).map(r => r[0]);
 }
 
-// Z-score normalization keeps weights stable across retrains.
+// Z-score normalization keeps weights stable across retrains. Target is
+// mean-centered (not z-scored) so weights remain in rating-space units and
+// predictions land in rating space without an inverse-transform step. The
+// intercept is implicit: prediction = stats.targetMean + Σ wj·zj.
 function _trainOnArrays(X, y) {
   if (!X.length) return null;
   const nF = X[0].length;
@@ -2657,8 +2671,12 @@ function _trainOnArrays(X, y) {
     stats.std[j] = Math.sqrt(variance);
   }
   const Xn = X.map(row => row.map((v, j) => stats.std[j] > 1e-10 ? (v - stats.mean[j]) / stats.std[j] : 0));
-  const weights = normalEquation(Xn, y);
-  return weights ? { weights, stats } : null;
+  const yMean = y.reduce((a, b) => a + b, 0) / y.length;
+  const yCentered = y.map(v => v - yMean);
+  const weights = normalEquation(Xn, yCentered);
+  if (!weights) return null;
+  stats.targetMean = yMean;
+  return { weights, stats };
 }
 
 function trainModel(entries, featureExtractor, targetFn) {
@@ -2693,7 +2711,7 @@ function leaveOneOutDetailed(entries, featureExtractor, targetFn) {
     const ytr = y.slice(0, h).concat(y.slice(h + 1));
     const m = _trainOnArrays(Xtr, ytr);
     if (!m) continue;
-    let pred = 0;
+    let pred = m.stats.targetMean;
     for (let j = 0; j < nF; j++) {
       const z = m.stats.std[j] > 1e-10 ? (X[h][j] - m.stats.mean[j]) / m.stats.std[j] : 0;
       pred += m.weights[j] * z;
@@ -2712,7 +2730,7 @@ function leaveOneOutDetailed(entries, featureExtractor, targetFn) {
 
 function _predict(ff, weights, stats) {
   if (!weights || !stats || !ff) return null;
-  let pred = 0;
+  let pred = stats.targetMean || 0;
   for (let i = 0; i < ff.length; i++) {
     const sd = stats.std[i];
     pred += weights[i] * (sd > 1e-10 ? (ff[i] - stats.mean[i]) / sd : 0);
@@ -2818,6 +2836,15 @@ function retrainAll(allEntries, uid) {
     const mid = Math.floor(sorted.length / 2);
     _TIDE_MEDIAN = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
   }
+  // Refresh wind-speed median (Conditions model only) for missing-data fill.
+  const windSpeeds = entries.map(e => e.conditions && e.conditions.wind && e.conditions.wind.speed).filter(s => typeof s === 'number' && isFinite(s));
+  if (windSpeeds.length) {
+    const sortedW = [...windSpeeds].sort((a, b) => a - b);
+    const midW = Math.floor(sortedW.length / 2);
+    _COND_WIND_MEDIAN = sortedW.length % 2 ? sortedW[midW] : (sortedW[midW - 1] + sortedW[midW]) / 2;
+  } else {
+    _COND_WIND_MEDIAN = 0;
+  }
   const wave = trainModel(entries, extractWaveFeatures, e => e.ratings.size);
   const ride = trainModel(entries, extractRideFeatures, e => e.ratings.rideQuality);
   const cond = trainModel(entries, extractCondFeatures, e => e.ratings.windQuality);
@@ -2854,6 +2881,67 @@ function logTrainSummary(bundle) {
     rmse_loo: bundle.cond.loo ? bundle.cond.loo.rmse : null
   });
   console.groupEnd();
+  _logRegressionSanity(bundle);
+}
+
+// Per-model post-retrain sanity output. Catches the class of bug where
+// predictions slip out of rating space (e.g. z-space leak from a missing
+// inverse transform) by checking pred range/mean/std against actuals, and
+// flags models that don't beat the "predict the mean" baseline.
+function _stats1D(arr) {
+  if (!arr || !arr.length) return null;
+  const n = arr.length;
+  const mean = arr.reduce((a, b) => a + b, 0) / n;
+  let v = 0; for (let i = 0; i < n; i++) v += (arr[i] - mean) * (arr[i] - mean);
+  let mn = arr[0], mx = arr[0];
+  for (let i = 1; i < n; i++) { if (arr[i] < mn) mn = arr[i]; if (arr[i] > mx) mx = arr[i]; }
+  return { n, mean, std: Math.sqrt(v / n), min: mn, max: mx };
+}
+function _logSanityModel(label, target, featureNames, loo) {
+  console.groupCollapsed('[regression-sanity] ' + label);
+  console.log('target          : ' + target);
+  console.log('features        : ' + (featureNames || []).join(', '));
+  if (!loo || !loo.foldPreds || !loo.foldPreds.length) {
+    console.log('n               : 0  (insufficient data for LOO)');
+    console.groupEnd();
+    return;
+  }
+  const ps = _stats1D(loo.foldPreds), as = _stats1D(loo.actuals);
+  let sse = 0;
+  for (let i = 0; i < loo.foldPreds.length; i++) {
+    const e = loo.foldPreds[i] - loo.actuals[i]; sse += e * e;
+  }
+  const rmse = Math.sqrt(sse / loo.foldPreds.length);
+  const baselineRMSE = as.std;
+  const ssTot = as.std * as.std * as.n;
+  const r2 = ssTot > 1e-10 ? 1 - sse / ssTot : null;
+  const fmt = (v, d = 2) => (v == null || !isFinite(v)) ? '—' : v.toFixed(d);
+  console.log('n               : ' + ps.n);
+  console.log('pred range      : [' + fmt(ps.min) + ', ' + fmt(ps.max) + ']');
+  console.log('actual range    : [' + fmt(as.min) + ', ' + fmt(as.max) + ']');
+  console.log('pred mean       : ' + fmt(ps.mean));
+  console.log('actual mean     : ' + fmt(as.mean));
+  console.log('pred std        : ' + fmt(ps.std));
+  console.log('actual std      : ' + fmt(as.std));
+  console.log('RMSE            : ' + fmt(rmse));
+  console.log('baseline RMSE   : ' + fmt(baselineRMSE));
+  console.log('R²              : ' + (r2 == null ? '—' : (r2 >= 0 ? '+' : '') + fmt(r2)));
+  const scaleBad = (ps.min < 0 || ps.max > 12) || (as.std > 1.5 && ps.std < 1.5 && ps.max < 4);
+  if (scaleBad) {
+    console.log('✗ SCALE MISMATCH — predictions may be in z-space, check inverse-transform');
+  }
+  if (rmse >= baselineRMSE) {
+    console.log('✗ worse than predicting the mean');
+  } else {
+    console.log('✓ beats baseline (RMSE < baseline RMSE)');
+  }
+  console.groupEnd();
+}
+function _logRegressionSanity(bundle) {
+  if (!bundle) return;
+  _logSanityModel('WAVE', 'size', WAVE_FEATURE_NAMES, bundle.wave && bundle.wave.loo);
+  _logSanityModel('RIDE', 'rideQuality', RIDE_FEATURE_NAMES, bundle.ride && bundle.ride.loo);
+  _logSanityModel('COND', 'windQuality', COND_FEATURE_NAMES, bundle.cond && bundle.cond.loo);
 }
 
 // ════════════════════════════════════════════════
@@ -3033,6 +3121,7 @@ const FEATURE_LABELS = {
   time_to_low: 'Hours to low tide (signed)',
   low_incoming: 'Low + incoming flag',
   wind_speed: 'Wind speed',
+  wind_offshore: 'Wind offshore (cos)',
   wind_offshore_score: 'Wind offshore score',
 };
 function prettyFeature(name) { return FEATURE_LABELS[name] || name; }
@@ -3366,12 +3455,28 @@ function _rmseChipColor(rmse) {
   return QUALITY_COLORS.good;
 }
 
-// Color the R² chip: green >=0.5, orange >=0.3, red below.
+// Color the R² chip: green >=0.5, orange >=0.3, gray near zero (model is
+// indistinguishable from "predict the mean"), red below.
 function _r2ChipColor(r2) {
   if (r2 == null) return '#6c7091';
   if (r2 >= 0.5) return QUALITY_COLORS.good;
   if (r2 >= 0.3) return QUALITY_COLORS.fair;
+  if (r2 >= -0.05 && r2 <= 0.05) return '#6c7091';
   return QUALITY_COLORS.poor;
+}
+function _formatR2(r2) {
+  if (r2 == null) return '–';
+  if (r2 >= -0.05 && r2 <= 0.05) return '≈ baseline';
+  return (r2 >= 0 ? '+' : '') + r2.toFixed(2);
+}
+// Std of actuals = RMSE of the "predict the mean" baseline. Lets the calibration
+// card show "RMSE 1.74 (vs 2.09 baseline)" so the model's value is contextualized.
+function _baselineRMSE(actuals) {
+  if (!actuals || actuals.length < 2) return null;
+  const n = actuals.length;
+  const mean = actuals.reduce((a, b) => a + b, 0) / n;
+  let v = 0; for (let i = 0; i < n; i++) v += (actuals[i] - mean) * (actuals[i] - mean);
+  return Math.sqrt(v / n);
 }
 
 function TabPills({ tabs, active, onSelect }) {
@@ -3710,6 +3815,7 @@ function PredVsActualScatter({ bundle, modelStatus }) {
   // Status bar always shown — N + RMSE + R² regardless of body state.
   const rmse = loo ? loo.rmse : null;
   const r2 = loo ? _computeR2(loo.foldPreds, loo.actuals) : null;
+  const baseline = loo ? _baselineRMSE(loo.actuals) : null;
 
   return (
     <div className="fn-card">
@@ -3739,11 +3845,16 @@ function PredVsActualScatter({ bundle, modelStatus }) {
         <span><span className="fn-status-key">N</span><span className="fn-status-val">{loo && loo.n != null ? loo.n : '–'}</span></span>
         <span>
           <span className="fn-status-key">RMSE</span>
-          <span className="fn-status-val" style={{ color: _rmseChipColor(rmse) }}>{rmse != null ? rmse.toFixed(2) : '–'}</span>
+          <span className="fn-status-val" style={{ color: _rmseChipColor(rmse) }}>
+            {rmse != null ? rmse.toFixed(2) : '–'}
+            {baseline != null && rmse != null
+              ? <span style={{ color: '#6c7091', fontWeight: 400, marginLeft: '4px' }}>(vs {baseline.toFixed(2)} baseline)</span>
+              : null}
+          </span>
         </span>
         <span>
           <span className="fn-status-key">R²</span>
-          <span className="fn-status-val" style={{ color: _r2ChipColor(r2) }}>{r2 != null ? r2.toFixed(2) : '–'}</span>
+          <span className="fn-status-val" style={{ color: _r2ChipColor(r2) }}>{_formatR2(r2)}</span>
         </span>
       </div>
       <Sources links={MODEL_DIAG_SOURCES} />
