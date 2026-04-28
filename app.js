@@ -3808,6 +3808,54 @@ function ratingBadge(val) {
   return '<span class="sl-rating-badge '+cls+'">'+v+'</span>';
 }
 
+function isLogEntryIncomplete(entry) {
+  if (!entry || typeof entry !== 'object') return true;
+  const r = entry.ratings;
+  if (!r || typeof r !== 'object') return true;
+  for (const k of ['size', 'rideQuality', 'windQuality']) {
+    const v = r[k];
+    if (typeof v !== 'number' || !isFinite(v) || v < 0 || v > 10) return true;
+  }
+  const c = entry.conditions;
+  if (!c || typeof c !== 'object') return true;
+  const s = c.swell;
+  if (!s) return true;
+  if (s.size === 0 && s.period === 0) return true;
+  if (s.size > 0 && (s.direction === undefined || s.direction === null || s.direction === 0)) return true;
+  return false;
+}
+
+function getIncompleteFields(entry) {
+  const fields = [];
+  if (!entry || typeof entry !== 'object') {
+    return ['size', 'rideQuality', 'windQuality', 'conditions', 'swell'];
+  }
+  const r = entry.ratings;
+  const ratingsObj = r && typeof r === 'object' ? r : null;
+  for (const k of ['size', 'rideQuality', 'windQuality']) {
+    const v = ratingsObj ? ratingsObj[k] : undefined;
+    if (typeof v !== 'number' || !isFinite(v) || v < 0 || v > 10) fields.push(k);
+  }
+  const c = entry.conditions;
+  if (!c || typeof c !== 'object') {
+    fields.push('conditions');
+    fields.push('swell');
+    return fields;
+  }
+  const s = c.swell;
+  if (!s) {
+    fields.push('swell');
+  } else if (s.size === 0 && s.period === 0) {
+    fields.push('swell');
+  } else if (s.size > 0 && (s.direction === undefined || s.direction === null || s.direction === 0)) {
+    fields.push('swell');
+  }
+  return fields;
+}
+
+window._llcIsLogEntryIncomplete = isLogEntryIncomplete;
+window._llcGetIncompleteFields = getIncompleteFields;
+
 function renderSurfLogTable() {
   const tbody = el('surflog-tbody'), emptyEl = el('surflog-empty'), exportRow = el('sl-export-row');
   if (!tbody) return;
