@@ -1128,6 +1128,18 @@ a:hover { text-decoration: underline; }
   min-height: 1.1em;
 }
 
+.sl-needs-review {
+  outline: 1px solid #f5c518;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.sl-conditions-warning {
+  font-size: 0.78rem;
+  color: #b88400;
+  margin-bottom: 6px;
+}
+
 .sl-range {
   -webkit-appearance: none;
   appearance: none;
