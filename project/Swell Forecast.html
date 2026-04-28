@@ -3037,6 +3037,307 @@ const FEATURE_LABELS = {
 };
 function prettyFeature(name) { return FEATURE_LABELS[name] || name; }
 
+// ════════════════════════════════════════════════
+// CARD 1 — Predicted Score Timeline
+// Three predicted score lines (Wave / Ride / Cond) for the same forecast
+// window as SwellChart. Hover state is local so this card doesn't couple to
+// the swell chart's hover.
+// ════════════════════════════════════════════════
+
+// Build per-segment colored paths so the line color tracks the score quality
+// bracket between adjacent hours. Skips segments where either endpoint is null
+// (model not trained or feature extraction missed).
+function _buildScoreSegments(series, points) {
+  const segs = [];
+  if (!series || !points || points.length < 2) return segs;
+  for (let i = 0; i < series.length - 1; i++) {
+    const a = series[i], b = series[i + 1];
+    if (a == null || b == null) continue;
+    const p1 = points[i], p2 = points[i + 1];
+    const p0 = points[i === 0 ? i : i - 1];
+    const p3 = points[i + 2] || p2;
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    const q = scoreQ((a + b) / 2);
+    const d = `M ${p1.x} ${p1.y} C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+    segs.push({ d, color: QUALITY_COLORS[q] });
+  }
+  return segs;
+}
+
+function PredHoverBanner({ hours, hoveredIdx, wrapWidth, series, isMobile }) {
+  if (hoveredIdx == null || !hours[hoveredIdx] || !wrapWidth) return null;
+  const h = hours[hoveredIdx];
+  const n = hours.length;
+  const wave = series.wave[hoveredIdx];
+  const ride = series.ride[hoveredIdx];
+  const cond = series.cond[hoveredIdx];
+
+  const innerW = Math.max(0, wrapWidth - (isMobile ? 16 : 24));
+  const padX = isMobile ? 8 : 12;
+  const pxX = padX + (xForIdx(hoveredIdx, n) / 800) * innerW;
+  const W = isMobile ? 150 : 200;
+  const leftPx = Math.max(8, Math.min(wrapWidth - W - 8, pxX - W / 2));
+
+  const t = new Date(h.time);
+  const dayStr = t.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+  const hr = t.getHours();
+  const hourStr = hr === 0 ? '12AM' : hr === 12 ? '12PM' : hr < 12 ? hr + 'AM' : (hr - 12) + 'PM';
+  const headerStr = dayStr + ' · ' + hourStr;
+
+  const overall = [wave, ride, cond].filter(v => v != null);
+  const avg = overall.length ? overall.reduce((a, b) => a + b, 0) / overall.length : null;
+  const accent = QUALITY_COLORS[scoreQ(avg)];
+
+  const style = {
+    position: 'absolute',
+    left: leftPx + 'px',
+    top: isMobile ? '8px' : '14px',
+    width: W + 'px',
+    background: '#0f1120',
+    borderLeft: '2px solid ' + accent,
+    clipPath: isMobile
+      ? 'polygon(6px 0, calc(100% - 6px) 0, 100% 6px, 100% calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 0 calc(100% - 6px), 0 6px)'
+      : 'polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% calc(100% - 12px), calc(100% - 12px) 100%, 12px 100%, 0 calc(100% - 12px), 0 12px)',
+    padding: isMobile ? '6px 8px' : '10px',
+    fontFamily: 'Noto Sans, sans-serif',
+    color: '#e6e8f2',
+    pointerEvents: 'none',
+    zIndex: 3,
+    boxShadow: '0 8px 22px rgba(0,0,0,0.55)',
+  };
+
+  const rowStyle = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: isMobile ? '11px' : '12px', marginTop: '2px' };
+  const labelStyle = {
+    fontFamily: 'Barlow Condensed, sans-serif',
+    fontWeight: 700,
+    fontSize: isMobile ? '10px' : '11px',
+    letterSpacing: '0.14em',
+    color: '#6c7091',
+    textTransform: 'uppercase',
+  };
+  const fmt = (v) => v == null ? '–' : v.toFixed(1);
+
+  return (
+    <div style={style}>
+      <div style={{ ...labelStyle, color: '#cfd3e6' }}>{headerStr}</div>
+      <div style={rowStyle}>
+        <span style={labelStyle}>Wave</span>
+        <span style={{ color: QUALITY_COLORS[scoreQ(wave)], fontFamily: 'DM Mono, monospace', fontWeight: 700 }}>{fmt(wave)}</span>
+      </div>
+      <div style={rowStyle}>
+        <span style={labelStyle}>Ride</span>
+        <span style={{ color: QUALITY_COLORS[scoreQ(ride)], fontFamily: 'DM Mono, monospace', fontWeight: 700 }}>{fmt(ride)}</span>
+      </div>
+      <div style={rowStyle}>
+        <span style={labelStyle}>Cond</span>
+        <span style={{ color: QUALITY_COLORS[scoreQ(cond)], fontFamily: 'DM Mono, monospace', fontWeight: 700 }}>{fmt(cond)}</span>
+      </div>
+      <div style={{ marginTop: '6px', fontSize: isMobile ? '10px' : '11px', color: '#8a90a8', fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, letterSpacing: '0.04em' }}>
+        {h.waveFt != null ? h.waveFt.toFixed(1) : '–'} FT @ {h.period != null ? h.period.toFixed(0) + 's' : '–'}
+        {' · '}
+        {h.windMph != null ? Math.round(h.windMph) : '–'} mph {degToCompass(h.windDir) || ''}
+      </div>
+    </div>
+  );
+}
+
+function PredictedScoreTimeline({ hours, bundle, tideHiLo, modelStatus }) {
+  const wrapRef = useRef(null);
+  const [wrapWidth, setWrapWidth] = useState(0);
+  const [hoveredIdx, setHoveredIdx] = useState(null);
+
+  useEffect(() => {
+    const update = () => { if (wrapRef.current) setWrapWidth(wrapRef.current.clientWidth); };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  const series = useMemo(
+    () => computePredictionSeries(hours || [], bundle, tideHiLo),
+    [hours, bundle, tideHiLo]
+  );
+
+  const geom = useMemo(() => computeTimelineGeometry(hours || []), [hours]);
+  const n = hours ? hours.length : 0;
+
+  const wavePoints = useMemo(() => series.wave.map((s, i) => ({ x: xForIdx(i, n), y: yForScore(s) })), [series, n]);
+  const ridePoints = useMemo(() => series.ride.map((s, i) => ({ x: xForIdx(i, n), y: yForScore(s) })), [series, n]);
+  const condPoints = useMemo(() => series.cond.map((s, i) => ({ x: xForIdx(i, n), y: yForScore(s) })), [series, n]);
+
+  const waveSegs = useMemo(() => _buildScoreSegments(series.wave, wavePoints), [series, wavePoints]);
+  const rideSegs = useMemo(() => _buildScoreSegments(series.ride, ridePoints), [series, ridePoints]);
+  const condSegs = useMemo(() => _buildScoreSegments(series.cond, condPoints), [series, condPoints]);
+
+  const idxFromClientX = (clientX, rect) => {
+    if (!n) return null;
+    const vbX = ((clientX - rect.left) / rect.width) * 800;
+    if (vbX < PLOT_LEFT || vbX > PLOT_RIGHT) return null;
+    const frac = (vbX - PLOT_LEFT) / PLOT_WIDTH;
+    return Math.max(0, Math.min(n - 1, Math.round(frac * (n - 1))));
+  };
+
+  const handleMove = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const i = idxFromClientX(e.clientX, rect);
+    setHoveredIdx(i);
+  };
+  const handleTouch = (e) => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const i = idxFromClientX(touch.clientX, rect);
+    if (i != null) setHoveredIdx(i);
+  };
+
+  const yTicks = [1, 3, 5, 7, 9, 10];
+  const haveAny = (bundle && (bundle.wave.weights || bundle.ride.weights || bundle.cond.weights));
+
+  // Empty-state overlay: not signed in / under-trained / forecast still loading.
+  let overlay = null;
+  if (modelStatus === 'noAuth') {
+    overlay = 'Sign in to see your personalized predicted scores.';
+  } else if (modelStatus === 'loading' || modelStatus === 'error') {
+    overlay = modelStatus === 'error' ? 'Surf-log model unavailable.' : 'Training your surf-log model…';
+  } else if (modelStatus === 'ready' && bundle && !haveAny) {
+    const ns = [bundle.wave.n || 0, bundle.ride.n || 0, bundle.cond.n || 0];
+    const mins = [bundle.wave.minSamples || 12, bundle.ride.minSamples || 12, bundle.cond.minSamples || 12];
+    const need = Math.max(0, mins[0] - ns[0], mins[1] - ns[1], mins[2] - ns[2]);
+    overlay = need > 0
+      ? 'Log ' + need + ' more session' + (need === 1 ? '' : 's') + ' to unlock predicted scores.'
+      : 'Not enough usable sessions to train yet.';
+  }
+
+  const hovered = hoveredIdx != null && n > 0
+    ? { x: xForIdx(hoveredIdx, n) }
+    : null;
+
+  return (
+    <div className="fn-card">
+      <SectionHeader
+        title="Predicted Score Timeline"
+        pill="Model"
+        sub="Wave / Ride / Conditions scores from your trained surf-log models, scored hourly across the forecast window."
+      />
+      <div className="fn-chart-wrap" ref={wrapRef} style={{ position: 'relative', touchAction: IS_MOBILE ? 'none' : undefined }}>
+        <svg viewBox="0 0 800 270" preserveAspectRatio="xMidYMid meet"
+             onMouseMove={handleMove}
+             onMouseLeave={() => { if (!IS_MOBILE) setHoveredIdx(null); }}
+             onTouchStart={handleTouch}
+             onTouchMove={handleTouch}
+             onTouchEnd={() => setHoveredIdx(null)}
+             onTouchCancel={() => setHoveredIdx(null)}>
+          <rect x={PLOT_LEFT} y={PLOT_TOP} width={PLOT_WIDTH} height={PLOT_HEIGHT} fill="#0a0c18" />
+
+          {yTicks.map(s => (
+            <g key={'pyt-' + s}>
+              <line x1={PLOT_LEFT} x2={PLOT_RIGHT} y1={yForScore(s)} y2={yForScore(s)} stroke="#1a1d33" strokeWidth="1" />
+              <text x={PLOT_LEFT - 6} y={yForScore(s) + 4} fontFamily="Noto Sans, sans-serif" fontSize="10" fill="#8a90a8" textAnchor="end">{s}</text>
+            </g>
+          ))}
+
+          {geom.nightRuns.map((run, i) => (
+            <rect key={'pn-' + i} x={run.x} y={PLOT_TOP} width={run.w} height={PLOT_HEIGHT} fill="rgba(2,3,14,0.58)" />
+          ))}
+
+          {geom.sunMarkers.map((m, i) => (
+            <g key={'psm-' + i} transform={`translate(${m.x.toFixed(2)}, ${(PLOT_TOP + 32)})`}>
+              <circle r="4.5" fill="#fde047" stroke="#facc15" strokeWidth="0.5" />
+              <g stroke="#fde047" strokeWidth="1.3" strokeLinecap="round">
+                <line x1="0" y1="-7" x2="0" y2="-9.5" />
+                <line x1="0" y1="7" x2="0" y2="9.5" />
+                <line x1="-7" y1="0" x2="-9.5" y2="0" />
+                <line x1="7" y1="0" x2="9.5" y2="0" />
+                <line x1="-5" y1="-5" x2="-6.9" y2="-6.9" />
+                <line x1="5" y1="-5" x2="6.9" y2="-6.9" />
+                <line x1="-5" y1="5" x2="-6.9" y2="6.9" />
+                <line x1="5" y1="5" x2="6.9" y2="6.9" />
+              </g>
+            </g>
+          ))}
+
+          {geom.sunLines.map((sl, i) => (
+            <line key={'psl-' + i} x1={sl.x} x2={sl.x} y1={PLOT_TOP} y2={PLOT_BOTTOM}
+                  stroke="#f5c518" strokeOpacity="0.22" strokeWidth="1" strokeDasharray="3 3" />
+          ))}
+
+          {geom.dayDividers.map((dv, i) => (
+            <g key={'pdv-' + i}>
+              <line x1={dv.x} x2={dv.x} y1={PLOT_TOP} y2={PLOT_BOTTOM}
+                    stroke="#f5c518" strokeOpacity="0.18" strokeWidth="1" strokeDasharray="3 3" />
+              <text x={dv.labelX} y={PLOT_TOP + 12} fontFamily="Noto Sans, sans-serif" fontSize="11" fontWeight="600" fill="#cfd3e6" textAnchor="middle">
+                {dv.label}
+              </text>
+            </g>
+          ))}
+
+          {/* Lines: wave (thickest) on bottom, then ride, then cond on top so the
+              thinner conditions line stays readable when overlapping. */}
+          {bundle && bundle.wave.weights && waveSegs.map((seg, i) => (
+            <path key={'wv-' + i} d={seg.d} fill="none" stroke={seg.color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+          ))}
+          {bundle && bundle.ride.weights && rideSegs.map((seg, i) => (
+            <path key={'rd-' + i} d={seg.d} fill="none" stroke={seg.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+          ))}
+          {bundle && bundle.cond.weights && condSegs.map((seg, i) => (
+            <path key={'cd-' + i} d={seg.d} fill="none" stroke={seg.color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+          ))}
+
+          {hovered && (
+            <line x1={hovered.x} x2={hovered.x} y1={PLOT_TOP} y2={PLOT_BOTTOM} stroke="#f5c518" strokeOpacity="0.55" strokeWidth="1" pointerEvents="none" />
+          )}
+        </svg>
+
+        {overlay && (
+          <div className="fn-pred-overlay-msg">
+            <div className="fn-rose-overlay-inner">{overlay}</div>
+          </div>
+        )}
+
+        {!overlay && (
+          <PredHoverBanner hours={hours || []} hoveredIdx={hoveredIdx} wrapWidth={wrapWidth} series={series} isMobile={IS_MOBILE} />
+        )}
+      </div>
+
+      <div className="fn-legend">
+        <span className="fn-legend-item">
+          <span style={{ width: '18px', height: '2.5px', background: '#cfd3e6', display: 'inline-block' }}></span>
+          Wave
+        </span>
+        <span className="fn-legend-item">
+          <span style={{ width: '18px', height: '2px', background: '#cfd3e6', display: 'inline-block' }}></span>
+          Ride
+        </span>
+        <span className="fn-legend-item">
+          <span style={{ width: '18px', height: '1.5px', background: '#cfd3e6', display: 'inline-block' }}></span>
+          Conditions
+        </span>
+        <span className="fn-legend-item">
+          <span className="fn-legend-dot" style={{ background: QUALITY_COLORS.good }}></span>
+          ≥ 7
+        </span>
+        <span className="fn-legend-item">
+          <span className="fn-legend-dot" style={{ background: QUALITY_COLORS.fair }}></span>
+          5 – 7
+        </span>
+        <span className="fn-legend-item">
+          <span className="fn-legend-dot" style={{ background: QUALITY_COLORS.poor }}></span>
+          &lt; 5
+        </span>
+      </div>
+
+      <div className="fn-statusbar">
+        <span><span className="fn-status-key">When</span><span className="fn-status-val">{hoveredIdx != null && hours && hours[hoveredIdx] ? new Date(hours[hoveredIdx].time).toLocaleString('en-US', { weekday: 'short', month: 'short', day: '2-digit', hour: 'numeric' }) : 'Hover the chart for hourly scores'}</span></span>
+      </div>
+
+      <Sources links={PREDICTION_SOURCES} />
+    </div>
+  );
+}
+
 // modelStatus drives the empty-state overlays on the three new cards:
 //   'loading' → auth/logs/tide still in flight
 //   'noAuth'  → user is anonymous or sign-in didn't complete
