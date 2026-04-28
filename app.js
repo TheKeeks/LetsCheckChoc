@@ -4133,11 +4133,25 @@ const RIDE_FEATURE_NAMES = [
   'tide_height','time_to_low','low_incoming'
 ];
 
-// Conditions features (target: ratings.windQuality)
+// Conditions features (target: ratings.windQuality). wind_offshore is cos of
+// the angular gap between wind direction and the reef's offshore bearing,
+// ranging −1 (directly onshore) to +1 (directly offshore).
 const COND_FEATURE_NAMES = [
-  'wind_speed','wind_offshore_score'
-  // ,'blown_water_index'  // available but disabled
+  'wind_speed','wind_offshore'
 ];
+
+// Reef's offshore bearing — wind blowing FROM this direction is directly offshore.
+const REEF_OFFSHORE_BEARING = 335;
+function windOffshoreness(windDir) {
+  if (windDir == null || isNaN(windDir)) return 0;
+  const raw = Math.abs(windDir - REEF_OFFSHORE_BEARING);
+  const diff = Math.min(raw, 360 - raw);
+  return Math.cos(diff * Math.PI / 180);
+}
+
+// Median wind speed across logged sessions — used to fill missing windSpd in
+// the Conditions model. Refreshed at slRetrain start.
+let _COND_WIND_MEDIAN = 0;
 
 // Median tide height (ft, MLLW) used by extractRideFeatures.low_incoming.
 // Refreshed at the start of slRetrain from logged-session tide heights so the
@@ -4195,10 +4209,14 @@ function extractRideFeatures(cond) {
 }
 
 function extractCondFeatures(cond) {
-  const w = cond?.wind||{speed:0};
+  const w = cond?.wind || {};
+  // Median-fill missing windSpd so the one session in the dataset with both
+  // wind fields blank still trains; cross-shore (0) for missing windDir.
+  const haveSpd = w.speed != null && isFinite(w.speed);
+  const haveDir = w.direction != null && isFinite(w.direction);
   return [
-    w.speed||0, cond?.wind_offshore_score||0
-    // , cond?.blown_water_index||0  // disabled
+    haveSpd ? w.speed : _COND_WIND_MEDIAN,
+    haveDir ? windOffshoreness(w.direction) : 0
   ];
 }
 
@@ -4226,6 +4244,10 @@ function normalEquation(X,y) {
 // Z-score normalization keeps weights stable across retrains; min-max would
 // drift each time a new outlier session is logged, making the weights panel
 // hard to interpret over time.
+//
+// Target is mean-centered (not z-scored) so weights stay in rating-space units
+// and predictions land in rating space without an inverse-transform step. The
+// intercept is implicit: prediction = stats.targetMean + Σ wj·zj.
 function _trainOnArrays(X, y) {
   if (!X.length) return null;
   const nF = X[0].length;
@@ -4238,8 +4260,12 @@ function _trainOnArrays(X, y) {
     stats.std[j] = Math.sqrt(variance);
   }
   const Xn = X.map(row => row.map((v,j) => stats.std[j] > 1e-10 ? (v - stats.mean[j]) / stats.std[j] : 0));
-  const weights = normalEquation(Xn, y);
-  return weights ? { weights, stats } : null;
+  const yMean = y.reduce((a,b) => a+b, 0) / y.length;
+  const yCentered = y.map(v => v - yMean);
+  const weights = normalEquation(Xn, yCentered);
+  if (!weights) return null;
+  stats.targetMean = yMean;
+  return { weights, stats };
 }
 
 function trainModel(entries, featureExtractor, targetFn) {
@@ -4268,7 +4294,7 @@ function leaveOneOutRMSE(entries, featureExtractor, targetFn) {
     const ytr = y.slice(0, h).concat(y.slice(h+1));
     const m = _trainOnArrays(Xtr, ytr);
     if (!m) continue;
-    let pred = 0;
+    let pred = m.stats.targetMean;
     for (let j = 0; j < nF; j++) {
       const z = m.stats.std[j] > 1e-10 ? (X[h][j] - m.stats.mean[j]) / m.stats.std[j] : 0;
       pred += m.weights[j] * z;
@@ -4290,6 +4316,15 @@ function slRetrain() {
     const sorted = [...tideHeights].sort((a,b) => a - b);
     const mid = Math.floor(sorted.length / 2);
     _TIDE_MEDIAN = sorted.length % 2 ? sorted[mid] : (sorted[mid-1] + sorted[mid]) / 2;
+  }
+  // Refresh wind-speed median (Conditions model only) for missing-data fill.
+  const windSpeeds = entries.map(e => e.conditions?.wind?.speed).filter(s => typeof s === 'number' && isFinite(s));
+  if (windSpeeds.length) {
+    const sortedW = [...windSpeeds].sort((a,b) => a - b);
+    const mid = Math.floor(sortedW.length / 2);
+    _COND_WIND_MEDIAN = sortedW.length % 2 ? sortedW[mid] : (sortedW[mid-1] + sortedW[mid]) / 2;
+  } else {
+    _COND_WIND_MEDIAN = 0;
   }
   // Wave model: target = size (pure swell arrival, no peel quality mixed in).
   const wave = trainModel(entries, extractWaveFeatures, e => e.ratings.size);
@@ -4322,6 +4357,93 @@ function _logRetrainSummary() {
   console.log('ride (target=rideQuality)', { weights: _pairWeights(STATE.surfLogRideWeights, RIDE_FEATURE_NAMES), rmse_loo: STATE.surfLogRideValidation });
   console.log('cond (target=windQuality)', { weights: _pairWeights(STATE.surfLogCondWeights, COND_FEATURE_NAMES), rmse_loo: STATE.surfLogCondValidation });
   console.groupEnd();
+  _logRegressionSanity();
+}
+
+// Per-model post-retrain sanity output. Catches the class of bug where
+// predictions slip out of rating space (e.g. z-space leak from a missing
+// inverse transform) by checking pred range / mean / std against actuals,
+// and flags models that don't beat "predict the mean" baseline.
+function _runLOOForSanity(entries, featureExtractor, targetFn) {
+  const X = [], y = [];
+  entries.forEach(e => { const f = featureExtractor(e.conditions); if (f) { X.push(f); y.push(targetFn(e)); } });
+  if (!X.length) return null;
+  const nF = X[0].length;
+  const minSamples = Math.max(2 * nF, 12);
+  if (X.length < minSamples + 1) return null;
+  const preds = [], actuals = [];
+  for (let h = 0; h < X.length; h++) {
+    const Xtr = X.slice(0, h).concat(X.slice(h + 1));
+    const ytr = y.slice(0, h).concat(y.slice(h + 1));
+    const m = _trainOnArrays(Xtr, ytr);
+    if (!m) continue;
+    let p = m.stats.targetMean;
+    for (let j = 0; j < nF; j++) {
+      const z = m.stats.std[j] > 1e-10 ? (X[h][j] - m.stats.mean[j]) / m.stats.std[j] : 0;
+      p += m.weights[j] * z;
+    }
+    preds.push(p);
+    actuals.push(y[h]);
+  }
+  return preds.length ? { preds, actuals } : null;
+}
+function _stats1D(arr) {
+  if (!arr || !arr.length) return null;
+  const n = arr.length;
+  const mean = arr.reduce((a, b) => a + b, 0) / n;
+  let v = 0; for (let i = 0; i < n; i++) v += (arr[i] - mean) * (arr[i] - mean);
+  return { n, mean, std: Math.sqrt(v / n), min: Math.min(...arr), max: Math.max(...arr) };
+}
+function _logSanityModel(label, target, featureNames, looOut) {
+  console.groupCollapsed('[regression-sanity] ' + label);
+  console.log('target          : ' + target);
+  console.log('features        : ' + (featureNames || []).join(', '));
+  if (!looOut) {
+    console.log('n               : 0  (insufficient data for LOO)');
+    console.groupEnd();
+    return;
+  }
+  const ps = _stats1D(looOut.preds), as = _stats1D(looOut.actuals);
+  let sse = 0; for (let i = 0; i < looOut.preds.length; i++) {
+    const e = looOut.preds[i] - looOut.actuals[i]; sse += e * e;
+  }
+  const rmse = Math.sqrt(sse / looOut.preds.length);
+  const baselineRMSE = as.std;
+  const ssTot = as.std * as.std * as.n;
+  const r2 = ssTot > 1e-10 ? 1 - sse / ssTot : null;
+  const fmt = (v, d = 2) => (v == null || !isFinite(v)) ? '—' : v.toFixed(d);
+  console.log('n               : ' + ps.n);
+  console.log('pred range      : [' + fmt(ps.min) + ', ' + fmt(ps.max) + ']');
+  console.log('actual range    : [' + fmt(as.min) + ', ' + fmt(as.max) + ']');
+  console.log('pred mean       : ' + fmt(ps.mean));
+  console.log('actual mean     : ' + fmt(as.mean));
+  console.log('pred std        : ' + fmt(ps.std));
+  console.log('actual std      : ' + fmt(as.std));
+  console.log('RMSE            : ' + fmt(rmse));
+  console.log('baseline RMSE   : ' + fmt(baselineRMSE));
+  console.log('R²              : ' + (r2 == null ? '—' : (r2 >= 0 ? '+' : '') + fmt(r2)));
+  // Scale-mismatch guard: predictions in z-space have std ~1 and range ~[−2, +3].
+  const scaleBad = (ps.min < 0 || ps.max > 12) || (as.std > 1.5 && ps.std < 1.5 && ps.max < 4);
+  if (scaleBad) {
+    console.log('✗ SCALE MISMATCH — predictions may be in z-space, check inverse-transform');
+  }
+  if (rmse >= baselineRMSE) {
+    console.log('✗ worse than predicting the mean');
+  } else {
+    console.log('✓ beats baseline (RMSE < baseline RMSE)');
+  }
+  console.groupEnd();
+}
+function _logRegressionSanity() {
+  const uid = window._fbUserId;
+  const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
+  const entries = userScoped.filter(e => e.conditions?.swell);
+  _logSanityModel('WAVE', 'size', WAVE_FEATURE_NAMES,
+    _runLOOForSanity(entries, extractWaveFeatures, e => e.ratings.size));
+  _logSanityModel('RIDE', 'rideQuality', RIDE_FEATURE_NAMES,
+    _runLOOForSanity(entries, extractRideFeatures, e => e.ratings.rideQuality));
+  _logSanityModel('COND', 'windQuality', COND_FEATURE_NAMES,
+    _runLOOForSanity(entries, extractCondFeatures, e => e.ratings.windQuality));
 }
 
 function renderWeightSection(weights, stats, featureNames, rmse) {
@@ -4381,7 +4503,7 @@ function computeCondMatch(ef, ff) { return _matchPct(ef, ff, STATE.surfLogCondWe
 
 function _predict(ff, weights, stats) {
   if (!weights||!stats) return null;
-  let pred=0;
+  let pred = stats.targetMean || 0;
   for(let i=0;i<ff.length;i++){ const sd=stats.std[i]; pred += weights[i] * (sd>1e-10 ? (ff[i]-stats.mean[i])/sd : 0); }
   return Math.max(1,Math.min(10,Math.round(pred*10)/10));
 }
