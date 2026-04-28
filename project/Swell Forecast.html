@@ -2856,6 +2856,187 @@ function logTrainSummary(bundle) {
   console.groupEnd();
 }
 
+// ════════════════════════════════════════════════
+// FORECAST MODEL CARDS — helpers shared by the three new cards
+// ════════════════════════════════════════════════
+
+// Per-hour score predictions from the trained bundle. Each series carries
+// nulls where weights are missing or feature extraction returned null, so the
+// cards can render the lines they have and skip the rest.
+function computePredictionSeries(hours, bundle, tideHiLo) {
+  const wave = [], ride = [], cond = [];
+  if (!hours || !hours.length) return { wave, ride, cond };
+  const haveWave = bundle && bundle.wave && bundle.wave.weights;
+  const haveRide = bundle && bundle.ride && bundle.ride.weights;
+  const haveCond = bundle && bundle.cond && bundle.cond.weights;
+  for (let i = 0; i < hours.length; i++) {
+    const c = buildForecastCond(hours[i], tideHiLo || []);
+    wave.push(haveWave ? _predict(extractWaveFeatures(c), bundle.wave.weights, bundle.wave.stats) : null);
+    ride.push(haveRide ? _predict(extractRideFeatures(c), bundle.ride.weights, bundle.ride.stats) : null);
+    cond.push(haveCond ? _predict(extractCondFeatures(c), bundle.cond.weights, bundle.cond.stats) : null);
+  }
+  return { wave, ride, cond };
+}
+
+const SCORE_Y_MIN = 1, SCORE_Y_MAX = 10;
+function yForScore(s) {
+  if (s == null) return null;
+  const v = Math.max(SCORE_Y_MIN, Math.min(SCORE_Y_MAX, s));
+  return PLOT_BOTTOM - ((v - SCORE_Y_MIN) / (SCORE_Y_MAX - SCORE_Y_MIN)) * PLOT_HEIGHT;
+}
+// Map a 1-10 predicted score to the same wind-quality color buckets used
+// elsewhere on the page so the line color tracks "good / fair / poor".
+function scoreQ(s) {
+  if (s == null) return 'poor';
+  if (s >= 7) return 'good';
+  if (s >= 5) return 'fair';
+  return 'poor';
+}
+
+// Reusable hour-axis interpolator — mirrors SwellChart's inline xAt(). Extracted
+// so the prediction timeline can place day dividers / sun markers without
+// re-deriving the same closure.
+function xAtMsForHours(ms, hours) {
+  const n = hours.length;
+  if (!n) return PLOT_LEFT;
+  const firstMs = new Date(hours[0].time).getTime();
+  const lastMs = new Date(hours[n - 1].time).getTime();
+  if (ms <= firstMs) return PLOT_LEFT;
+  if (ms >= lastMs) return PLOT_RIGHT;
+  for (let i = 0; i < n - 1; i++) {
+    const a = new Date(hours[i].time).getTime();
+    const b = new Date(hours[i + 1].time).getTime();
+    if (ms >= a && ms <= b) {
+      const f = (ms - a) / (b - a || 1);
+      return xForIdx(i, n) + (xForIdx(i + 1, n) - xForIdx(i, n)) * f;
+    }
+  }
+  return PLOT_RIGHT;
+}
+
+// Same nightRuns / sunLines / dayDividers / sunMarkers SwellChart computes,
+// but as a pure function so the prediction timeline can reuse the geometry
+// without sharing state.
+function computeTimelineGeometry(hours) {
+  const n = hours.length;
+  if (!n) return { dayDividers: [], sunMarkers: [], nightRuns: [], sunLines: [] };
+  const dayMap = new Map();
+  const sunMarkers = [];
+  const dayDividers = [];
+  const seen = new Set();
+  for (let i = 0; i < n; i++) {
+    const t = new Date(hours[i].time);
+    const key = t.getFullYear() + '-' + t.getMonth() + '-' + t.getDate();
+    if (!seen.has(key)) {
+      seen.add(key);
+      const sun = sunTimes(t, LAT_WIND);
+      dayMap.set(key, sun);
+      const midH = (sun.sunsetHr > sun.sunriseHr) ? (sun.sunriseHr + sun.sunsetHr) / 2 : 12;
+      const midnight = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
+      sunMarkers.push({ x: xAtMsForHours(midnight + midH * 3600000, hours) });
+    }
+    if (t.getHours() === 0 || i === 0) {
+      const sun = dayMap.get(key);
+      const midH = (sun.sunsetHr > sun.sunriseHr) ? (sun.sunriseHr + sun.sunsetHr) / 2 : 12;
+      const midnight = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
+      const label = t.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: '2-digit' }).replace(',', '');
+      dayDividers.push({ x: xForIdx(i, n), label, labelX: xAtMsForHours(midnight + midH * 3600000, hours), i });
+    }
+  }
+  const sunLines = [];
+  dayMap.forEach((sun, key) => {
+    const parts = key.split('-').map(Number);
+    const midnight = new Date(parts[0], parts[1], parts[2]).getTime();
+    sunLines.push({ x: xAtMsForHours(midnight + sun.sunriseHr * 3600000, hours) });
+    sunLines.push({ x: xAtMsForHours(midnight + sun.sunsetHr * 3600000, hours) });
+  });
+  const isNight = [];
+  for (let i = 0; i < n; i++) {
+    const t = new Date(hours[i].time);
+    const key = t.getFullYear() + '-' + t.getMonth() + '-' + t.getDate();
+    const sun = dayMap.get(key);
+    const hr = t.getHours() + t.getMinutes() / 60;
+    isNight.push(hr < sun.sunriseHr || hr >= sun.sunsetHr);
+  }
+  const xStartFor = (i) => i === 0 ? PLOT_LEFT : (xForIdx(i - 1, n) + xForIdx(i, n)) / 2;
+  const xEndFor = (i) => i === n - 1 ? PLOT_RIGHT : (xForIdx(i, n) + xForIdx(i + 1, n)) / 2;
+  const nightRuns = [];
+  let start = null;
+  for (let i = 0; i < n; i++) {
+    if (isNight[i] && start === null) start = i;
+    if ((!isNight[i] || i === n - 1) && start !== null) {
+      const end = isNight[i] && i === n - 1 ? i : i - 1;
+      nightRuns.push({ x: xStartFor(start), w: xEndFor(end) - xStartFor(start) });
+      start = null;
+    }
+  }
+  return { dayDividers, sunMarkers, nightRuns, sunLines };
+}
+
+// Per-feature std across LOO fold weight vectors. Drives the ±1σ uncertainty
+// band on the forest plot. Returns null when the LOO bundle is missing.
+function foldWeightStds(loo) {
+  if (!loo || !loo.foldWeights || !loo.foldWeights.length) return null;
+  const folds = loo.foldWeights;
+  const nF = folds[0].length;
+  const stds = [];
+  for (let j = 0; j < nF; j++) {
+    let sum = 0, sumSq = 0;
+    for (let i = 0; i < folds.length; i++) { sum += folds[i][j]; sumSq += folds[i][j] * folds[i][j]; }
+    const mean = sum / folds.length;
+    const variance = (sumSq / folds.length) - mean * mean;
+    stds.push(Math.sqrt(Math.max(0, variance)));
+  }
+  return stds;
+}
+
+// Classify a logged entry's swell direction relative to the reef window.
+// Drives the scatter dot color: in (well inside), edge (in window but off
+// center), out (outside window — alignment clamped to 0).
+function alignmentClass(entry) {
+  if (!entry || !entry.conditions || !entry.conditions.swell) return 'out';
+  const dir = entry.conditions.swell.direction;
+  if (dir == null) return 'out';
+  const geo = _windowGeometry();
+  const a = _dirAlignment(dir, geo);
+  if (a >= 0.5) return 'in';
+  if (a > 0)    return 'edge';
+  return 'out';
+}
+
+const ALIGNMENT_COLORS = {
+  in: QUALITY_COLORS.good,    // #57e649
+  edge: QUALITY_COLORS.fair,  // #fb923c
+  out: QUALITY_COLORS.poor,   // #ff4747
+};
+
+const PREDICTION_SOURCES = [
+  ...FORECAST_SOURCES,
+  { label: 'Trained on your logged Chocomount sessions' },
+];
+const MODEL_DIAG_SOURCES = [
+  { label: 'Trained on your logged Chocomount sessions' },
+];
+
+// Pretty feature labels — keep raw snake_case in code (matches the trained
+// weight keys logged to console) but render readable text in the UI.
+const FEATURE_LABELS = {
+  swell_height: 'Swell height',
+  swell_period: 'Swell period',
+  swell_dir_alignment: 'Swell-direction alignment',
+  swell_dir_outside_deg: 'Swell-direction outside (°)',
+  period_x_alignment: 'Period × alignment',
+  sec_swell_height: 'Secondary swell height',
+  sec_swell_period: 'Secondary swell period',
+  sec_dir_in_window: 'Secondary swell in window',
+  tide_height: 'Tide height',
+  time_to_low: 'Hours to low tide (signed)',
+  low_incoming: 'Low + incoming flag',
+  wind_speed: 'Wind speed',
+  wind_offshore_score: 'Wind offshore score',
+};
+function prettyFeature(name) { return FEATURE_LABELS[name] || name; }
+
 // modelStatus drives the empty-state overlays on the three new cards:
 //   'loading' → auth/logs/tide still in flight
 //   'noAuth'  → user is anonymous or sign-in didn't complete

@@ -19,8 +19,9 @@ at each commit; serves as a resume point if a session times out mid-flight.
 ## Stages
 
 - [x] **Stage 0** — extractCondFeatures fallback + Sources non-link items + this doc
-- [ ] **Stage 1** — Prediction/geometry helpers (computePredictionSeries,
-      yForScore, scoreQ, computeTimelineGeometry, foldWeightStds, alignmentClass)
+- [x] **Stage 1** — Prediction/geometry helpers (computePredictionSeries,
+      yForScore, scoreQ, computeTimelineGeometry, foldWeightStds,
+      alignmentClass, FEATURE_LABELS / prettyFeature, source lists)
 - [ ] **Stage 2** — Card 1: PredictedScoreTimeline (800×270 SVG, 3 colored
       lines, hover banner desktop + mobile, empty-state overlays, sources)
 - [ ] **Stage 3** — Card 2: FeatureWeightsForestPlot (tab pills, vertical
