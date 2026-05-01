@@ -626,4 +626,552 @@ The reverse is **not** symmetric: selecting a buoy or moving the pin **does** ch
 
 ---
 
-*End of sections 4–9. Sections 10–16 reserved for the next prompt.*
+## 10. Regression / "Learned Preferences" model
+
+### 10.1 Files and lines
+
+All regression/matching code lives in `app.js`, in three contiguous sections:
+
+- **`app.js:4107–4482`** — "SURF LOG — Linear Regression (Normal Equation)" — feature definitions, matrix algebra, training, leave-one-out validation, sanity logging, weights panel render.
+- **`app.js:4484–4569`** — "SURF LOG — Forecast Matching" — match-percentage formula, prediction helper, per-day best-match search.
+- **`app.js:4572–4677`** — personal-match toggle, card rendering, match modal, feedback save.
+
+Storage hooks: `app.js:2977–3169`. Trigger sites for `slRetrain()`: `app.js:3008, 3024, 3041, 3168, 3938, 4709`.
+
+### 10.2 The exact method
+
+**OLS via the normal equation, with three independent sub-models, ridge term ε = 0.001 on the diagonal of XᵀX, z-scored features, mean-centered target, no explicit intercept term.** Not logistic; not iteratively re-weighted; closed-form one-shot.
+
+Cite — `app.js:4237-4242`:
+
+```js
+function normalEquation(X,y) {
+  const Xt=matTranspose(X), XtX=matMul(Xt,X);
+  for(let i=0;i<XtX.length;i++) XtX[i][i]+=0.001;
+  const inv=matInvert(XtX); if(!inv) return null;
+  return matMul(inv, matMul(Xt, y.map(v=>[v]))).map(r=>r[0]);
+}
+```
+
+The `+=0.001` on the diagonal is a small Tikhonov / ridge term to keep XᵀX numerically invertible; weights are otherwise unconstrained. Inversion is by hand-rolled Gauss–Jordan with partial pivoting (`app.js:4225-4235`); singular matrices return `null` and the model is left as `null`.
+
+**Three sub-models, not one.** Each has its own feature set, target, weights vector, stats (per-feature mean/std plus targetMean), and validation RMSE. From `slRetrain()` at `app.js:4308-4346`:
+
+| sub-model | target | feature set name | feature count |
+|---|---|---|---|
+| **wave** | `e.ratings.size` | `WAVE_FEATURE_NAMES` | 8 |
+| **ride** | `e.ratings.rideQuality` | `RIDE_FEATURE_NAMES` | 6 |
+| **cond** | `e.ratings.windQuality` | `COND_FEATURE_NAMES` | 2 |
+
+This matches the three-section weights panel rendered at `app.js:4474-4480` ("Wave Score Weights", "Ride Quality Score Weights", "Conditions Score Weights").
+
+### 10.3 Leave-one-out cross-validation
+
+**Yes.** `leaveOneOutRMSE(entries, featureExtractor, targetFn)` at `app.js:4283-4306` runs a true leave-one-out: for each held-out row, refit on the remaining rows (mean/std/weights all recomputed on the training fold), predict the held-out target via `pred = m.stats.targetMean + Σ wj·zj`, accumulate squared error, return `√(SSE/N)`.
+
+The metric is **RMSE only** — there is no R² or residual diagnostic in the production validation path. The result is stored as `STATE.surfLogWaveValidation` / `surfLogRideValidation` / `surfLogCondValidation` (`app.js:4333, 4338, 4343`) and rendered as `Validation RMSE: X.XX (leave-one-out)` in the weights panel (`app.js:4463-4465`).
+
+A separate diagnostic, `_logRegressionSanity()` at `app.js:4437-4447`, additionally computes R² (line 4413: `r2 = 1 - sse / ssTot` where `ssTot = std² * n`), pred range, baseline RMSE (= actual std), and a "scale mismatch" guard (line 4426: flags pred values outside `[0, 12]` or with std < 1.5 when actual std > 1.5). This output goes only to `console.groupCollapsed('[regression-sanity] …')` — **not surfaced in the UI**.
+
+**Min-sample gate.** `trainModel` requires `X.length >= max(2 * nF, 12)` (`app.js:4276`). LOO requires `minSamples + 1` (`app.js:4290`). With 8 features the wave model needs ≥16 sessions; with 6, ride needs ≥12; with 2, cond needs ≥12.
+
+### 10.4 Inputs (features) and target per sub-model
+
+#### Wave sub-model — target `ratings.size` (0–10)
+
+`WAVE_FEATURE_NAMES` at `app.js:4123-4127`:
+
+```js
+['swell_height','swell_period','swell_dir_alignment','swell_dir_outside_deg',
+ 'period_x_alignment',
+ 'sec_swell_height','sec_swell_period','sec_dir_in_window']
+```
+
+Built by `extractWaveFeatures(cond)` at `app.js:4172-4190`. Source fields read off `cond.swell.{height,direction,period}` and `cond.swell.secondary.{height,direction,period}`.
+
+#### Ride sub-model — target `ratings.rideQuality` (0–10)
+
+`RIDE_FEATURE_NAMES` at `app.js:4131-4134`:
+
+```js
+['swell_dir_alignment','swell_dir_outside_deg','swell_period',
+ 'tide_height','time_to_low','low_incoming']
+```
+
+Built by `extractRideFeatures(cond)` at `app.js:4192-4209`. `time_to_low` is **signed**: rising stage → past low → negative; falling stage → upcoming low → positive (line 4203). `low_incoming` is a 0/1 indicator: tide below the user's session-history median AND rising (line 4204). The median itself is recomputed from logged tide heights at every retrain (line 4314-4319).
+
+#### Cond sub-model — target `ratings.windQuality` (0–10)
+
+`COND_FEATURE_NAMES` at `app.js:4139-4141`:
+
+```js
+['wind_speed','wind_offshore']
+```
+
+Built by `extractCondFeatures(cond)` at `app.js:4211-4221`. Missing `wind.speed` is filled with `_COND_WIND_MEDIAN` (recomputed at retrain, `app.js:4321-4328`); missing `wind.direction` becomes 0 (treated as cross-shore by `windOffshoreness`).
+
+#### Disabled / dead features
+
+`blown_water_index` is computed by `buildForecastConditions` (`app.js:4528-4530`) and persisted with each session (`app.js:3465, 3648`), but **does not appear in any feature vector** for any sub-model — confirmed by reading the three `*_FEATURE_NAMES` arrays. The header comment at `app.js:4119` calls this out: "blown_water_index disabled for now — kept in code for future use."
+
+### 10.5 Feature normalization / encoding
+
+**Continuous features → z-scored** per training batch. From `_trainOnArrays` at `app.js:4251-4269`:
+
+```js
+for (let j = 0; j < nF; j++) {
+  const col = X.map(r => r[j]);
+  const mean = col.reduce((a,b) => a+b, 0) / col.length;
+  const variance = col.reduce((a,b) => a + (b-mean)*(b-mean), 0) / col.length;
+  stats.mean[j] = mean;
+  stats.std[j] = Math.sqrt(variance);
+}
+const Xn = X.map(row => row.map((v,j) => stats.std[j] > 1e-10 ? (v - stats.mean[j]) / stats.std[j] : 0));
+```
+
+A constant feature collapses to z = 0 instead of dividing by zero (`std > 1e-10` guard).
+
+**Target → mean-centered** (NOT z-scored), so weights remain in rating units and predictions land in rating space:
+
+```js
+const yMean = y.reduce((a,b) => a+b, 0) / y.length;
+const yCentered = y.map(v => v - yMean);
+…
+stats.targetMean = yMean;
+```
+
+The intercept is implicit: `pred = stats.targetMean + Σ wj · zj` (header comment at `app.js:4248-4250`; prediction loop at `app.js:4504-4509`).
+
+**Circular features (wind/swell direction) — NOT sin/cos decomposition.** They are reduced to scalars before entering the regression:
+
+- `swell_dir_alignment = max(0, 1 − |dir − center| / half)`, the linear hat function over the swell window (`_dirAlignment` at `app.js:4168`). Window is `CONFIG.chocomount.swellWindowMin/Max = 115°–158°`, center 136.5°, half-width 21.5° — see `_windowGeometry()` at `app.js:4162-4166`.
+- `swell_dir_outside_deg = clamp(0, 45) of degrees beyond the nearer window edge` (`_dirOutsideDeg` at `app.js:4170`).
+- `sec_dir_in_window` is a 0/1 indicator (`app.js:4182`).
+- `wind_offshore = cos(angular_gap_to_335°)` so it ranges −1..+1 (`windOffshoreness` at `app.js:4145-4150`). This is the only feature in the system that uses cos directly.
+
+The header comment at `app.js:4116-4118` makes the choice explicit: "Direction encoded as two window-relative features (alignment + outside_deg) instead of raw sin/cos so the regression can reveal whether the swell window acts as a hard gate, a gradual ramp, or both."
+
+**One feature interaction**: `period_x_alignment = period × dir_alignment` (`app.js:4186`). No polynomial terms beyond that.
+
+### 10.6 Training triggers
+
+`slRetrain()` is invoked at exactly six sites:
+
+| Site | Trigger |
+|---|---|
+| `app.js:3008` (`addLogEntry`) | After every new session save |
+| `app.js:3024` (`updateLogEntry`) | After every session edit |
+| `app.js:3041` (`deleteLogEntry`) | After session delete |
+| `app.js:3168` (`loadLogsFromFirebase`) | After Firestore log fetch on init / re-auth |
+| `app.js:3938` (import-JSON handler) | After bulk import |
+| `app.js:4709` (`initApp`) | Once on page load, after `loadSurfLog()` |
+
+There is **no manual "retrain" button** and no user-facing threshold control. The "we have enough data to fit" decision is the per-model `X.length >= max(2*nF, 12)` check inside `trainModel` (`app.js:4276-4277`); below that, the weights stay `null` and the panel shows `Need N+ sessions to train.` (`app.js:4451`).
+
+### 10.7 Persistence
+
+**The model is in-memory only.** The fitted weights, stats, and validation RMSE live exclusively on `STATE`:
+
+```js
+surfLogWaveWeights: null, surfLogWaveStats: null, surfLogWaveValidation: null,
+surfLogRideWeights: null, surfLogRideStats: null, surfLogRideValidation: null,
+surfLogCondWeights: null, surfLogCondStats: null, surfLogCondValidation: null,
+```
+
+(`app.js:77-85`). I searched for any write of these keys to `localStorage` or Firestore and found none — every page load re-fits from scratch from the logged sessions. What **is** persisted is the *training data*: the surf-log entries themselves, written to:
+
+- `localStorage.lcc_surfLog` (`saveSurfLog` at `app.js:2996-3001`).
+- Firestore collection `surf_logs`, document id = entry id (`saveLogEntryToFirebase` at `app.js:3128`).
+
+`loadSurfLog` at `app.js:2980-2994` prefers Firestore when authenticated (`loadLogsFromFirebase`), falls back to localStorage on failure.
+
+### 10.8 Match-threshold logic for forecast → session matching
+
+**There is no per-feature or global threshold above which a forecast hour is "a match".** Matching is implemented as a continuous similarity score; every forecast hour gets a percentage, and the top one per day wins.
+
+The match formula, `_matchPct(ef, ff, weights, stats)` at `app.js:4488-4499`:
+
+```js
+function _matchPct(ef, ff, weights, stats) {
+  if (!stats) return 0;
+  const w = weights || new Array(ef.length).fill(1);
+  let dist = 0;
+  for (let i=0;i<ef.length;i++) {
+    const sd = stats.std[i]; if (sd < 1e-10) continue;
+    const ze = (ef[i] - stats.mean[i]) / sd;
+    const zf = (ff[i] - stats.mean[i]) / sd;
+    dist += Math.abs(w[i]) * Math.pow(ze - zf, 2);
+  }
+  return Math.round(Math.exp(-Math.sqrt(dist))*100);
+}
+```
+
+So a session feature vector `ef` and a forecast feature vector `ff` are both z-scored using the **session-history mean/std**, the squared per-feature gap is weighted by `|wj|` (the regression weight magnitude — features the model thinks matter weigh more), summed, square-rooted, and then mapped through `100 · exp(−√Σ)` into a percentage. Identity gives 100; every unit of z-distance multiplied by feature importance pulls the score down exponentially.
+
+**Per sub-model** there are three of these: `computeWaveMatch`, `computeRideMatch`, `computeCondMatch` (`app.js:4500-4502`).
+
+**Daily best match.** `findBestMatchPerDay(marine, wind, tideHiLo)` at `app.js:4536-4570` groups forecast hours by `time.split('T')[0]`, then for each (day, forecast hour, logged session) triple computes `(wPct + rPct + cPct)/3` and keeps the session+hour pair that maximises that average:
+
+```js
+const avg=(wPct+rPct+cPct)/3;
+if(avg>((bestWM+bestRM+bestCM)/3)){
+  bestWM=wPct;bestRM=rPct;bestCM=cPct;bestE=entry;bestH=hi;
+  …
+}
+```
+
+(`app.js:4558-4564`). The simple-average aggregation is hardcoded — no min-of-three, no thresholded gating. There is no minimum score below which a day is suppressed; every day with any entries gets a card. The `.slice(0,7)` at `app.js:4599` only caps the rendered count, not the match quality.
+
+If **no model has trained yet** (weights still null), the function falls back to `simpleMatchPct(a,b)` at `app.js:4514-4517`: unweighted, raw-units (not z-scored), `100 · exp(−√(Σ(a-b)²)/n)`. This is what runs when the user has fewer than the min-samples count.
+
+**User-tunable today: no.** No slider, threshold input, or weight override exists in the UI. The weights panel at `app.js:4469-4482` is read-only — it renders bars for each weight and the LOO RMSE, with no edit affordance. The match-toggle button at `app.js:4577-4587` only collapses/expands the cards.
+
+**Where it's rendered.** `renderPersonalMatchCards()` at `app.js:4589-4614` populates `#personal-match-cards`. The visibility of the toggle is governed by `updatePersonalMatchToggle()` at `app.js:4572-4575`: shown only when `STATE.isChocomount && STATE.surfLog.length > 0`. Each card shows the day, predicted scores (`predictWaveRating` / `predictRideRating` / `predictCondRating`, `app.js:4510-4512`), three match percentages, and a thumbnail; clicking opens `openMatchModal` at `app.js:4620-4642`.
+
+### 10.9 Diagnostics surfaced today
+
+| Surface | What it shows | Where |
+|---|---|---|
+| Weights panel (UI) | Per-feature signed weight as % of Σ\|w\|, plus `Validation RMSE: X.XX (leave-one-out)` | `renderWeightsPanel` `app.js:4469-4482`; `renderWeightSection` `app.js:4449-4467` |
+| `[surf-log] retrain` console group | Pretty-printed weights + LOO RMSE per sub-model | `_logRetrainSummary` `app.js:4354-4361` |
+| `[regression-sanity]` console group | n, pred/actual range, mean, std, RMSE, baseline RMSE, **R²**, "beats baseline" check, scale-mismatch warning — **per sub-model** | `_logRegressionSanity` `app.js:4437-4447`; `_logSanityModel` `app.js:4397-4436` |
+| `window._llcDiagnoseHistoricalFetch()` | Per-entry table of which historical lookups succeed/fail (DevTools only) | `app.js:3371-3394` |
+
+**R² and residuals exist but are buried in console output.** Nothing in the rendered DOM exposes R², per-residual analysis, or cross-fold variance. The "Validation RMSE" line is the only fit diagnostic the user actually sees.
+
+---
+
+## 11. Charts (per-chart inventory)
+
+| Panel | Element id | Library / approach | Interactions | Data source |
+|---|---|---|---|---|
+| **Swell forecast chart** | `<canvas id="forecast-canvas">` (`index.html:138`) | Hand-rolled **Canvas 2D** in `drawForecastChart` / `_drawForecastChartPage` (`app.js:1596-1974`) | Mouse `mousemove` selects nearest hour, paints crosshair line + detail bar (`app.js:2065-2073`); `mouseleave` clears. Touch: tap/drag selects an hour; horizontal swipe (>60px, ±35° from horizontal) pages forward/back (`app.js:2089-2143`). Page nav also via `#forecast-prev` / `#forecast-next` arrow buttons (`app.js:2152-2168`) | Open-Meteo Marine + Open-Meteo Weather, joined with daylight calc + tide hi/lo overlay (`app.js:1049, 1202`) |
+| **Tide canvas** | `<canvas id="tide-canvas">` (`index.html:163`) | Hand-rolled **Canvas 2D** in `drawTideChart` (`app.js:2202-`) | None — static plot. No `addEventListener` on the canvas (grep of `tide-canvas` returned nothing on event handlers). A vertical `now` line is drawn but is non-interactive (`app.js:2253-2261`) | NOAA CO-OPS predictions (`fetchTidePredictions`, range=3 days, interval=hilo paired with hourly predictions); fed by `loadTidesPanel(station)` `app.js:1539-1569` |
+| **Spectral compass rose** | `<canvas id="compass-canvas">` (`index.html:200`) | Hand-rolled **Canvas 2D** in `drawCompassRose` (`app.js:2492-2667`) | The two `.rose-scale-chip` buttons toggle `STATE.roseScaleMode` between `linear` / `sqrt` and re-draw (`initRoseScaleToggle` `app.js:2827-2854`). Choice persists in `localStorage.lcc-rose-scale`. No mouse/touch on the canvas itself. A `ResizeObserver` on the parent re-draws on container size change (`app.js:2806-2825`) | NDBC `.data_spec` + `.swdir` parsed by `parseNDBCSpectral`; or pipeline fallback `data/buoy.json._pipelineSummary` |
+| **Wave energy spectrum** | `<canvas id="spectrum-canvas">` (`index.html:220`) | Hand-rolled **Canvas 2D** in `drawSpectrum` (`app.js:2669-`) | None on the canvas. Re-draws on container resize via the same `ResizeObserver` (`app.js:2806-2825`) | Same NDBC spectral parse output as compass rose |
+| **Wave-spectra summary** | `<div id="spectral-summary-table">` (`index.html:181`) | Plain HTML `<table>` built by `renderSpectralSummary` (`app.js:2360-2415`) — **no canvas, no SVG, no chart library**. 3 rows: Primary Swell / Wind Waves / Significant Hs, columns Height / Period / Direction | None — static table | NDBC `.spec` text via `parseSpecSummaryFromText`, with energy-weighted primary direction override from `computePrimarySwellDir(bins)` (`app.js:2386-2390`) |
+| **Buoy map / tide map** | `<div id="buoy-map">` / `<div id="tide-map">` | **Leaflet 1.9.4** loaded from CDN (`index.html:9, 452`) on Carto Light tiles (`app.js:51-52, 777, 872`). Sea-level marker recoloring done in JS, not via D3/SVG | Marker click → `selectBuoy` / `selectTideStation`; right-click on buoy map drops a custom pin (`app.js:839-846`); marker draggable for the forecast pin | static `data/buoys-east-coast.json` and `data/tide-stations.json` |
+| **Wind / Waves maps** | `<iframe id="windy-wind">` / `<iframe id="windy-swell">` (`index.html:105, 114`) | **Embedded Windy.com iframe** — no local rendering | Whatever Windy's iframe ships (zoom/pan inside iframe). Cross-origin, so no programmatic interaction from the host page | URL constructed from buoy lat/lon at `app.js:1527-1532` |
+| **Hourly forecast detail table** | `<table id="hourly-table">` (`index.html:244`) | Plain HTML table built by `buildHourlyTable` (`app.js:2860-`). Not a chart, but appears in the same panel stack | None | Open-Meteo Marine + Wind, 72-hour cap (`app.js:2874`) |
+
+No D3, no Chart.js, no SVG-based charts in the production page. Two CDN libs total: **Leaflet** (maps) and **Firebase compat SDK** (auth/firestore/storage).
+
+---
+
+## 12. Photos
+
+### 12.1 URL-based photos
+
+User pastes a URL into `<input id="sl-photo-url">`, clicks the `#sl-add-url` button, which pushes the raw string into `_slPhotos` (`app.js:3737-3740`):
+
+```js
+el('sl-add-url')?.addEventListener('click', () => {
+  const input = el('sl-photo-url'), url = (input.value||'').trim();
+  if (url) { _slPhotos.push(url); _slPhotoFiles.push(null); input.value = ''; renderPhotoGallery(); }
+});
+```
+
+**No URL validation** — any non-empty trimmed string is accepted. **No max-count cap** in this code path (the form pushes unbounded; the only enforcement is `localStorage` quota at save time, which throws "Storage full" via `saveSurfLog` at `app.js:3000`).
+
+In the saved-entry schema, `entry.photos` is a heterogeneous array. Each element is either:
+
+- a plain string (legacy or pasted URL), or
+- an object `{url: string, path: string}` (the Storage-uploaded shape, `app.js:3088, 3102`).
+
+`photoUrl(p)` at `app.js:3058-3063` normalises both forms to a string for rendering.
+
+On Firestore round-trip, the loader filters to entries that have a usable URL: `photos.filter(p => p && (p.url || typeof p === 'string'))` at `app.js:3159`.
+
+### 12.2 Uploaded photos (file picker → Storage)
+
+End-to-end pipeline:
+
+1. **File picker** — `<input type="file" id="sl-photo-file">` change handler at `app.js:3741-3747`. Multiple files allowed (loops `Array.from(e.target.files)`).
+2. **Client-side resize** — `resizeImageFile(f, 800, 0.7)` at `app.js:3209-3228`. Reads file as data URL → `<img>` decode → draws into a canvas with width capped at **800 px** (height proportional) → exports `canvas.toDataURL('image/jpeg', 0.7)`. Always JPEG, always quality 0.7.
+3. **Optimistic preview** — the data-URI string and the original `File` object are pushed to `_slPhotos` and `_slPhotoFiles`; the gallery thumb appears immediately.
+4. **Save** — `addLogEntry`/`updateLogEntry` calls `saveLogEntryToFirebase` (`app.js:3065-3129`).
+5. **Storage upload** — for each entry where the photo is still a `data:` string (`app.js:3089-3109`):
+   - Path: `surf-photos/raw/<userId>/<YYYY>/<MM>/<timestamp>_<i>.jpg` (`app.js:3091`).
+   - Upload preferentially the original `File` blob from `_slPhotoFiles[i]` (so the JPEG retains EXIF and full resolution); only if that's missing does it `fetch()` the resized data-URI and upload the smaller blob (`app.js:3093-3100`).
+   - On success → `{url, path}` shape pushed to `processedPhotos`.
+   - On failure → photo is **silently dropped**. Comment at `app.js:3106-3107`: "Do NOT store raw base64 in Firestore — it exceeds the 1MB document limit and gets truncated, producing broken images. Skip the photo instead."
+6. **Persisted URL** — `entry.photos = processedPhotos` is written into the Firestore `surf_logs/<id>` document (`app.js:3112, 3128`). After the upload returns, `addLogEntry` re-runs `saveSurfLog()` to refresh localStorage with the now-https URLs (`app.js:3011-3013`).
+
+### 12.3 Size limits / format restrictions / compression
+
+- **Resize cap**: 800 px wide (height scales proportionally).
+- **JPEG quality**: 0.7.
+- **No client-side file-size check** before resize — large images go straight into `FileReader.readAsDataURL`.
+- **No format restriction in JS**; the `<input type="file">` accept attribute is `accept="image/*"` (would need to verify in HTML — `index.html:316` area).
+- **Firestore 1 MB document cap** is the implicit ceiling; the data-URI fallback path is what the comment at `app.js:3106-3107` warns is unsafe to store in Firestore directly.
+- **Storage rules** live in `storage.rules` (not read in this audit; flagged as out of scope for §12).
+
+### 12.4 Display surfaces
+
+- **Form gallery thumbs** — `renderPhotoGallery` at `app.js:3230-3246`, `<div id="sl-photo-gallery">`, with per-photo × removal button.
+- **Surf-log table thumbnails** — up to 3 per row: `validPhotos = …slice(0,3)` at `app.js:4038-4040`.
+- **Personal-match card thumbnail** — first photo only (`m.entry.photos?.[0]`) at `app.js:4601`.
+- **Match modal carousel** — `updateModalCarousel(photos, idx)` at `app.js:4644-4652`, with prev/next dots; `<div id="modal-carousel-dots">` paginates by index. Wired by `initMatchModal` at `app.js:4654-4677`.
+
+---
+
+## 13. Historical conditions lookup
+
+### 13.1 Endpoints and the >5-day branching
+
+Entry point: `lookupHistoricalConditions(dateStr)` at `app.js:3613-3665`. Decision at `app.js:3617-3622`:
+
+```js
+// Dates older than 5 days: use actual NDBC buoy observations (Chocomount only)
+// Open-Meteo Marine API does not reliably provide historical swell for these dates
+const diffDays = (Date.now() - new Date(dateStr).getTime()) / 86400000;
+if (diffDays > 5 && STATE.isChocomount) {
+  return lookupNDBCHistoricalConditions(dateStr);
+}
+```
+
+So the routing is:
+
+| Age of date | Spot | Path |
+|---|---|---|
+| ≤ 5 days | any | `lookupHistoricalConditions` body — Open-Meteo Marine + Open-Meteo Weather + CO-OPS tide |
+| > 5 days | Chocomount only | `lookupNDBCHistoricalConditions` at `app.js:3396-3483` — NDBC stdmet historical archive + CO-OPS tide |
+| > 5 days | other spots | Falls through to the Open-Meteo path (the `&& STATE.isChocomount` short-circuits), which the code comment notes is unreliable |
+
+**Open-Meteo path, `lookupHistoricalConditions` (`app.js:3613-3665`):**
+
+- `fetchHistoricalWind` (`app.js:3518-3528`) — switches between `openMeteoWeather` (forecast endpoint with `past_days=7`) for ≤5d and `openMeteoArchive` for older.
+- `fetchHistoricalMarine` (`app.js:3530-3541`) — same split: `past_days=7` on the forecast endpoint or explicit `start_date=end_date` on the archive endpoint.
+- `fetchHistoricalTide` (`app.js:3543-3548`) — CO-OPS predictions, `interval=hilo`, range=24h, station hardcoded to `CONFIG.chocomount.tideStation = 8510719`.
+- Swell-arrival lag: `getSwellLagHours` at `app.js:3500-3516` averages primary swell period in `[T-5h, T-2h]` and uses `lag = buoyDistanceMiles / (1.5 × avgPeriod)` to step the swell-time index back.
+
+**NDBC path, `lookupNDBCHistoricalConditions` (`app.js:3396-3483`):**
+
+- `fetchNDBCHistoricalYear(buoyId, year)` at `app.js:3315-3326` — proxy-chained fetch of `https://www.ndbc.noaa.gov/view_text_file.php?filename=44097h<YYYY>.txt.gz&dir=data/historical/stdmet/`. Same proxy list as the live spectral fetch (corsproxy.io / allorigins / codetabs).
+- Yearly text cached in `_ndbcYearCache` (`app.js:3289`) keyed by `buoyId-year`.
+- Wave reading taken at the lagged time (`app.js:3429`), wind reading at session time (no lag, `app.js:3431`).
+- 24-hour blown-water-index recomputed from the NDBC rows (`app.js:3447-3454`).
+
+### 13.2 Latency caveats surfaced to the user
+
+`index.html:332`:
+
+```html
+<div class="sl-note">Weather archive has a ~5 day delay. Very recent sessions may show partial data.</div>
+```
+
+— displayed inline in the form's "Lookup Historical Conditions" section. Beyond that, the conditions display footers a `Source: …` line (`app.js:3686-3689`):
+
+- Open-Meteo path → `Source: Open-Meteo marine API`
+- NDBC path → `Source: NDBC buoy 44097 (measured)`
+
+When a swell lag is applied, an additional hint appears: `Using swell from ~Xh ago at buoy (travel time estimate)` (`app.js:3683-3685`).
+
+### 13.3 Auto-fill behaviour
+
+The lookup populates a single in-memory object `_slConditions` (`app.js:3697`, set at `app.js:3752`) which is then attached to the saved entry:
+
+```js
+notes: el('sl-notes')?.value || '', conditions: _slConditions || null
+```
+
+(`app.js:3778`). It does **not** auto-fill any visible form field — date, ratings, notes, photos all remain user-driven. Only the "Conditions" display block (`#sl-conditions-display`, rendered by `renderConditionsDisplay` at `app.js:3667-3691`) reflects what was looked up.
+
+The session's `ratings.size`, `ratings.windQuality`, `ratings.rideQuality` sliders default to 5 and stay 5 unless the user moves them (`app.js:3777`).
+
+### 13.4 What it does on missing data
+
+- **Open-Meteo path**, missing wind or marine response → `<span class="sl-hint">Historical data not available for this date.</span>` and returns null (`app.js:3626-3629`). The user can still save the entry with `conditions: null`.
+- **Open-Meteo path**, missing secondary-swell data with primary < 0.3 ft → just omits the `secondary` sub-object (`app.js:3657`).
+- **NDBC path**, no rows for that year → `NDBC historical data not available for YYYY.` (`app.js:3411`).
+- **NDBC path**, no nearby wave row → diagnostic console output of nearest 4 rows + `No NDBC wave observations found near this date.` (`app.js:3433-3439`).
+- **Tide-only failure** — if `fetchHistoricalTide` returns null but other promises resolve, `parseTideAtTime(null,…)` returns the safe default `{height:0, stage:'rising', timeToNearest:0}` (`app.js:3580-3581`). The entry will be saved with a flat-tide stub.
+
+### 13.5 Source labelling shown to the user
+
+Set on `cond.source = 'ndbc' | 'openmeteo'` (`app.js:3467, 3650`); rendered at `app.js:3687`:
+
+```js
+const srcLabel = cond.source === 'ndbc' ? 'NDBC buoy 44097 (measured)' : 'Open-Meteo marine API';
+```
+
+— so the user can tell a measured-buoy lookup from a model lookup.
+
+---
+
+## 14. Hidden / conditional surfaces
+
+### 14.1 "Coming by boat?" gate
+
+**Trigger.** First page load with no `sessionStorage['lcc-gate']` value shows the gate overlay (`#gate-overlay`) over a blank app shell (`app.js:411-441`).
+
+**Behaviour.**
+
+- **"Yes" button** (`#gate-yes`, `app.js:421-432`) — replaces `#gate-question` with `#gate-go-home`, the latter shown for 2 s then hidden again, returning the user to the same question. Crucially, "yes" **never sets `boatGatePassed` and never calls `initApp()`** — the user just bounces. It also does NOT write to sessionStorage, so reloading still shows the gate.
+- **"No" button** (`#gate-no`, `app.js:434-440`) — writes `sessionStorage.setItem('lcc-gate', 'no')`, sets `STATE.boatGatePassed = true`, hides the overlay, calls `initApp()`.
+
+**Where it routes.** "No" leads into the normal app with `boatGatePassed = true`. The Choc buoy is only shown on the buoy map when this flag is true (`app.js:785: if (buoy.home === 'chocomount' && !STATE.boatGatePassed) return`). The "by boat" branch in `initApp` at `app.js:4727-4734` skips the auto-select-Choc behaviour ("If by boat, just show the map, no auto-select"). So in the current code the only way to reach Chocomount is through "No" — there is **no** alternative path that completes the gate as "by boat".
+
+**sessionStorage key.** `'lcc-gate'`, value `'no'` is the only value ever written. On reload, `initGate` at `app.js:412-419` short-circuits when `saved` is truthy:
+
+```js
+if (saved) {
+  STATE.boatGatePassed = saved === 'no';
+  …
+  initApp();
+  return;
+}
+```
+
+`STATE.boatGatePassed` is `true` if and only if the saved value equals `'no'`. (Confirmed by `test-gate.js:57-61`.)
+
+### 14.2 Tab visibility gating
+
+`updateTabBarVisibility()` at `app.js:3196-3199`:
+
+```js
+function updateTabBarVisibility() {
+  const tabBar = el('tab-bar');
+  if (tabBar) tabBar.style.display = STATE.isChocomount ? '' : 'none';
+  if (!STATE.isChocomount && STATE.activeTab === 'surflog') switchTab('forecast');
+}
+```
+
+The Forecast/Surf-Log tab bar is only shown when the selected buoy is Chocomount. Selecting any other buoy (`STATE.isChocomount = false` at `app.js:930`) hides the tabs and forces the user back to the forecast view if they were on the surf log. Called from `selectBuoy` at `app.js:921` and `selectPin` (off-buoy click at `app.js:935`).
+
+### 14.3 Personal-matches visibility gating
+
+`updatePersonalMatchToggle()` at `app.js:4572-4575`:
+
+```js
+function updatePersonalMatchToggle() {
+  const w = el('personal-match-toggle-wrap');
+  if (w) w.style.display = (STATE.isChocomount && STATE.surfLog.length > 0) ? '' : 'none';
+}
+```
+
+The "Show My Personal Matches" button (`#personal-match-toggle-wrap`) only appears when both:
+
+- the active buoy is Chocomount (`STATE.isChocomount`), AND
+- the surf log has at least one entry.
+
+Even when shown, the cards start collapsed (`STATE.personalMatchesOpen = false` at `app.js:89`); `renderPersonalMatchCards` is only called on expand (`app.js:4585`).
+
+### 14.4 Other hidden / conditional surfaces
+
+- **Match modal** — `<div id="match-modal">` (initially `display:none`) opened by `openMatchModal` at `app.js:4620-4642`, closed by clicking the close button or backdrop (`app.js:4655-4656`).
+- **Sign-in prompt** — `<div id="sl-auth-prompt">` (initially `display:none`, `index.html:276`); shown when surf-log view is active and the user is anonymous; dismissable to local-only mode.
+- **Spectral panels** — `#panel-spectral-summary` and `#panel-spectral-row` start `style="display:none"` and only appear when the buoy has `spectral === true` and the parse succeeds (`app.js:1073, 1133, 1137`); grays-out branch shows `showSpectralEmpty` (`app.js:2421-`).
+- **Tides panel** — `#panel-tides` starts `display:none` (`index.html:156`); only shown after `loadTidesPanel` resolves with predictions.
+- **Advanced data section** — `#advanced-sections.collapsed` is gated by the toggle (`#advanced-toggle-btn`), wired by `initAdvancedToggle` (called at `app.js:4701`).
+- **Coming-by-boat "go home" splash** — `#gate-go-home` shown for 2 s after "Yes" click (`app.js:425-431`).
+- **Diagnostic globals** — `window._llcDiagnoseHistoricalFetch` (`app.js:3371`) is intentional dev-only API, not surfaced in any UI; user has to know to invoke it from DevTools.
+- **No query-string flags found** — search for `URLSearchParams\(window.location` / `location.search` in `app.js` returned nothing (verified by grep). All conditional surfaces are state- or session-gated, not URL-gated.
+
+---
+
+## 15. Build / deploy
+
+### 15.1 No build step
+
+The site is **pure static**. There is no `package.json`, `node_modules`, `vite.config.*`, `webpack.config.*`, `tsconfig.json`, or `.npmrc` at the repo root (`ls /home/user/LetsCheckChoc` shows only `index.html`, `app.js`, `style.css`, `firebase-config.js`, `test-gate.js`, plus `data/`, `scripts/`, `project/`, configs, AUDIT, README). The only `.json` files are `firestore.indexes.json` and the static data files. JavaScript ships unbundled and unminified directly from `app.js`, with Firebase and Leaflet pulled in as `<script src=…>` from CDNs (`index.html:9, 452`).
+
+### 15.2 Deploy to GitHub Pages
+
+The README says (`README.md:8-12`):
+
+> Source: Deploy from a branch · Branch: `main` / `root` · Save
+
+So deploy is **direct from `main`**, no `gh-pages` branch, no Action. There is no GitHub Actions workflow for site deploy in `.github/workflows/` — only `update-buoy.yml` exists. Each push to `main` is what GitHub Pages serves.
+
+### 15.3 buoy.json cron Action
+
+`.github/workflows/update-buoy.yml`:
+
+```yaml
+on:
+  schedule:
+    - cron: '15 */2 * * *'  # Every 2 hours at :15
+  workflow_dispatch:
+…
+- name: Fetch buoy data
+  run: python scripts/fetch_buoy.py
+- name: Commit and push
+  run: |
+    …
+    git add data/buoy.json
+    if git diff --cached --quiet; then
+      echo "No changes to commit"
+    else
+      git commit -m "Update buoy data $(date -u +'%Y-%m-%d %H:%M UTC')"
+      git push
+    fi
+```
+
+Runs every 2 hours at :15 past the hour; checks out, runs `pip install requests`, `python scripts/fetch_buoy.py`, commits `data/buoy.json` if it changed, and pushes to `main` as `github-actions[bot]`. Each push that produces a change re-deploys the static site.
+
+The `fetch_buoy.py` script is the single source of `data/buoy.json` — the pipeline fallback used by `fetchPipelineBuoy()` at `app.js:651-653`. Recent commit history (`git log --oneline -5`) shows `f430fe2 Update buoy data 2026-05-01 15:16 UTC` as a typical bot commit, confirming the cadence.
+
+### 15.4 Env vars / secrets
+
+No env vars at build time — there is no build. At runtime, the only configuration baked into the static bundle is `firebase-config.js`:
+
+```js
+const firebaseConfig = {
+  apiKey: "AIzaSyBWuLMPKGS91HSOzmQALinQl3w5FwkIdIs",
+  authDomain: "letscheckchoc.firebaseapp.com",
+  projectId: "letscheckchoc",
+  storageBucket: "letscheckchoc.firebasestorage.app",
+  messagingSenderId: "801516961544",
+  appId: "1:801516961544:web:c28584674e5be4643e36bd",
+  measurementId: "G-JFYS74CC6D"
+};
+```
+
+(`firebase-config.js:2-10`). This is the only Firebase config in the tree (`grep -r firebaseConfig` would confirm; not re-run here). There is no `.env`, no secret-injection step, no template substitution.
+
+The Firebase **web API key is not a secret in the cryptographic sense** — for client-side Firebase apps it identifies the project, not authenticates a privileged caller. Access control lives in `firestore.rules` and `storage.rules` (both present at the repo root, not audited in detail in §15). Flagged in §16 for completeness.
+
+The cron Action's only required secret is the default `GITHUB_TOKEN` for the push step (granted via `permissions: contents: write` in `update-buoy.yml`).
+
+---
+
+## 16. Open questions, inconsistencies, bugs
+
+Re-listed from earlier sections plus new items found in §10–§15.
+
+### 16.1 Carried forward from §1–§9
+
+- **Proxy-config shape mismatch.** `test-gate.js:74-77` validates that `CONFIG.api.ndbcProxies` has at least 2 entries with a `prefix:` field, but `app.js:41-45` defines the proxies with `name:` + `wrap:`, never `prefix:`. The test still passes — for the wrong reason. *(Verify: test 6 reads `match[1].match(/prefix:/g)`; the live config string has zero matches, so `proxyCount` would be 0, asserting `>= 2` should fail. Either the test is somehow not running this assertion path or the config previously used `prefix`. Flag as live discrepancy that warrants reproducing locally.)*
+- **`fetchTextWithProxies` proxy-shape mismatch.** `app.js:475-484` reads `proxy.encode` and `proxy.prefix`:
+
+  ```js
+  const url = proxy.encode
+    ? proxy.prefix + encodeURIComponent(rawUrl)
+    : proxy.prefix + rawUrl;
+  ```
+
+  but the live `CONFIG.api.ndbcProxies` entries have neither field. So `proxy.prefix` is `undefined`, the `url` becomes `"undefined" + rawUrl`, and `fetchText` fails for every proxy in the chain. **`fetchTextWithProxies` is broken for the spectral and stdmet live fetches** at `app.js:627, 633-638`. The newer `fetchWithProxies` at `app.js:491-` correctly uses `proxy.wrap(rawUrl)`.
+
+- **`fetchNWSWind` orphaned.** Defined at `app.js:644-648`, never called anywhere else in `app.js` (`grep -n fetchNWSWind` returns only the definition).
+- **README references deleted files.** `README.md:46, 50` list `scripts/fetch_forecast.py` and `data/forecast.json` as "Deleted" — fine in the table that documents the old layout, but the README still implies the surrounding text is current. The "What Replaces What" framing is fossilised.
+- **`scripts/spot_check_2023.py`** is present but referenced nowhere else in the codebase (no Action runs it, no doc mentions it, README doesn't list it).
+- **Committed Firebase web API key.** `firebase-config.js:3`. Web API keys are not secrets per Firebase's own guidance — security comes from `firestore.rules` / `storage.rules` / App Check. Flagged for completeness; the rules files exist on disk but were not validated in this audit.
+
+### 16.2 New, found in §10–§15
+
+- **`blown_water_index` is computed but never used as a feature.** `app.js:4528-4530, 3465, 3648` build it for every session and forecast hour; no `*_FEATURE_NAMES` array references it; the regression weights for it don't exist. The header comment at `app.js:4119` says "disabled for now — kept in code for future use," so this is intentional, but the runtime cost (extra fetch-window scan, extra field on every persisted entry) is being paid for nothing.
+- **`wind_offshore_score` similarly unused as a feature.** Persisted on every entry (`app.js:3466, 3649`) and read for the match modal display (`app.js:4638`), but not in any feature vector. The cond model uses `wind_offshore` recomputed from `cond.wind.direction`, not the stored score.
+- **Match-percentage normalization uses the live training stats.** `_matchPct` at `app.js:4488-4499` z-scores both the session and forecast feature vectors using `STATE.surfLog*Stats`, which are recomputed at every retrain. This means a user's old session match-scores **shift every time a new session is logged**, even for forecast hours that haven't changed. The `entries.forEach` loop in `findBestMatchPerDay` at `app.js:4554` re-extracts session features each call, so the displayed "X% match" is not a stable identifier.
+- **Match aggregation is a simple average of three percentages.** `(wPct + rPct + cPct) / 3` at `app.js:4558` weights each sub-model equally regardless of how well the underlying model fits. A cond model with RMSE >> baseline still gets a third of the vote.
+- **Best-match search has no fallback for null model.** When no model has trained yet, the code paths in `findBestMatchPerDay` (`app.js:4555-4557`) call `simpleMatchPct` with the **raw feature vectors** — so wave height in feet (~1–8) is summed in quadrature with `dirAlignment` (∈ [0,1]) and `period_x_alignment` (~0–80). Different scales swamp the smaller features. The `simpleMatchPct` divides by `a.length` inside `exp(−√x/n)`, partially compensating but not normalising.
+- **`personal-match-toggle-wrap` displays `surfLog.length > 0` even for entries that lack `conditions`.** The toggle appears the moment any entry exists; but `findBestMatchPerDay` filters to `entries.filter(e=>e.conditions)` (`app.js:4538`) which can return zero matches, in which case the cards container shows "No matches. Log more sessions." (`app.js:4597`). The user is shown an enabled toggle that resolves to an empty state — minor UX friction.
+- **Photo data-URI race.** `addLogEntry` at `app.js:3007-3017` does `STATE.surfLog.unshift(entry)` and `saveSurfLog()` *before* `saveLogEntryToFirebase` resolves. If the user navigates before the upload completes, the entry's `photos` array still holds data-URI strings in localStorage. On next load (`loadSurfLog` → `loadLogsFromFirebase`), the Firestore copy may have been dropped if the upload failed silently (`app.js:3107`), but the localStorage cache won't reflect that. Users with flaky connections could see ghost photos.
+- **`STATE.surfLog` is community-wide, not user-scoped.** `loadLogsFromFirebase` at `app.js:3149-3153` fetches `surf_logs` ordered by `createdAt` desc with `limit(200)`, **no `where(userId == _fbUserId)` clause**. The training step **does** scope to user (`slRetrain` at `app.js:4310-4311: const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog`), but the surf-log table at `app.js:4007` and the personal-match search at `app.js:4538` iterate `STATE.surfLog` directly, without filtering by user. So the table and the personal-match cards mix sessions from every authenticated user — possibly intentional ("community log — all authenticated users see all sessions" comment at `app.js:3149`), but at odds with the "personal" framing of the matches.
+- **Gate "Yes" path never persists.** `app.js:421-432` writes nothing to sessionStorage, so a "Yes" user is shown the gate again on every reload. Only "No" sticks. If the intent was "Yes → block forever in this tab," the absence of `sessionStorage.setItem('lcc-gate', 'yes')` is a bug; if the intent was "Yes is a no-op flourish," then the "go home" splash is purely decorative. Ambiguous.
+- **Open-Meteo path with non-Choc spot + age > 5d.** `lookupHistoricalConditions` at `app.js:3617-3622` short-circuits to NDBC only when `STATE.isChocomount`. For any other buoy, dates older than 5 days fall through to Open-Meteo's archive endpoint, which the in-line comment at `app.js:3618` calls "not reliably" providing historical swell. No user-visible warning differentiates this case from the ≤5-day path.
+- **`fetchTextWithProxies` proxy bug (re-emphasised, since it was the live spectral path).** This affects every NDBC live spectral / stdmet pull. Whether spectral panels work at all is contingent on whether all six `.spec/.data_spec/.swdir/.swdir2/.swr1/.swr2` requests fail-and-return-null without crashing the surrounding chain. Worth verifying live behaviour rather than relying on log inspection.
+- **`renderConditionsDisplay` reads `cond.wind_offshore_score.toFixed(2)` and `cond.blown_water_index.toFixed(2)` unconditionally** at `app.js:3680-3681`. If either is missing or not a number, this throws. The historical paths set both, but the `buildForecastConditions` path also sets both — looks safe; flag as fragile only.
+- **No R²/residual surface.** Already noted in §10.9 — diagnostics exist but are console-only. From a user perspective the model is opaque past "RMSE: 1.4".
+
+— *End of audit. Sections 1–16 complete.*
