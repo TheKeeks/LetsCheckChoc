@@ -280,4 +280,350 @@ Shallow only. The swell-forecast usage of Open-Meteo and NDBC will be re-examine
 
 ---
 
-*End of sections 1–3. Section 4 (swell forecast deep dive) is intentionally not started; awaiting the next prompt.*
+*End of sections 1–3.*
+
+---
+
+## 4. Swell forecast pipeline (deep dive)
+
+### 4.1 Provider
+
+A single provider supplies the swell forecast in production: **Open-Meteo Marine Weather API**. Wind comes from a sibling product, **Open-Meteo Weather (forecast) API**.
+
+Endpoints, declared in `CONFIG.api` at `app.js:36-38`:
+
+```
+openMeteoMarine:  https://marine-api.open-meteo.com/v1/marine
+openMeteoWeather: https://api.open-meteo.com/v1/forecast
+openMeteoArchive: https://archive-api.open-meteo.com/v1/archive   // historical only, surf-log scoring
+```
+
+NDBC buoy text and the local `data/buoy.json` pipeline file supply *current* buoy observations (used to override the swell card's "now" reading); they do NOT supply the forecast curves on the chart or hourly table. See `app.js:991-996`. So "swell forecast" = Open-Meteo Marine, full stop.
+
+### 4.2 Marine call — full parameter set
+
+`fetchMarineForecast(lat, lon)` at `app.js:528-551`:
+
+```js
+const params = new URLSearchParams({
+  latitude: lat,
+  longitude: lon,
+  hourly: [
+    'wave_height','wave_direction','wave_period',
+    'swell_wave_height','swell_wave_direction','swell_wave_period','swell_wave_peak_period',
+    'wind_wave_height','wind_wave_direction','wind_wave_period',
+    'secondary_swell_wave_height','secondary_swell_wave_direction','secondary_swell_wave_period',
+    'sea_surface_temperature'
+  ].join(','),
+  current: [
+    'wave_height','wave_direction','wave_period',
+    'swell_wave_height','swell_wave_direction','swell_wave_period',
+    'wind_wave_height','wind_wave_direction','wind_wave_period',
+    'sea_surface_temperature'
+  ].join(','),
+  length_unit: 'imperial',
+  temperature_unit: 'fahrenheit',
+  timezone: 'auto',
+  forecast_days: 7
+});
+```
+
+**No `models=` parameter is ever sent on the live forecast call.** That means Open-Meteo's `best_match` default is used. The chart footer still reads `Open-Meteo Marine · gfs Wave 0.16°` (`app.js:1056`, `app.js:1204`) — that string is hard-coded and does NOT reflect a real model selection. Flagging this as a caption/code mismatch.
+
+The historical re-fetch for surf-log scoring (`fetchHistoricalMarine` at `app.js:3530-3541`) hits `marine-api` for ≤5-day-old dates and `archive-api` for older dates, with `wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_direction,swell_wave_period,secondary_swell_wave_height,secondary_swell_wave_direction,secondary_swell_wave_period`. Same lat/lon as the live Choc forecast. Also no `models=`.
+
+### 4.3 Wind call
+
+`fetchWindForecast(lat, lon)` at `app.js:554-565`:
+
+```js
+hourly:           'wind_speed_10m,wind_direction_10m,wind_gusts_10m'
+current:          'wind_speed_10m,wind_direction_10m,wind_gusts_10m'
+wind_speed_unit:  'mph'
+timezone:         'auto'
+forecast_days:    7
+```
+
+No `models=` here either.
+
+### 4.4 Lat/lon used for the marine query
+
+For the Chocomount buoy (`buoy.home === 'chocomount'`), `loadAllData` substitutes a hard-coded **open-water forecast point** at `app.js:976-982`:
+
+```js
+const forecastLat = isChoc ? CONFIG.chocomount.forecastLat : lat;
+const forecastLon = isChoc ? CONFIG.chocomount.forecastLon : lon;
+```
+
+with values `forecastLat: 41.089152`, `forecastLon: -71.721050` (`app.js:21-22`). These coords are roughly south of Block Island/Fishers Island, deliberately offshore — not the Chocomount Beach landfall (`41.275693, -71.963310` at `app.js:19-20`).
+
+For all other buoys: the marine query uses the **buoy's own `lat`/`lon`** straight from `data/buoys-east-coast.json` (`app.js:976-979` then `app.js:992`).
+
+For a user-dragged pin: marine + wind both fetch at the **pin lat/lon** with no Choc substitution (`loadPinData` at `app.js:1167-1170`).
+
+So: the forecast point is ONE of (a) hard-coded open-water Choc point, (b) the buoy coord, (c) the pin coord. It is never the buoy coord for Choc, and the displayed wind card for Choc actually uses a *third* coord — `displayLat = CONFIG.chocomount.lat` (`app.js:981, 993`), i.e. the land-side beach point — which gives a different wind reading than the marine point. This is intentional per `CHOC_WIND_LAT/LON` at `app.js:12-13` and the comment "Chocomount land GPS for wind history".
+
+### 4.5 Forecast horizon and resolution
+
+- Horizon: **7 days** (`forecast_days: 7` on both calls).
+- Temporal resolution: **hourly** (the `hourly=` array). No client-side interpolation — values are read directly per-index via `marine.hourly.time[i]`. The chart paginates 3 days at a time; see `_forecastDayOffset` and `FORECAST_DAYS_VISIBLE = 3` at `app.js:1593-1594`. The hourly table renders the full 168-hour series.
+- A `current` block is requested separately and used for the "now" reading on the cards (`app.js:1283-1293`).
+
+### 4.6 Variables consumed → UI surface
+
+| Open-Meteo field | Where it surfaces |
+|---|---|
+| `wave_height` (total Hs) | Swell card fallback when no buoy data (`app.js:1286, 1289`); hourly table; chart total. |
+| `wave_period` | Swell card fallback (`app.js:1287`); hourly table. |
+| `wave_direction` | Swell card fallback (`app.js:1288`); hourly table; chart arrows. |
+| `swell_wave_height` | **Primary** swell-only height for cards/chart when overriding total (`app.js:1286 ?? wave_height`). Surf-log historical scoring (`app.js:3503` via period). |
+| `swell_wave_period` | Same — primary swell period (`app.js:1287, 3503`). |
+| `swell_wave_direction` | Primary swell direction (`app.js:1288`). |
+| `swell_wave_peak_period` | Requested in hourly only (`app.js:534`). I did **not** find a render site — appears unused on the UI. Flagging as uncertain. |
+| `wind_wave_height` / `_direction` / `_period` | Requested but I did **not** locate any UI consumer. The hourly table at `app.js:2860-2912` and chart drawing don't appear to read them. Flagging — possibly fetched-and-unused. |
+| `secondary_swell_wave_height` / `_direction` / `_period` | Requested in hourly. **No consumer found in `app.js` for the production view.** Used only in `project/Swell Forecast.html` (the React prototype) at lines 1640-1647 for the secondary-swell arrow on the lineup map. Flagging clearly: production fetches it but does not render it. |
+| `sea_surface_temperature` | Water-temp card fallback (`updateWaterTempCard`, `app.js:1330-`) when CO-OPS / buoy unavailable. |
+| `wind_speed_10m` | Wind card "now" (`app.js:1304, 1308`); hourly table; chart. |
+| `wind_direction_10m` | Wind card direction + arrow (`app.js:1305, 1310-1311`); chart arrows. |
+| `wind_gusts_10m` | Wind card "gusts X mph" (`app.js:1306, 1311-1312`). |
+
+### 4.7 Unit handling
+
+All conversions are pushed server-side via Open-Meteo params, so there is essentially no client-side unit math on the forecast path:
+
+- Wave/swell heights: `length_unit: 'imperial'` → API returns **feet**. No m→ft conversion in JS for this path.
+- Sea temp / air temp from Marine: `temperature_unit: 'fahrenheit'`.
+- Wind speed: `wind_speed_unit: 'mph'`.
+- The **one** client-side height conversion is for the `data/buoy.json` pipeline's spectral summary, which is metric: `swellFt = specSwellM * 3.28084` at `app.js:1252-1253`.
+- NDBC stdmet text is parsed at `app.js:656+` (not re-read in this audit pass) — its unit handling is out of this section.
+
+No m/s↔kt conversion exists in production (wind comes back in mph already). `SWELL_SPEED_KTS_PER_PERIOD = 1.5` at `app.js:3495` is a group-velocity rule for the Choc buoy-→-shore lag, not a unit conversion.
+
+### 4.8 Secondary swell — current state
+
+Open-Meteo exposes **discrete fields** for secondary swell (`secondary_swell_wave_height/_direction/_period`). The production app **requests them** (`app.js:536`) but does not render them anywhere I could find. They are not derived from a spectrum on the client. The only place they're used is the React prototype at `project/Swell Forecast.html:1640-1647`, which gates the secondary arrow on `sHeight >= 1` and `sHeight >= 0.25 × waveFt`. Marking secondary swell as **fetched but unused in production**.
+
+### 4.9 Caching and refetch triggers
+
+- Client-side caching: results are stored on `STATE._cachedMarine`, `STATE._cachedWind`, `STATE._cachedTideHiLo` (`app.js:1034-1036`) and read back by personal-match rendering. There is **no time-based cache** — every call to `loadAllData` / `loadPinData` re-fetches.
+- Refetch triggers: any call to `selectBuoy` (`app.js:925`), `selectPin` (`app.js:936`), or the initial `initApp` auto-select for Choc (`app.js:4730`). Tide-map clicks (`selectTideStation`) do NOT trigger a marine refetch.
+- No `Cache-Control`, `ETag`, or service-worker layer on top of `fetchJSON` (`app.js:445-455` — only `AbortController`, no caching).
+
+### 4.10 Model toggle — does one exist?
+
+**No.** Neither the marine call nor the wind call sends a `models=` parameter (`app.js:528-551, 554-565`). There is no UI control bound to model selection — searching `models` / `model=` in `app.js`/`index.html` returns nothing on the forecast path. The "gfs Wave 0.16°" label in the footer is a static string and does not reflect any selection.
+
+### 4.11 Available Open-Meteo Marine models (for a future toggle)
+
+I cannot fetch live docs in this pass, so the following list is **from prior knowledge of Open-Meteo's public Marine API** and may be incomplete or out of date. Treat as a starting point, not a final spec — verify against `https://open-meteo.com/en/docs/marine-weather-api` before wiring a UI:
+
+| `models=` value (best-effort) | Underlying source / notes |
+|---|---|
+| `best_match` *(default)* | Open-Meteo's blend; what the app currently effectively uses. |
+| `gwam` | DWD Global Wave Model (~25 km). |
+| `ewam` | DWD European Wave Model (regional, higher res for Europe). |
+| `era5_ocean` | ERA5 reanalysis (archive endpoint, historical). |
+| `ecmwf_wam025` | ECMWF WAM @ 0.25° (recent additions; availability has changed over time). |
+| `meteofrance_wave` | Meteo-France MFWAM. |
+| `ncep_gfswave_global` (a.k.a. `gfs_wave025` or similar) | NOAA NCEP GFS-Wave global, ~0.25°. |
+| `ncep_gfswave_atlantic` / regional GFS-Wave subdomains | NOAA NCEP GFS-Wave regional nests at ~0.16° / ~0.25° depending on basin. |
+
+Open-Meteo also exposes `cell_selection`, `forecast_hours`, `past_hours`, and per-variable model choice via `wave_height_models=` etc. — none of which the app uses today. **Confirm exact model identifiers and which variables each supports before relying on this list.**
+
+---
+
+## 5. Persisted state (full inventory)
+
+### 5.1 Browser storage
+
+| Store | Key | Schema | Writer | Reader | Notes |
+|---|---|---|---|---|---|
+| sessionStorage | `lcc-gate` | string `'no'` (only set when user clicks "I'm not on a boat") | `app.js:435` | `app.js:412` | Gates the boat-question overlay; presence = passed gate this session. |
+| localStorage | `lcc-spots` | JSON array of `{name:string, lat:number, lon:number}` | `app.js:842-844` (right-click on buoy map) | `app.js:849` (replay on map init) | Custom user pins. |
+| localStorage | `lcc-advanced` | string `'open'` \| `'closed'` | `app.js:1505, 1510` | `app.js:1492` | Hourly-table expand/collapse. |
+| localStorage | `lcc-rose-scale` | string `'linear'` \| `'sqrt'` | `app.js:2849` | `app.js:2829` | Compass-rose energy scale toggle. |
+| localStorage | `lcc_surfLog` | JSON array of surf-log entries (mirror of `STATE.surfLog`) | `app.js:2998` (every save) | `app.js:2990` (Firebase fallback path) | Local mirror; canonical source is Firestore for signed-in users. |
+| IndexedDB | (Firebase SDK internal) | Firebase Auth persistence, Firestore offline cache | Firebase compat SDK | Firebase compat SDK | Not directly read by app code. |
+
+I did not find any direct `indexedDB.open(...)` calls in `app.js` or `firebase-config.js`; the only IndexedDB usage is whatever the Firebase SDK does internally.
+
+### 5.2 Firestore collections
+
+| Path | Schema (per doc) | Writer | Reader | Rules |
+|---|---|---|---|---|
+| `surf_logs/{docId}` (docId = entry id, e.g. `entry.id` from `app.js:3004`) | `{ id, userId, displayName, timestamp, photos: [{url,path}], ratings, notes, conditions, createdAt: serverTimestamp, repairedAt?: serverTimestamp, repairedFields?: [] }` (`app.js:3113-3127`) | `saveLogEntryToFirebase` (`app.js:3128`); `migrateAnonDataToUser` (`app.js:2952`) | `loadLogsFromFirebase` — `orderBy('createdAt','desc').limit(200)` (`app.js:3150-3153`) | `firestore.rules:10-16`: any authed user reads all docs; only owner (matching `userId`) creates/updates/deletes. |
+
+There are no other Firestore collections referenced in code.
+
+### 5.3 Firebase Storage paths
+
+| Path | Writer | Reader | Rules |
+|---|---|---|---|
+| `surf-photos/raw/{userId}/{YYYY}/{MM}/{ts}_{i}.jpg` | `app.js:3091-3102` (per-photo upload during `saveLogEntryToFirebase`) | Public via `getDownloadURL()` stored on Firestore doc; auth required (`storage.rules:17-23`) | Authed users read; only matching `auth.uid == userId` can write; size <10 MB; `image/*` content type. |
+| `gallery/{filename}` | Admin SDK only (rules deny client writes) | Authed users (`storage.rules:9-13`) | I did **not** find a client read site in `app.js`; flagging as possibly unused by the production UI. |
+
+### 5.4 What about the React prototype?
+
+`project/Swell Forecast.html` is not deployed and uses no persistent storage path that I located in this pass. Out of scope for production state.
+
+---
+
+## 6. Auth & sync
+
+### 6.1 Wiring
+
+- Library: Firebase **compat** SDK v10.x (loaded via `<script>` tags in `index.html`; the file uses globals `firebase`, `fbAuth`, `fbFirestore`, `fbStorage`).
+- Provider: `firebase.auth.GoogleAuthProvider()` (`firebase-config.js:89`). **No `provider.addScope(...)` calls** — only Google's default scopes (basic profile + email).
+- Sign-in flow: `signInWithGoogle` at `firebase-config.js:86-119`. If the current user is anonymous, it tries `currentUser.linkWithPopup(provider)` first; on `auth/credential-already-in-use` or `auth/email-already-in-use` it falls back to `fbAuth.signInWithPopup(provider)`. Otherwise it goes straight to `signInWithPopup`.
+- Sign-out: `signOutUser` at `firebase-config.js:122-130` — signs out then immediately re-signs in anonymously.
+- Anonymous bootstrap: 2 s after page load, if no `currentUser`, the app does `signInAnonymously` (`firebase-config.js:76-82`).
+- Token storage: Firebase Auth's default persistence (IndexedDB-backed `local` persistence). The app does not call `setPersistence` anywhere I searched.
+
+### 6.2 What signing in actually changes
+
+Both **gating** and **cross-device sync** happen at sign-in:
+
+- **Gating**: `loadLogsFromFirebase` short-circuits with `console.log('… skipping — user is anonymous')` at `app.js:3144-3147`. So an anonymous user sees only their localStorage `lcc_surfLog` mirror. A real user sees the **community log** — `surf_logs` is queried with no `where userId == ...` filter (`app.js:3150-3153`), and `firestore.rules` only requires `request.auth != null` for read.
+- **Sync**: signing in triggers `migrateAnonDataToUser` (`firebase-config.js:43-45`, body at `app.js:2952-2974`), which uploads each in-memory `STATE.surfLog` entry via `saveLogEntryToFirebase`, then calls `loadLogsFromFirebase`.
+- **Surf-log auth prompt**: `#sl-auth-prompt` shown when the user is on the surf-log tab and `_fbUserIsAnon !== false` (`app.js:3189-3191`).
+
+### 6.3 Source of truth, conflicts, offline
+
+- **Source of truth** (signed in): Firestore `surf_logs`. After every local mutation, the entry is also pushed (`addLogEntry` at `app.js:3009-3017`, `updateLogEntry` at `app.js:3025-3033`).
+- **Cache**: localStorage `lcc_surfLog` is a mirror, written on every save (`app.js:2998`) and read only as fallback when Firebase load throws (`app.js:2987-2992`).
+- **Conflict resolution**: last-write-wins per-doc — `set(payload)` at `app.js:3128` overwrites. There is no `update`-with-merge, no version field, no compare-and-set. Concurrent edits from two devices clobber.
+- **Offline**: the app does **not** call `firebase.firestore().enablePersistence(...)`, so the SDK's offline write queue is not enabled. On Firebase failure, `addLogEntry` keeps the entry in localStorage and shows a `"Saved locally — sync failed"` toast (`app.js:3014-3017`). There's no automatic retry — the next mutation that succeeds will only sync that one entry, not backlog.
+- **Photo handling**: data-URI photos in the local mirror are uploaded to Storage on the next successful save and replaced with `{url, path}` objects (`app.js:3089-3102, 3112`). On upload failure the photo is dropped, not retained as base64 (`app.js:3106-3108`).
+
+---
+
+## 7. Chocomount satellite map asset
+
+### 7.1 Does it exist?
+
+Yes — but **only in the React prototype, not in the production site**.
+
+- File: `project/assets/lineup.jpg` (the only image asset in the repo besides Leaflet's tile sources). JPEG, **1992 × 949 pixels** (`file` reports `1992x949`), 326 KB.
+- Usage: `project/Swell Forecast.html:1727-1731`:
+  ```jsx
+  <img className="fn-lineup-img" src="assets/lineup.jpg" alt="Lineup satellite view" ... />
+  ```
+- It is **not referenced** from `index.html`, `app.js`, or `style.css`. I grep'd for `lineup`, `satellite`, `aerial`, `background-image`, etc. — zero hits in the production code path.
+
+### 7.2 Geographic registration
+
+There is **no lat/lon → pixel projection math anywhere**. The image is treated as a stylized backdrop, not a georegistered raster:
+
+- The container `.fn-lineup-frame` holds the image and a sibling SVG with `viewBox="0 0 100 100"` and `preserveAspectRatio="xMidYMid meet"` (`Swell Forecast.html:1735-1745`).
+- All overlays anchor to the image's **viewBox center (50, 50)** as the apex/lineup point. Arrows and the reef guide are computed in degrees from compass north relative to this fixed center, e.g.:
+  ```js
+  const reefEndX = 50 + reefLen * Math.sin(reefRad);   // line 1673
+  const reefEndY = 50 - reefLen * Math.cos(reefRad);
+  ```
+- `REEF_HEADING_DEG = 335` (used at line 1671 and labeled "reef 335°" at line 1769) is a hand-set bearing for the reef alignment, not derived from the image.
+- The swell-window cone uses `SWELL_WINDOW_MIN = 115` and `SWELL_WINDOW_MAX = 158` (`Swell Forecast.html:729-730`) — `CONFIG.chocomount.swellWindowMin/Max` in the production code (`app.js:28-29`).
+
+So the projection is "compass bearings emanating from the SVG center". There are **no declared geographic bounds** (no NW-corner / SE-corner lat/lon, no pixels-per-degree). To convert bearings to image pixels would require eyeballing the image's true center coordinate and orientation — which is not encoded anywhere I could find.
+
+### 7.3 Existing overlays
+
+In the prototype only (`project/Swell Forecast.html:1747-1796`):
+
+- A **swell-window cone** (`<path d={conePath}>`), filled cyan when not firing or green when firing.
+- A dashed **reef heading line** at 335° from center, with text label `reef 335°`.
+- Up to three **`<ConvergingArrow>`** components: primary swell, secondary swell (when `sHeight >= 1` and `>= 0.25 × waveFt`), and wind. Each arrow's tail length is energy-scaled (`Math.sqrt(secondaryEnergy) * K_SWELL`, line 1650).
+- A **legend** below the frame mapping arrow colors to swell vs wind (lines 1799-1810).
+
+No pins beyond these are rendered.
+
+### 7.4 Production status
+
+Production renders **no satellite/aerial overlay**. The buoy map and tide map are pure Leaflet on a Carto Light basemap (`app.js:777, 872`). No image of Chocomount Beach is loaded by `index.html` or `app.js`.
+
+---
+
+## 8. Buoy selector
+
+### 8.1 Default and selectable list
+
+- Default: when the gate is passed and not by boat, `initApp` auto-selects the buoy with `home === 'chocomount'`, i.e. **NDBC 44097 Block Island** (`app.js:4727-4732`). For "by boat" entry, no auto-select; user picks from the map.
+- Source: `data/buoys-east-coast.json`, 29 entries, fetched at `app.js:4686`.
+- UI: there is **no `<select>` dropdown** — selection is a click on a Leaflet marker (`app.js:800: marker.on('click', () => selectBuoy(buoy))`). The Choc buoy gets a separate ⭐ marker at the open-water forecast point (`app.js:805-823`); clicking it also calls `selectBuoy(chocBuoy)`. Right-click on the buoy map adds a custom-spot pin that calls `selectPin` (`app.js:839-846`).
+- Chocomount buoy is hidden until `boatGatePassed`: `if (buoy.home === 'chocomount' && !STATE.boatGatePassed) return` (`app.js:785`).
+
+### 8.2 What `selectBuoy` re-triggers
+
+`selectBuoy` at `app.js:904-926`:
+
+1. Sets `STATE.selectedBuoy`, `STATE.isChocomount`, `STATE.pinLat/Lon`.
+2. Moves the draggable forecast pin to the buoy's coords.
+3. Updates `#header-location` text.
+4. `updateTabBarVisibility()` and `updatePersonalMatchToggle()`.
+5. Calls `loadAllData(buoy)` — which re-fetches Marine, Wind, NDBC stdmet (if `buoy.spectral`), and the Choc pipeline JSON if Choc. Updates every card, the chart, the spectral panels, the hourly table, the tides panel, and `highlightNearestTideStation`.
+
+### 8.3 Does buoy selection drive the forecast query coordinates?
+
+**Yes for non-Choc buoys; no for Chocomount.** From `app.js:976-993`:
+
+```js
+const lat = buoy.lat;
+const lon = buoy.lon;
+const isChoc = buoy.home === 'chocomount';
+const forecastLat = isChoc ? CONFIG.chocomount.forecastLat : lat;   // 41.089152 if Choc
+const forecastLon = isChoc ? CONFIG.chocomount.forecastLon : lon;   // -71.721050 if Choc
+const displayLat  = isChoc ? CONFIG.chocomount.lat : lat;           // 41.275693 if Choc (land)
+const displayLon  = isChoc ? CONFIG.chocomount.lon : lon;
+...
+fetchMarineForecast(forecastLat, forecastLon),
+fetchWindForecast(displayLat, displayLon),
+```
+
+So:
+
+- For 28 of the 29 buoys, marine query lat/lon = **the buoy's own lat/lon**.
+- For Chocomount (44097), the marine query lat/lon is **hardcoded to `(41.089152, -71.721050)`** — independent of the buoy's actual location at `(40.969, -71.124)` per `data/buoys-east-coast.json:2`. The wind query for Choc uses yet another hardcoded point (the land beach point).
+
+This split is invisible to the user — there is no UI indication that "Choc forecast" doesn't come from buoy 44097's lat/lon.
+
+---
+
+## 9. Tide stations
+
+### 9.1 List and source
+
+- File: `data/tide-stations.json`, 48 stations (`grep -c '"id"'`). Loaded at `app.js:4687`.
+- Schema per entry: `{id: string, name: string, lat: number, lon: number}` (e.g. `{"id":"8510719","name":"Silver Eel Pond, Fishers Island, NY","lat":41.263,"lon":-72.048}`, `data/tide-stations.json:2-7`).
+- All 48 are NOAA CO-OPS stations queried via `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter` (`app.js:39, 587`).
+
+### 9.2 UI dependencies on the selected station
+
+There are **two distinct concepts** of "selected tide station" in the code:
+
+**(A) The implicit "nearest" station — `STATE.nearestTideStation`.**
+Set by `findNearestTideStation(lat, lon)` (`app.js:739-751`) which picks the closest station within `coopsNearbyRadiusMiles = 50`. This is what every UI surface that depends on tide data actually reads:
+
+- The **tide condition card** ("Next high/low" widget) — `updateTideCard(tideHiLoForChart, tideStn)` at `app.js:1039, 1192`.
+- The **forecast chart's tide curve overlay** — `tideHiLoForChart` passed into `drawForecastChart` (`app.js:1049, 1202`).
+- The **tides panel** (high/low list + Canvas tide chart) — `loadTidesPanel(STATE.nearestTideStation)` at `app.js:1064, 1212`.
+- The **highlighted dot on the tide map** — `highlightNearestTideStation(displayLat, displayLon)` at `app.js:1153, 1232, 1571-1586`.
+
+`STATE.nearestTideStation` is recomputed every time a buoy or pin is selected (`app.js:1025-1026, 1183-1184`). It is **driven by buoy/pin coordinates**, not by user clicks on the tide map.
+
+**(B) The map-click "selected station" — argument to `selectTideStation(station)`.**
+At `app.js:939-966`. Clicking a tide-station marker on the dedicated tide map only:
+
+1. Recolors the markers (highlights the clicked one in dark, others in blue).
+2. Fetches `fetchTideHiLo(station.id, 2)` (a fresh CO-OPS call with `range=48h`).
+3. Renders the result into `#tide-map-info` — a small text block on the tide-map panel.
+
+It does **not** update `STATE.nearestTideStation`, the tide condition card, the forecast chart's tide overlay, or the tides panel. Users may experience this as confusing: the map click only updates one inline info blurb, while the "real" tide displays remain pinned to whatever station the buoy/pin selection chose.
+
+### 9.3 Independence from buoy selector
+
+The tide-map selector is **independent of the buoy selector** in the sense that clicking a tide marker does not re-select a buoy or refetch any forecast.
+
+The reverse is **not** symmetric: selecting a buoy or moving the pin **does** change the highlighted tide station and the data displayed in the tide card / tides panel / chart overlay (via `findNearestTideStation` of the buoy's coords). For Chocomount specifically, the lookup uses `displayLat/Lon = (41.275693, -71.963310)`, which yields `8510719 Silver Eel Pond` (≈ 1.4 miles away) — matching `CONFIG.chocomount.tideStation = '8510719'` (`app.js:26`), although that constant itself is only used by the historical-tide fetch in surf-log scoring (`app.js:3546`), not by the live forecast path.
+
+---
+
+*End of sections 4–9. Sections 10–16 reserved for the next prompt.*
