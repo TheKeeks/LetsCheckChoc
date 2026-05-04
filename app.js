@@ -3419,10 +3419,10 @@ async function lookupNDBCHistoricalConditions(dateStr) {
       return r.t.getTime() >= windowStart && r.t.getTime() <= windowEnd && r.period > 0;
     }).map(function(r) { return r.period; });
     const avgPeriod = lagPeriods.length > 0 ? lagPeriods.reduce(function(s, p) { return s + p; }, 0) / lagPeriods.length : 0;
-    const lagHours = avgPeriod > 0 ? CONFIG.chocomount.buoyDistanceMiles / (SWELL_SPEED_KTS_PER_PERIOD * avgPeriod) : 0;
-    const laggedMs = lagHours > 0 ? sessionMs - lagHours * 3600000 : sessionMs;
+    const ndbcLagHours = avgPeriod > 0 ? CONFIG.chocomount.buoyDistanceMiles / (SWELL_SPEED_KTS_PER_PERIOD * avgPeriod) : 0;
+    const laggedMs = ndbcLagHours > 0 ? sessionMs - ndbcLagHours * 3600000 : sessionMs;
 
-    console.log(`[ndbc-parse] searching for swell row matching ${new Date(laggedMs).toISOString()} (lagged ${lagHours.toFixed(2)}h from session)`);
+    console.log(`[ndbc-parse] searching for swell row matching ${new Date(laggedMs).toISOString()} (lagged ${ndbcLagHours.toFixed(2)}h from session)`);
     console.log(`[ndbc-parse] candidate rows in ±2hr window:`, rows.filter(function(r) { return Math.abs(r.t.getTime() - laggedMs) <= 2 * 3600000; }).length);
 
     // Wave observation at lagged time (buoy reading that arrived at beach by session time)
@@ -3458,7 +3458,7 @@ async function lookupNDBCHistoricalConditions(dateStr) {
         height: Math.round((swellRow.waveHeight || 0) * 10) / 10,
         direction: Math.round(swellRow.direction || 0),
         period: Math.round((swellRow.period || 0) * 10) / 10,
-        lagHours: Math.round(lagHours * 10) / 10
+        lagHours: Math.round(ndbcLagHours * 10) / 10
       },
       wind: { speed: Math.round(wSpd), direction: Math.round(wDir) },
       tide: { height: Math.round(tideInfo.height * 10) / 10, stage: tideInfo.stage, timeToNearest: tideInfo.timeToNearest },
@@ -3467,8 +3467,8 @@ async function lookupNDBCHistoricalConditions(dateStr) {
       source: 'ndbc'
     };
 
-    if (lagHours > 0) {
-      conditions.swellLagHours = Math.round(lagHours * 10) / 10;
+    if (ndbcLagHours > 0) {
+      conditions.swellLagHours = Math.round(ndbcLagHours * 10) / 10;
       conditions.originalLoggedTime = dateStr;
       conditions.calculatedFromBuoyTime = new Date(laggedMs).toISOString();
     }
