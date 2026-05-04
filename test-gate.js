@@ -73,7 +73,7 @@ test('CONFIG.api.ndbcProxies is an array with multiple proxies', function() {
   assert(code.includes('ndbcProxies: ['), 'should have ndbcProxies array');
   const match = code.match(/ndbcProxies:\s*\[([\s\S]*?)\]/);
   assert(match, 'should be able to extract ndbcProxies array');
-  const proxyCount = (match[1].match(/prefix:/g) || []).length;
+  const proxyCount = (match[1].match(/wrap:/g) || []).length;
   assert(proxyCount >= 2, 'should have at least 2 proxy entries, found ' + proxyCount);
 });
 
