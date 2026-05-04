@@ -53,6 +53,13 @@ test('gate "no" click handler sets sessionStorage and boatGatePassed', function(
   assert(code.includes("el('app').classList.remove('hidden')"), 'handler must show the app');
 });
 
+// ── Test 3b: Gate "yes" must NOT persist to sessionStorage ──
+test('gate "yes" click handler does NOT write sessionStorage', function() {
+  const code = fs.readFileSync('app.js', 'utf8');
+  assert(!code.includes("sessionStorage.setItem('lcc-gate', 'yes')"),
+    'Yes path must not persist gate state — it should re-show the question after splash');
+});
+
 // ── Test 4: Gate session restore with "no" value ─────────
 test('gate restores correctly when sessionStorage contains "no"', function() {
   const saved = 'no';

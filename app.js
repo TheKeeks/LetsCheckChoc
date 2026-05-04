@@ -246,10 +246,8 @@ function swellArrivalTime(periodSeconds, distanceMiles) {
 // ── Gate logic ───────────────────────────────────
 function initGate() {
   const saved = sessionStorage.getItem('lcc-gate');
-  if (saved) {
-    // 'no' → user is on land, auto-select Choc as before.
-    // 'yes' → user is on a boat; skip the overlay but do not auto-select Choc.
-    STATE.boatGatePassed = saved === 'no';
+  if (saved === 'no') {
+    STATE.boatGatePassed = true;
     el('gate-overlay').classList.add('hidden');
     el('app').classList.remove('hidden');
     initApp();
@@ -257,17 +255,18 @@ function initGate() {
   }
 
   el('gate-yes').addEventListener('click', () => {
-    sessionStorage.setItem('lcc-gate', 'yes');
-    el('gate-question').classList.add('hidden');
-    // Replace go-home element with a fresh clone to re-trigger the CSS animation
+    // No persistence: Yes means "go home". Show splash, then return to question.
+    const question = el('gate-question');
+    question.classList.add('hidden');
     const goHome = el('gate-go-home');
     const clone = goHome.cloneNode(true);
     clone.classList.remove('hidden');
     goHome.replaceWith(clone);
     setTimeout(() => {
-      el('gate-overlay').classList.add('hidden');
-      el('app').classList.remove('hidden');
-      initApp();
+      // Re-show the question; user can pick again or click No to enter.
+      const splash = el('gate-go-home');
+      splash.classList.add('hidden');
+      question.classList.remove('hidden');
     }, 2000);
   });
 
