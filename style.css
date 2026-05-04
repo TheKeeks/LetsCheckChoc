@@ -238,6 +238,28 @@ a:hover { text-decoration: underline; }
   width: 100%;
 }
 
+/* Collapsed buoy-selector header line */
+.panel-buoy-map.is-collapsed #buoy-map { display: none; }
+.buoy-map-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono, monospace);
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  color: var(--ink, #2c2825);
+}
+.buoy-map-expand-btn {
+  background: transparent;
+  border: none;
+  color: #2a5a8a;
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.buoy-map-expand-btn:hover { text-decoration: underline; }
+
 .map-container-sm {
   height: 250px;
 }
@@ -345,6 +367,12 @@ a:hover { text-decoration: underline; }
 
 .chart-container-sq {
   height: 260px;
+}
+
+/* Forecast chart needs more vertical space for the dual-axis layout
+   (height area + period/wind right axis + day labels). */
+.chart-container-tall {
+  height: 340px;
 }
 
 .chart-container canvas {
@@ -457,15 +485,88 @@ a:hover { text-decoration: underline; }
   font-weight: 500;
 }
 
-/* ── Forecast crosshair ──────────────────────── */
+/* ── Forecast scrubber (vertical line + circular handle) ── */
 .forecast-crosshair {
   position: absolute;
-  width: 2px;
-  background: rgba(90, 127, 160, 0.5);
+  width: 1.5px;
+  background: rgba(44, 40, 37, 0.7);
   pointer-events: none;
   z-index: 5;
   border-radius: 1px;
 }
+.forecast-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.5px solid #2c2825;
+  pointer-events: none;
+  z-index: 6;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.forecast-detail-bar { display: block; }
+.forecast-detail-bar.scrub-active {
+  background: #2c2825;
+  color: #f0ece6;
+  border-top-color: #2c2825;
+}
+.forecast-detail-bar.scrub-active .detail-label { color: #b5afa8; }
+.forecast-detail-bar.scrub-active .detail-tide { color: #67e8f9; }
+.scrub-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #2c2825;
+  color: #f0ece6;
+  font-family: var(--mono, monospace);
+  font-size: 0.65rem;
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+/* ── Forecast model toolbar ──────────────────── */
+.forecast-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.forecast-model-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono, monospace);
+  font-size: 0.75rem;
+  color: var(--ink2, #5a5550);
+}
+.forecast-model-label-txt { white-space: nowrap; }
+#forecast-model-select {
+  font-family: var(--mono, monospace);
+  font-size: 0.72rem;
+  padding: 3px 6px;
+  border: 1px solid var(--border, #e0dbd3);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink, #2c2825);
+}
+
+/* "Reset to now" link below the chart, shown only when scrubber moved */
+.forecast-reset-row {
+  text-align: right;
+  padding: 4px 12px 0 0;
+}
+.forecast-reset-btn {
+  background: transparent;
+  border: none;
+  color: #2a5a8a;
+  font-family: var(--mono, monospace);
+  font-size: 0.72rem;
+  cursor: pointer;
+  padding: 0;
+}
+.forecast-reset-btn:hover { text-decoration: underline; }
 
 /* ── Panel row (compass + spectrum side by side) ─ */
 .panel-row {

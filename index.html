@@ -46,6 +46,16 @@
       </div>
     </header>
 
+    <!-- Buoy selector map (shared header / context for all tabs).
+         Lives outside #view-forecast so it sits above the tab strip. -->
+    <section class="panel panel-buoy-map" id="panel-map">
+      <div id="buoy-map-summary" class="buoy-map-summary" style="display:none;">
+        <span id="buoy-map-summary-text"></span>
+        <button type="button" id="buoy-map-expand" class="buoy-map-expand-btn">[change]</button>
+      </div>
+      <div id="buoy-map" class="map-container"></div>
+    </section>
+
     <!-- Tab navigation -->
     <nav class="tab-bar" id="tab-bar">
       <button class="tab-btn active" data-tab="forecast" id="tab-btn-forecast">Current Conditions &amp; Forecast</button>
@@ -55,11 +65,6 @@
 
     <!-- ═══ TAB 1 — CURRENT CONDITIONS & FORECAST ═══ -->
     <div id="view-forecast">
-
-      <!-- Buoy selector map (shared header / context for all tabs) -->
-      <section class="panel" id="panel-map">
-        <div id="buoy-map" class="map-container"></div>
-      </section>
 
       <!-- 1. Lineup map (Choc only) -->
       <section class="panel" id="panel-lineup" style="display:none;">
@@ -83,19 +88,18 @@
       <section class="panel" id="panel-forecast">
         <div class="forecast-header-row">
           <h3 class="panel-title">Swell Forecast</h3>
-          <div class="forecast-day-nav">
-            <button class="forecast-nav-btn" id="forecast-prev" aria-label="Previous days">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-            </button>
-            <span class="forecast-nav-label" id="forecast-nav-label"></span>
-            <button class="forecast-nav-btn" id="forecast-next" aria-label="Next days">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-            </button>
+          <div class="forecast-toolbar">
+            <label class="forecast-model-label">
+              <span class="forecast-model-label-txt">Model:</span>
+              <select id="forecast-model-select" aria-label="Forecast model">
+                <option value="">Best match (default)</option>
+              </select>
+            </label>
           </div>
         </div>
         <details class="widget-help">
           <summary>What is this?</summary>
-          <p>A rolling 72-hour projection of three sea-surface parameters — wave height, wave period, and wind speed — rendered on a shared time axis so their interactions are visible at a glance.</p>
+          <p>A 7-day projection of three sea-surface parameters — swell height, swell period, and wind speed — rendered on a shared time axis so their interactions are visible at a glance. Drag the cursor to scrub through hours; the lineup map and stat grid update to match.</p>
         </details>
         <div class="forecast-coord-toggle" id="forecast-coord-toggle-wrap" style="display:none;">
           <label>
@@ -103,10 +107,13 @@
             Use buoy coordinates for forecast
           </label>
         </div>
-        <div class="chart-container" id="forecast-chart-container">
+        <div class="chart-container chart-container-tall" id="forecast-chart-container">
           <canvas id="forecast-canvas"></canvas>
         </div>
         <div class="forecast-detail-bar" id="forecast-detail-bar"></div>
+        <div class="forecast-reset-row" id="forecast-reset-row" style="display:none;">
+          <button type="button" id="forecast-reset-now" class="forecast-reset-btn">Reset to now</button>
+        </div>
         <div class="panel-footer" id="footer-forecast"></div>
       </section>
 
@@ -154,24 +161,22 @@
         </div>
       </section>
 
-      <!-- 5. Wave-spectra summary -->
-      <section class="panel" id="panel-spectral-summary" style="display:none;">
-        <h3 class="panel-title">Wave Spectra</h3>
-        <details class="widget-help">
-          <summary>What is this?</summary>
-          <p>A decomposition of the buoy's raw wave spectrum into three interpretable rows:</p>
-          <ul>
-            <li><strong>Primary Swell</strong> — the dominant long-period wave train the spectrum can isolate, typically a distant-storm groundswell.</li>
-            <li><strong>Wind Waves</strong> — the shorter-period train driven by the local wind at the buoy.</li>
-            <li><strong>Significant Hs</strong> — the total significant wave height of the sea state (mean of the highest one-third of waves); the combined energy of every ripple, chop, and groundswell currently present.</li>
-          </ul>
-        </details>
-        <div id="spectral-summary-table"></div>
-        <div class="panel-footer" id="footer-spectral-summary"></div>
-      </section>
-
-      <!-- 6 + 7. Compass rose + wave energy spectrum side by side -->
+      <!-- 4. Wave-spectra summary (left) + Spectral Compass Rose (right) -->
       <section class="panel-row" id="panel-spectral-row" style="display:none;">
+        <div class="panel panel-half" id="panel-spectral-summary">
+          <h3 class="panel-title">Wave Spectra</h3>
+          <details class="widget-help">
+            <summary>What is this?</summary>
+            <p>A decomposition of the buoy's raw wave spectrum into three interpretable rows:</p>
+            <ul>
+              <li><strong>Primary Swell</strong> — the dominant long-period wave train the spectrum can isolate, typically a distant-storm groundswell.</li>
+              <li><strong>Wind Waves</strong> — the shorter-period train driven by the local wind at the buoy.</li>
+              <li><strong>Significant Hs</strong> — the total significant wave height of the sea state (mean of the highest one-third of waves); the combined energy of every ripple, chop, and groundswell currently present.</li>
+            </ul>
+          </details>
+          <div id="spectral-summary-table"></div>
+          <div class="panel-footer" id="footer-spectral-summary"></div>
+        </div>
         <div class="panel panel-half" id="panel-compass">
           <div class="rose-header">
             <h3 class="panel-title">Spectral Compass Rose</h3>
@@ -198,17 +203,19 @@
           </div>
           <div class="panel-footer" id="footer-compass"></div>
         </div>
-        <div class="panel panel-half" id="panel-spectrum">
-          <h3 class="panel-title">Wave Energy Spectrum</h3>
-          <details class="widget-help">
-            <summary>What is this?</summary>
-            <p>Spectral energy density plotted as a function of wave period. Each peak is a distinct wave train present in the sea state; peak height indicates that train's share of total energy.</p>
-          </details>
-          <div class="chart-container chart-container-sq">
-            <canvas id="spectrum-canvas"></canvas>
-          </div>
-          <div class="panel-footer" id="footer-spectrum"></div>
+      </section>
+
+      <!-- 5. Wave Energy Spectrum (full width) -->
+      <section class="panel" id="panel-spectrum" style="display:none;">
+        <h3 class="panel-title">Wave Energy Spectrum</h3>
+        <details class="widget-help">
+          <summary>What is this?</summary>
+          <p>Spectral energy density plotted as a function of wave period. Each peak is a distinct wave train present in the sea state; peak height indicates that train's share of total energy.</p>
+        </details>
+        <div class="chart-container chart-container-sq">
+          <canvas id="spectrum-canvas"></canvas>
         </div>
+        <div class="panel-footer" id="footer-spectrum"></div>
       </section>
 
       <!-- Tides panel (kept; renders next to tide-station selector) -->

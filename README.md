@@ -81,6 +81,22 @@ The app shows a "Are you coming by boat today?" prompt on first visit.
   Chocomount auto-select. Both choices persist for the session in
   `sessionStorage['lcc-gate']`.
 
+## Persisted preferences
+
+Per-user state is split between `localStorage` (cross-session) and
+`sessionStorage` (per-tab):
+
+| Key | Storage | Set by |
+|-----|---------|--------|
+| `lcc-gate` | session | gate "No" path (only `'no'` persists) |
+| `lcc-buoy-map-collapsed` | local | auto-collapse on first buoy / pin selection |
+| `lcc-forecast-use-buoy-coords` | local | "Use buoy coordinates for forecast" toggle |
+| `lcc-forecast-model` | local | model dropdown above the swell forecast chart |
+| `lcc-scrubber-hour` | session | dragging the forecast chart scrubber |
+| `lcc-rose-scale` | local | linear / sqrt toggle on the compass rose |
+| `lcc-spots` | local | right-click on the buoy map to save a custom spot |
+| `lcc-advanced` | local | (legacy, no longer read) |
+
 ## Customization
 
 To add swell window color coding for other spots, edit the `swellDirColor()` and `swellDirClass()` functions in `app.js`. The Chocomount swell window is defined in `CONFIG.chocomount`.
