@@ -2012,3 +2012,118 @@ a:hover { text-decoration: underline; }
 }
 
 
+
+/* ── Tab restructure additions (Prompt #2) ───────────── */
+
+/* Buoy dropdown selector in the global header */
+.header-buoy-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono, monospace);
+  font-size: 0.8rem;
+}
+.header-buoy-label {
+  color: var(--ink3, #5a5450);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+#buoy-select {
+  font-family: var(--mono, monospace);
+  font-size: 0.85rem;
+  padding: 3px 6px;
+  border: 1px solid var(--line, #ccc);
+  background: #fff;
+  max-width: 220px;
+}
+
+/* Coord footer (small, italic, gray — appended below the existing
+   data-source footer on cards that depend on a specific lat/lon). */
+.footer-coord {
+  font-style: italic;
+  opacity: 0.75;
+  margin-top: 2px;
+}
+
+/* Forecast-coords toggle (Choc only — small chip above the chart). */
+.forecast-coord-toggle {
+  font-family: var(--mono, monospace);
+  font-size: 0.78rem;
+  margin: 4px 0 8px;
+  color: var(--ink3, #5a5450);
+}
+.forecast-coord-toggle label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+/* Lineup satellite map (Choc only). Container sized to image aspect. */
+.lineup-frame {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  aspect-ratio: 1992 / 949;
+  background: #0a0c18;
+  overflow: hidden;
+  border-radius: 4px;
+}
+.lineup-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  pointer-events: none;
+}
+.lineup-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.lineup-legend {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 8px;
+  font-family: var(--mono, monospace);
+  font-size: 0.78rem;
+  color: var(--ink3, #5a5450);
+}
+.lineup-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.lineup-legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+}
+.lineup-swatch-swell { background: #67e8f9; }
+.lineup-swatch-wind  { background: #fbbf24; }
+
+/* Crowdsource note above Past Sessions table */
+.sl-crowdsource-note {
+  font-family: var(--mono, monospace);
+  font-size: 0.78rem;
+  color: var(--ink3, #5a5450);
+  font-style: italic;
+  padding: 6px 0 8px;
+  border-bottom: 1px dashed var(--line, #ccc);
+  margin-bottom: 8px;
+}
+
+/* Sample summary block on the Regression Results tab */
+.regression-sample-summary {
+  font-family: var(--mono, monospace);
+  font-size: 0.85rem;
+  color: var(--ink2, #2c2825);
+  line-height: 1.55;
+}
+.regression-sample-summary strong { color: var(--ink, #1a1714); }
