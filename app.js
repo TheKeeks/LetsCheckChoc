@@ -858,9 +858,6 @@ async function selectTideStation(station) {
 // ════════════════════════════════════════════════
 
 async function loadAllData(buoy) {
-  // Reset forecast chart to first page when loading new data
-  _forecastDayOffset = 0;
-
   const lat = buoy.lat;
   const lon = buoy.lon;
   const isChoc = buoy.home === 'chocomount';
@@ -1356,51 +1353,27 @@ function highlightNearestTideStation(lat, lon) {
 // ════════════════════════════════════════════════
 // SWELL FORECAST CHART (Canvas 2D)
 // ════════════════════════════════════════════════
+//
+// Visual reference: project/Swell Forecast.html (React prototype).
+// Ported visual elements: smooth swell-height area fill (color-coded by
+// wind quality / chocomount swell-direction), full 7-day window with
+// midnight day-separators and weekday labels, nighttime shading, swell
+// direction arrows, DM Mono number typography, draggable scrubber with
+// circular handle on the height curve.
+// Production-only additions: right-side y-axis carrying swell period
+// (solid line) and wind speed (dashed line), tide overlay drawn under
+// the height area, hour ticks (every 6h on day 1 only), low-tide drop
+// markers, and a "Reset to now" link below the chart.
 
-// ── Forecast chart paging state ──
-let _forecastDayOffset = 0; // day offset from first day (advances 1 day per click)
-const FORECAST_DAYS_VISIBLE = 3;
+const FORECAST_HOURS = 168; // 7 × 24
 
-function drawForecastChart(marine, wind, daylight, tideHiLo) {
-  // Store raw data for paging
-  STATE.forecastData = { marine, wind, daylight, tideHiLo };
-
-  // Determine total days available
-  const allTimes = marine.hourly.time.map(t => new Date(t));
-  const firstDay = new Date(allTimes[0]); firstDay.setHours(0,0,0,0);
-  const lastDay = new Date(allTimes[allTimes.length - 1]); lastDay.setHours(0,0,0,0);
-  const totalDays = Math.round((lastDay - firstDay) / 86400000) + 1;
-  const maxOffset = Math.max(0, totalDays - FORECAST_DAYS_VISIBLE);
-
-  // Clamp offset
-  if (_forecastDayOffset > maxOffset) _forecastDayOffset = maxOffset;
-  if (_forecastDayOffset < 0) _forecastDayOffset = 0;
-
-  // Update nav buttons
-  const prevBtn = el('forecast-prev');
-  const nextBtn = el('forecast-next');
-  const navLabel = el('forecast-nav-label');
-  if (prevBtn) prevBtn.disabled = _forecastDayOffset === 0;
-  if (nextBtn) nextBtn.disabled = _forecastDayOffset >= maxOffset;
-
-  // Calculate time window: 3 days starting from offset
-  const pageStart = new Date(firstDay);
-  pageStart.setDate(pageStart.getDate() + _forecastDayOffset);
-  const pageEnd = new Date(pageStart);
-  pageEnd.setDate(pageEnd.getDate() + FORECAST_DAYS_VISIBLE);
-
-  // Update nav label
-  if (navLabel) {
-    const startLabel = pageStart.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    const endDateMinusOne = new Date(pageEnd); endDateMinusOne.setDate(endDateMinusOne.getDate() - 1);
-    const endLabel = endDateMinusOne.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    navLabel.textContent = `${startLabel} – ${endLabel}`;
-  }
-
-  _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pageEnd);
+function drawForecastChart(marine, wind, daylight, tideHiLo, tidePred) {
+  // Cache so the scrubber and external reflows can re-render without re-fetching.
+  STATE.forecastData = { marine, wind, daylight, tideHiLo, tidePred };
+  _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred);
 }
 
-function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pageEnd) {
+function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const canvas = el('forecast-canvas');
   const container = el('forecast-chart-container');
   const dpr = window.devicePixelRatio || 1;
@@ -1425,28 +1398,24 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
   const allTimes = marine.hourly.time.map(t => new Date(t));
   const heights = marine.hourly.swell_wave_height || marine.hourly.wave_height || [];
   const swellDirs = marine.hourly.swell_wave_direction || [];
-  const wavePeriods = marine.hourly.wave_period || [];
+  const wavePeriods = marine.hourly.swell_wave_period || marine.hourly.wave_period || [];
   const windSpeeds = wind && wind.hourly ? wind.hourly.wind_speed_10m || [] : [];
   const windDirs = wind && wind.hourly ? wind.hourly.wind_direction_10m || [] : [];
   const windGusts = wind && wind.hourly ? wind.hourly.wind_gusts_10m || [] : [];
 
-  // Filter to page window
-  const t0 = pageStart.getTime();
-  const tEnd = pageEnd.getTime();
+  // X-axis spans the full 168 hours (or whatever the marine response gave us),
+  // anchored to the first hourly entry. No pagination.
+  const t0 = allTimes[0].getTime();
+  const lastIdx = Math.min(allTimes.length - 1, FORECAST_HOURS);
+  const tEnd = allTimes[lastIdx].getTime();
   const tRange = tEnd - t0;
 
-  // Indices within page range (inclusive of start, exclusive of end)
-  const pageIndices = [];
-  for (let i = 0; i < allTimes.length; i++) {
-    const tt = allTimes[i].getTime();
-    if (tt >= t0 && tt < tEnd) pageIndices.push(i);
-  }
-
-  // Also keep one extra point on each side for smooth line drawing
-  const firstPageIdx = pageIndices.length > 0 ? pageIndices[0] : 0;
-  const lastPageIdx = pageIndices.length > 0 ? pageIndices[pageIndices.length - 1] : allTimes.length - 1;
-  const extStart = Math.max(0, firstPageIdx - 1);
-  const extEnd = Math.min(allTimes.length - 1, lastPageIdx + 1);
+  const extStart = 0;
+  const extEnd = lastIdx;
+  // Align day-iteration anchor to the local-midnight that contains t0
+  const firstDay = new Date(t0); firstDay.setHours(0, 0, 0, 0);
+  const lastDay = new Date(tEnd); lastDay.setHours(0, 0, 0, 0);
+  const dayCount = Math.max(1, Math.round((lastDay - firstDay) / 86400000) + 1);
 
   const maxY = 15;
   const yStep = 2;
@@ -1475,8 +1444,8 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
 
   // ── Nighttime shading ──
   if (daylight && !daylight.alwaysDay) {
-    for (let dayOff = 0; dayOff < FORECAST_DAYS_VISIBLE + 1; dayOff++) {
-      const dayDate = new Date(pageStart);
+    for (let dayOff = 0; dayOff < dayCount + 1; dayOff++) {
+      const dayDate = new Date(firstDay);
       dayDate.setDate(dayDate.getDate() + dayOff);
       const dl = calcDaylight(STATE.pinLat || CONFIG.chocomount.lat, STATE.pinLon || CONFIG.chocomount.lon, dayDate);
       if (dl && dl.sunset && dl.sunrise) {
@@ -1515,10 +1484,9 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
   // ── Day separators (at midnight) ──
   ctx.strokeStyle = '#e0dbd3';
   ctx.lineWidth = 0.5;
-  for (let dayOff = 0; dayOff <= FORECAST_DAYS_VISIBLE; dayOff++) {
-    const midDate = new Date(pageStart);
+  for (let dayOff = 0; dayOff <= dayCount; dayOff++) {
+    const midDate = new Date(firstDay);
     midDate.setDate(midDate.getDate() + dayOff);
-    midDate.setHours(0, 0, 0, 0);
     const xx = xPos(midDate);
     if (xx > pad.left && xx < pad.left + plotW) {
       ctx.beginPath();
@@ -1613,8 +1581,9 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
   const arrowY = pad.top + (isMobile ? 10 : 14);
   const windLabelY = pad.top + (isMobile ? 22 : 29);
 
-  for (let dayOff = 0; dayOff < FORECAST_DAYS_VISIBLE; dayOff++) {
-    const arrowDate = new Date(pageStart);
+  // One arrow at 6am each day across the full 7-day window.
+  for (let dayOff = 0; dayOff < dayCount; dayOff++) {
+    const arrowDate = new Date(firstDay);
     arrowDate.setDate(arrowDate.getDate() + dayOff);
     arrowDate.setHours(6, 0, 0, 0);
     const xx = xPos(arrowDate);
@@ -1666,8 +1635,8 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  for (let dayOff = 0; dayOff < FORECAST_DAYS_VISIBLE; dayOff++) {
-    const noonDate = new Date(pageStart);
+  for (let dayOff = 0; dayOff < dayCount; dayOff++) {
+    const noonDate = new Date(firstDay);
     noonDate.setDate(noonDate.getDate() + dayOff);
     noonDate.setHours(12, 0, 0, 0);
     const xx = xPos(noonDate);
@@ -1680,9 +1649,8 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
 
     // Line 2: low tide times for this day
     if (tideHiLo) {
-      const dayStart = new Date(pageStart);
+      const dayStart = new Date(firstDay);
       dayStart.setDate(dayStart.getDate() + dayOff);
-      dayStart.setHours(0, 0, 0, 0);
       const dayEnd = new Date(dayStart);
       dayEnd.setDate(dayEnd.getDate() + 1);
 
@@ -1723,7 +1691,7 @@ function _drawForecastChartPage(marine, wind, daylight, tideHiLo, pageStart, pag
   STATE.forecastChart = {
     pad, plotW, plotH, W, H, t0, tEnd, tRange,
     times: allTimes, heights, wavePeriods, swellDirs, windSpeeds, windDirs, windGusts,
-    tideHiLo, pageStart, pageEnd
+    tideHiLo, firstDay, dayCount
   };
   setupForecastInteraction(canvas, container);
 }
@@ -1761,12 +1729,11 @@ function setupForecastInteraction(canvas, container) {
 
     const targetT = cs.t0 + tFrac * cs.tRange;
 
-    // Find nearest hour within the visible page window
     let closest = -1;
     let closestDiff = Infinity;
     for (let i = 0; i < cs.times.length; i++) {
       const tt = cs.times[i].getTime();
-      if (tt < cs.t0 || tt >= cs.tEnd) continue;
+      if (tt > cs.tEnd) break;
       const diff = Math.abs(tt - targetT);
       if (diff < closestDiff) { closestDiff = diff; closest = i; }
     }
@@ -1845,95 +1812,19 @@ function setupForecastInteraction(canvas, container) {
     canvas.style.cursor = '';
   }, { signal });
 
-  // ── Touch events (mobile: tap/drag to select + swipe to page) ──
-  let touching = false;
-  let touchStartX = 0;
-  let touchStartY = 0;
-  let touchMoved = false;
-  let swipeHandled = false;
-  const SWIPE_THRESHOLD = 60;
-  const SWIPE_ANGLE_LIMIT = 35; // max degrees from horizontal
-
+  // ── Touch events (mobile: tap/drag to select hour) ──
   canvas.addEventListener('touchstart', function(e) {
-    if (e.touches.length === 1) {
-      touching = true;
-      touchMoved = false;
-      swipeHandled = false;
-      touchStartX = e.touches[0].clientX;
-      touchStartY = e.touches[0].clientY;
-    }
+    if (e.touches.length !== 1) return;
+    const idx = findNearestIndex(e.touches[0].clientX);
+    if (idx >= 0) selectHour(idx);
   }, { passive: true, signal });
 
   canvas.addEventListener('touchmove', function(e) {
-    if (!touching || e.touches.length !== 1) return;
-    const t = e.touches[0];
-    const dx = t.clientX - touchStartX;
-    const dy = t.clientY - touchStartY;
-    touchMoved = true;
-
-    // Determine if this is a horizontal swipe
-    const angle = Math.abs(Math.atan2(dy, dx) * 180 / Math.PI);
-    const isHorizontal = (angle < SWIPE_ANGLE_LIMIT || angle > (180 - SWIPE_ANGLE_LIMIT));
-
-    if (isHorizontal && Math.abs(dx) > SWIPE_THRESHOLD && !swipeHandled) {
-      // Swipe detected — page the forecast
-      swipeHandled = true;
-      if (dx < 0) {
-        // Swipe left → next page
-        _forecastDayOffset++;
-      } else {
-        // Swipe right → prev page
-        if (_forecastDayOffset > 0) _forecastDayOffset--;
-      }
-      if (STATE.forecastData) {
-        const fd = STATE.forecastData;
-        drawForecastChart(fd.marine, fd.wind, fd.daylight, fd.tideHiLo);
-      }
-    } else if (!swipeHandled && !isHorizontal) {
-      // Vertical-ish drag — select hour
-      e.preventDefault();
-      const idx = findNearestIndex(t.clientX);
-      selectHour(idx);
-    }
+    if (e.touches.length !== 1) return;
+    e.preventDefault();
+    const idx = findNearestIndex(e.touches[0].clientX);
+    if (idx >= 0) selectHour(idx);
   }, { passive: false, signal });
-
-  canvas.addEventListener('touchend', function() {
-    // If it was a quick tap (no swipe, minimal move), select hour at tap position
-    if (touching && !touchMoved && !swipeHandled) {
-      // Already handled in touchstart implicitly via no move
-    }
-    touching = false;
-    // Keep selection visible on mobile after lifting finger
-  }, { signal });
-
-  canvas.addEventListener('touchcancel', function() {
-    touching = false;
-  }, { signal });
-}
-
-// ── Forecast nav button wiring (called once on init) ──
-let _forecastNavWired = false;
-function wireForecastNav() {
-  if (_forecastNavWired) return;
-  _forecastNavWired = true;
-
-  el('forecast-prev').addEventListener('click', function() {
-    if (_forecastDayOffset > 0) {
-      _forecastDayOffset--;
-      if (STATE.forecastData) {
-        const d = STATE.forecastData;
-        drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo);
-      }
-    }
-  });
-
-  el('forecast-next').addEventListener('click', function() {
-    _forecastDayOffset++;
-    if (STATE.forecastData) {
-      const d = STATE.forecastData;
-      drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo);
-    }
-  });
 }
 
 function drawArrow(ctx, x, y, dirDeg, size, color, lineW) {
@@ -4738,9 +4629,6 @@ async function initApp() {
   // Init maps
   initBuoyMap();
   initTideMap();
-
-  // Wire forecast chart navigation buttons
-  wireForecastNav();
 
   // Wire forecast-coords toggle (Choc only behaviour; the wrap is hidden for
   // non-Choc selections via applyChocOnlyVisibility).

@@ -369,6 +369,12 @@ a:hover { text-decoration: underline; }
   height: 260px;
 }
 
+/* Forecast chart needs more vertical space for the dual-axis layout
+   (height area + period/wind right axis + day labels). */
+.chart-container-tall {
+  height: 340px;
+}
+
 .chart-container canvas {
   display: block;
   height: 100%;
@@ -488,6 +494,47 @@ a:hover { text-decoration: underline; }
   z-index: 5;
   border-radius: 1px;
 }
+
+/* ── Forecast model toolbar ──────────────────── */
+.forecast-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.forecast-model-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono, monospace);
+  font-size: 0.75rem;
+  color: var(--ink2, #5a5550);
+}
+.forecast-model-label-txt { white-space: nowrap; }
+#forecast-model-select {
+  font-family: var(--mono, monospace);
+  font-size: 0.72rem;
+  padding: 3px 6px;
+  border: 1px solid var(--border, #e0dbd3);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink, #2c2825);
+}
+
+/* "Reset to now" link below the chart, shown only when scrubber moved */
+.forecast-reset-row {
+  text-align: right;
+  padding: 4px 12px 0 0;
+}
+.forecast-reset-btn {
+  background: transparent;
+  border: none;
+  color: #2a5a8a;
+  font-family: var(--mono, monospace);
+  font-size: 0.72rem;
+  cursor: pointer;
+  padding: 0;
+}
+.forecast-reset-btn:hover { text-decoration: underline; }
 
 /* ── Panel row (compass + spectrum side by side) ─ */
 .panel-row {

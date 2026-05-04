@@ -88,19 +88,18 @@
       <section class="panel" id="panel-forecast">
         <div class="forecast-header-row">
           <h3 class="panel-title">Swell Forecast</h3>
-          <div class="forecast-day-nav">
-            <button class="forecast-nav-btn" id="forecast-prev" aria-label="Previous days">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-            </button>
-            <span class="forecast-nav-label" id="forecast-nav-label"></span>
-            <button class="forecast-nav-btn" id="forecast-next" aria-label="Next days">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-            </button>
+          <div class="forecast-toolbar">
+            <label class="forecast-model-label">
+              <span class="forecast-model-label-txt">Model:</span>
+              <select id="forecast-model-select" aria-label="Forecast model">
+                <option value="">Best match (default)</option>
+              </select>
+            </label>
           </div>
         </div>
         <details class="widget-help">
           <summary>What is this?</summary>
-          <p>A rolling 72-hour projection of three sea-surface parameters — wave height, wave period, and wind speed — rendered on a shared time axis so their interactions are visible at a glance.</p>
+          <p>A 7-day projection of three sea-surface parameters — swell height, swell period, and wind speed — rendered on a shared time axis so their interactions are visible at a glance. Drag the cursor to scrub through hours; the lineup map and stat grid update to match.</p>
         </details>
         <div class="forecast-coord-toggle" id="forecast-coord-toggle-wrap" style="display:none;">
           <label>
@@ -108,10 +107,13 @@
             Use buoy coordinates for forecast
           </label>
         </div>
-        <div class="chart-container" id="forecast-chart-container">
+        <div class="chart-container chart-container-tall" id="forecast-chart-container">
           <canvas id="forecast-canvas"></canvas>
         </div>
         <div class="forecast-detail-bar" id="forecast-detail-bar"></div>
+        <div class="forecast-reset-row" id="forecast-reset-row" style="display:none;">
+          <button type="button" id="forecast-reset-now" class="forecast-reset-btn">Reset to now</button>
+        </div>
         <div class="panel-footer" id="footer-forecast"></div>
       </section>
 
