@@ -402,16 +402,18 @@ async function fetchWindForecast(lat, lon) {
 }
 
 // ── API: CO-OPS tides ────────────────────────────
-async function fetchTidePredictions(stationId, rangeDays = 3) {
+// rangeHours overrides rangeDays when supplied (max ~720h = 30 days).
+async function fetchTidePredictions(stationId, rangeDays = 3, rangeHours) {
   const now = new Date();
   const beginDate = [
     now.getFullYear(),
     String(now.getMonth() + 1).padStart(2, '0'),
     String(now.getDate()).padStart(2, '0')
   ].join('');
+  const range = rangeHours != null ? rangeHours : rangeDays * 24;
   const params = new URLSearchParams({
     begin_date: beginDate,
-    range: rangeDays * 24,
+    range,
     station: stationId,
     product: 'predictions',
     datum: 'MLLW',
@@ -918,20 +920,26 @@ async function loadAllData(buoy) {
     const tideStn = findNearestTideStation(displayLat, displayLon);
     STATE.nearestTideStation = tideStn;
     let tideHiLoForChart = null;
+    let tidePredForChart = null;
     if (tideStn) {
-      const td = await fetchTideHiLo(tideStn.id, 10);
+      const [td, predData] = await Promise.all([
+        fetchTideHiLo(tideStn.id, 10),
+        fetchTidePredictions(tideStn.id, undefined, 168)
+      ]);
       tideHiLoForChart = td && td.predictions ? td.predictions : null;
+      tidePredForChart = predData && predData.predictions ? predData.predictions : null;
     }
 
     // Cache forecast data for personal-match scoring (consumed by Tab 2 / future).
     STATE._cachedMarine = marine;
     STATE._cachedWind = wind;
     STATE._cachedTideHiLo = tideHiLoForChart;
+    STATE._cachedTidePred = tidePredForChart;
 
     // ── Tide condition card ──
     updateTideCard(tideHiLoForChart, tideStn);
 
-    drawForecastChart(marine, wind, daylight, tideHiLoForChart);
+    drawForecastChart(marine, wind, daylight, tideHiLoForChart, tidePredForChart);
 
     // Refresh lineup overlay (Choc only — uses current Open-Meteo + wind values).
     if (isChoc) drawLineupMap(marine, wind, buoyParsed);
@@ -1031,8 +1039,6 @@ async function loadAllData(buoy) {
 }
 
 async function loadPinData(lat, lon) {
-  _forecastPage = 0; // Reset to first page
-
   el('val-swell-height').textContent = '···';
   el('val-wind-speed').textContent = '···';
   el('val-water-temp').textContent = '···';
@@ -1060,14 +1066,20 @@ async function loadPinData(lat, lon) {
     const tideStn = findNearestTideStation(lat, lon);
     STATE.nearestTideStation = tideStn;
     let tideHiLoForChart = null;
+    let tidePredForChart = null;
     if (tideStn) {
-      const td = await fetchTideHiLo(tideStn.id, 10);
+      const [td, predData] = await Promise.all([
+        fetchTideHiLo(tideStn.id, 10),
+        fetchTidePredictions(tideStn.id, undefined, 168)
+      ]);
       tideHiLoForChart = td && td.predictions ? td.predictions : null;
+      tidePredForChart = predData && predData.predictions ? predData.predictions : null;
     }
 
+    STATE._cachedTidePred = tidePredForChart;
     updateTideCard(tideHiLoForChart, tideStn);
 
-    drawForecastChart(marine, wind, daylight, tideHiLoForChart);
+    drawForecastChart(marine, wind, daylight, tideHiLoForChart, tidePredForChart);
     setFooter('footer-forecast',
       `Open-Meteo Marine · best_match (default) · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`,
       'https://open-meteo.com/en/docs/marine-weather-api',
@@ -1506,6 +1518,43 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
     }
   }
 
+  // ── Tide overlay (drawn before the swell-height area so it sits beneath) ──
+  if (tidePred && tidePred.length > 1) {
+    const tideVals = tidePred.map(p => parseFloat(p.v));
+    const tideMin = Math.min(...tideVals);
+    const tideMax = Math.max(...tideVals);
+    const tideRange = (tideMax - tideMin) || 1;
+    // Tide rides on its own implicit axis: occupy the bottom 70%-30% of the
+    // plot height. Centered around the height-area visual rather than overlapping.
+    const tideTop = pad.top + plotH * 0.30;
+    const tideBot = pad.top + plotH * 0.95;
+    const tideH = tideBot - tideTop;
+    function tideY(v) {
+      const frac = (v - tideMin) / tideRange;
+      return tideBot - frac * tideH;
+    }
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(pad.left, pad.top, plotW, plotH);
+    ctx.clip();
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(58, 125, 125, 0.6)'; // faint teal
+    ctx.lineWidth = 1;
+    let tStarted = false;
+    for (const p of tidePred) {
+      const tt = new Date(p.t).getTime();
+      if (tt < t0 || tt > tEnd) continue;
+      const v = parseFloat(p.v);
+      if (!Number.isFinite(v)) continue;
+      const x = pad.left + ((tt - t0) / tRange) * plotW;
+      const y = tideY(v);
+      if (!tStarted) { ctx.moveTo(x, y); tStarted = true; }
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // ── Area fill (swell height) ──
   ctx.save();
   ctx.beginPath();
@@ -1749,7 +1798,8 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
     const items = [
       { color: STATE.isChocomount ? '#3a7d56' : '#5a7fa0', label: 'swell ft' },
       { color: '#b87a2e', label: 'period s' },
-      { color: '#4a443e', label: 'wind mph', dashed: true }
+      { color: '#4a443e', label: 'wind mph', dashed: true },
+      { color: 'rgba(58,125,125,0.7)', label: 'tide (right-aligned, faint)' }
     ];
     for (const it of items) {
       ctx.strokeStyle = it.color;
@@ -1770,7 +1820,7 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   STATE.forecastChart = {
     pad, plotW, plotH, W, H, t0, tEnd, tRange,
     times: allTimes, heights, wavePeriods, swellDirs, windSpeeds, windDirs, windGusts,
-    tideHiLo, firstDay, dayCount
+    tideHiLo, tidePred, firstDay, dayCount
   };
   setupForecastInteraction(canvas, container);
 }
