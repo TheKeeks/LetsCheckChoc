@@ -7,8 +7,6 @@
 'use strict';
 
 // ── Surf Log Constants ──────────────────────────────
-const CHOC_OFFSHORE_CENTER = 337.5;  // NNW — best offshore wind direction
-const OFFSHORE_HALF_WINDOW = 90;     // ±90° for full score
 const CHOC_WIND_LAT = 41.276083;     // Chocomount land GPS for wind history
 const CHOC_WIND_LON = -71.963725;
 
@@ -3434,15 +3432,6 @@ async function lookupNDBCHistoricalConditions(dateStr) {
     const wSpd = windRow ? (windRow.windSpeed || 0) : 0;
     const wDir = windRow ? (windRow.windDir  || 0) : 0;
 
-    // Blown-water index: easterly wind component averaged over the 24h before session
-    const bwiRows = rows.filter(function(r) {
-      return r.t.getTime() >= sessionMs - 86400000 && r.t.getTime() <= sessionMs && r.windSpeed !== null && r.windDir !== null;
-    });
-    const bwi = bwiRows.length > 0 ? Math.round(
-      bwiRows.reduce(function(s, r) { return s + Math.max(0, r.windSpeed * Math.cos(degToRad(r.windDir - 90))); }, 0)
-      / bwiRows.length * 100
-    ) / 100 : 0;
-
     const conditions = {
       swell: {
         height: Math.round((swellRow.waveHeight || 0) * 10) / 10,
@@ -3452,8 +3441,6 @@ async function lookupNDBCHistoricalConditions(dateStr) {
       },
       wind: { speed: Math.round(wSpd), direction: Math.round(wDir) },
       tide: { height: Math.round(tideInfo.height * 10) / 10, stage: tideInfo.stage, timeToNearest: tideInfo.timeToNearest },
-      blown_water_index: bwi,
-      wind_offshore_score: computeWindOffshoreScore(wDir),
       source: 'ndbc'
     };
 
@@ -3537,26 +3524,6 @@ async function fetchHistoricalTide(dateStr) {
   return fetchJSON(CONFIG.api.coops + '?' + p);
 }
 
-function computeBlownWaterIndex(windData, targetDateStr) {
-  if (!windData?.hourly) return 0;
-  const times = windData.hourly.time || [], speeds = windData.hourly.wind_speed_10m || [], dirs = windData.hourly.wind_direction_10m || [];
-  const target = new Date(targetDateStr).getTime(), t24 = target - 86400000;
-  let sum = 0, count = 0;
-  for (let i = 0; i < times.length; i++) {
-    const t = new Date(times[i]).getTime();
-    if (t >= t24 && t <= target && speeds[i] != null && dirs[i] != null) {
-      const easterly = speeds[i] * Math.cos(degToRad(dirs[i] - 90));
-      if (easterly > 0) { sum += easterly; count++; }
-    }
-  }
-  return count > 0 ? Math.round(sum / count * 100) / 100 : 0;
-}
-
-function computeWindOffshoreScore(windDir) {
-  if (windDir == null) return 0;
-  return Math.round(Math.max(0, 1 - angularDist(windDir, CHOC_OFFSHORE_CENTER) / OFFSHORE_HALF_WINDOW) * 100) / 100;
-}
-
 function findNearestHour(times, dateStr) {
   const t = new Date(dateStr).getTime();
   let best = 0, bestD = Infinity;
@@ -3635,8 +3602,6 @@ async function lookupHistoricalConditions(dateStr) {
       swell: { height: Math.round(swH*10)/10, direction: Math.round(swD), period: Math.round(swP*10)/10, lagHours: lagHours },
       wind: { speed: Math.round(wSpd), direction: Math.round(wDir) },
       tide: { height: Math.round(tideInfo.height*10)/10, stage: tideInfo.stage, timeToNearest: tideInfo.timeToNearest },
-      blown_water_index: computeBlownWaterIndex(wind, dateStr),
-      wind_offshore_score: computeWindOffshoreScore(wDir),
       source: 'openmeteo'
     };
     if (lagHours > 0) {
@@ -3658,7 +3623,6 @@ function renderConditionsDisplay(cond) {
   const display = el('sl-conditions-display');
   if (!display || !cond) return;
   const dl = (l,v) => '<span class="sl-cond-label">'+l+'</span> <span class="sl-cond-val">'+v+'</span>';
-  const hl = (l,v) => '<span class="sl-cond-label">'+l+'</span> <span class="sl-cond-highlight">'+v+'</span>';
   const lagNote = cond.swell.lagHours ? ' ('+cond.swell.lagHours+'h buoy lag)' : '';
   let h = '<div class="sl-cond-row">';
   h += dl('Swell'+lagNote+':', cond.swell.height+'ft '+cond.swell.period+'s '+directionLabel(cond.swell.direction)+' ('+cond.swell.direction+'\u00b0)');
@@ -3666,9 +3630,6 @@ function renderConditionsDisplay(cond) {
   h += '</div><div class="sl-cond-row">';
   h += dl('Wind:', cond.wind.speed+' mph '+directionLabel(cond.wind.direction)+' ('+cond.wind.direction+'\u00b0)');
   h += dl('Tide:', cond.tide.height+'ft '+cond.tide.stage+' ('+cond.tide.timeToNearest+'h to next)');
-  h += '</div><div class="sl-cond-row">';
-  h += hl('Offshore Score:', cond.wind_offshore_score.toFixed(2));
-  h += hl('Blown Water Idx:', cond.blown_water_index.toFixed(2));
   h += '</div>';
   if (cond.swellLagHours > 0) {
     h += `<div class="sl-cond-row"><span class="sl-hint">Using swell from ~${cond.swellLagHours}h ago at buoy (travel time estimate)</span></div>`;
@@ -3894,13 +3855,13 @@ function exportJSON() {
 }
 
 function exportCSV() {
-  const rows = [['id','date','size','windQuality','rideQuality','avg','notes','swellH','swellDir','swellPer','windSpd','windDir','tideH','tideStage','bwi','wos']];
+  const rows = [['id','date','size','windQuality','rideQuality','avg','notes','swellH','swellDir','swellPer','windSpd','windDir','tideH','tideStage']];
   STATE.surfLog.forEach(e => {
     const c = e.conditions||{}, s = c.swell||{}, w = c.wind||{}, t = c.tide||{};
     rows.push([e.id,e.timestamp,e.ratings.size,e.ratings.windQuality,e.ratings.rideQuality,
       ((e.ratings.size+e.ratings.windQuality+e.ratings.rideQuality)/3).toFixed(1),
       '"'+(e.notes||'').replace(/"/g,'""')+'"',
-      s.height||'',s.direction||'',s.period||'',w.speed||'',w.direction||'',t.height||'',t.stage||'',c.blown_water_index||'',c.wind_offshore_score||'']);
+      s.height||'',s.direction||'',s.period||'',w.speed||'',w.direction||'',t.height||'',t.stage||'']);
   });
   const blob = new Blob([rows.map(r=>r.join(',')).join('\n')], { type: 'text/csv' });
   const a = document.createElement('a');
@@ -4087,7 +4048,6 @@ function toggleEntryDetail(entry, tr) {
     if (c.swell.secondary) h += '<br>2nd: '+c.swell.secondary.height+'ft '+c.swell.secondary.period+'s '+directionLabel(c.swell.secondary.direction);
     h += '</div><div class="sl-cond-group"><span class="sl-cond-group-title">Wind</span>'+c.wind.speed+' mph '+directionLabel(c.wind.direction)+' ('+c.wind.direction+'\u00b0)</div>';
     h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Tide</span>'+c.tide.height+'ft '+c.tide.stage+' ('+c.tide.timeToNearest+'h to next)</div>';
-    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Custom</span>Offshore Score: <strong>'+(c.wind_offshore_score?.toFixed(2)||'\u2014')+'</strong><br>Blown Water Idx: <strong>'+(c.blown_water_index?.toFixed(2)||'\u2014')+'</strong></div>';
   } else { h += '<div style="grid-column:1/-1;color:var(--ink4)">No conditions recorded</div>'; }
   h += '</div></td>';
   dr.innerHTML = h; tr.after(dr);
@@ -4106,7 +4066,6 @@ function toggleEntryDetail(entry, tr) {
 // Direction encoded as two window-relative features (alignment + outside_deg) instead
 // of raw sin/cos so the regression can reveal whether the swell window acts as a hard
 // gate, a gradual ramp, or both.
-// blown_water_index disabled for now — kept in code for future use.
 
 // Wave features (target: ratings.size). period_x_alignment tests whether long
 // period only matters when direction lets it through.
@@ -4515,12 +4474,9 @@ function buildForecastConditions(marine, wind, tideHiLo, hi) {
   const secD=marine.hourly.secondary_swell_wave_direction?.[hi]??0;
   const secP=marine.hourly.secondary_swell_wave_period?.[hi]??0;
   const wSpd=wind.hourly.wind_speed_10m?.[hi]??0, wDir=wind.hourly.wind_direction_10m?.[hi]??0;
-  let bwi=0,bc=0;
-  for(let i=Math.max(0,hi-24);i<=hi;i++){const s=wind.hourly.wind_speed_10m?.[i],d=wind.hourly.wind_direction_10m?.[i]; if(s!=null&&d!=null){const e=s*Math.cos(degToRad(d-90)); if(e>0){bwi+=e;bc++;}}}
-  bwi=bc>0?Math.round(bwi/bc*100)/100:0;
   const tideInfo = tideHiLo ? parseTideAtTime({predictions:tideHiLo}, marine.hourly.time?.[hi]) : {height:0,stage:'rising',timeToNearest:0};
   return { swell:{height:swH,direction:swD,period:swP,secondary:secH>0.3?{height:secH,direction:secD,period:secP}:undefined},
-    wind:{speed:wSpd,direction:wDir}, tide:tideInfo, blown_water_index:bwi, wind_offshore_score:computeWindOffshoreScore(wDir) };
+    wind:{speed:wSpd,direction:wDir}, tide:tideInfo };
 }
 
 function findBestMatchPerDay(marine, wind, tideHiLo) {
@@ -4624,8 +4580,8 @@ function openMatchModal(entry, forecastDay, hi) {
   el('modal-title').textContent = new Date(entry.timestamp).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   const ce = el('modal-conditions');
   if (ce && entry.conditions) {
-    const c=entry.conditions, dl=(l,v)=>'<span class="mc-label">'+l+'</span><span class="mc-val">'+v+'</span>', hl=(l,v)=>'<span class="mc-label">'+l+'</span><span class="mc-highlight">'+v+'</span>';
-    ce.innerHTML = [dl('Swell',c.swell.height+'ft '+c.swell.period+'s '+directionLabel(c.swell.direction)), dl('Wind',c.wind.speed+'mph '+directionLabel(c.wind.direction)), dl('Tide',c.tide.height+'ft '+c.tide.stage), hl('Offshore',c.wind_offshore_score?.toFixed(2)||'\u2014'), hl('Blown Water',c.blown_water_index?.toFixed(2)||'\u2014'), fc?dl('Fcst Wind',Math.round(fc.wind.speed)+'mph '+directionLabel(fc.wind.direction)):''].join('');
+    const c=entry.conditions, dl=(l,v)=>'<span class="mc-label">'+l+'</span><span class="mc-val">'+v+'</span>';
+    ce.innerHTML = [dl('Swell',c.swell.height+'ft '+c.swell.period+'s '+directionLabel(c.swell.direction)), dl('Wind',c.wind.speed+'mph '+directionLabel(c.wind.direction)), dl('Tide',c.tide.height+'ft '+c.tide.stage), fc?dl('Fcst Wind',Math.round(fc.wind.speed)+'mph '+directionLabel(fc.wind.direction)):''].join('');
   }
   el('modal-ratings').innerHTML = ratingBadge(entry.ratings.size)+' Size '+ratingBadge(entry.ratings.windQuality)+' Wind '+ratingBadge(entry.ratings.rideQuality)+' Ride';
   el('modal-notes').textContent = entry.notes || '';
