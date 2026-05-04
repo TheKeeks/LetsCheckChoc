@@ -161,6 +161,23 @@ function formatDayShort(date) {
 
 function el(id) { return document.getElementById(id); }
 
+// Apply HiDPI / DPR sizing to a canvas. Sets backing-store dimensions to
+// cssW * dpr × cssH * dpr while keeping the on-screen CSS size unchanged,
+// then scales the 2D context so existing draw code can keep using CSS-pixel
+// coordinates. Setting canvas.width / height also resets any prior context
+// state, so this is safe to call once per draw cycle.
+function setCanvasDPR(canvas, ctx, cssW, cssH) {
+  const dpr = window.devicePixelRatio || 1;
+  const W = Math.max(1, Math.round(cssW));
+  const H = Math.max(1, Math.round(cssH));
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(dpr, dpr);
+}
+
 function setFooter(id, text, url, urlLabel) {
   const footer = el(id);
   if (!footer) return;
@@ -1418,16 +1435,10 @@ function drawForecastChart(marine, wind, daylight, tideHiLo, tidePred) {
 function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const canvas = el('forecast-canvas');
   const container = el('forecast-chart-container');
-  const dpr = window.devicePixelRatio || 1;
-
   const W = container.clientWidth;
   const H = container.clientHeight;
-  canvas.width = W * dpr;
-  canvas.height = H * dpr;
-  canvas.style.width = W + 'px';
-  canvas.style.height = H + 'px';
   const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
+  setCanvasDPR(canvas, ctx, W, H);
 
   // Responsive padding: tighter on mobile for more plot area.
   // Extra right padding now reserves room for the right-side y-axis
@@ -2217,15 +2228,10 @@ function drawArrow(ctx, x, y, dirDeg, size, color, lineW) {
 function drawTideChart(predictions) {
   const canvas = el('tide-canvas');
   const container = canvas.parentElement;
-  const dpr = window.devicePixelRatio || 1;
   const W = container.clientWidth;
   const H = container.clientHeight;
-  canvas.width = W * dpr;
-  canvas.height = H * dpr;
-  canvas.style.width = W + 'px';
-  canvas.style.height = H + 'px';
   const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
+  setCanvasDPR(canvas, ctx, W, H);
 
   const pad = { top: 12, right: 16, bottom: 28, left: 40 };
   const plotW = W - pad.left - pad.right;
@@ -2507,18 +2513,13 @@ function periodColorRGBA(period, alpha) {
 function drawCompassRose(spectral, buoyParsed) {
   const canvas = el('compass-canvas');
   const container = canvas.parentElement;
-  const dpr = window.devicePixelRatio || 1;
   const size = Math.min(
     container.clientWidth || container.offsetWidth || 260,
     container.clientHeight || container.offsetHeight || 260
   );
   if (size <= 0) return;
-  canvas.width = size * dpr;
-  canvas.height = size * dpr;
-  canvas.style.width = size + 'px';
-  canvas.style.height = size + 'px';
   const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
+  setCanvasDPR(canvas, ctx, size, size);
 
   const compact = size < 380;
   const padLabel = compact ? 10 : 14;
@@ -2684,16 +2685,11 @@ function drawCompassRose(spectral, buoyParsed) {
 function drawSpectrum(spectral) {
   const canvas = el('spectrum-canvas');
   const container = canvas.parentElement;
-  const dpr = window.devicePixelRatio || 1;
   const W = container.clientWidth;
   const H = container.clientHeight;
   if (W <= 0 || H <= 0) return;
-  canvas.width = W * dpr;
-  canvas.height = H * dpr;
-  canvas.style.width = W + 'px';
-  canvas.style.height = H + 'px';
   const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
+  setCanvasDPR(canvas, ctx, W, H);
 
   const pad = { top: 12, right: 16, bottom: 36, left: 52 };
   const plotW = W - pad.left - pad.right;
@@ -2811,10 +2807,10 @@ function drawSpectrum(spectral) {
 }
 
 // ════════════════════════════════════════════════
-// SPECTRAL RESIZE OBSERVER
+// CANVAS RESIZE OBSERVER (all four charts)
 // ════════════════════════════════════════════════
 
-(function initSpectralResizeObserver() {
+(function initCanvasResizeObserver() {
   let resizeTimer = null;
   const observer = new ResizeObserver(() => {
     clearTimeout(resizeTimer);
@@ -2823,13 +2819,24 @@ function drawSpectrum(spectral) {
         drawCompassRose(STATE.lastSpectral, STATE.lastBuoyParsed);
         drawSpectrum(STATE.lastSpectral);
       }
+      if (STATE.forecastData && STATE.forecastData.marine) {
+        const d = STATE.forecastData;
+        drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo, d.tidePred);
+      }
+      if (STATE._cachedTidePred) {
+        drawTideChart(STATE._cachedTidePred);
+      }
     }, 250);
   });
   function attach() {
     const cc = el('compass-canvas');
     const sc = el('spectrum-canvas');
+    const fc = el('forecast-canvas');
+    const tc = el('tide-canvas');
     if (cc && cc.parentElement) observer.observe(cc.parentElement);
     if (sc && sc.parentElement) observer.observe(sc.parentElement);
+    if (fc && fc.parentElement) observer.observe(fc.parentElement);
+    if (tc && tc.parentElement) observer.observe(tc.parentElement);
     initRoseScaleToggle();
   }
   if (document.readyState === 'loading') {
