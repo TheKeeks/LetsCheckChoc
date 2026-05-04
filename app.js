@@ -903,6 +903,7 @@ async function loadAllData(buoy) {
   }
 
   // ── Current conditions cards ──
+  STATE._cachedBuoyParsed = buoyParsed;
   updateSwellCard(buoyParsed, marine, buoy, pipelineData?.spectral_summary);
   updateWindCard(wind, buoyParsed, isChoc, displayLat, displayLon);
   updateWaterTempCard(buoyParsed, marine, isChoc);
@@ -1382,6 +1383,8 @@ const FORECAST_HOURS = 168; // 7 × 24
 function drawForecastChart(marine, wind, daylight, tideHiLo, tidePred) {
   // Cache so the scrubber and external reflows can re-render without re-fetching.
   STATE.forecastData = { marine, wind, daylight, tideHiLo, tidePred };
+  // New data → re-resolve scrubber position (may reload from sessionStorage).
+  STATE.scrubberIdx = -1;
   _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred);
 }
 
@@ -1826,70 +1829,82 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
 }
 
 // ════════════════════════════════════════════════
-// FORECAST CHART INTERACTION (click/tap to select + hover)
+// FORECAST CHART SCRUBBER
 // ════════════════════════════════════════════════
+//
+// Scrubber state lives at STATE.scrubberIdx (an integer index into the
+// hourly arrays of the cached marine forecast). On idle, the scrubber
+// resolves to the hour matching Date.now(); the user can click or drag
+// to move it. The position persists for the session via
+// sessionStorage 'lcc-scrubber-hour' (ISO hour string).
 
 let _forecastInteractionAbort = null;
 
-function setupForecastInteraction(canvas, container) {
-  if (_forecastInteractionAbort) _forecastInteractionAbort.abort();
-  _forecastInteractionAbort = new AbortController();
-  const signal = _forecastInteractionAbort.signal;
-
-  const detailBar = el('forecast-detail-bar');
-
-  // Create or reuse crosshair line element
-  let crosshair = container.querySelector('.forecast-crosshair');
-  if (!crosshair) {
-    crosshair = document.createElement('div');
-    crosshair.className = 'forecast-crosshair';
-    container.appendChild(crosshair);
+function findHourIndexForTime(targetMs, cs) {
+  let best = -1;
+  let bestDiff = Infinity;
+  for (let i = 0; i < cs.times.length; i++) {
+    const tt = cs.times[i].getTime();
+    if (tt > cs.tEnd + 30 * 60 * 1000) break;
+    const d = Math.abs(tt - targetMs);
+    if (d < bestDiff) { bestDiff = d; best = i; }
   }
-  crosshair.style.display = 'none';
+  return best;
+}
 
-  function findNearestIndex(clientX) {
-    const cs = STATE.forecastChart;
-    if (!cs) return -1;
-
-    const rect = canvas.getBoundingClientRect();
-    const chartX = clientX - rect.left;
-    const tFrac = (chartX - cs.pad.left) / cs.plotW;
-    if (tFrac < 0 || tFrac > 1) return -1;
-
-    const targetT = cs.t0 + tFrac * cs.tRange;
-
-    let closest = -1;
-    let closestDiff = Infinity;
-    for (let i = 0; i < cs.times.length; i++) {
-      const tt = cs.times[i].getTime();
-      if (tt > cs.tEnd) break;
-      const diff = Math.abs(tt - targetT);
-      if (diff < closestDiff) { closestDiff = diff; closest = i; }
+function getScrubberIndex() {
+  const cs = STATE.forecastChart;
+  if (!cs) return -1;
+  if (typeof STATE.scrubberIdx === 'number' && STATE.scrubberIdx >= 0 && STATE.scrubberIdx < cs.times.length) {
+    return STATE.scrubberIdx;
+  }
+  // Restore from sessionStorage if present
+  let stored = null;
+  try { stored = sessionStorage.getItem('lcc-scrubber-hour'); } catch (_) {}
+  if (stored) {
+    const targetMs = new Date(stored).getTime();
+    if (Number.isFinite(targetMs)) {
+      const idx = findHourIndexForTime(targetMs, cs);
+      if (idx >= 0) {
+        STATE.scrubberIdx = idx;
+        return idx;
+      }
     }
-    return closest;
   }
+  // Default: nearest hour to "now"
+  const idx = findHourIndexForTime(Date.now(), cs);
+  STATE.scrubberIdx = idx;
+  return idx;
+}
 
-  function selectHour(idx) {
-    const cs = STATE.forecastChart;
-    if (!cs || idx < 0) { clearSelection(); return; }
+function isScrubberAtNow() {
+  const cs = STATE.forecastChart;
+  if (!cs) return true;
+  const nowIdx = findHourIndexForTime(Date.now(), cs);
+  return STATE.scrubberIdx === nowIdx;
+}
 
-    const t = cs.times[idx];
-    const h = cs.heights[idx];
-    const p = cs.wavePeriods[idx];
-    const dir = cs.swellDirs[idx];
-    const ws = cs.windSpeeds[idx];
-    const wd = cs.windDirs[idx];
-    const wg = cs.windGusts[idx];
+function applyScrubberToHour(idx) {
+  const cs = STATE.forecastChart;
+  if (!cs || idx < 0) return;
+  const t = cs.times[idx];
+  const h = cs.heights[idx];
+  const p = cs.wavePeriods[idx];
+  const dir = cs.swellDirs[idx];
+  const ws = cs.windSpeeds[idx];
+  const wd = cs.windDirs[idx];
+  const wg = cs.windGusts[idx];
 
+  // ── Floating label below chart ──
+  const detailBar = el('forecast-detail-bar');
+  if (detailBar) {
     const dayName = t.toLocaleDateString('en-US', { weekday: 'short' });
     const timeStr = t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-
-    // Find nearby low tide (within 2 hours)
     let tideHtml = '';
     if (cs.tideHiLo) {
       const twoHrs = 2 * 60 * 60 * 1000;
-      const nearby = cs.tideHiLo.find(p =>
-        p.type === 'L' && Math.abs(new Date(p.t).getTime() - t.getTime()) < twoHrs
+      const nearby = cs.tideHiLo.find(pp =>
+        pp.type === 'L' && Math.abs(new Date(pp.t).getTime() - t.getTime()) < twoHrs
       );
       if (nearby) {
         const td = new Date(nearby.t);
@@ -1897,64 +1912,249 @@ function setupForecastInteraction(canvas, container) {
         tideHtml = `<span class="detail-item"><span class="detail-tide">Low Tide ${tideTime}</span></span>`;
       }
     }
+    detailBar.innerHTML =
+      `<div class="detail-row">` +
+      `<span class="detail-time">${dayName} ${timeStr}</span>` +
+      `<span class="detail-item"><span class="detail-label">Wave</span> <span class="detail-val">${h != null ? h.toFixed(1) + ' ft' : '—'}</span></span>` +
+      `<span class="detail-item"><span class="detail-label">Period</span> <span class="detail-val">${p != null ? p.toFixed(0) + 's' : '—'}</span></span>` +
+      `<span class="detail-item"><span class="detail-label">Dir</span> <span class="detail-val">${directionLabel(dir)}${dir != null ? ' (' + Math.round(dir) + '°)' : ''}</span></span>` +
+      `<span class="detail-item"><span class="detail-label">Wind</span> <span class="detail-val">${ws != null ? Math.round(ws) + ' mph ' + directionLabel(wd) : '—'}</span></span>` +
+      `<span class="detail-item"><span class="detail-label">Gusts</span> <span class="detail-val">${wg != null ? Math.round(wg) + ' mph' : '—'}</span></span>` +
+      tideHtml +
+      `</div>`;
+    detailBar.classList.add('active');
+    detailBar.classList.toggle('scrub-active', !isScrubberAtNow());
+  }
 
-    if (detailBar) {
-      detailBar.innerHTML =
-        `<div class="detail-row">` +
-        `<span class="detail-time">${dayName} ${timeStr}</span>` +
-        `<span class="detail-item"><span class="detail-label">Wave</span> <span class="detail-val">${h != null ? h.toFixed(1) + ' ft' : '—'}</span></span>` +
-        `<span class="detail-item"><span class="detail-label">Period</span> <span class="detail-val">${p != null ? p.toFixed(0) + 's' : '—'}</span></span>` +
-        `<span class="detail-item"><span class="detail-label">Dir</span> <span class="detail-val">${directionLabel(dir)}${dir != null ? ' (' + Math.round(dir) + '°)' : ''}</span></span>` +
-        `<span class="detail-item"><span class="detail-label">Wind</span> <span class="detail-val">${ws != null ? Math.round(ws) + ' mph ' + directionLabel(wd) : '—'}</span></span>` +
-        `<span class="detail-item"><span class="detail-label">Gusts</span> <span class="detail-val">${wg != null ? Math.round(wg) + ' mph' : '—'}</span></span>` +
-        tideHtml +
-        `</div>`;
-      detailBar.classList.add('active');
+  // ── Move overlay crosshair + handle ──
+  const container = el('forecast-chart-container');
+  if (container) {
+    let crosshair = container.querySelector('.forecast-crosshair');
+    if (!crosshair) {
+      crosshair = document.createElement('div');
+      crosshair.className = 'forecast-crosshair';
+      container.appendChild(crosshair);
     }
-
-    // Show crosshair
+    let handle = container.querySelector('.forecast-handle');
+    if (!handle) {
+      handle = document.createElement('div');
+      handle.className = 'forecast-handle';
+      container.appendChild(handle);
+    }
     const dataXPx = cs.pad.left + ((t.getTime() - cs.t0) / cs.tRange) * cs.plotW;
     crosshair.style.display = '';
     crosshair.style.left = dataXPx + 'px';
     crosshair.style.top = cs.pad.top + 'px';
     crosshair.style.height = cs.plotH + 'px';
+    handle.style.display = '';
+    handle.style.left = dataXPx + 'px';
+    const maxY = 15;
+    const handleY = cs.pad.top + cs.plotH - (Math.min(h != null ? h : 0, maxY) / maxY) * cs.plotH;
+    handle.style.top = handleY + 'px';
   }
 
-  function clearSelection() {
-    crosshair.style.display = 'none';
-    if (detailBar) detailBar.classList.remove('active');
+  // ── Cross-feature: lineup map arrows ──
+  if (STATE.isChocomount && STATE.forecastData) {
+    const fd = STATE.forecastData;
+    drawLineupMap(fd.marine, fd.wind, null, idx);
   }
 
-  // ── Mouse events (desktop: hover to preview, click to select) ──
-  canvas.addEventListener('mousemove', function(e) {
-    const idx = findNearestIndex(e.clientX);
-    if (idx >= 0) {
-      selectHour(idx);
-      canvas.style.cursor = 'crosshair';
-    } else {
-      canvas.style.cursor = '';
+  // ── Cross-feature: stat grid (with +Xh / -Xh badge) ──
+  applyStatGridForHour(idx);
+
+  // ── "Reset to now" link visibility ──
+  const resetRow = el('forecast-reset-row');
+  if (resetRow) resetRow.style.display = isScrubberAtNow() ? 'none' : '';
+}
+
+function applyStatGridForHour(idx) {
+  const cs = STATE.forecastChart;
+  if (!cs) return;
+  const fd = STATE.forecastData;
+  if (!fd || !fd.marine || !fd.marine.hourly) return;
+  const t = cs.times[idx];
+  const offsetH = Math.round((t.getTime() - Date.now()) / 3600000);
+  const isNow = offsetH === 0;
+  const badgeText = isNow ? '' : (offsetH > 0 ? `+${offsetH}h` : `${offsetH}h`);
+
+  const setBadge = (cardId, text) => {
+    const card = el(cardId);
+    if (!card) return;
+    let b = card.querySelector('.scrub-badge');
+    if (!text) {
+      if (b) b.remove();
+      return;
     }
+    if (!b) {
+      b = document.createElement('span');
+      b.className = 'scrub-badge';
+      const labelEl = card.querySelector('.condition-label');
+      if (labelEl) labelEl.appendChild(b);
+    }
+    b.textContent = text;
+  };
+
+  if (isNow) {
+    // Restore the cards to their "live" rendering. Re-call the regular
+    // updaters from cached data so any scrub overrides clear cleanly.
+    const buoy = STATE.selectedBuoy;
+    const isChoc = STATE.isChocomount;
+    if (fd.marine && fd.wind) {
+      // Note: we don't have buoyParsed cached so we pass null for it; this
+      // momentarily blanks the swell/wind cards' buoy-derived secondary
+      // lines, but the next data refresh restores them. Acceptable trade-off.
+      updateSwellCard(STATE._cachedBuoyParsed || null, fd.marine, buoy, null);
+      updateWindCard(fd.wind, STATE._cachedBuoyParsed || null, isChoc, STATE.pinLat, STATE.pinLon);
+    }
+    setBadge('card-swell', '');
+    setBadge('card-secondary-swell', '');
+    setBadge('card-wind', '');
+    setBadge('card-tide', '');
+    setBadge('card-temp', '');
+    setBadge('card-daylight', '');
+    return;
+  }
+
+  // Override card values from forecast hourly data at idx.
+  const mh = fd.marine.hourly;
+  const wh = fd.wind && fd.wind.hourly ? fd.wind.hourly : null;
+
+  // Swell
+  const swellHt = mh.swell_wave_height ? mh.swell_wave_height[idx] : null;
+  const swellPer = mh.swell_wave_period ? mh.swell_wave_period[idx] : null;
+  const swellDir = mh.swell_wave_direction ? mh.swell_wave_direction[idx] : null;
+  if (swellHt != null) {
+    el('val-swell-height').textContent = `${swellHt.toFixed(1)} ft`;
+    el('val-swell-detail').textContent = `${swellPer != null ? swellPer.toFixed(0) + 's' : '—'} ${swellDir != null ? directionLabel(swellDir) : ''}`.trim();
+  }
+  setBadge('card-swell', badgeText);
+
+  // Secondary swell
+  const secHt = mh.secondary_swell_wave_height ? mh.secondary_swell_wave_height[idx] : null;
+  const secPer = mh.secondary_swell_wave_period ? mh.secondary_swell_wave_period[idx] : null;
+  const secDir = mh.secondary_swell_wave_direction ? mh.secondary_swell_wave_direction[idx] : null;
+  if (secHt != null) {
+    el('val-sec-swell-height').textContent = `${secHt.toFixed(1)} ft`;
+    el('val-sec-swell-detail').textContent = `${secPer != null ? secPer.toFixed(0) + 's' : '—'} ${secDir != null ? directionLabel(secDir) : ''}`.trim();
+    setBadge('card-secondary-swell', badgeText);
+  }
+
+  // Wind
+  if (wh) {
+    const ws = wh.wind_speed_10m ? wh.wind_speed_10m[idx] : null;
+    const wd = wh.wind_direction_10m ? wh.wind_direction_10m[idx] : null;
+    const wg = wh.wind_gusts_10m ? wh.wind_gusts_10m[idx] : null;
+    if (ws != null) {
+      el('val-wind-speed').textContent = `${Math.round(ws)} mph`;
+      const detail = `${wd != null ? directionLabel(wd) : ''}${wg != null ? ' · g ' + Math.round(wg) : ''}`;
+      el('val-wind-detail').textContent = detail.trim() || '—';
+    }
+    setBadge('card-wind', badgeText);
+  }
+
+  // Tide / temp / daylight: leave as "now" — the scrubber doesn't change
+  // these intuitively (tide is its own panel, temp varies slowly, daylight
+  // is per-day). No badge, no override.
+}
+
+function setupForecastInteraction(canvas, container) {
+  if (_forecastInteractionAbort) _forecastInteractionAbort.abort();
+  _forecastInteractionAbort = new AbortController();
+  const signal = _forecastInteractionAbort.signal;
+
+  // Resolve initial scrubber position and apply it.
+  const initialIdx = getScrubberIndex();
+  if (initialIdx >= 0) applyScrubberToHour(initialIdx);
+
+  function indexFromClientX(clientX) {
+    const cs = STATE.forecastChart;
+    if (!cs) return -1;
+    const rect = canvas.getBoundingClientRect();
+    const chartX = clientX - rect.left;
+    const tFrac = Math.max(0, Math.min(1, (chartX - cs.pad.left) / cs.plotW));
+    const targetT = cs.t0 + tFrac * cs.tRange;
+    return findHourIndexForTime(targetT, cs);
+  }
+
+  function setScrubberToIdx(idx, persist) {
+    const cs = STATE.forecastChart;
+    if (!cs || idx < 0) return;
+    STATE.scrubberIdx = idx;
+    if (persist) {
+      try {
+        const t = cs.times[idx];
+        const iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') +
+          '-' + String(t.getDate()).padStart(2, '0') +
+          'T' + String(t.getHours()).padStart(2, '0') + ':00';
+        sessionStorage.setItem('lcc-scrubber-hour', iso);
+      } catch (_) {}
+    }
+    applyScrubberToHour(idx);
+  }
+
+  // ── Mouse: click anywhere → jump; mousedown + drag → follow ──
+  let dragging = false;
+  canvas.addEventListener('mousedown', (e) => {
+    dragging = true;
+    canvas.style.cursor = 'ew-resize';
+    const idx = indexFromClientX(e.clientX);
+    setScrubberToIdx(idx, true);
+    e.preventDefault();
   }, { signal });
 
-  canvas.addEventListener('mouseleave', function() {
-    clearSelection();
+  canvas.addEventListener('mousemove', (e) => {
+    if (!dragging) {
+      // No hover preview — scrubber only moves on drag/click.
+      return;
+    }
+    const idx = indexFromClientX(e.clientX);
+    setScrubberToIdx(idx, true);
+  }, { signal });
+
+  window.addEventListener('mouseup', () => {
+    dragging = false;
     canvas.style.cursor = '';
   }, { signal });
 
-  // ── Touch events (mobile: tap/drag to select hour) ──
-  canvas.addEventListener('touchstart', function(e) {
+  // ── Touch: tap to jump, drag to follow ──
+  canvas.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1) return;
-    const idx = findNearestIndex(e.touches[0].clientX);
-    if (idx >= 0) selectHour(idx);
+    const idx = indexFromClientX(e.touches[0].clientX);
+    setScrubberToIdx(idx, true);
   }, { passive: true, signal });
 
-  canvas.addEventListener('touchmove', function(e) {
+  canvas.addEventListener('touchmove', (e) => {
     if (e.touches.length !== 1) return;
     e.preventDefault();
-    const idx = findNearestIndex(e.touches[0].clientX);
-    if (idx >= 0) selectHour(idx);
+    const idx = indexFromClientX(e.touches[0].clientX);
+    setScrubberToIdx(idx, true);
   }, { passive: false, signal });
 }
+
+function resetScrubberToNow() {
+  const cs = STATE.forecastChart;
+  if (!cs) return;
+  STATE.scrubberIdx = findHourIndexForTime(Date.now(), cs);
+  try { sessionStorage.removeItem('lcc-scrubber-hour'); } catch (_) {}
+  applyScrubberToHour(STATE.scrubberIdx);
+}
+
+// Wire the "Reset to now" link once. The button is hidden by default
+// and revealed by applyScrubberToHour when off-now.
+(function wireForecastReset() {
+  function attach() {
+    const btn = el('forecast-reset-now');
+    if (btn && !btn._wired) {
+      btn._wired = true;
+      btn.addEventListener('click', resetScrubberToNow);
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attach);
+  } else {
+    attach();
+  }
+})();
 
 function drawArrow(ctx, x, y, dirDeg, size, color, lineW) {
   // dirDeg is "from" direction (meteorological). Arrow points in the "to" direction.
@@ -4565,24 +4765,32 @@ function _lineupArrow(svg, fromDeg, length, color, label) {
   svg.appendChild(g);
 }
 
-function drawLineupMap(marine, wind, buoyParsed) {
+function drawLineupMap(marine, wind, buoyParsed, hourIdx) {
   const svg = el('lineup-overlay');
   if (!svg) return;
   while (svg.firstChild) svg.removeChild(svg.firstChild);
   const ns = 'http://www.w3.org/2000/svg';
 
-  // Pull "now" values: prefer hourly[0] (Open-Meteo current doesn't expose
-  // secondary swell), fall back to current/buoy where appropriate.
+  // When hourIdx is supplied (scrubber moved), pull all values from
+  // marine.hourly[hourIdx] / wind.hourly[hourIdx]. Otherwise fall back to
+  // hourly[0] / current as before.
   const hr = marine && marine.hourly ? marine.hourly : null;
   const cur = marine && marine.current ? marine.current : {};
-  const waveFt = (hr && hr.swell_wave_height ? hr.swell_wave_height[0] : null) ?? cur.swell_wave_height ?? cur.wave_height;
-  const period = (hr && hr.swell_wave_period ? hr.swell_wave_period[0] : null) ?? cur.swell_wave_period ?? cur.wave_period;
-  const swellDir = (hr && hr.swell_wave_direction ? hr.swell_wave_direction[0] : null) ?? cur.swell_wave_direction ?? cur.wave_direction;
-  const sHeight = hr && hr.secondary_swell_wave_height ? hr.secondary_swell_wave_height[0] : null;
-  const sPeriod = hr && hr.secondary_swell_wave_period ? hr.secondary_swell_wave_period[0] : null;
-  const sDir    = hr && hr.secondary_swell_wave_direction ? hr.secondary_swell_wave_direction[0] : null;
-  const wSpd = wind && wind.current ? wind.current.wind_speed_10m : null;
-  const wDir = wind && wind.current ? wind.current.wind_direction_10m : null;
+  const i = (typeof hourIdx === 'number' && hourIdx >= 0) ? hourIdx : 0;
+  const useScrub = typeof hourIdx === 'number' && hourIdx >= 0;
+  const waveFt = (hr && hr.swell_wave_height ? hr.swell_wave_height[i] : null) ?? (useScrub ? null : (cur.swell_wave_height ?? cur.wave_height));
+  const period = (hr && hr.swell_wave_period ? hr.swell_wave_period[i] : null) ?? (useScrub ? null : (cur.swell_wave_period ?? cur.wave_period));
+  const swellDir = (hr && hr.swell_wave_direction ? hr.swell_wave_direction[i] : null) ?? (useScrub ? null : (cur.swell_wave_direction ?? cur.wave_direction));
+  const sHeight = hr && hr.secondary_swell_wave_height ? hr.secondary_swell_wave_height[i] : null;
+  const sPeriod = hr && hr.secondary_swell_wave_period ? hr.secondary_swell_wave_period[i] : null;
+  const sDir    = hr && hr.secondary_swell_wave_direction ? hr.secondary_swell_wave_direction[i] : null;
+  const wHr = wind && wind.hourly ? wind.hourly : null;
+  const wSpd = useScrub
+    ? (wHr && wHr.wind_speed_10m ? wHr.wind_speed_10m[i] : null)
+    : (wind && wind.current ? wind.current.wind_speed_10m : null);
+  const wDir = useScrub
+    ? (wHr && wHr.wind_direction_10m ? wHr.wind_direction_10m[i] : null)
+    : (wind && wind.current ? wind.current.wind_direction_10m : null);
 
   // ── Cone (swell window) ──
   const coneRadius = 40;
@@ -4645,7 +4853,13 @@ function drawLineupMap(marine, wind, buoyParsed) {
     const lbl = (wSpd != null ? Math.round(wSpd) : '–') + 'mph ' + directionLabel(wDir);
     _lineupArrow(svg, wDir, len, '#fbbf24', lbl);
   }
-  setFooter('footer-lineup', 'Live "now" — primary swell, secondary swell, wind. Arrows converge on the lineup.');
+  if (useScrub && hr && hr.time && hr.time[i]) {
+    const t = new Date(hr.time[i]);
+    const stamp = t.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+    setFooter('footer-lineup', `Scrubbed to ${stamp} — primary swell, secondary swell, wind. Arrows converge on the lineup.`);
+  } else {
+    setFooter('footer-lineup', 'Live "now" — primary swell, secondary swell, wind. Arrows converge on the lineup.');
+  }
 }
 
 // ════════════════════════════════════════════════

@@ -485,14 +485,46 @@ a:hover { text-decoration: underline; }
   font-weight: 500;
 }
 
-/* ── Forecast crosshair ──────────────────────── */
+/* ── Forecast scrubber (vertical line + circular handle) ── */
 .forecast-crosshair {
   position: absolute;
-  width: 2px;
-  background: rgba(90, 127, 160, 0.5);
+  width: 1.5px;
+  background: rgba(44, 40, 37, 0.7);
   pointer-events: none;
   z-index: 5;
   border-radius: 1px;
+}
+.forecast-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.5px solid #2c2825;
+  pointer-events: none;
+  z-index: 6;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.forecast-detail-bar { display: block; }
+.forecast-detail-bar.scrub-active {
+  background: #2c2825;
+  color: #f0ece6;
+  border-top-color: #2c2825;
+}
+.forecast-detail-bar.scrub-active .detail-label { color: #b5afa8; }
+.forecast-detail-bar.scrub-active .detail-tide { color: #67e8f9; }
+.scrub-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #2c2825;
+  color: #f0ece6;
+  font-family: var(--mono, monospace);
+  font-size: 0.65rem;
+  font-weight: 500;
+  vertical-align: middle;
 }
 
 /* ── Forecast model toolbar ──────────────────── */
