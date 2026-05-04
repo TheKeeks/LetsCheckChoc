@@ -1,5 +1,97 @@
 # Changelog
 
+## [Unreleased] — Prompt #3: Tab 1 forecast redesign
+
+### Gate
+
+- **Reverted** the Prompt #2 `sessionStorage['lcc-gate'] = 'yes'` write.
+  Yes path now matches the original spec: show "Go Home" splash for 2s
+  and return to the gate question. Only `'no'` persists and dismisses
+  the overlay. `test-gate.js` gains an explicit test asserting the
+  Yes-write does not exist.
+
+### Buoy selector
+
+- The `<section id="panel-map">` now lives outside `#view-forecast`
+  (between the global header and the tab strip), so it's visible on
+  every tab.
+- Auto-collapse to a one-line summary on the first buoy/pin selection
+  (e.g. `📍 Choc · 44097 — Block Island, NY · 40.97°N, -71.12°W
+  [change]`). `[change]` re-expands. State persists to
+  `localStorage.lcc-buoy-map-collapsed`; if no selection is in flight
+  the map force-expands regardless.
+
+### Tab 1 reorder
+
+DOM order now: lineup map → forecast chart → stat grid → wave-spectra
+summary + compass rose (side by side; summary left, rose right) →
+wave energy spectrum → tide stations panel + tide-station selector
+map.
+
+### Forecast chart
+
+Sweeping rewrite of `drawForecastChart` / `_drawForecastChartFull` at
+`app.js`. A header comment block lists what was ported from
+`project/Swell Forecast.html` and what was invented locally.
+
+- **Full 7-day view, no pagination.** `_forecastDayOffset`,
+  `FORECAST_DAYS_VISIBLE`, the `#forecast-prev` / `#forecast-next`
+  buttons, the day-range nav label, swipe-to-page, and
+  `wireForecastNav()` are all gone. The chart spans 168 hours anchored
+  at `marine.hourly.time[0]`.
+- **Visual redesign.** Right-side y-axis (0–30) carries swell period
+  (solid burnt-orange line) and wind speed (dashed dark line). One
+  swell-direction arrow every 6 hours (~28 across the window) anchored
+  just above the height curve. Day separators stay at midnights;
+  weekday labels render at noon; hour ticks (`00:00 / 06:00 / 12:00 /
+  18:00`) only on the current day. Mini in-plot legend on desktop.
+- **Tide overlay.** Thin teal tide curve drawn beneath the swell-height
+  area from a new 168-hour 6-min CO-OPS predictions fetch (existing
+  `fetchTidePredictions(stationId, undefined, 168)`). Existing
+  low-tide drop-lines preserved on top.
+- **Draggable scrubber.** Vertical line + circular handle on the height
+  curve. Click to jump, drag to follow, release leaves it in place.
+  Defaults to the hour matching `Date.now()` on idle. Persists for the
+  session via `sessionStorage.lcc-scrubber-hour` (ISO hour string).
+  A "Reset to now" link below the chart appears off-now and clears
+  the storage.
+  - Cross-feature wiring: lineup map's three arrows + the swell /
+    secondary-swell / wind stat cards adopt the scrubbed-hour values.
+    Stat cards gain a `+Xh` / `-Xh` badge when off-now. Tide / temp /
+    daylight cards are pinned to "now" (not meaningfully forecastable
+    at this resolution). Wave Spectra / Compass / Energy Spectrum /
+    Tide Stations are buoy-instantaneous and unaffected.
+- **Model toggle.** New `<select id="forecast-model-select">` next to
+  the chart title. Default = best_match (no `models=` param sent).
+  Verified models from the live Open-Meteo Marine docs (only those
+  exposing `swell_wave_*` are user-selectable):
+    - `meteofrance_wave` — MeteoFrance MFWAM (0.08°)
+    - `dwd_ewam` — DWD EWAM (0.05°)
+    - `dwd_gwam` — DWD GWAM (0.25°)
+    - `ecmwf_wam` — ECMWF WAM (~9 km)
+    - `ecmwf_wam025` — ECMWF WAM (0.25°)
+    - `gfs_wave025` — GFS Wave (NOAA, 0.25°)
+    - `gfs_wave016` — GFS Wave (NOAA, 0.16°)
+    - `era5_ocean` — ERA5-Ocean (0.5°)
+  - `meteofrance_ocean_currents` is omitted (no swell variables).
+  - Selection persists to `localStorage.lcc-forecast-model`. On a
+    failed fetch, falls back to best_match for that load with a toast.
+  - Chart footer now reads `Open-Meteo Marine · <model description> ·
+    <coords>` — replaces the placeholder
+    `best_match (default)` literal from Prompt #2.
+- **DPR fix.** New `setCanvasDPR(canvas, ctx, cssW, cssH)` helper
+  applied to `forecast-canvas`, `tide-canvas`, `compass-canvas`,
+  `spectrum-canvas`. The ResizeObserver now watches the forecast and
+  tide containers in addition to the existing spectral pair, so all
+  four charts re-render crisply on viewport resize.
+
+### New keys
+
+- `localStorage.lcc-buoy-map-collapsed` (`'true'`|`'false'`)
+- `localStorage.lcc-forecast-model` (model id or absent)
+- `sessionStorage.lcc-scrubber-hour` (ISO hour, e.g.
+  `'2026-05-04T15:00'`)
+
 ## [Unreleased] — Tab restructure pass
 
 ### Three-tab shell
