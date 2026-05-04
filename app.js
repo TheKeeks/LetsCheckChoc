@@ -474,9 +474,7 @@ async function fetchText(url, timeout = 10000) {
 
 async function fetchTextWithProxies(rawUrl, timeout = 15000) {
   for (const proxy of CONFIG.api.ndbcProxies) {
-    const url = proxy.encode
-      ? proxy.prefix + encodeURIComponent(rawUrl)
-      : proxy.prefix + rawUrl;
+    const url = proxy.wrap(rawUrl);
     const result = await fetchText(url, timeout);
     if (result) return result;
   }
