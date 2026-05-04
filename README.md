@@ -36,18 +36,24 @@ LetsCheckChoc/
 └── README.md                   This file
 ```
 
-## What Replaces What
+## App Structure
 
-If you had the previous single-file LetsCheckChoc:
+The app is organised as three tabs that share a global header (buoy
+selector + auth bar):
 
-| Old file | New replacement | Notes |
-|----------|----------------|-------|
-| `index.html` (single file) | `index.html` + `app.js` + `style.css` | Split into 3 files |
-| `scripts/fetch_forecast.py` | Deleted | Open-Meteo replaces gfs-Wave pipeline |
-| `scripts/fetch_buoy.py` | `scripts/fetch_buoy.py` (simplified) | Same name, simpler code |
-| `.github/workflows/update-forecast.yml` | Deleted | No longer needed |
-| `.github/workflows/update-buoy.yml` | `.github/workflows/update-buoy.yml` | Simplified |
-| `data/forecast.json` | Deleted | Open-Meteo replaces it |
+1. **Current Conditions & Forecast** — lineup map (Choc only), swell
+   forecast chart, current-snapshot stat grid (with primary + secondary
+   swell, wind, tide, water temp, daylight), wave spectra summary,
+   spectral compass rose, wave energy spectrum, tide-station selector.
+2. **Regression Results** — sample summary, learned-preference weights,
+   diagnostic placeholders. Chocomount-only.
+3. **Log a Session** — log form (Choc only), past sessions table
+   (crowdsourced; visible to all signed-in users), JSON/CSV export and
+   import.
+
+Forecast and wind data come from Open-Meteo (no `models=` is sent, so
+the API picks `best_match`). Buoy and spectral data come from NDBC via
+a CORS-proxy chain, with the `data/buoy.json` pipeline as fallback.
 
 ## Data Sources
 
@@ -64,10 +70,10 @@ All data is fetched browser-side (no server needed) except the ndbc fallback pip
 ## Chocomount Access Gate
 
 The app shows a "Are you coming by boat today?" prompt on first visit.
-- "No" → full access including Chocomount star on the map
-- "Yes" → "Go Home" message is displayed (beach access is for land visitors)
-
-The answer is stored in sessionStorage (resets when the browser tab is closed).
+- "No" → full access including Chocomount star on the map.
+- "Yes" → "Go Home" splash, then the user lands on the buoy map with no
+  Chocomount auto-select. Both choices persist for the session in
+  `sessionStorage['lcc-gate']`.
 
 ## Customization
 

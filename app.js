@@ -37,7 +37,6 @@ const CONFIG = {
     openMeteoWeather: 'https://api.open-meteo.com/v1/forecast',
     openMeteoArchive: 'https://archive-api.open-meteo.com/v1/archive',
     coops: 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter',
-    nws: 'https://api.weather.gov/points/',
     ndbcProxies: [
       { name: 'corsproxy.io', wrap: function(url) { return 'https://corsproxy.io/?' + encodeURIComponent(url); } },
       { name: 'allorigins',   wrap: function(url) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url); } },
@@ -636,13 +635,6 @@ async function fetchNDBCSpectral(buoyId) {
     fetchTextWithProxies(base + '.swr2', 15000)
   ]);
   return { spec, dataSpec, swdir, swdir2, swr1, swr2 };
-}
-
-// ── API: NWS wind (Chocomount) ───────────────────
-async function fetchNWSWind(lat, lon) {
-  const meta = await fetchJSON(`${CONFIG.api.nws}${lat.toFixed(4)},${lon.toFixed(4)}`);
-  if (!meta || !meta.properties || !meta.properties.forecastHourly) return null;
-  return fetchJSON(meta.properties.forecastHourly);
 }
 
 // ── API: Pipeline fallback for Chocomount ────────
