@@ -1051,7 +1051,7 @@ async function loadAllData(buoy) {
 
     const coordLabel = isChoc ? `${forecastLat}°N, ${Math.abs(forecastLon)}°W (open water)` : `${forecastLat.toFixed(3)}°N, ${Math.abs(forecastLon).toFixed(3)}°W`;
     setFooter('footer-forecast',
-      `Open-Meteo Marine · gfs Wave 0.16° · ${coordLabel}`,
+      `Open-Meteo Marine · best_match (default) · ${coordLabel}`,
       'https://open-meteo.com/en/docs/marine-weather-api',
       'open-meteo.com'
     );
@@ -1199,7 +1199,7 @@ async function loadPinData(lat, lon) {
 
     drawForecastChart(marine, wind, daylight, tideHiLoForChart);
     setFooter('footer-forecast',
-      `Open-Meteo Marine · gfs Wave 0.16° · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`,
+      `Open-Meteo Marine · best_match (default) · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`,
       'https://open-meteo.com/en/docs/marine-weather-api',
       'open-meteo.com'
     );
