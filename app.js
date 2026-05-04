@@ -3051,7 +3051,40 @@ function photoUrl(p) {
   if (!p) return '';
   if (typeof p === 'string') return p;
   if (p.url) return p.url;
+  if (p._uploadFailed && typeof p._localDataURI === 'string') return p._localDataURI;
   return '';
+}
+
+// Walks every entry's photos and re-saves any that still carry _uploadFailed.
+// Called once after the surf log finishes loading on page init; saveLogEntry-
+// ToFirebase will retry the upload when given a marker that has a stored
+// _localDataURI, and silently re-mark on continued failure.
+async function retryFailedPhotoUploads() {
+  if (!window._fbUserId || window._fbUserIsAnon) return;
+  const candidates = (STATE.surfLog || []).filter(function(e) {
+    return Array.isArray(e.photos) && e.photos.some(function(p) {
+      return p && p._uploadFailed && typeof p._localDataURI === 'string';
+    });
+  });
+  if (candidates.length === 0) return;
+  showToast('Retrying ' + candidates.length + ' photo upload(s)…');
+  let stillFailing = 0;
+  for (const entry of candidates) {
+    try {
+      await saveLogEntryToFirebase(entry);
+    } catch (e) {
+      console.warn('Retry save failed:', e);
+    }
+    const remaining = (entry.photos || []).filter(function(p) { return p && p._uploadFailed; }).length;
+    if (remaining > 0) stillFailing++;
+  }
+  saveSurfLog();
+  renderSurfLogTable();
+  if (stillFailing === 0) {
+    showToast('All photos synced', 'success');
+  } else {
+    showToast(stillFailing + ' photos still failing — will retry next load', 'warn');
+  }
 }
 
 async function saveLogEntryToFirebase(entry) {
@@ -3074,8 +3107,23 @@ async function saveLogEntryToFirebase(entry) {
   const processedPhotos = [];
   for (let i = 0; i < (entry.photos || []).length; i++) {
     const p = entry.photos[i];
-    if (typeof p === 'object' && p.url) {
+    if (typeof p === 'object' && p && p.url) {
       processedPhotos.push(p);
+    } else if (typeof p === 'object' && p && p._uploadFailed && typeof p._localDataURI === 'string') {
+      // Retry a previously-failed upload using the cached data URI.
+      try {
+        const path = 'surf-photos/raw/' + window._fbUserId + '/' + YYYY + '/' + MM + '/' + ts + '_' + i + '.jpg';
+        const ref = fbStorage.ref(path);
+        const res = await fetch(p._localDataURI);
+        const blob = await res.blob();
+        await ref.put(blob, { contentType: 'image/jpeg' });
+        const url = await ref.getDownloadURL();
+        processedPhotos.push({ url: url, path: path });
+      } catch (err) {
+        console.warn('Photo upload retry failed:', err);
+        // Keep the failure marker so the next attempt can try again.
+        processedPhotos.push(p);
+      }
     } else if (typeof p === 'string' && p.startsWith('http')) {
       processedPhotos.push({ url: p, path: '' });
     } else if (typeof p === 'string' && p.startsWith('data:')) {
@@ -3094,20 +3142,28 @@ async function saveLogEntryToFirebase(entry) {
         processedPhotos.push({ url: url, path: path });
       } catch (err) {
         console.warn('Photo upload failed:', err);
-        showToast('\u26a0 A photo failed to upload', 'warn');
-        // Do NOT store raw base64 in Firestore — it exceeds the 1MB document limit
-        // and gets truncated, producing broken images. Skip the photo instead.
+        showToast('\u26a0 A photo failed to upload — will retry', 'warn');
+        // Mark the photo for a later retry instead of dropping it. The local
+        // mirror keeps the data URI under _localDataURI; on the next save or
+        // page load, retryFailedPhotoUploads picks it up again.
+        processedPhotos.push({ url: null, path: null, _uploadFailed: true, _localDataURI: p });
       }
     }
     // Other formats (unknown objects without .url, etc.) are silently dropped
   }
   entry.photos = processedPhotos;
+  // Strip the local-only _localDataURI from anything we ship to Firestore — those
+  // strings can be hundreds of kilobytes and would push the doc past the 1 MB cap.
+  const remotePhotos = processedPhotos.map(function(p) {
+    if (p && p._uploadFailed) return { url: null, path: null, _uploadFailed: true };
+    return p;
+  });
   const payload = {
     id: entry.id,
     userId: window._fbUserId,
     displayName: window._fbDisplayName || '',
     timestamp: entry.timestamp,
-    photos: processedPhotos,
+    photos: remotePhotos,
     ratings: entry.ratings,
     notes: entry.notes || '',
     conditions: entry.conditions || null,
@@ -3148,7 +3204,7 @@ async function loadLogsFromFirebase() {
     return {
       id: d.id,
       timestamp: d.timestamp,
-      photos: (d.photos || []).filter(function(p) { return p && (p.url || typeof p === 'string'); }),
+      photos: (d.photos || []).filter(function(p) { return p && (p.url || typeof p === 'string' || p._uploadFailed); }),
       ratings: d.ratings,
       notes: d.notes || '',
       conditions: d.conditions || null,
@@ -4657,6 +4713,8 @@ async function initApp() {
   initPersonalMatchToggle();
   initMatchModal();
   slRetrain();
+  // Re-attempt any photo uploads that failed on a prior session.
+  retryFailedPhotoUploads().catch(function(e) { console.warn('Retry pass failed:', e); });
 
   // Wire auth buttons
   el('auth-signin-btn')?.addEventListener('click', function() {
