@@ -362,7 +362,21 @@ async function fetchWithProxies(rawUrl, timeout = 10000) {
 }
 
 // ── API: Open-Meteo Marine ───────────────────────
-async function fetchMarineForecast(lat, lon) {
+// List of Open-Meteo Marine API models verified against the live docs at
+// https://open-meteo.com/en/docs/marine-weather-api (only those that
+// expose swell_wave_* variables are user-selectable).
+const FORECAST_MODELS = [
+  { value: 'meteofrance_wave', label: 'MeteoFrance MFWAM (0.08°)' },
+  { value: 'dwd_ewam',         label: 'DWD EWAM (0.05°)' },
+  { value: 'dwd_gwam',         label: 'DWD GWAM (0.25°)' },
+  { value: 'ecmwf_wam',        label: 'ECMWF WAM (~9 km)' },
+  { value: 'ecmwf_wam025',     label: 'ECMWF WAM (0.25°)' },
+  { value: 'gfs_wave025',      label: 'GFS Wave (NOAA, 0.25°)' },
+  { value: 'gfs_wave016',      label: 'GFS Wave (NOAA, 0.16°)' },
+  { value: 'era5_ocean',       label: 'ERA5-Ocean (0.5°)' }
+];
+
+async function fetchMarineForecast(lat, lon, model) {
   const params = new URLSearchParams({
     latitude: lat,
     longitude: lon,
@@ -384,6 +398,7 @@ async function fetchMarineForecast(lat, lon) {
     timezone: 'auto',
     forecast_days: 7
   });
+  if (model) params.set('models', model);
   return fetchJSON(`${CONFIG.api.openMeteoMarine}?${params}`);
 }
 
@@ -880,12 +895,18 @@ async function loadAllData(buoy) {
   el('val-tide').textContent = '···';
 
   // Fetch all in parallel
-  const [marine, wind, buoyData, pipelineData] = await Promise.all([
-    fetchMarineForecast(forecastLat, forecastLon),
+  const selectedModel = getForecastModel();
+  let [marine, wind, buoyData, pipelineData] = await Promise.all([
+    fetchMarineForecast(forecastLat, forecastLon, selectedModel),
     fetchWindForecast(displayLat, displayLon),
     buoy.spectral ? fetchNDBCStdmet(buoy.id) : Promise.resolve(null),
     isChoc ? fetchPipelineBuoy() : Promise.resolve(null)
   ]);
+  if (selectedModel && !marineHasUsableData(marine)) {
+    showToast(`Model ${selectedModel} unavailable, falling back to best_match`, 'warn');
+    setForecastModel('');
+    marine = await fetchMarineForecast(forecastLat, forecastLon, null);
+  }
 
   // Parse buoy data (CORS proxy primary, pipeline fallback for Choc)
   let buoyParsed = parseNDBCStdmet(buoyData);
@@ -947,7 +968,7 @@ async function loadAllData(buoy) {
 
     const coordLabel = isChoc ? `${forecastLat}°N, ${Math.abs(forecastLon)}°W (open water)` : `${forecastLat.toFixed(3)}°N, ${Math.abs(forecastLon).toFixed(3)}°W`;
     setFooter('footer-forecast',
-      `Open-Meteo Marine · best_match (default) · ${coordLabel}`,
+      `Open-Meteo Marine · ${describeForecastModel(selectedModel)} · ${coordLabel}`,
       'https://open-meteo.com/en/docs/marine-weather-api',
       'open-meteo.com'
     );
@@ -1045,10 +1066,16 @@ async function loadPinData(lat, lon) {
   el('val-water-temp').textContent = '···';
   el('val-tide').textContent = '···';
 
-  const [marine, wind] = await Promise.all([
-    fetchMarineForecast(lat, lon),
+  const selectedModel = getForecastModel();
+  let [marine, wind] = await Promise.all([
+    fetchMarineForecast(lat, lon, selectedModel),
     fetchWindForecast(lat, lon)
   ]);
+  if (selectedModel && !marineHasUsableData(marine)) {
+    showToast(`Model ${selectedModel} unavailable, falling back to best_match`, 'warn');
+    setForecastModel('');
+    marine = await fetchMarineForecast(lat, lon, null);
+  }
 
   // Current conditions from Open-Meteo only
   updateSwellCard(null, marine, null);
@@ -1082,7 +1109,7 @@ async function loadPinData(lat, lon) {
 
     drawForecastChart(marine, wind, daylight, tideHiLoForChart, tidePredForChart);
     setFooter('footer-forecast',
-      `Open-Meteo Marine · best_match (default) · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`,
+      `Open-Meteo Marine · ${describeForecastModel(selectedModel)} · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`,
       'https://open-meteo.com/en/docs/marine-weather-api',
       'open-meteo.com'
     );
@@ -4886,6 +4913,62 @@ function initForecastCoordsToggle() {
 }
 
 // ════════════════════════════════════════════════
+// FORECAST MODEL TOGGLE (Tab 1)
+// ════════════════════════════════════════════════
+
+function getForecastModel() {
+  try {
+    const v = localStorage.getItem('lcc-forecast-model');
+    if (!v) return '';
+    if (v === 'best_match' || v === 'default') return '';
+    if (FORECAST_MODELS.some(m => m.value === v)) return v;
+    return '';
+  } catch (_) { return ''; }
+}
+
+function setForecastModel(v) {
+  try {
+    if (v) localStorage.setItem('lcc-forecast-model', v);
+    else localStorage.removeItem('lcc-forecast-model');
+  } catch (_) {}
+  const sel = el('forecast-model-select');
+  if (sel) sel.value = v || '';
+}
+
+function describeForecastModel(v) {
+  if (!v) return 'best_match (default)';
+  const m = FORECAST_MODELS.find(x => x.value === v);
+  return m ? `${v} · ${m.label}` : v;
+}
+
+// Quick sanity check for the post-fetch fallback path.
+function marineHasUsableData(marine) {
+  if (!marine || !marine.hourly) return false;
+  const h = marine.hourly.swell_wave_height || marine.hourly.wave_height;
+  if (!h || h.length === 0) return false;
+  return h.some(v => v != null && Number.isFinite(v));
+}
+
+function initForecastModelDropdown() {
+  const sel = el('forecast-model-select');
+  if (!sel) return;
+  // Populate options (default option already exists in HTML).
+  for (const m of FORECAST_MODELS) {
+    const opt = document.createElement('option');
+    opt.value = m.value;
+    opt.textContent = m.label;
+    sel.appendChild(opt);
+  }
+  sel.value = getForecastModel();
+  sel.addEventListener('change', () => {
+    setForecastModel(sel.value);
+    // Re-fetch the active selection with the new model.
+    if (STATE.selectedBuoy) loadAllData(STATE.selectedBuoy);
+    else if (STATE.pinLat != null && STATE.pinLon != null) loadPinData(STATE.pinLat, STATE.pinLon);
+  });
+}
+
+// ════════════════════════════════════════════════
 // BUOY SELECT DROPDOWN (global header)
 // ════════════════════════════════════════════════
 
@@ -4976,6 +5059,7 @@ async function initApp() {
   // Wire forecast-coords toggle (Choc only behaviour; the wrap is hidden for
   // non-Choc selections via applyChocOnlyVisibility).
   initForecastCoordsToggle();
+  initForecastModelDropdown();
 
   // Populate the buoy <select> dropdown that mirrors the map for keyboard /
   // accessibility users.
