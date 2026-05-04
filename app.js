@@ -1387,11 +1387,13 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  // Responsive padding: tighter on mobile for more plot area
+  // Responsive padding: tighter on mobile for more plot area.
+  // Extra right padding now reserves room for the right-side y-axis
+  // (period seconds + wind mph).
   const isMobile = W < 600;
   const pad = isMobile
-    ? { top: 24, right: 10, bottom: 44, left: 34 }
-    : { top: 32, right: 16, bottom: 52, left: 44 };
+    ? { top: 28, right: 32, bottom: 48, left: 34 }
+    : { top: 36, right: 44, bottom: 56, left: 44 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top - pad.bottom;
 
@@ -1419,9 +1421,17 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
 
   const maxY = 15;
   const yStep = 2;
+  // Shared right-axis scale (period seconds + wind mph). Open-Meteo periods
+  // run roughly 4–22s, wind 0–40+ mph; cap visually at 30 so 30s ≈ 30mph
+  // visually align on the same right scale.
+  const rightMax = 30;
 
   function xPos(time) { return pad.left + ((time.getTime() - t0) / tRange) * plotW; }
   function yPos(val) { return pad.top + plotH - (val / maxY) * plotH; }
+  function yPosRight(val) {
+    const v = Math.max(0, Math.min(rightMax, val));
+    return pad.top + plotH - (v / rightMax) * plotH;
+  }
 
   // Helper: get wave height Y for a given time (interpolated)
   function getHeightAtTime(timeMs) {
@@ -1543,6 +1553,40 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   }
   ctx.stroke();
 
+  // ── Period line (right axis, solid) ──
+  ctx.beginPath();
+  ctx.strokeStyle = '#b87a2e'; // burnt orange
+  ctx.lineWidth = 1.5;
+  let pStarted = false;
+  for (let i = extStart; i <= extEnd; i++) {
+    const p = wavePeriods[i];
+    if (p == null) continue;
+    const x = xPos(allTimes[i]);
+    const y = yPosRight(p);
+    if (!pStarted) { ctx.moveTo(x, y); pStarted = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // ── Wind speed line (right axis, dashed) ──
+  ctx.save();
+  ctx.beginPath();
+  ctx.strokeStyle = '#4a443e';
+  ctx.lineWidth = 1.25;
+  ctx.setLineDash([4, 3]);
+  let wStarted = false;
+  for (let i = extStart; i <= extEnd; i++) {
+    const w = windSpeeds[i];
+    if (w == null) continue;
+    const x = xPos(allTimes[i]);
+    const y = yPosRight(w);
+    if (!wStarted) { ctx.moveTo(x, y); wStarted = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
   ctx.restore(); // remove clip
 
   // ── Low tide vertical drop lines (no labels — labels are below x-axis) ──
@@ -1572,49 +1616,23 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
     });
   }
 
-  // ── Direction arrows at 6am each day ──
-  const arrowSize = isMobile ? 10 : 14;
-  const arrowLineW = isMobile ? 2 : 2.5;
-  const windArrowSize = isMobile ? 7 : 10;
-  const windArrowOffset = isMobile ? 18 : 24;
-  const windFontSize = isMobile ? '8px' : '10px';
-  const arrowY = pad.top + (isMobile ? 10 : 14);
-  const windLabelY = pad.top + (isMobile ? 22 : 29);
+  // ── Direction arrows: one every 6 hours, anchored just above the curve ──
+  const arrowSize = isMobile ? 8 : 10;
+  const arrowLineW = isMobile ? 1.5 : 2;
 
-  // One arrow at 6am each day across the full 7-day window.
-  for (let dayOff = 0; dayOff < dayCount; dayOff++) {
-    const arrowDate = new Date(firstDay);
-    arrowDate.setDate(arrowDate.getDate() + dayOff);
-    arrowDate.setHours(6, 0, 0, 0);
-    const xx = xPos(arrowDate);
+  // Walk the underlying hourly array so arrows snap to actual data hours.
+  for (let i = extStart; i <= extEnd; i++) {
+    const t = allTimes[i];
+    if (t.getHours() % 6 !== 0) continue;
+    const swDir = swellDirs[i];
+    if (swDir == null) continue;
+    const xx = xPos(t);
     if (xx < pad.left || xx > pad.left + plotW) continue;
-
-    const targetT = arrowDate.getTime();
-    let closest = 0;
-    let closestDiff = Infinity;
-    for (let i = 0; i < allTimes.length; i++) {
-      const diff = Math.abs(allTimes[i].getTime() - targetT);
-      if (diff < closestDiff) { closestDiff = diff; closest = i; }
-    }
-
-    // Swell arrow (colored by direction)
-    const swDir = swellDirs[closest];
-    if (swDir != null) {
-      drawArrow(ctx, xx, arrowY, swDir, arrowSize, swellDirColor(swDir), arrowLineW);
-    }
-
-    // Wind arrow (offset right, dark for contrast)
-    const wDir = windDirs[closest];
-    const wSpd = windSpeeds[closest];
-    if (wDir != null) {
-      drawArrow(ctx, xx + windArrowOffset, arrowY, wDir, windArrowSize, '#4a443e', 2);
-      if (wSpd != null) {
-        ctx.fillStyle = '#4a443e';
-        ctx.font = `${windFontSize} "DM Mono", monospace`;
-        ctx.textAlign = 'center';
-        ctx.fillText(`${Math.round(wSpd)}`, xx + windArrowOffset, windLabelY);
-      }
-    }
+    const h = heights[i] != null ? heights[i] : 0;
+    // Place the arrow a touch above the height curve.
+    const yArrow = yPos(Math.min(h, maxY)) - (isMobile ? 10 : 14);
+    if (yArrow < pad.top + 2) continue;
+    drawArrow(ctx, xx, yArrow, swDir, arrowSize, swellDirColor(swDir), arrowLineW);
   }
 
   // ── Y-axis labels ──
@@ -1627,11 +1645,23 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
     ctx.fillText(`${y}`, pad.left - (isMobile ? 4 : 6), yPos(y));
   }
 
-  // ── X-axis labels (date + low tides below) ──
+  // ── Right Y-axis labels (period s / wind mph) ──
+  ctx.fillStyle = '#b87a2e';
+  ctx.font = `${axisFont} "DM Mono", monospace`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const rightStep = 10;
+  for (let v = 0; v <= rightMax; v += rightStep) {
+    ctx.fillText(`${v}`, pad.left + plotW + (isMobile ? 4 : 6), yPosRight(v));
+  }
+
+  // ── X-axis labels: day labels at noon + 6-hour ticks on day 1 only ──
   const dayLabelFont = isMobile ? '9px' : '11px';
   const tideLabelFont = isMobile ? '8px' : '9px';
+  const hourLabelFont = isMobile ? '8px' : '9px';
   const dayLabelY = pad.top + plotH + (isMobile ? 3 : 4);
-  const tideLabelY = pad.top + plotH + (isMobile ? 14 : 18);
+  const hourLabelY = pad.top + plotH + (isMobile ? 14 : 18);
+  const tideLabelY = pad.top + plotH + (isMobile ? 24 : 30);
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
@@ -1642,12 +1672,12 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
     const xx = xPos(noonDate);
     if (xx <= pad.left || xx >= pad.left + plotW) continue;
 
-    // Line 1: day label
+    // Day label (Mon, Tue, ...)
     ctx.fillStyle = '#8a827a';
     ctx.font = `${dayLabelFont} "DM Mono", monospace`;
     ctx.fillText(formatDay(noonDate), xx, dayLabelY);
 
-    // Line 2: low tide times for this day
+    // Low tide times for this day, below
     if (tideHiLo) {
       const dayStart = new Date(firstDay);
       dayStart.setDate(dayStart.getDate() + dayOff);
@@ -1677,7 +1707,21 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
     }
   }
 
-  // ── "ft" label ──
+  // Hour ticks (00:00 / 06:00 / 12:00 / 18:00) only on the current day
+  // (firstDay), since later days are too dense to label cleanly at 7-day width.
+  ctx.fillStyle = '#b5afa8';
+  ctx.font = `${hourLabelFont} "DM Mono", monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (const hh of [0, 6, 12, 18]) {
+    const tick = new Date(firstDay);
+    tick.setHours(hh, 0, 0, 0);
+    const xx = xPos(tick);
+    if (xx <= pad.left + 8 || xx >= pad.left + plotW - 8) continue;
+    ctx.fillText(`${String(hh).padStart(2, '0')}:00`, xx, hourLabelY);
+  }
+
+  // ── Axis-unit labels ──
   ctx.save();
   ctx.fillStyle = '#b5afa8';
   ctx.font = `${isMobile ? '8px' : '10px'} "DM Mono", monospace`;
@@ -1686,6 +1730,41 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   ctx.rotate(-Math.PI / 2);
   ctx.fillText('ft', 0, 0);
   ctx.restore();
+  ctx.save();
+  ctx.fillStyle = '#b5afa8';
+  ctx.font = `${isMobile ? '8px' : '10px'} "DM Mono", monospace`;
+  ctx.textAlign = 'center';
+  ctx.translate(W - (isMobile ? 8 : 12), pad.top + plotH / 2);
+  ctx.rotate(Math.PI / 2);
+  ctx.fillText('s · mph', 0, 0);
+  ctx.restore();
+
+  // ── Mini legend (top-right, inside the plot) ──
+  if (!isMobile) {
+    ctx.font = '9px "DM Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    let lx = pad.left + 8;
+    const ly = pad.top + 8;
+    const items = [
+      { color: STATE.isChocomount ? '#3a7d56' : '#5a7fa0', label: 'swell ft' },
+      { color: '#b87a2e', label: 'period s' },
+      { color: '#4a443e', label: 'wind mph', dashed: true }
+    ];
+    for (const it of items) {
+      ctx.strokeStyle = it.color;
+      ctx.lineWidth = 1.5;
+      if (it.dashed) ctx.setLineDash([3, 2]); else ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      ctx.lineTo(lx + 18, ly);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#5a5550';
+      ctx.fillText(it.label, lx + 22, ly);
+      lx += 22 + ctx.measureText(it.label).width + 14;
+    }
+  }
 
   // ── Store chart state for interaction ──
   STATE.forecastChart = {
