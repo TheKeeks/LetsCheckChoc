@@ -238,6 +238,28 @@ a:hover { text-decoration: underline; }
   width: 100%;
 }
 
+/* Collapsed buoy-selector header line */
+.panel-buoy-map.is-collapsed #buoy-map { display: none; }
+.buoy-map-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono, monospace);
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  color: var(--ink, #2c2825);
+}
+.buoy-map-expand-btn {
+  background: transparent;
+  border: none;
+  color: #2a5a8a;
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.buoy-map-expand-btn:hover { text-decoration: underline; }
+
 .map-container-sm {
   height: 250px;
 }

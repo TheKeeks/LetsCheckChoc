@@ -678,6 +678,25 @@ function initBuoyMap() {
   // Load saved custom spots
   const spots = JSON.parse(localStorage.getItem('lcc-spots') || '[]');
   spots.forEach(s => addCustomSpotMarker(s));
+
+  // Wire the [change] button on the collapsed summary
+  const expandBtn = el('buoy-map-expand');
+  if (expandBtn) {
+    expandBtn.addEventListener('click', () => setBuoyMapCollapsed(false));
+  }
+
+  // Restore collapse state on load. If a buoy/pin is already selected (saved
+  // session restore would have set STATE.selectedBuoy), respect the stored
+  // preference; otherwise force-expand.
+  const storedCollapsed = localStorage.getItem('lcc-buoy-map-collapsed');
+  const hasSelection = !!STATE.selectedBuoy || (STATE.pinLat != null && STATE.pinLon != null);
+  if (hasSelection && storedCollapsed === 'true') {
+    const lat = STATE.selectedBuoy ? STATE.selectedBuoy.lat : STATE.pinLat;
+    const lon = STATE.selectedBuoy ? STATE.selectedBuoy.lon : STATE.pinLon;
+    setBuoyMapCollapsed(true, buoyMapSummaryFor(STATE.selectedBuoy, lat, lon));
+  } else {
+    setBuoyMapCollapsed(false);
+  }
 }
 
 function addCustomSpotMarker(spot) {
@@ -731,6 +750,39 @@ function initTideMap() {
 // SELECTION LOGIC
 // ════════════════════════════════════════════════
 
+function buoyMapSummaryFor(buoy, lat, lon) {
+  const latStr = `${lat.toFixed(2)}°N`;
+  const lonStr = `${lon.toFixed(2)}°W`;
+  if (buoy) {
+    const prefix = buoy.home === 'chocomount' ? 'Choc · ' : '';
+    return `📍 ${prefix}${buoy.id} — ${buoy.name} · ${latStr}, ${lonStr}`;
+  }
+  return `📍 ${latStr}, ${lonStr}`;
+}
+
+function setBuoyMapCollapsed(collapsed, summaryText) {
+  const panel = el('panel-map');
+  if (!panel) return;
+  const summary = el('buoy-map-summary');
+  if (collapsed) {
+    panel.classList.add('is-collapsed');
+    if (summaryText && el('buoy-map-summary-text')) {
+      el('buoy-map-summary-text').textContent = summaryText;
+    }
+    if (summary) summary.style.display = '';
+  } else {
+    panel.classList.remove('is-collapsed');
+    if (summary) summary.style.display = 'none';
+    // Force Leaflet to recompute size after re-show
+    setTimeout(() => { if (STATE.buoyMap) STATE.buoyMap.invalidateSize(); }, 50);
+  }
+  localStorage.setItem('lcc-buoy-map-collapsed', collapsed ? 'true' : 'false');
+}
+
+function collapseBuoyMapForSelection(buoy, lat, lon) {
+  setBuoyMapCollapsed(true, buoyMapSummaryFor(buoy, lat, lon));
+}
+
 function selectBuoy(buoy) {
   STATE.selectedBuoy = buoy;
   STATE.isChocomount = buoy.home === 'chocomount';
@@ -751,6 +803,9 @@ function selectBuoy(buoy) {
   updateTabBarVisibility();
   syncBuoySelectDropdown();
 
+  // Collapse the buoy-selector map down to a one-line summary.
+  collapseBuoyMapForSelection(buoy, lat, lon);
+
   // Load all data
   loadAllData(buoy);
 }
@@ -765,6 +820,7 @@ function selectPin(lat, lon) {
 
   updateTabBarVisibility();
   syncBuoySelectDropdown();
+  collapseBuoyMapForSelection(null, lat, lon);
   loadPinData(lat, lon);
 }
 
