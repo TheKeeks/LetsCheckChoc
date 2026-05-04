@@ -408,6 +408,8 @@ function swellArrivalTime(periodSeconds, distanceMiles) {
 function initGate() {
   const saved = sessionStorage.getItem('lcc-gate');
   if (saved) {
+    // 'no' → user is on land, auto-select Choc as before.
+    // 'yes' → user is on a boat; skip the overlay but do not auto-select Choc.
     STATE.boatGatePassed = saved === 'no';
     el('gate-overlay').classList.add('hidden');
     el('app').classList.remove('hidden');
@@ -416,6 +418,7 @@ function initGate() {
   }
 
   el('gate-yes').addEventListener('click', () => {
+    sessionStorage.setItem('lcc-gate', 'yes');
     el('gate-question').classList.add('hidden');
     // Replace go-home element with a fresh clone to re-trigger the CSS animation
     const goHome = el('gate-go-home');
@@ -423,8 +426,9 @@ function initGate() {
     clone.classList.remove('hidden');
     goHome.replaceWith(clone);
     setTimeout(() => {
-      el('gate-go-home').classList.add('hidden');
-      el('gate-question').classList.remove('hidden');
+      el('gate-overlay').classList.add('hidden');
+      el('app').classList.remove('hidden');
+      initApp();
     }, 2000);
   });
 
