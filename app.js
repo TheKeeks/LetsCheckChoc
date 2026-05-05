@@ -1418,13 +1418,12 @@ function highlightNearestTideStation(lat, lon) {
 //   │  ┌─ wind  card ─ canvas#forecast-canvas-wind  ──┐  │
 //   │  ┌─ tide callout row (NEXT LOW …) ──────────────┐  │
 //   │  ┌─ tide  card ─ canvas#forecast-canvas-tide  ──┐  │
-//   │  ┌─ arrow row ─ canvas#forecast-canvas-arrows ─┐  │
 //   │  ┌─ day  row ── canvas#forecast-canvas-days  ──┐  │
 //   └──────────────────────────────────────────────────────┘
 //
 // Coordination: a single `_drawForecastChartFull` cycle calls into
-// drawSwellPanel → drawWindPanel → drawTidePanel → drawArrowStrip →
-// drawDayLabels in sequence. Every canvas uses the same horizontal
+// drawSwellPanel → drawWindPanel → drawTidePanel → drawDayLabels in
+// sequence. Every canvas uses the same horizontal
 // padding (FC_PAD.left/right) so the per-canvas xPos is identical;
 // day separators / nighttime shading land at the same x on every card.
 // Visual reference: project/Swell Forecast.html (React prototype).
@@ -1693,6 +1692,47 @@ function drawSwellPanel(common, data) {
   ctx.fillStyle = '#c46a32';
   ctx.fillText('s', plotLeft + plotW - 6, top + 2);
 
+  // Inline daily-peak direction arrows: one per day at the day's
+  // swell-height maximum. Surfline-style at-a-glance summary; replaces
+  // the old below-tide arrow strip. swell_wave_direction is the
+  // direction the swell is COMING FROM; rotate by +180 so each arrow
+  // points where the swell is HEADING (matches how surfers visualize
+  // a swell hitting a coast).
+  const dayPeaks = [];
+  for (let d = 0; d < common.dayCount; d++) {
+    const dayStart = new Date(common.firstDay);
+    dayStart.setDate(dayStart.getDate() + d);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    let bestI = -1, bestH = -Infinity;
+    for (let i = 0; i <= common.lastIdx; i++) {
+      const tt = common.allTimes[i].getTime();
+      if (tt < dayStart.getTime() || tt >= dayEnd.getTime()) continue;
+      const v = heights[i];
+      if (v == null) continue;
+      if (v > bestH) { bestH = v; bestI = i; }
+    }
+    if (bestI >= 0 && swellDirs[bestI] != null) dayPeaks.push(bestI);
+  }
+
+  const arrowSize = isMobile ? 7 : 8;
+  const arrowLineW = 1.5;
+  for (const i of dayPeaks) {
+    const t = common.allTimes[i];
+    const dir = swellDirs[i];
+    const xx = xPos(t);
+    if (xx < plotLeft || xx > plotLeft + plotW) continue;
+    const peakY = ySwell(heights[i]);
+    const arrowY = Math.max(top + arrowSize + 2, peakY - 14);
+    // White-fill / blue-stroke arrow, drawn above the swell-height curve.
+    drawArrowFilled(ctx, xx, arrowY, dir, arrowSize, '#ffffff', '#3a5570', arrowLineW);
+    ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+    ctx.fillStyle = '#666666';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(directionLabel(dir), xx, arrowY + arrowSize + 1);
+  }
+
   return {
     canvas, cssW, cssH, plotLeft, plotW, top, h,
     swellMaxY, ySwell, yPeriod
@@ -1921,40 +1961,6 @@ function drawTidePanel(common, data) {
   return { canvas, cssW, cssH, plotLeft, plotW, top, h, tideMin, tideMax };
 }
 
-function drawArrowStrip(common, data) {
-  const canvas = el('forecast-canvas-arrows');
-  if (!canvas) return null;
-  const cssW = canvas.clientWidth || canvas.parentElement.clientWidth;
-  const cssH = canvas.clientHeight || canvas.parentElement.clientHeight;
-  const ctx = canvas.getContext('2d');
-  setCanvasDPR(canvas, ctx, cssW, cssH);
-
-  const isMobile = common.isMobile;
-  const plotLeft = FC_PAD.left;
-  const plotW    = cssW - FC_PAD.left - FC_PAD.right;
-  ctx.clearRect(0, 0, cssW, cssH);
-
-  const arrowY = cssH * 0.45;
-  const arrowSize = isMobile ? 7 : 9;
-  const arrowLineW = isMobile ? 1.25 : 1.5;
-  const arrowColor = '#4a6e91';
-  const { swellDirs } = data;
-  for (let i = 0; i <= common.lastIdx; i++) {
-    const t = common.allTimes[i];
-    if (t.getHours() % 6 !== 0) continue;
-    const dir = swellDirs[i];
-    if (dir == null) continue;
-    const xx = _fcXFor(t, common, plotLeft, plotW);
-    if (xx < plotLeft || xx > plotLeft + plotW) continue;
-    drawArrow(ctx, xx, arrowY, dir, arrowSize, arrowColor, arrowLineW);
-    ctx.font = `${isMobile ? '7px' : '8px'} "DM Mono", monospace`;
-    ctx.fillStyle = '#8a827a';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText(`${Math.round(dir)}° ${directionLabel(dir)}`, xx, arrowY + arrowSize + 2);
-  }
-}
-
 function drawDayLabels(common) {
   const canvas = el('forecast-canvas-days');
   if (!canvas) return null;
@@ -2068,7 +2074,6 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   });
   drawWindPanel(common, { windSpeeds, windDirs, windMaxY });
   const tideInfo = drawTidePanel(common, { tidePred, tideHiLo });
-  drawArrowStrip(common, { swellDirs });
   drawDayLabels(common);
 
   // Tide callout (HTML overlay, populated as text only).
@@ -2077,10 +2082,8 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   // Container-relative geometry for the scrubber crosshair / handle.
   const swellCanvas = el('forecast-canvas-swell');
   const tideCanvas  = el('forecast-canvas-tide');
-  const arrowCanvas = el('forecast-canvas-arrows');
   const swellCard   = swellCanvas ? swellCanvas.parentElement : null;
   const tideCard    = tideCanvas ? tideCanvas.parentElement : null;
-  const arrowRow    = arrowCanvas ? arrowCanvas.parentElement : null;
 
   const offsetTopWithin = (node, ancestor) => {
     let y = 0, n = node;
@@ -2102,8 +2105,6 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const swellCardTop  = swellCard ? offsetTopWithin(swellCard, container) : 0;
   const tideCardTop   = tideCard  ? offsetTopWithin(tideCard,  container) : 0;
   const tideCardBot   = tideCard  ? tideCardTop + tideCard.offsetHeight : 0;
-  const arrowRowTop   = arrowRow  ? offsetTopWithin(arrowRow,  container) : tideCardBot;
-  const arrowRowBot   = arrowRow  ? arrowRowTop + arrowRow.offsetHeight : tideCardBot;
 
   // Swell drawing area within the container (for handle Y).
   const swellPanelTop = swellCanvas
@@ -2129,7 +2130,7 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
       tideMin: tideInfo ? tideInfo.tideMin : 0,
       tideMax: tideInfo ? tideInfo.tideMax : 1,
       crosshairTop: swellCardTop,
-      crosshairBot: arrowRowBot
+      crosshairBot: tideCardBot
     }
   };
   setupForecastInteraction(container);
@@ -2543,6 +2544,29 @@ function drawArrow(ctx, x, y, dirDeg, size, color, lineW) {
   ctx.lineTo(size - headLen, headW);
   ctx.closePath();
   ctx.fill();
+  ctx.restore();
+}
+
+// Filled triangle marker (no shaft) used for the inline daily-peak swell
+// arrows. White fill, colored stroke. dirDeg is "from" direction;
+// the arrow points where the swell is HEADING (dir + 180).
+function drawArrowFilled(ctx, x, y, dirDeg, size, fillColor, strokeColor, lineW) {
+  const rad = degToRad((dirDeg + 180) % 360 - 90);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rad);
+  ctx.beginPath();
+  ctx.moveTo(size, 0);
+  ctx.lineTo(-size * 0.7, -size * 0.7);
+  ctx.lineTo(-size * 0.4, 0);
+  ctx.lineTo(-size * 0.7, size * 0.7);
+  ctx.closePath();
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = lineW;
+  ctx.stroke();
   ctx.restore();
 }
 
