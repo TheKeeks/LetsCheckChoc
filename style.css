@@ -370,13 +370,55 @@ a:hover { text-decoration: underline; }
 }
 
 /* Forecast chart needs more vertical space for the stacked-panel layout
-   (tide callout + swell + wind + tide + arrow strip + day labels). */
+   (three card-wrapped canvases + callout + arrow row + day labels). */
 .chart-container-tall {
-  height: 540px;
+  height: auto;
+  min-height: 480px;
+  position: relative;
 }
 
 .chart-container canvas {
   display: block;
+  height: 100%;
+}
+
+/* Forecast cards: each canvas wrapped in its own white card. */
+#forecast-chart-container .forecast-card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+  position: relative;
+}
+#forecast-chart-container .forecast-card-swell { height: 200px; }
+#forecast-chart-container .forecast-card-wind  { height: 90px; }
+#forecast-chart-container .forecast-card-tide  { height: 70px; }
+#forecast-chart-container .forecast-card canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#forecast-chart-container .forecast-arrow-row {
+  height: 40px;
+  padding: 0 8px;
+  margin-bottom: 4px;
+  box-sizing: border-box;
+}
+#forecast-chart-container .forecast-arrow-row canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#forecast-chart-container .forecast-day-row {
+  height: 28px;
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+#forecast-chart-container .forecast-day-row canvas {
+  display: block;
+  width: 100%;
   height: 100%;
 }
 
@@ -485,18 +527,18 @@ a:hover { text-decoration: underline; }
   font-weight: 500;
 }
 
-/* ── Forecast tide callout (overlays the canvas band above the tide curve) ── */
+/* ── Forecast tide callout (own row between wind & tide cards) ── */
 .forecast-tide-callout {
-  position: absolute;
   display: flex;
   align-items: center;
+  height: 24px;
   font-family: var(--mono);
   font-size: 0.74rem;
   letter-spacing: 0.04em;
   color: var(--ink);
   pointer-events: none;
-  z-index: 4;
-  padding: 0 4px;
+  padding: 0 12px;
+  margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
 }

@@ -108,7 +108,22 @@
           </label>
         </div>
         <div class="chart-container chart-container-tall" id="forecast-chart-container">
-          <canvas id="forecast-canvas"></canvas>
+          <div class="forecast-card forecast-card-swell">
+            <canvas id="forecast-canvas-swell"></canvas>
+          </div>
+          <div class="forecast-card forecast-card-wind">
+            <canvas id="forecast-canvas-wind"></canvas>
+          </div>
+          <div class="forecast-tide-callout" id="forecast-tide-callout"></div>
+          <div class="forecast-card forecast-card-tide">
+            <canvas id="forecast-canvas-tide"></canvas>
+          </div>
+          <div class="forecast-arrow-row">
+            <canvas id="forecast-canvas-arrows"></canvas>
+          </div>
+          <div class="forecast-day-row">
+            <canvas id="forecast-canvas-days"></canvas>
+          </div>
         </div>
         <div class="forecast-detail-bar" id="forecast-detail-bar"></div>
         <div class="forecast-reset-row" id="forecast-reset-row" style="display:none;">
