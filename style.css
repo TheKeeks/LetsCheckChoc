@@ -395,12 +395,29 @@ a:hover { text-decoration: underline; }
   position: relative;
 }
 #forecast-chart-container .forecast-card-swell { height: 200px; }
-#forecast-chart-container .forecast-card-wind  { height: 90px; }
-#forecast-chart-container .forecast-card-tide  { height: 70px; }
+#forecast-chart-container .forecast-card-wind  { height: 120px; }
+/* Tide card hosts the inline NEXT LOW callout in a 24px row + the curve.
+   Total = 8 (pad-top) + 24 (callout) + 1 (divider) + 120 (curve) + 8 (pad-bot) ≈ 161. */
+#forecast-chart-container .forecast-card-tide  { height: 161px; }
 #forecast-chart-container .forecast-card canvas {
   display: block;
   width: 100%;
   height: 100%;
+}
+/* Tide canvas shares its card with the callout row + divider, so it
+   can't claim 100% — leave 30px on top for those rows. */
+#forecast-chart-container .forecast-card-tide canvas {
+  height: calc(100% - 30px);
+}
+/* Section label vertically aligned with the curve, not the callout row. */
+#forecast-chart-container .forecast-card-tide .forecast-section-label {
+  top: auto;
+  bottom: 8px;
+  height: calc(100% - 38px);
+  transform: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 /* Stacked-letter section label: vertically centered in the 60px column. */
 #forecast-chart-container .forecast-section-label {
@@ -429,9 +446,8 @@ a:hover { text-decoration: underline; }
   width: 100%;
   height: 100%;
 }
-#forecast-chart-container .forecast-tide-callout {
-  padding-left: 60px;
-}
+/* When the callout row is inside the tide card, it inherits the card's
+   60px left-padding (section-label column), so no extra padding needed. */
 
 /* ── Forecast header & navigation ────────────── */
 .forecast-header-row {
@@ -538,20 +554,24 @@ a:hover { text-decoration: underline; }
   font-weight: 500;
 }
 
-/* ── Forecast tide callout (own row between wind & tide cards) ── */
+/* ── Forecast tide callout (top row inside the tide card) ── */
 .forecast-tide-callout {
   display: flex;
   align-items: center;
   height: 24px;
   font-family: var(--mono);
-  font-size: 0.74rem;
+  font-size: 0.78rem;
+  font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--ink);
   pointer-events: none;
-  padding: 0 12px;
-  margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
+}
+.forecast-tide-divider {
+  height: 1px;
+  background: #e8e8e8;
+  margin: 1px 0 4px;
 }
 .forecast-tide-callout .tide-callout-prefix {
   color: var(--ink3);

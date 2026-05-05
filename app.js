@@ -1861,35 +1861,46 @@ function drawTidePanel(common, data) {
     const padInside = 4;
     tideY = (v) => (top + padInside) + (1 - (v - tideMin) / tideRange) * (h - 2 * padInside);
 
+    // Today's portion gets full opacity; days 2-7 fade to 0.7. Subtle
+    // "you are here" cue without breaking the curve continuity.
+    const todayEnd = new Date(); todayEnd.setHours(24, 0, 0, 0);
+    const todayEndX = _fcXFor(todayEnd, common, plotLeft, plotW);
+
     ctx.save();
     ctx.beginPath();
     ctx.rect(plotLeft, top, plotW, h);
     ctx.clip();
-    ctx.beginPath();
-    ctx.strokeStyle = 'rgba(58, 125, 125, 0.85)';
-    ctx.lineWidth = 1.25;
-    let tStarted = false;
-    for (const p of tidePred) {
-      const tt = new Date(p.t).getTime();
-      if (tt < common.t0 || tt > common.tEnd) continue;
-      const v = parseFloat(p.v);
-      if (!Number.isFinite(v)) continue;
-      const x = _fcXFor(new Date(tt), common, plotLeft, plotW);
-      const y = tideY(v);
-      if (!tStarted) { ctx.moveTo(x, y); tStarted = true; }
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
+
+    const tealStroke = '#3a9aa3';
+    const drawSegment = (alpha, xClipMin, xClipMax) => {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(xClipMin, top, Math.max(0, xClipMax - xClipMin), h);
+      ctx.clip();
+      ctx.beginPath();
+      ctx.strokeStyle = tealStroke;
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = 1.5;
+      let tStarted = false;
+      for (const p of tidePred) {
+        const tt = new Date(p.t).getTime();
+        if (tt < common.t0 || tt > common.tEnd) continue;
+        const v = parseFloat(p.v);
+        if (!Number.isFinite(v)) continue;
+        const x = _fcXFor(new Date(tt), common, plotLeft, plotW);
+        const y = tideY(v);
+        if (!tStarted) { ctx.moveTo(x, y); tStarted = true; }
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    };
+    drawSegment(1.0, plotLeft, Math.min(todayEndX, plotLeft + plotW));
+    drawSegment(0.7, Math.max(todayEndX, plotLeft), plotLeft + plotW);
     ctx.restore();
   }
 
-  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
-  ctx.fillStyle = '#3a7d7d';
-  ctx.textBaseline = 'top';
-  ctx.textAlign = 'left';
-  ctx.fillText('tide', plotLeft + 2, top + 2);
-
-  // Low-tide markers + sparse labels
+  // Low-tide markers + sparse labels (with collision avoidance)
   const nowMs = Date.now();
   if (tideHiLo && tideY) {
     const lowsInWindow = tideHiLo
@@ -1899,46 +1910,96 @@ function drawTidePanel(common, data) {
     const lowsAfterNow = lowsInWindow.filter(p => p.t >= nowMs).sort((a, b) => a.t - b.t);
     const labelSet = new Set(lowsAfterNow.slice(0, 2).map(p => p.t));
 
+    // First pass: unlabeled markers.
     for (const lo of lowsInWindow) {
+      if (labelSet.has(lo.t)) continue;
       const xx = _fcXFor(new Date(lo.t), common, plotLeft, plotW);
       if (xx < plotLeft || xx > plotLeft + plotW) continue;
       const yy = tideY(lo.v);
-      if (labelSet.has(lo.t)) {
-        ctx.fillStyle = 'rgba(58, 125, 125, 0.95)';
-        ctx.beginPath();
-        ctx.moveTo(xx, yy + 2);
-        ctx.lineTo(xx - 3, yy - 3);
-        ctx.lineTo(xx + 3, yy - 3);
-        ctx.closePath();
-        ctx.fill();
-        const td = new Date(lo.t);
-        const hrs = td.getHours();
-        const mins = td.getMinutes();
-        const ampm = hrs >= 12 ? 'pm' : 'am';
-        const h12 = hrs % 12 || 12;
-        const timeStr = mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
-        const heightStr = `${lo.v.toFixed(1)}ft`;
-        ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
-        ctx.fillStyle = '#3a7d7d';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        const stackBelow = (yy + 18) < (top + h) - 2;
-        if (stackBelow) {
-          ctx.fillText(timeStr,   xx, yy + 4);
-          ctx.fillText(heightStr, xx, yy + 13);
-        } else {
-          ctx.textBaseline = 'bottom';
-          ctx.fillText(heightStr, xx, yy - 4);
-          ctx.fillText(timeStr,   xx, yy - 13);
+      ctx.fillStyle = 'rgba(58, 125, 125, 0.55)';
+      ctx.beginPath();
+      ctx.moveTo(xx, yy + 1);
+      ctx.lineTo(xx - 3, yy - 4);
+      ctx.lineTo(xx + 3, yy - 4);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Second pass: labeled lows (the next two after nowMs).
+    // Estimate label width once so we can collision-check.
+    ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+    const labelWidth = ctx.measureText('12:00pm').width + 8;
+    const labeled = lowsAfterNow.slice(0, 2).map(lo => ({
+      ...lo,
+      xx: _fcXFor(new Date(lo.t), common, plotLeft, plotW),
+      yy: tideY(lo.v)
+    }));
+
+    for (let li = 0; li < labeled.length; li++) {
+      const lo = labeled[li];
+      const xx = lo.xx, yy = lo.yy;
+      if (xx < plotLeft || xx > plotLeft + plotW) continue;
+      const td = new Date(lo.t);
+      const hrs = td.getHours();
+      const mins = td.getMinutes();
+      const ampm = hrs >= 12 ? 'pm' : 'am';
+      const h12 = hrs % 12 || 12;
+      const timeStr = mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
+      const heightStr = `${lo.v.toFixed(1)}ft`;
+
+      // Triangle marker at the trough
+      ctx.fillStyle = 'rgba(58, 125, 125, 0.95)';
+      ctx.beginPath();
+      ctx.moveTo(xx, yy + 2);
+      ctx.lineTo(xx - 3, yy - 3);
+      ctx.lineTo(xx + 3, yy - 3);
+      ctx.closePath();
+      ctx.fill();
+
+      // Collision: if the previous labeled low is closer than labelWidth
+      // in x, push this one's stack down by ~14px and draw a connector.
+      let pushDown = false;
+      if (li > 0) {
+        const prev = labeled[li - 1];
+        if (Math.abs(xx - prev.xx) < labelWidth) pushDown = true;
+      }
+
+      ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+      ctx.fillStyle = '#3a7d7d';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const baseTop = yy + 4;
+      const lowOff = pushDown ? 14 : 0;
+      const stackBelow = (baseTop + lowOff + 9) < (top + h) - 2;
+      if (stackBelow) {
+        if (pushDown) {
+          // Connector: thin teal line from trough up to label baseline.
+          ctx.save();
+          ctx.strokeStyle = 'rgba(58, 125, 125, 0.7)';
+          ctx.lineWidth = 0.5;
+          ctx.beginPath();
+          ctx.moveTo(xx, yy + 2);
+          ctx.lineTo(xx, baseTop + lowOff - 1);
+          ctx.stroke();
+          ctx.restore();
         }
+        ctx.fillText(timeStr,   xx, baseTop + lowOff);
+        ctx.fillText(heightStr, xx, baseTop + lowOff + 9);
       } else {
-        ctx.fillStyle = 'rgba(58, 125, 125, 0.55)';
-        ctx.beginPath();
-        ctx.moveTo(xx, yy + 1);
-        ctx.lineTo(xx - 2.5, yy - 3);
-        ctx.lineTo(xx + 2.5, yy - 3);
-        ctx.closePath();
-        ctx.fill();
+        ctx.textBaseline = 'bottom';
+        const baseBot = yy - 4 - lowOff;
+        if (pushDown) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(58, 125, 125, 0.7)';
+          ctx.lineWidth = 0.5;
+          ctx.beginPath();
+          ctx.moveTo(xx, yy - 2);
+          ctx.lineTo(xx, baseBot + 1);
+          ctx.stroke();
+          ctx.restore();
+        }
+        ctx.fillText(heightStr, xx, baseBot);
+        ctx.fillText(timeStr,   xx, baseBot - 9);
       }
     }
   }
