@@ -1877,9 +1877,9 @@ function drawWindPanel(common, data) {
       if (bucket === 'cross') bucket = 'off';
       else if (bucket === 'on') bucket = 'cross';
     }
-    if (bucket === 'off')   return 'rgba(110, 169, 107, 0.6)';
-    if (bucket === 'cross') return 'rgba(212, 179, 74, 0.6)';
-    return 'rgba(194, 94, 94, 0.6)';
+    if (bucket === 'off')   return 'rgba(110, 169, 107, 0.7)';
+    if (bucket === 'cross') return 'rgba(212, 179, 74, 0.7)';
+    return 'rgba(194, 94, 94, 0.7)';
   };
 
   ctx.save();
