@@ -1408,19 +1408,27 @@ function highlightNearestTideStation(lat, lon) {
 }
 
 // ════════════════════════════════════════════════
-// SWELL FORECAST CHART (Canvas 2D)
+// SWELL FORECAST CHART (Canvas 2D, stacked panels)
 // ════════════════════════════════════════════════
 //
-// Visual reference: project/Swell Forecast.html (React prototype).
-// Ported visual elements: smooth swell-height area fill (color-coded by
-// wind quality / chocomount swell-direction), full 7-day window with
-// midnight day-separators and weekday labels, nighttime shading, swell
-// direction arrows, DM Mono number typography, draggable scrubber with
-// circular handle on the height curve.
-// Production-only additions: right-side y-axis carrying swell period
-// (solid line) and wind speed (dashed line), tide overlay drawn under
-// the height area, hour ticks (every 6h on day 1 only), low-tide drop
-// markers, and a "Reset to now" link below the chart.
+// One <canvas> partitioned into vertical bands sharing a single x-axis:
+//
+//   ┌──────────────────────── tide callout (NEXT LOW …) ───┐
+//   │  SWELL panel  — primary + secondary area, period line │
+//   │  WIND  panel  — filled area shaded by wind quality    │
+//   │  TIDE  panel  — clean teal curve, sparse low labels   │
+//   │  arrow strip  — swell direction every 6h              │
+//   │  day-label band — Today / Tomorrow / Thu 5/7          │
+//   └───────────────────────────────────────────────────────┘
+//
+// Visual reference: project/Swell Forecast.html (React prototype) — used
+// for typography (DM Mono numbers, Libre Baskerville headings), color
+// palette, and line-weight feel. Layout is original to this project, not
+// ported from the prototype.
+// Day separators (midnight verticals) and nighttime shading run from the
+// top of the swell panel through the bottom of the tide panel — single
+// continuous visual cue. The scrubber (vertical dashed line + handle on
+// the swell curve) crosses all three panels and the arrow strip.
 
 const FORECAST_HOURS = 168; // 7 × 24
 
@@ -1432,6 +1440,63 @@ function drawForecastChart(marine, wind, daylight, tideHiLo, tidePred) {
   _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred);
 }
 
+// Render the "NEXT LOW: …" callout text relative to a target ms timestamp
+// (defaults to Date.now()). Returns the formatted line.
+function formatNextLowCallout(tideHiLo, fromMs) {
+  if (!tideHiLo) return '';
+  const fm = fromMs != null ? fromMs : Date.now();
+  const lows = tideHiLo
+    .filter(p => p.type === 'L')
+    .map(p => ({ t: new Date(p.t).getTime(), v: parseFloat(p.v) }))
+    .filter(p => Number.isFinite(p.v) && p.t > fm)
+    .sort((a, b) => a.t - b.t);
+  const next = lows[0];
+  if (!next) return '';
+  const td = new Date(next.t);
+  const hrs = td.getHours();
+  const mins = td.getMinutes();
+  const ampm = hrs >= 12 ? 'pm' : 'am';
+  const h12 = hrs % 12 || 12;
+  const timeStr = mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
+  // Day word: Today / Tomorrow / weekday
+  const refDay = new Date(fm); refDay.setHours(0, 0, 0, 0);
+  const lowDay = new Date(td); lowDay.setHours(0, 0, 0, 0);
+  const dayDelta = Math.round((lowDay - refDay) / 86400000);
+  let dayWord;
+  if (dayDelta <= 0)      dayWord = 'Today';
+  else if (dayDelta === 1) dayWord = 'Tomorrow';
+  else                     dayWord = td.toLocaleDateString('en-US', { weekday: 'short' });
+  const heightStr = `${next.v.toFixed(1)}ft`;
+  // "in Xh Ym" — relative to fromMs.
+  const deltaMin = Math.max(0, Math.round((next.t - fm) / 60000));
+  const dh = Math.floor(deltaMin / 60);
+  const dm = deltaMin % 60;
+  const inStr = dh > 0 ? `${dh}h ${dm}m` : `${dm}m`;
+  return `${dayWord} ${timeStr} · ${heightStr} · in ${inStr}`;
+}
+
+function positionAndUpdateTideCallout(container, geom, scrubMs) {
+  let cal = container.querySelector('.forecast-tide-callout');
+  if (!cal) {
+    cal = document.createElement('div');
+    cal.className = 'forecast-tide-callout';
+    container.appendChild(cal);
+  }
+  cal.style.left   = geom.plotLeft + 'px';
+  cal.style.top    = geom.calloutTop + 'px';
+  cal.style.width  = geom.plotW + 'px';
+  cal.style.height = geom.calloutH + 'px';
+  const tideHiLo = geom.tideHiLo;
+  if (!tideHiLo) { cal.textContent = ''; return; }
+  const isScrub = scrubMs != null && Math.abs(scrubMs - Date.now()) > 30 * 60 * 1000;
+  const line = formatNextLowCallout(tideHiLo, isScrub ? scrubMs : null);
+  if (!line) { cal.innerHTML = ''; return; }
+  const scrubLabel = isScrub
+    ? `NEXT LOW AFTER ${new Date(scrubMs).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true})}`
+    : 'NEXT LOW';
+  cal.innerHTML = `<span class="tide-callout-prefix">${scrubLabel}:</span> <strong>${line}</strong>`;
+}
+
 function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const canvas = el('forecast-canvas');
   const container = el('forecast-chart-container');
@@ -1440,72 +1505,112 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const ctx = canvas.getContext('2d');
   setCanvasDPR(canvas, ctx, W, H);
 
-  // Responsive padding: tighter on mobile for more plot area.
-  // Extra right padding now reserves room for the right-side y-axis
-  // (period seconds + wind mph).
   const isMobile = W < 600;
+
+  // ── Layout regions (CSS pixels) ──
+  // Vertical:
+  //   [pad.top]
+  //   [swell panel]   ← 50% of usable
+  //   [gap]
+  //   [wind panel]    ← 25% of usable
+  //   [callout band — "NEXT LOW: …" line, sits directly above the tide curve]
+  //   [tide panel]    ← 15% of usable
+  //   [arrow strip]   ← swell-direction arrows, fixed 40px
+  //   [day-label band] ← Today / Tomorrow / Thu 5/7, fixed 22px
+  //   [pad.bottom]
   const pad = isMobile
-    ? { top: 28, right: 32, bottom: 48, left: 34 }
-    : { top: 36, right: 44, bottom: 56, left: 44 };
-  const plotW = W - pad.left - pad.right;
-  const plotH = H - pad.top - pad.bottom;
+    ? { top: 4, right: 36, bottom: 4, left: 36 }
+    : { top: 6, right: 48, bottom: 6, left: 48 };
+  const calloutH    = 28;
+  const arrowStripH = 40;
+  const dayBandH    = 22;
+  const panelGap    = isMobile ? 10 : 14;
 
+  const plotLeft  = pad.left;
+  const plotRight = W - pad.right;
+  const plotW     = plotRight - plotLeft;
+
+  const dayBandBot  = H - pad.bottom;
+  const dayBandTop  = dayBandBot - dayBandH;
+  const arrowBot    = dayBandTop;
+  const arrowTop    = arrowBot - arrowStripH;
+  const panelsTop   = pad.top;
+  const panelsBot   = arrowTop;
+  const panelsTotal = panelsBot - panelsTop;
+  // Panels take 50+25+15 = 90 of the ratio; one inter-panel gap + the callout
+  // band consume the rest.
+  const usable      = panelsTotal - panelGap - calloutH;
+  const swellH      = Math.max(40, usable * 50 / 90);
+  const windH       = Math.max(20, usable * 25 / 90);
+  const tideH       = Math.max(16, usable * 15 / 90);
+  const swellTop = panelsTop;
+  const swellBot = swellTop + swellH;
+  const windTop  = swellBot + panelGap;
+  const windBot  = windTop + windH;
+  const calloutTop = windBot;
+  const calloutBot = calloutTop + calloutH;
+  const tideTop  = calloutBot;
+  const tideBot  = tideTop + tideH;
+
+  // ── Hourly arrays ──
   const allTimes = marine.hourly.time.map(t => new Date(t));
-  const heights = marine.hourly.swell_wave_height || marine.hourly.wave_height || [];
-  const swellDirs = marine.hourly.swell_wave_direction || [];
-  const wavePeriods = marine.hourly.swell_wave_period || marine.hourly.wave_period || [];
-  const windSpeeds = wind && wind.hourly ? wind.hourly.wind_speed_10m || [] : [];
-  const windDirs = wind && wind.hourly ? wind.hourly.wind_direction_10m || [] : [];
-  const windGusts = wind && wind.hourly ? wind.hourly.wind_gusts_10m || [] : [];
+  const heights      = marine.hourly.swell_wave_height || marine.hourly.wave_height || [];
+  const secHeights   = marine.hourly.secondary_swell_wave_height || [];
+  const swellDirs    = marine.hourly.swell_wave_direction || [];
+  // Use peak period when present, otherwise mean period. (Open-Meteo Marine
+  // exposes both depending on model — we asked for both in the fetch.)
+  const peakPeriods  = marine.hourly.swell_wave_peak_period || [];
+  const meanPeriods  = marine.hourly.swell_wave_period || marine.hourly.wave_period || [];
+  const wavePeriods  = peakPeriods.length ? peakPeriods : meanPeriods;
+  const windSpeeds   = wind && wind.hourly ? wind.hourly.wind_speed_10m   || [] : [];
+  const windDirs     = wind && wind.hourly ? wind.hourly.wind_direction_10m || [] : [];
+  const windGusts    = wind && wind.hourly ? wind.hourly.wind_gusts_10m   || [] : [];
 
-  // X-axis spans the full 168 hours (or whatever the marine response gave us),
-  // anchored to the first hourly entry. No pagination.
-  const t0 = allTimes[0].getTime();
+  const t0      = allTimes[0].getTime();
   const lastIdx = Math.min(allTimes.length - 1, FORECAST_HOURS);
-  const tEnd = allTimes[lastIdx].getTime();
-  const tRange = tEnd - t0;
-
+  const tEnd    = allTimes[lastIdx].getTime();
+  const tRange  = tEnd - t0;
   const extStart = 0;
-  const extEnd = lastIdx;
-  // Align day-iteration anchor to the local-midnight that contains t0
+  const extEnd   = lastIdx;
   const firstDay = new Date(t0); firstDay.setHours(0, 0, 0, 0);
-  const lastDay = new Date(tEnd); lastDay.setHours(0, 0, 0, 0);
+  const lastDay  = new Date(tEnd); lastDay.setHours(0, 0, 0, 0);
   const dayCount = Math.max(1, Math.round((lastDay - firstDay) / 86400000) + 1);
 
-  const maxY = 15;
-  const yStep = 2;
-  // Shared right-axis scale (period seconds + wind mph). Open-Meteo periods
-  // run roughly 4–22s, wind 0–40+ mph; cap visually at 30 so 30s ≈ 30mph
-  // visually align on the same right scale.
-  const rightMax = 30;
-
-  function xPos(time) { return pad.left + ((time.getTime() - t0) / tRange) * plotW; }
-  function yPos(val) { return pad.top + plotH - (val / maxY) * plotH; }
-  function yPosRight(val) {
-    const v = Math.max(0, Math.min(rightMax, val));
-    return pad.top + plotH - (v / rightMax) * plotH;
+  // ── Per-panel scales ──
+  // Swell left axis: 0 → max(primary, secondary) × 1.2, rounded up to nearest 2.
+  let swellPeak = 0;
+  for (let i = extStart; i <= extEnd; i++) {
+    if (heights[i]    != null && heights[i]    > swellPeak) swellPeak = heights[i];
+    if (secHeights[i] != null && secHeights[i] > swellPeak) swellPeak = secHeights[i];
   }
-
-  // Helper: get wave height Y for a given time (interpolated)
-  function getHeightAtTime(timeMs) {
-    for (let i = 0; i < allTimes.length - 1; i++) {
-      const t1 = allTimes[i].getTime();
-      const t2 = allTimes[i + 1].getTime();
-      if (timeMs >= t1 && timeMs <= t2) {
-        const frac = (timeMs - t1) / (t2 - t1);
-        const h1 = heights[i] != null ? heights[i] : 0;
-        const h2 = heights[i + 1] != null ? heights[i + 1] : 0;
-        return h1 + frac * (h2 - h1);
-      }
-    }
-    return 0;
+  let swellMaxY = Math.max(2, Math.ceil(swellPeak * 1.2 / 2) * 2);
+  const swellStep = swellMaxY <= 4 ? 1 : (swellMaxY <= 10 ? 2 : 4);
+  // Period right axis: fixed 0–25s.
+  const periodMax = 25;
+  // Wind axis: 0 → max(speed) × 1.2, rounded to nearest 5, floor 10.
+  let windPeak = 0;
+  for (let i = extStart; i <= extEnd; i++) {
+    if (windSpeeds[i] != null && windSpeeds[i] > windPeak) windPeak = windSpeeds[i];
   }
+  const windMaxY = Math.max(10, Math.ceil(windPeak * 1.2 / 5) * 5);
 
-  // ── Background ──
+  function xPos(time) { return plotLeft + ((time.getTime() - t0) / tRange) * plotW; }
+  // Per-panel y functions — each panel has its own (top, height, max).
+  const ySwell  = (val) => swellTop + swellH - (Math.min(val, swellMaxY) / swellMaxY) * swellH;
+  const yPeriod = (val) => {
+    const v = Math.max(0, Math.min(periodMax, val));
+    return swellTop + swellH - (v / periodMax) * swellH;
+  };
+  const yWind   = (val) => windTop  + windH  - (Math.min(val, windMaxY)  / windMaxY)  * windH;
+
+  // ── Paint background ──
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, W, H);
 
-  // ── Nighttime shading ──
+  // ── Nighttime shading: spans swell + wind + tide panels ──
+  const shadingTop = swellTop;
+  const shadingBot = tideBot;
+  const shadingH   = shadingBot - shadingTop;
   if (daylight && !daylight.alwaysDay) {
     for (let dayOff = 0; dayOff < dayCount + 1; dayOff++) {
       const dayDate = new Date(firstDay);
@@ -1517,77 +1622,236 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
         midnightDate.setDate(midnightDate.getDate() + 1);
         midnightDate.setHours(0, 0, 0, 0);
         const midnightX = xPos(midnightDate);
-        if (sunsetX < pad.left + plotW && midnightX > pad.left) {
+        if (sunsetX < plotLeft + plotW && midnightX > plotLeft) {
           ctx.fillStyle = 'rgba(44, 40, 37, 0.04)';
-          ctx.fillRect(Math.max(sunsetX, pad.left), pad.top, Math.min(midnightX, pad.left + plotW) - Math.max(sunsetX, pad.left), plotH);
+          ctx.fillRect(Math.max(sunsetX, plotLeft), shadingTop,
+            Math.min(midnightX, plotLeft + plotW) - Math.max(sunsetX, plotLeft), shadingH);
         }
-        const morningStart = new Date(dayDate);
-        morningStart.setHours(0, 0, 0, 0);
+        const morningStart = new Date(dayDate); morningStart.setHours(0, 0, 0, 0);
         const mStartX = xPos(morningStart);
         const sunriseX = xPos(dl.sunrise);
-        if (mStartX < pad.left + plotW && sunriseX > pad.left) {
+        if (mStartX < plotLeft + plotW && sunriseX > plotLeft) {
           ctx.fillStyle = 'rgba(44, 40, 37, 0.04)';
-          ctx.fillRect(Math.max(mStartX, pad.left), pad.top, Math.min(sunriseX, pad.left + plotW) - Math.max(mStartX, pad.left), plotH);
+          ctx.fillRect(Math.max(mStartX, plotLeft), shadingTop,
+            Math.min(sunriseX, plotLeft + plotW) - Math.max(mStartX, plotLeft), shadingH);
         }
       }
     }
   }
 
-  // ── Grid lines ──
-  ctx.strokeStyle = '#eae6e0';
-  ctx.lineWidth = 0.5;
-  for (let y = 0; y <= maxY; y += yStep) {
-    const yy = yPos(y);
-    ctx.beginPath();
-    ctx.moveTo(pad.left, yy);
-    ctx.lineTo(pad.left + plotW, yy);
-    ctx.stroke();
-  }
-
-  // ── Day separators (at midnight) ──
+  // ── Day separators (midnight verticals) — span all three panels + arrow strip ──
   ctx.strokeStyle = '#e0dbd3';
   ctx.lineWidth = 0.5;
   for (let dayOff = 0; dayOff <= dayCount; dayOff++) {
     const midDate = new Date(firstDay);
     midDate.setDate(midDate.getDate() + dayOff);
     const xx = xPos(midDate);
-    if (xx > pad.left && xx < pad.left + plotW) {
+    if (xx > plotLeft && xx < plotLeft + plotW) {
       ctx.beginPath();
-      ctx.moveTo(xx, pad.top);
-      ctx.lineTo(xx, pad.top + plotH);
+      ctx.moveTo(xx, shadingTop);
+      ctx.lineTo(xx, arrowBot);
       ctx.stroke();
     }
   }
 
-  // ── Tide overlay (drawn before the swell-height area so it sits beneath) ──
-  if (tidePred && tidePred.length > 1) {
-    const tideVals = tidePred.map(p => parseFloat(p.v));
-    const tideMin = Math.min(...tideVals);
-    const tideMax = Math.max(...tideVals);
-    const tideRange = (tideMax - tideMin) || 1;
-    // Tide rides on its own implicit axis: occupy the bottom 70%-30% of the
-    // plot height. Centered around the height-area visual rather than overlapping.
-    const tideTop = pad.top + plotH * 0.30;
-    const tideBot = pad.top + plotH * 0.95;
-    const tideH = tideBot - tideTop;
-    function tideY(v) {
-      const frac = (v - tideMin) / tideRange;
-      return tideBot - frac * tideH;
+  // ── Faint panel dividers ──
+  ctx.strokeStyle = '#eae6e0';
+  ctx.lineWidth = 0.5;
+  for (const yLine of [swellBot, windBot, tideBot]) {
+    ctx.beginPath();
+    ctx.moveTo(plotLeft, yLine);
+    ctx.lineTo(plotLeft + plotW, yLine);
+    ctx.stroke();
+  }
+
+  // ════════════════════════════════════════════════
+  // SWELL PANEL — secondary area + primary area + period line on right axis
+  // ════════════════════════════════════════════════
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(plotLeft, swellTop, plotW, swellH);
+  ctx.clip();
+
+  // Secondary area (lighter blue, behind primary)
+  if (secHeights.length) {
+    ctx.beginPath();
+    ctx.moveTo(xPos(allTimes[extStart]), ySwell(0));
+    for (let i = extStart; i <= extEnd; i++) {
+      const h = secHeights[i] != null ? secHeights[i] : 0;
+      ctx.lineTo(xPos(allTimes[i]), ySwell(h));
     }
+    ctx.lineTo(xPos(allTimes[extEnd]), ySwell(0));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(140, 175, 205, 0.6)';
+    ctx.fill();
+  }
+
+  // Primary swell area (darker blue, on top)
+  ctx.beginPath();
+  ctx.moveTo(xPos(allTimes[extStart]), ySwell(0));
+  for (let i = extStart; i <= extEnd; i++) {
+    const h = heights[i] != null ? heights[i] : 0;
+    ctx.lineTo(xPos(allTimes[i]), ySwell(h));
+  }
+  ctx.lineTo(xPos(allTimes[extEnd]), ySwell(0));
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(74, 110, 145, 0.85)';
+  ctx.fill();
+
+  // Primary swell stroke (top edge)
+  ctx.beginPath();
+  ctx.strokeStyle = '#3a5570';
+  ctx.lineWidth = 1.5;
+  let started = false;
+  for (let i = extStart; i <= extEnd; i++) {
+    const h = heights[i];
+    if (h == null) continue;
+    const x = xPos(allTimes[i]);
+    const y = ySwell(h);
+    if (!started) { ctx.moveTo(x, y); started = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Period line (right axis)
+  ctx.beginPath();
+  ctx.strokeStyle = '#b87a2e';
+  ctx.lineWidth = 1.5;
+  let pStarted = false;
+  for (let i = extStart; i <= extEnd; i++) {
+    const p = wavePeriods[i];
+    if (p == null) continue;
+    const x = xPos(allTimes[i]);
+    const y = yPeriod(p);
+    if (!pStarted) { ctx.moveTo(x, y); pStarted = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // Swell axis labels
+  const axisFont = isMobile ? '9px' : '10px';
+  ctx.font = `${axisFont} "DM Mono", monospace`;
+  ctx.fillStyle = '#3a5570';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let v = 0; v <= swellMaxY; v += swellStep) {
+    ctx.fillText(`${v}`, plotLeft - 4, ySwell(v));
+  }
+  ctx.fillStyle = '#b87a2e';
+  ctx.textAlign = 'left';
+  for (let v = 0; v <= periodMax; v += 5) {
+    ctx.fillText(`${v}`, plotLeft + plotW + 4, yPeriod(v));
+  }
+  // unit labels
+  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#3a5570';
+  ctx.fillText('ft',  plotLeft + 2, swellTop + 2);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#b87a2e';
+  ctx.fillText('s',   plotLeft + plotW - 2, swellTop + 2);
+
+  // ════════════════════════════════════════════════
+  // WIND PANEL — single mph axis, filled area + line on top (color shading lands in next commit)
+  // ════════════════════════════════════════════════
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(plotLeft, windTop, plotW, windH);
+  ctx.clip();
+
+  // Per-hour quality color: offshore (green) / cross-shore (yellow) / onshore (red).
+  // Light winds (<5 mph) upgrade one tier so colors don't mislead at calm hours.
+  // Choc-spec offshore center = 335° (audit / Prompt #4 spec).
+  const OFFSHORE_CENTER = 335;
+  const colorFor = (dir, speed) => {
+    if (dir == null) return 'rgba(150, 145, 138, 0.5)';
+    const gap = Math.min(((dir - OFFSHORE_CENTER) % 360 + 360) % 360,
+                        ((OFFSHORE_CENTER - dir) % 360 + 360) % 360);
+    let bucket;
+    if (gap < 60)        bucket = 'off';
+    else if (gap < 120)  bucket = 'cross';
+    else                 bucket = 'on';
+    if (speed != null && speed < 5) {
+      if (bucket === 'cross') bucket = 'off';
+      else if (bucket === 'on') bucket = 'cross';
+    }
+    if (bucket === 'off')   return 'rgba(110, 169, 107, 0.6)';
+    if (bucket === 'cross') return 'rgba(212, 179, 74, 0.6)';
+    return 'rgba(194, 94, 94, 0.6)';
+  };
+
+  // Fill each hour-segment with its own color. Adjacent segments butt together
+  // — quality is a per-hour quantity, no smoothing.
+  for (let i = extStart; i < extEnd; i++) {
+    const x1 = xPos(allTimes[i]);
+    const x2 = xPos(allTimes[i + 1]);
+    const w1 = windSpeeds[i]     != null ? windSpeeds[i]     : 0;
+    const w2 = windSpeeds[i + 1] != null ? windSpeeds[i + 1] : 0;
+    ctx.beginPath();
+    ctx.moveTo(x1, yWind(0));
+    ctx.lineTo(x1, yWind(w1));
+    ctx.lineTo(x2, yWind(w2));
+    ctx.lineTo(x2, yWind(0));
+    ctx.closePath();
+    ctx.fillStyle = colorFor(windDirs[i], windSpeeds[i]);
+    ctx.fill();
+  }
+
+  // Top stroke
+  ctx.beginPath();
+  ctx.strokeStyle = '#4a443e';
+  ctx.lineWidth = 1.25;
+  let wStarted = false;
+  for (let i = extStart; i <= extEnd; i++) {
+    const w = windSpeeds[i];
+    if (w == null) continue;
+    const x = xPos(allTimes[i]);
+    const y = yWind(w);
+    if (!wStarted) { ctx.moveTo(x, y); wStarted = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.font = `${axisFont} "DM Mono", monospace`;
+  ctx.fillStyle = '#5a5550';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${windMaxY}`, plotLeft - 4, yWind(windMaxY));
+  ctx.fillText('0', plotLeft - 4, yWind(0));
+  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.fillText('mph', plotLeft + 2, windTop + 2);
+
+  // ════════════════════════════════════════════════
+  // TIDE PANEL — clean teal curve + sparse low-tide labels
+  // ════════════════════════════════════════════════
+  let tideMin = 0, tideMax = 1, tideY = null;
+  if (tidePred && tidePred.length > 1) {
+    const vals = tidePred.map(p => parseFloat(p.v)).filter(Number.isFinite);
+    tideMin = Math.min(...vals);
+    tideMax = Math.max(...vals);
+    const tideRange = (tideMax - tideMin) || 1;
+    const padInside = 4;
+    tideY = (v) => (tideTop + padInside) + (1 - (v - tideMin) / tideRange) * (tideH - 2 * padInside);
+
     ctx.save();
     ctx.beginPath();
-    ctx.rect(pad.left, pad.top, plotW, plotH);
+    ctx.rect(plotLeft, tideTop, plotW, tideH);
     ctx.clip();
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(58, 125, 125, 0.6)'; // faint teal
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(58, 125, 125, 0.85)';
+    ctx.lineWidth = 1.25;
     let tStarted = false;
     for (const p of tidePred) {
       const tt = new Date(p.t).getTime();
       if (tt < t0 || tt > tEnd) continue;
       const v = parseFloat(p.v);
       if (!Number.isFinite(v)) continue;
-      const x = pad.left + ((tt - t0) / tRange) * plotW;
+      const x = plotLeft + ((tt - t0) / tRange) * plotW;
       const y = tideY(v);
       if (!tStarted) { ctx.moveTo(x, y); tStarted = true; }
       else ctx.lineTo(x, y);
@@ -1596,272 +1860,182 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
     ctx.restore();
   }
 
-  // ── Area fill (swell height) ──
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(pad.left, 0, plotW, H); // clip to plot area
-  ctx.clip();
-
-  ctx.beginPath();
-  ctx.moveTo(xPos(allTimes[extStart]), yPos(0));
-  for (let i = extStart; i <= extEnd; i++) {
-    const h = heights[i] != null ? heights[i] : 0;
-    ctx.lineTo(xPos(allTimes[i]), yPos(Math.min(h, maxY)));
-  }
-  ctx.lineTo(xPos(allTimes[extEnd]), yPos(0));
-  ctx.closePath();
-
-  if (STATE.isChocomount) {
-    ctx.save();
-    ctx.clip();
-    for (let i = extStart; i < extEnd; i++) {
-      const x1 = xPos(allTimes[i]);
-      const x2 = xPos(allTimes[i + 1]);
-      const dir = swellDirs[i];
-      ctx.fillStyle = swellDirColor(dir);
-      ctx.globalAlpha = 0.35;
-      ctx.fillRect(x1, pad.top, x2 - x1, plotH);
-    }
-    ctx.restore();
-  } else {
-    ctx.fillStyle = 'rgba(90, 127, 160, 0.25)';
-    ctx.fill();
-  }
-
-  // ── Swell height line ──
-  ctx.beginPath();
-  ctx.strokeStyle = STATE.isChocomount ? '#3a7d56' : '#5a7fa0';
-  ctx.lineWidth = 2;
-  let started = false;
-  for (let i = extStart; i <= extEnd; i++) {
-    const h = heights[i];
-    if (h == null) continue;
-    const x = xPos(allTimes[i]);
-    const y = yPos(Math.min(h, maxY));
-    if (!started) { ctx.moveTo(x, y); started = true; }
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  // ── Period line (right axis, solid) ──
-  ctx.beginPath();
-  ctx.strokeStyle = '#b87a2e'; // burnt orange
-  ctx.lineWidth = 1.5;
-  let pStarted = false;
-  for (let i = extStart; i <= extEnd; i++) {
-    const p = wavePeriods[i];
-    if (p == null) continue;
-    const x = xPos(allTimes[i]);
-    const y = yPosRight(p);
-    if (!pStarted) { ctx.moveTo(x, y); pStarted = true; }
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  // ── Wind speed line (right axis, dashed) ──
-  ctx.save();
-  ctx.beginPath();
-  ctx.strokeStyle = '#4a443e';
-  ctx.lineWidth = 1.25;
-  ctx.setLineDash([4, 3]);
-  let wStarted = false;
-  for (let i = extStart; i <= extEnd; i++) {
-    const w = windSpeeds[i];
-    if (w == null) continue;
-    const x = xPos(allTimes[i]);
-    const y = yPosRight(w);
-    if (!wStarted) { ctx.moveTo(x, y); wStarted = true; }
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
-
-  ctx.restore(); // remove clip
-
-  // ── Low tide vertical drop lines (no labels — labels are below x-axis) ──
-  if (tideHiLo) {
-    tideHiLo.forEach(p => {
-      if (p.type !== 'L') return;
-      const d = new Date(p.t);
-      const dMs = d.getTime();
-      if (dMs < t0 || dMs >= tEnd) return;
-      const xx = xPos(d);
-      if (xx < pad.left || xx > pad.left + plotW) return;
-
-      const waveH = getHeightAtTime(dMs);
-      const lineTop = yPos(Math.min(waveH, maxY));
-      const lineBottom = yPos(0);
-
-      ctx.save();
-      ctx.strokeStyle = 'rgba(90, 127, 160, 0.5)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 3]);
-      ctx.beginPath();
-      ctx.moveTo(xx, lineTop);
-      ctx.lineTo(xx, lineBottom);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.restore();
-    });
-  }
-
-  // ── Direction arrows: one every 6 hours, anchored just above the curve ──
-  const arrowSize = isMobile ? 8 : 10;
-  const arrowLineW = isMobile ? 1.5 : 2;
-
-  // Walk the underlying hourly array so arrows snap to actual data hours.
-  for (let i = extStart; i <= extEnd; i++) {
-    const t = allTimes[i];
-    if (t.getHours() % 6 !== 0) continue;
-    const swDir = swellDirs[i];
-    if (swDir == null) continue;
-    const xx = xPos(t);
-    if (xx < pad.left || xx > pad.left + plotW) continue;
-    const h = heights[i] != null ? heights[i] : 0;
-    // Place the arrow a touch above the height curve.
-    const yArrow = yPos(Math.min(h, maxY)) - (isMobile ? 10 : 14);
-    if (yArrow < pad.top + 2) continue;
-    drawArrow(ctx, xx, yArrow, swDir, arrowSize, swellDirColor(swDir), arrowLineW);
-  }
-
-  // ── Y-axis labels ──
-  const axisFont = isMobile ? '9px' : '11px';
-  ctx.fillStyle = '#8a827a';
-  ctx.font = `${axisFont} "DM Mono", monospace`;
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  for (let y = 0; y <= maxY; y += yStep) {
-    ctx.fillText(`${y}`, pad.left - (isMobile ? 4 : 6), yPos(y));
-  }
-
-  // ── Right Y-axis labels (period s / wind mph) ──
-  ctx.fillStyle = '#b87a2e';
-  ctx.font = `${axisFont} "DM Mono", monospace`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  const rightStep = 10;
-  for (let v = 0; v <= rightMax; v += rightStep) {
-    ctx.fillText(`${v}`, pad.left + plotW + (isMobile ? 4 : 6), yPosRight(v));
-  }
-
-  // ── X-axis labels: day labels at noon + 6-hour ticks on day 1 only ──
-  const dayLabelFont = isMobile ? '9px' : '11px';
-  const tideLabelFont = isMobile ? '8px' : '9px';
-  const hourLabelFont = isMobile ? '8px' : '9px';
-  const dayLabelY = pad.top + plotH + (isMobile ? 3 : 4);
-  const hourLabelY = pad.top + plotH + (isMobile ? 14 : 18);
-  const tideLabelY = pad.top + plotH + (isMobile ? 24 : 30);
-
-  ctx.textAlign = 'center';
+  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+  ctx.fillStyle = '#3a7d7d';
   ctx.textBaseline = 'top';
-  for (let dayOff = 0; dayOff < dayCount; dayOff++) {
-    const noonDate = new Date(firstDay);
-    noonDate.setDate(noonDate.getDate() + dayOff);
-    noonDate.setHours(12, 0, 0, 0);
-    const xx = xPos(noonDate);
-    if (xx <= pad.left || xx >= pad.left + plotW) continue;
+  ctx.textAlign = 'left';
+  ctx.fillText('tide', plotLeft + 2, tideTop + 2);
 
-    // Day label (Mon, Tue, ...)
-    ctx.fillStyle = '#8a827a';
-    ctx.font = `${dayLabelFont} "DM Mono", monospace`;
-    ctx.fillText(formatDay(noonDate), xx, dayLabelY);
+  // ── Low-tide markers + sparse labels ──
+  const nowMs = Date.now();
+  if (tideHiLo && tideY) {
+    const lowsInWindow = tideHiLo
+      .filter(p => p.type === 'L')
+      .map(p => ({ t: new Date(p.t).getTime(), v: parseFloat(p.v) }))
+      .filter(p => p.t >= t0 && p.t <= tEnd && Number.isFinite(p.v));
+    const lowsAfterNow = lowsInWindow.filter(p => p.t >= nowMs).sort((a, b) => a.t - b.t);
+    const labelSet = new Set(lowsAfterNow.slice(0, 2).map(p => p.t));
 
-    // Low tide times for this day, below
-    if (tideHiLo) {
-      const dayStart = new Date(firstDay);
-      dayStart.setDate(dayStart.getDate() + dayOff);
-      const dayEnd = new Date(dayStart);
-      dayEnd.setDate(dayEnd.getDate() + 1);
-
-      const lowTides = tideHiLo.filter(p => {
-        if (p.type !== 'L') return false;
-        const pt = new Date(p.t).getTime();
-        return pt >= dayStart.getTime() && pt < dayEnd.getTime();
-      });
-
-      if (lowTides.length > 0) {
-        const tideStr = lowTides.map(p => {
-          const td = new Date(p.t);
-          const hrs = td.getHours();
-          const mins = td.getMinutes();
-          const ampm = hrs >= 12 ? 'pm' : 'am';
-          const h12 = hrs % 12 || 12;
-          return mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
-        }).join(', ');
-
-        ctx.fillStyle = '#5a7fa0';
-        ctx.font = `${tideLabelFont} "DM Mono", monospace`;
-        ctx.fillText(`Low ${tideStr}`, xx, tideLabelY);
+    for (const lo of lowsInWindow) {
+      const xx = plotLeft + ((lo.t - t0) / tRange) * plotW;
+      if (xx < plotLeft || xx > plotLeft + plotW) continue;
+      const yy = tideY(lo.v);
+      if (labelSet.has(lo.t)) {
+        // Marker (small filled triangle) + stacked time/height label
+        ctx.fillStyle = 'rgba(58, 125, 125, 0.95)';
+        ctx.beginPath();
+        ctx.moveTo(xx, yy + 2);
+        ctx.lineTo(xx - 3, yy - 3);
+        ctx.lineTo(xx + 3, yy - 3);
+        ctx.closePath();
+        ctx.fill();
+        const td = new Date(lo.t);
+        const hrs = td.getHours();
+        const mins = td.getMinutes();
+        const ampm = hrs >= 12 ? 'pm' : 'am';
+        const h12 = hrs % 12 || 12;
+        const timeStr = mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
+        const heightStr = `${lo.v.toFixed(1)}ft`;
+        ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+        ctx.fillStyle = '#3a7d7d';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        // Place stacked labels above or below the trough depending on room.
+        const stackBelow = (yy + 18) < tideBot - 2;
+        if (stackBelow) {
+          ctx.fillText(timeStr,   xx, yy + 4);
+          ctx.fillText(heightStr, xx, yy + 13);
+        } else {
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(heightStr, xx, yy - 4);
+          ctx.fillText(timeStr,   xx, yy - 13);
+        }
+      } else {
+        // Sparse unlabeled triangle marker.
+        ctx.fillStyle = 'rgba(58, 125, 125, 0.55)';
+        ctx.beginPath();
+        ctx.moveTo(xx, yy + 1);
+        ctx.lineTo(xx - 2.5, yy - 3);
+        ctx.lineTo(xx + 2.5, yy - 3);
+        ctx.closePath();
+        ctx.fill();
       }
     }
   }
 
-  // Hour ticks (00:00 / 06:00 / 12:00 / 18:00) only on the current day
-  // (firstDay), since later days are too dense to label cleanly at 7-day width.
-  ctx.fillStyle = '#b5afa8';
-  ctx.font = `${hourLabelFont} "DM Mono", monospace`;
+  // ── Dashed "now" vertical, tide panel only ──
+  if (nowMs >= t0 && nowMs <= tEnd) {
+    const nowX = plotLeft + ((nowMs - t0) / tRange) * plotW;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(44, 40, 37, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(nowX, tideTop);
+    ctx.lineTo(nowX, tideBot);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // ════════════════════════════════════════════════
+  // DIRECTION ARROW STRIP — one arrow per 6h, anchored to swell direction
+  // ════════════════════════════════════════════════
+  // Convention: Open-Meteo reports swell_wave_direction as the direction the
+  // swell is coming FROM (compass bearing). We point each arrow toward where
+  // the swell is going TO — i.e. (dir + 180) — so a 290° (WNW) swell arrow
+  // points eastward, matching how surfers visualize a swell hitting a coast.
+  const arrowY = arrowTop + arrowStripH * 0.45;
+  const arrowSize = isMobile ? 7 : 9;
+  const arrowLineW = isMobile ? 1.25 : 1.5;
+  const arrowColor = '#4a6e91'; // same family as the primary swell area
+  for (let i = extStart; i <= extEnd; i++) {
+    const t = allTimes[i];
+    if (t.getHours() % 6 !== 0) continue;
+    const dir = swellDirs[i];
+    if (dir == null) continue;
+    const xx = xPos(t);
+    if (xx < plotLeft || xx > plotLeft + plotW) continue;
+    drawArrow(ctx, xx, arrowY, dir, arrowSize, arrowColor, arrowLineW);
+    // Sub-label: degrees + compass abbreviation
+    ctx.font = `${isMobile ? '7px' : '8px'} "DM Mono", monospace`;
+    ctx.fillStyle = '#8a827a';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`${Math.round(dir)}° ${directionLabel(dir)}`, xx, arrowY + arrowSize + 2);
+  }
+
+  // ── Tide callout: HTML overlay positioned over the calloutTop band ──
+  // (Rendered in HTML so applyScrubberToHour can update its text without
+  // forcing a full canvas redraw.) Initial text is now-relative; scrub
+  // updates from applyScrubberToHour swap to "NEXT LOW AFTER <hh:mm>".
+  positionAndUpdateTideCallout(container, {
+    calloutTop, calloutH, plotLeft, plotW, isMobile, tideHiLo
+  });
+
+  // ════════════════════════════════════════════════
+  // DAY-LABEL BAND — Today / Tomorrow / Thu 5/7
+  // ════════════════════════════════════════════════
+  // Each label is centered on its day's midpoint within the visible window
+  // (so a partial first day gets centered on the visible portion, not noon).
+  // Larger / bolder than other axis labels.
+  const todayLocal = new Date(); todayLocal.setHours(0, 0, 0, 0);
+  ctx.fillStyle = '#3a352f';
+  ctx.font = `600 ${isMobile ? '11px' : '13px'} "DM Mono", monospace`;
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
+  ctx.textBaseline = 'middle';
+  for (let dayOff = 0; dayOff < dayCount; dayOff++) {
+    const dayStart = new Date(firstDay);
+    dayStart.setDate(dayStart.getDate() + dayOff);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    // Visible portion of this day inside the plot.
+    const visStart = Math.max(xPos(dayStart), plotLeft);
+    const visEnd   = Math.min(xPos(dayEnd),   plotLeft + plotW);
+    if (visEnd <= visStart + 8) continue;
+    const xx = (visStart + visEnd) / 2;
+    const dayDelta = Math.round((dayStart - todayLocal) / 86400000);
+    let label;
+    if (dayDelta === 0)      label = 'Today';
+    else if (dayDelta === 1) label = 'Tomorrow';
+    else label = `${dayStart.toLocaleDateString('en-US',{weekday:'short'})} ${dayStart.getMonth()+1}/${dayStart.getDate()}`;
+    ctx.fillText(label, xx, dayBandTop + dayBandH / 2);
+  }
+
+  // Hour ticks (00:00 / 06:00 / 12:00 / 18:00) — only on day 1, drawn just above
+  // the day-label band so they don't crowd later days.
+  ctx.fillStyle = '#b5afa8';
+  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+  ctx.textBaseline = 'bottom';
   for (const hh of [0, 6, 12, 18]) {
     const tick = new Date(firstDay);
     tick.setHours(hh, 0, 0, 0);
     const xx = xPos(tick);
-    if (xx <= pad.left + 8 || xx >= pad.left + plotW - 8) continue;
-    ctx.fillText(`${String(hh).padStart(2, '0')}:00`, xx, hourLabelY);
-  }
-
-  // ── Axis-unit labels ──
-  ctx.save();
-  ctx.fillStyle = '#b5afa8';
-  ctx.font = `${isMobile ? '8px' : '10px'} "DM Mono", monospace`;
-  ctx.textAlign = 'center';
-  ctx.translate(isMobile ? 8 : 12, pad.top + plotH / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillText('ft', 0, 0);
-  ctx.restore();
-  ctx.save();
-  ctx.fillStyle = '#b5afa8';
-  ctx.font = `${isMobile ? '8px' : '10px'} "DM Mono", monospace`;
-  ctx.textAlign = 'center';
-  ctx.translate(W - (isMobile ? 8 : 12), pad.top + plotH / 2);
-  ctx.rotate(Math.PI / 2);
-  ctx.fillText('s · mph', 0, 0);
-  ctx.restore();
-
-  // ── Mini legend (top-right, inside the plot) ──
-  if (!isMobile) {
-    ctx.font = '9px "DM Mono", monospace';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    let lx = pad.left + 8;
-    const ly = pad.top + 8;
-    const items = [
-      { color: STATE.isChocomount ? '#3a7d56' : '#5a7fa0', label: 'swell ft' },
-      { color: '#b87a2e', label: 'period s' },
-      { color: '#4a443e', label: 'wind mph', dashed: true },
-      { color: 'rgba(58,125,125,0.7)', label: 'tide (right-aligned, faint)' }
-    ];
-    for (const it of items) {
-      ctx.strokeStyle = it.color;
-      ctx.lineWidth = 1.5;
-      if (it.dashed) ctx.setLineDash([3, 2]); else ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.moveTo(lx, ly);
-      ctx.lineTo(lx + 18, ly);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#5a5550';
-      ctx.fillText(it.label, lx + 22, ly);
-      lx += 22 + ctx.measureText(it.label).width + 14;
-    }
+    if (xx <= plotLeft + 8 || xx >= plotLeft + plotW - 8) continue;
+    ctx.fillText(`${String(hh).padStart(2, '0')}:00`, xx, dayBandTop - 1);
   }
 
   // ── Store chart state for interaction ──
   STATE.forecastChart = {
-    pad, plotW, plotH, W, H, t0, tEnd, tRange,
-    times: allTimes, heights, wavePeriods, swellDirs, windSpeeds, windDirs, windGusts,
-    tideHiLo, tidePred, firstDay, dayCount
+    // Legacy keys retained for the scrubber/applyScrubber code path:
+    pad: { left: plotLeft, right: pad.right, top: swellTop, bottom: H - tideBot },
+    plotW,
+    plotH: swellH,                    // handle snaps to swell curve
+    W, H, t0, tEnd, tRange,
+    times: allTimes,
+    heights, secHeights, wavePeriods, swellDirs, windSpeeds, windDirs, windGusts,
+    tideHiLo, tidePred, firstDay, dayCount,
+    // New stacked-layout fields:
+    layout: {
+      plotLeft, plotRight, plotW,
+      swellTop, swellBot, swellH, swellMaxY,
+      windTop,  windBot,  windH,  windMaxY,
+      tideTop,  tideBot,  tideH,  tideMin, tideMax,
+      arrowTop, arrowBot, arrowStripH,
+      dayBandTop, dayBandBot, dayBandH,
+      calloutTop, calloutBot, calloutH,
+      crosshairTop: swellTop, crosshairBot: arrowBot
+    }
   };
   setupForecastInteraction(canvas, container);
 }
@@ -1934,31 +2108,53 @@ function applyScrubberToHour(idx) {
   const wg = cs.windGusts[idx];
 
   // ── Floating label below chart ──
+  // Field order: time | swell h @ p | swell dir | wind speed (gust) dir | tide level
   const detailBar = el('forecast-detail-bar');
   if (detailBar) {
     const dayName = t.toLocaleDateString('en-US', { weekday: 'short' });
     const timeStr = t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-    let tideHtml = '';
-    if (cs.tideHiLo) {
-      const twoHrs = 2 * 60 * 60 * 1000;
-      const nearby = cs.tideHiLo.find(pp =>
-        pp.type === 'L' && Math.abs(new Date(pp.t).getTime() - t.getTime()) < twoHrs
-      );
-      if (nearby) {
-        const td = new Date(nearby.t);
-        const tideTime = td.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-        tideHtml = `<span class="detail-item"><span class="detail-tide">Low Tide ${tideTime}</span></span>`;
+
+    const swellStr = (h != null && p != null)
+      ? `${h.toFixed(1)}ft @ ${p.toFixed(1)}s`
+      : (h != null ? `${h.toFixed(1)}ft` : '—');
+    const swellDirStr = dir != null
+      ? `${Math.round(dir)}° ${directionLabel(dir)}`
+      : '—';
+    let windStr = '—';
+    if (ws != null) {
+      windStr = `wind ${Math.round(ws)}mph`;
+      if (wg != null) windStr += ` (gust ${Math.round(wg)})`;
+      if (wd != null) windStr += ` ${directionLabel(wd)}`;
+    }
+
+    // Tide level interpolated from tidePred at t.
+    let tideStr = '';
+    if (cs.tidePred && cs.tidePred.length) {
+      const tMs = t.getTime();
+      let lo = null, hi = null;
+      for (let i = 0; i < cs.tidePred.length - 1; i++) {
+        const a = new Date(cs.tidePred[i].t).getTime();
+        const b = new Date(cs.tidePred[i + 1].t).getTime();
+        if (tMs >= a && tMs <= b) { lo = cs.tidePred[i]; hi = cs.tidePred[i + 1]; break; }
+      }
+      if (lo && hi) {
+        const a = new Date(lo.t).getTime();
+        const b = new Date(hi.t).getTime();
+        const va = parseFloat(lo.v), vb = parseFloat(hi.v);
+        if (Number.isFinite(va) && Number.isFinite(vb) && b > a) {
+          const v = va + (vb - va) * ((tMs - a) / (b - a));
+          tideStr = `tide ${v >= 0 ? '+' : ''}${v.toFixed(1)}ft`;
+        }
       }
     }
+
     detailBar.innerHTML =
       `<div class="detail-row">` +
       `<span class="detail-time">${dayName} ${timeStr}</span>` +
-      `<span class="detail-item"><span class="detail-label">Wave</span> <span class="detail-val">${h != null ? h.toFixed(1) + ' ft' : '—'}</span></span>` +
-      `<span class="detail-item"><span class="detail-label">Period</span> <span class="detail-val">${p != null ? p.toFixed(0) + 's' : '—'}</span></span>` +
-      `<span class="detail-item"><span class="detail-label">Dir</span> <span class="detail-val">${directionLabel(dir)}${dir != null ? ' (' + Math.round(dir) + '°)' : ''}</span></span>` +
-      `<span class="detail-item"><span class="detail-label">Wind</span> <span class="detail-val">${ws != null ? Math.round(ws) + ' mph ' + directionLabel(wd) : '—'}</span></span>` +
-      `<span class="detail-item"><span class="detail-label">Gusts</span> <span class="detail-val">${wg != null ? Math.round(wg) + ' mph' : '—'}</span></span>` +
-      tideHtml +
+      `<span class="detail-item"><span class="detail-val">${swellStr}</span></span>` +
+      `<span class="detail-item"><span class="detail-val">${swellDirStr}</span></span>` +
+      `<span class="detail-item"><span class="detail-val">${windStr}</span></span>` +
+      (tideStr ? `<span class="detail-item"><span class="detail-tide">${tideStr}</span></span>` : '') +
       `</div>`;
     detailBar.classList.add('active');
     detailBar.classList.toggle('scrub-active', !isScrubberAtNow());
@@ -1979,15 +2175,17 @@ function applyScrubberToHour(idx) {
       handle.className = 'forecast-handle';
       container.appendChild(handle);
     }
-    const dataXPx = cs.pad.left + ((t.getTime() - cs.t0) / cs.tRange) * cs.plotW;
+    const L = cs.layout;
+    const dataXPx = L.plotLeft + ((t.getTime() - cs.t0) / cs.tRange) * L.plotW;
+    // Crosshair spans swell + wind + tide panels + arrow strip.
     crosshair.style.display = '';
     crosshair.style.left = dataXPx + 'px';
-    crosshair.style.top = cs.pad.top + 'px';
-    crosshair.style.height = cs.plotH + 'px';
+    crosshair.style.top = L.crosshairTop + 'px';
+    crosshair.style.height = (L.crosshairBot - L.crosshairTop) + 'px';
+    // Handle snaps to the swell-height curve in the swell panel.
     handle.style.display = '';
     handle.style.left = dataXPx + 'px';
-    const maxY = 15;
-    const handleY = cs.pad.top + cs.plotH - (Math.min(h != null ? h : 0, maxY) / maxY) * cs.plotH;
+    const handleY = L.swellTop + L.swellH - (Math.min(h != null ? h : 0, L.swellMaxY) / L.swellMaxY) * L.swellH;
     handle.style.top = handleY + 'px';
   }
 
@@ -1999,6 +2197,20 @@ function applyScrubberToHour(idx) {
 
   // ── Cross-feature: stat grid (with +Xh / -Xh badge) ──
   applyStatGridForHour(idx);
+
+  // ── Tide callout: re-render relative to scrubbed hour ──
+  if (cs.layout) {
+    const containerEl = el('forecast-chart-container');
+    if (containerEl) {
+      positionAndUpdateTideCallout(containerEl, {
+        calloutTop: cs.layout.calloutTop,
+        calloutH:   cs.layout.calloutH,
+        plotLeft:   cs.layout.plotLeft,
+        plotW:      cs.layout.plotW,
+        tideHiLo:   cs.tideHiLo
+      }, isScrubberAtNow() ? null : t.getTime());
+    }
+  }
 
   // ── "Reset to now" link visibility ──
   const resetRow = el('forecast-reset-row');

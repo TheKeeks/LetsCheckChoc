@@ -1,5 +1,132 @@
 # Changelog
 
+## [Unreleased] — Prompt #4: stacked forecast panels
+
+### Forecast chart layout
+
+The single-panel chart from Prompt #3 is replaced by three stacked panels
+sharing one x-axis on a single canvas — `app.js:_drawForecastChartFull`.
+Internal y-coordinate ranges partition the canvas; there is still one
+canvas, one draw cycle, one scrubber, and one ResizeObserver.
+
+Vertical regions (CSS pixels):
+
+```
+[pad.top]
+[swell panel       — 50% of usable]
+[gap               — 10–14px]
+[wind  panel       — 25% of usable]
+[callout band      — 28px, sits directly above the tide curve]
+[tide  panel       — 15% of usable]
+[arrow strip       — 40px fixed]
+[day-label band    — 22px fixed]
+[pad.bottom]
+```
+
+Day separators (faint vertical lines at midnight) and nighttime shading
+(rgba grey at sunset→sunrise) span the full panel stack so the time axis
+reads as one continuous cue.
+
+`.chart-container-tall` height bumped 340 → 540px to fit the stack.
+That is the only CSS change in this prompt; the full styling pass is
+Prompt #6.
+
+### Swell panel
+
+- Two y-axes. Left: feet, dynamic 0 → max(primary, secondary) × 1.2,
+  rounded up to the nearest 2. Right: seconds, fixed 0–25.
+- Z-order, back-to-front: secondary swell area (lighter blue, 60%
+  alpha) → primary swell area (darker blue, 85% alpha) → primary stroke
+  → period line (burnt-orange, right axis).
+- Period series uses `swell_wave_peak_period` when present, otherwise
+  `swell_wave_period`. Both are requested in the existing fetch.
+- No direction arrows on this panel — moved to the strip below tide.
+
+### Wind panel
+
+- Single mph y-axis, dynamic 0 → max × 1.2 (floor 10).
+- Per-hour fill colored by wind quality. Each hour-segment is filled
+  to its own color; adjacent segments butt against each other (no
+  gradient — quality is per-hour).
+- Bucketing: gap to Choc's offshore center (335°) → < 60° offshore /
+  < 120° cross-shore / else onshore. Light-wind override (< 5 mph)
+  upgrades cross-shore → offshore and onshore → cross-shore.
+- Palette: green `#6ea96b`, yellow `#d4b34a`, red `#c25e5e`, all 0.6
+  alpha. Top stroke is uniform dark gray. Gust is no longer rendered
+  on the chart — only in the floating label.
+
+### Tide panel
+
+- Clean teal curve, no fill, autoscaled to the predicted min/max with
+  4px inside-padding so the trough/peak don't kiss the edges.
+- Callout above the panel (HTML overlay so scrub updates don't force
+  a canvas redraw):
+  - Idle: `NEXT LOW: <Today|Tomorrow|<Wkd>> <h:mm><am/pm> · <h>ft · in <Xh Ym>`
+  - Scrubbed off-now: prefix becomes
+    `NEXT LOW AFTER <h:mm><am/pm>:` and the timing is relative to the
+    scrubbed hour. Resets when the user clicks "Reset to now".
+- Next two lows after the reference time are labeled at the trough
+  with a small filled triangle and stacked `<h:mm><am/pm>` / `<h>ft`
+  text (above or below the trough depending on room).
+- Subsequent lows render as small unlabeled triangle markers.
+- Highs are unmarked.
+- A faint dashed `now` vertical sits inside the tide panel (the
+  scrubber crosshair carries the cross-panel role).
+
+### Direction arrow strip
+
+- 40-px band below the tide panel.
+- One filled-triangle arrow per 6 hours (28 across the 168h window).
+- Convention: arrows point toward the direction the swell is going TO
+  (Open-Meteo reports `swell_wave_direction` as the from-direction;
+  `drawArrow` already adds 180°).
+- Slate-blue (`#4a6e91`) to visually link the strip to the primary
+  swell area above.
+- Each arrow gets a small `<deg>° <compass>` sub-label.
+
+### Day-label band
+
+- Bottom 22px of the canvas.
+- Day 1 → "Today", day 2 → "Tomorrow", day 3+ → `<Wkd> M/D` (e.g.
+  "Thu 5/7"). Centered on the visible portion of each day.
+- Hour ticks (`00:00 / 06:00 / 12:00 / 18:00`) are rendered just
+  above the day-label band, day 1 only.
+
+### Scrubber
+
+- Single dashed vertical now spans swell + wind + tide panels + arrow
+  strip; ends above the day-label band.
+- Circular handle still snaps to the swell-height curve (using the
+  panel-local `swellTop`/`swellH`/`swellMaxY`).
+- Floating detail bar reformatted per spec §7:
+  `time | 3.4ft @ 11.2s | 290° WNW | wind 8mph (gust 12) NE | tide +1.8ft`.
+  Direction is mandatory now that inline arrows are gone; tide level
+  is interpolated from the 6-min CO-OPS prediction array at the
+  scrubbed time.
+- Tide callout is re-rendered relative to the scrubbed hour on every
+  scrub move, and reverted to "now" form on Reset to now.
+
+### Deletions
+
+- Mini in-plot legend (per-panel labeling makes it redundant).
+- Inline 28 swell-direction arrows on the swell area.
+- Low-tide drop-lines on the swell panel.
+- "All lows labeled" tide treatment (replaced by callout + 2 labels +
+  sparse marks).
+- Helper functions `_fcSwellArea` / `_fcPeriodLine` / `_fcWindLine`
+  introduced in commit 1 of this prompt are removed in commit 2 once
+  the per-panel rewrite makes them redundant.
+
+### Commits (in order)
+
+1. `Forecast chart: extract draw functions per panel`
+2. `Forecast chart: stacked swell / wind / tide panels`
+3. `Forecast chart: wind quality color shading`
+4. `Forecast chart: tide callout + sparse low-tide labeling`
+5. `Forecast chart: direction arrow strip below tide`
+6. `Forecast chart: Today/Tomorrow/Thu 5/7 day labels`
+7. `Forecast chart: floating-label adds direction + tide level`
+
 ## [Unreleased] — Prompt #3: Tab 1 forecast redesign
 
 ### Gate
