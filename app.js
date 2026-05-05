@@ -1938,6 +1938,33 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
     ctx.restore();
   }
 
+  // ════════════════════════════════════════════════
+  // DIRECTION ARROW STRIP — one arrow per 6h, anchored to swell direction
+  // ════════════════════════════════════════════════
+  // Convention: Open-Meteo reports swell_wave_direction as the direction the
+  // swell is coming FROM (compass bearing). We point each arrow toward where
+  // the swell is going TO — i.e. (dir + 180) — so a 290° (WNW) swell arrow
+  // points eastward, matching how surfers visualize a swell hitting a coast.
+  const arrowY = arrowTop + arrowStripH * 0.45;
+  const arrowSize = isMobile ? 7 : 9;
+  const arrowLineW = isMobile ? 1.25 : 1.5;
+  const arrowColor = '#4a6e91'; // same family as the primary swell area
+  for (let i = extStart; i <= extEnd; i++) {
+    const t = allTimes[i];
+    if (t.getHours() % 6 !== 0) continue;
+    const dir = swellDirs[i];
+    if (dir == null) continue;
+    const xx = xPos(t);
+    if (xx < plotLeft || xx > plotLeft + plotW) continue;
+    drawArrow(ctx, xx, arrowY, dir, arrowSize, arrowColor, arrowLineW);
+    // Sub-label: degrees + compass abbreviation
+    ctx.font = `${isMobile ? '7px' : '8px'} "DM Mono", monospace`;
+    ctx.fillStyle = '#8a827a';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`${Math.round(dir)}° ${directionLabel(dir)}`, xx, arrowY + arrowSize + 2);
+  }
+
   // ── Tide callout: HTML overlay positioned over the calloutTop band ──
   // (Rendered in HTML so applyScrubberToHour can update its text without
   // forcing a full canvas redraw.) Initial text is now-relative; scrub
