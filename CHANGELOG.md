@@ -1,5 +1,109 @@
 # Changelog
 
+## [Unreleased] — Prompt #4.1: forecast chart fix-up
+
+Restructures Prompt #4's single partitioned canvas into the Surfline-style
+stacked card layout the spec was actually after. All Prompt #4 functionality
+(scrubber persistence + cross-feature wiring, model toggle, model footer,
+day labels, wind quality color shading with 5mph overrides, model auto-
+fallback, DPR fix) is preserved.
+
+### Three canvases in cards
+
+`#forecast-chart-container` now holds three independent `<canvas>` elements:
+`forecast-canvas-swell` / `forecast-canvas-wind` / `forecast-canvas-tide`,
+each wrapped in a white card (1px #e0e0e0 border, 4px radius, 8px padding,
+8px vertical gap). A separate small canvas (`forecast-canvas-days`) hosts
+the day-label band; the tide callout sits inside the tide card.
+`_drawForecastChartFull` now orchestrates `drawSwellPanel` →
+`drawWindPanel` → `drawTidePanel` → `drawDayLabels` in sequence; all four
+share an `FC_PAD.left/right` anchor so the time-axis lines up exactly
+across cards.
+
+### Section labels
+
+Each card has a fixed 60px left column with stacked uppercase letters
+("S / W / E / L / L", "W / I / N / D", "T / I / D / E") rendered as plain
+HTML so the canvas stays focused on data. The arrow row, day-label row, and
+tide callout share the same 60px left padding so canvases right-align.
+
+### Day separators + today accent + nighttime shading
+
+- Midnight verticals: 1px solid #c0c0c0 (was 0.5px #e0dbd3) — drawn on
+  every panel canvas at identical x-coords so they read as continuous
+  columns punching through all three cards.
+- New `_fcDrawTodayAccent` paints a 2px primary-swell-blue stripe at the
+  left edge of today's column on every canvas.
+- Nighttime shading dropped to alpha 0.04 so it doesn't compete.
+
+### Period line back with halo
+
+Re-implemented as a `Path2D`: a 4px white rgba(255,255,255,0.85) halo
+strokes first, then the warm-orange (#c46a32) 2px line on top. Right-axis
+seconds numbers and the 's' unit label adopt the same warmer tone.
+Unit labels get +4px padding off the canvas edge.
+
+### Inline daily-peak direction arrows (replaces arrow strip)
+
+The 40-px direction-arrow strip below the tide card is gone. Direction
+now appears INLINE on the swell panel as 7 white-filled / blue-stroke
+triangle arrows (one per day), each anchored ~14px above the swell-height
+curve at that day's height-peak hour. Compass-only label below in 9px
+gray monospace. New `drawArrowFilled` helper renders the filled triangle.
+The floating scrubber label still shows degrees + compass for the scrubbed
+hour — that's the precision view; the inline arrows are the at-a-glance.
+
+### Wind panel polish
+
+- Card height bumped to 120px (was ~75 effective).
+- Quality-color alpha bumped 0.6 → 0.7 so the green/yellow/red read.
+- 5mph light-wind override unchanged.
+- 'mph' unit label still top-left in-canvas.
+
+### Tide panel polish
+
+- Card height bumped to 161px = 24px callout row + 1px divider + 120px
+  curve area + paddings.
+- The "NEXT LOW: …" callout moves INSIDE the tide card top with a
+  `.forecast-tide-divider` 1px #e8e8e8 line below it. Bold, monospace.
+- Curve stroke 1.5px (was 1.25), pure teal #3a9aa3. Today's segment at
+  alpha 1.0; days 2–7 at alpha 0.7 via clipped sub-strokes.
+- Label-collision fix: when two labeled lows are within `labelWidth + 8px`,
+  the second's stack is pushed 14px and a thin 0.5px teal connector
+  bridges the trough to the label. Triangle alone if a low is unlabeled.
+
+### Floating scrubber label
+
+The detail bar moved INTO `#forecast-chart-container` as the first child
+with `position:sticky; top:0; z-index:10`. Restyled dark (#2c2825) with
+light text and tabular-nums monospace numerals; tide value gets a cyan
+accent. Content unchanged: time | swell h/p | direction | wind | tide.
+
+### Deletions
+
+- `forecast-canvas-arrows` element + `.forecast-arrow-row` CSS + the
+  `drawArrowStrip` function — all gone with the inline arrows replacing
+  them.
+- The single-canvas internal partitioning logic (the swellTop/windTop/
+  tideTop math, the giant `_drawForecastChartFull` body that drew every
+  panel into shared y-bands) — now isolated to per-panel canvases.
+- The mid-canvas y-axis number duplication that came from the shared
+  canvas — each canvas now draws its own axis once.
+- The `.forecast-detail-bar.scrub-active` light/dark toggle, since the
+  bar is always dark.
+- `positionAndUpdateTideCallout` no longer sets left/top/width/height —
+  it's a static-flow div now; the function only updates innerHTML.
+
+### Commits (in order)
+
+1. `Forecast chart: split into three canvases inside cards`
+2. `Forecast chart: add SWELL/WIND/TIDE left-edge section labels`
+3. `Forecast chart: bolder day separators + today-column accent`
+4. `Forecast chart: bring back period line with halo`
+5. `Forecast chart: replace arrow strip with inline daily-peak arrows`
+6. `Forecast chart: tide panel height bump + label collision fix`
+7. `Forecast chart: float scrubber label to top`
+
 ## [Unreleased] — Prompt #4: stacked forecast panels
 
 ### Forecast chart layout

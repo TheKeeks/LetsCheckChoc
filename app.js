@@ -1408,29 +1408,31 @@ function highlightNearestTideStation(lat, lon) {
 }
 
 // ════════════════════════════════════════════════
-// SWELL FORECAST CHART (Canvas 2D, stacked panels)
+// SWELL FORECAST CHART (Canvas 2D, three stacked card-panels)
 // ════════════════════════════════════════════════
 //
-// One <canvas> partitioned into vertical bands sharing a single x-axis:
+// Three independent <canvas> elements, each inside its own card:
 //
-//   ┌──────────────────────── tide callout (NEXT LOW …) ───┐
-//   │  SWELL panel  — primary + secondary area, period line │
-//   │  WIND  panel  — filled area shaded by wind quality    │
-//   │  TIDE  panel  — clean teal curve, sparse low labels   │
-//   │  arrow strip  — swell direction every 6h              │
-//   │  day-label band — Today / Tomorrow / Thu 5/7          │
-//   └───────────────────────────────────────────────────────┘
+//   ┌─ #forecast-chart-container ─────────────────────────┐
+//   │  ┌─ swell card ─ canvas#forecast-canvas-swell  ──┐  │
+//   │  ┌─ wind  card ─ canvas#forecast-canvas-wind  ──┐  │
+//   │  ┌─ tide callout row (NEXT LOW …) ──────────────┐  │
+//   │  ┌─ tide  card ─ canvas#forecast-canvas-tide  ──┐  │
+//   │  ┌─ day  row ── canvas#forecast-canvas-days  ──┐  │
+//   └──────────────────────────────────────────────────────┘
 //
-// Visual reference: project/Swell Forecast.html (React prototype) — used
-// for typography (DM Mono numbers, Libre Baskerville headings), color
-// palette, and line-weight feel. Layout is original to this project, not
-// ported from the prototype.
-// Day separators (midnight verticals) and nighttime shading run from the
-// top of the swell panel through the bottom of the tide panel — single
-// continuous visual cue. The scrubber (vertical dashed line + handle on
-// the swell curve) crosses all three panels and the arrow strip.
+// Coordination: a single `_drawForecastChartFull` cycle calls into
+// drawSwellPanel → drawWindPanel → drawTidePanel → drawDayLabels in
+// sequence. Every canvas uses the same horizontal
+// padding (FC_PAD.left/right) so the per-canvas xPos is identical;
+// day separators / nighttime shading land at the same x on every card.
+// Visual reference: project/Swell Forecast.html (React prototype).
 
 const FORECAST_HOURS = 168; // 7 × 24
+
+// Canvas-internal padding (CSS px). Identical on every panel canvas so
+// the time-axis (xPos) matches across all three cards.
+const FC_PAD = { left: 36, right: 40 };
 
 function drawForecastChart(marine, wind, daylight, tideHiLo, tidePred) {
   // Cache so the scrubber and external reflows can re-render without re-fetching.
@@ -1476,16 +1478,8 @@ function formatNextLowCallout(tideHiLo, fromMs) {
 }
 
 function positionAndUpdateTideCallout(container, geom, scrubMs) {
-  let cal = container.querySelector('.forecast-tide-callout');
-  if (!cal) {
-    cal = document.createElement('div');
-    cal.className = 'forecast-tide-callout';
-    container.appendChild(cal);
-  }
-  cal.style.left   = geom.plotLeft + 'px';
-  cal.style.top    = geom.calloutTop + 'px';
-  cal.style.width  = geom.plotW + 'px';
-  cal.style.height = geom.calloutH + 'px';
+  const cal = container.querySelector('#forecast-tide-callout, .forecast-tide-callout');
+  if (!cal) return;
   const tideHiLo = geom.tideHiLo;
   if (!tideHiLo) { cal.textContent = ''; return; }
   const isScrub = scrubMs != null && Math.abs(scrubMs - Date.now()) > 30 * 60 * 1000;
@@ -1497,60 +1491,590 @@ function positionAndUpdateTideCallout(container, geom, scrubMs) {
   cal.innerHTML = `<span class="tide-callout-prefix">${scrubLabel}:</span> <strong>${line}</strong>`;
 }
 
-function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
-  const canvas = el('forecast-canvas');
-  const container = el('forecast-chart-container');
-  const W = container.clientWidth;
-  const H = container.clientHeight;
+// ── Shared per-canvas helpers ──────────────────────
+//
+// Every panel canvas receives the same `common` payload (time range,
+// daylight, etc.). Each panel computes its own (cssW, cssH, plotW) but
+// uses identical FC_PAD.left/right so the time-axis lines up across
+// all three cards.
+
+function _fcXFor(time, common, plotLeft, plotW) {
+  return plotLeft + ((time.getTime() - common.t0) / common.tRange) * plotW;
+}
+
+function _fcDrawNightShading(ctx, common, plotLeft, plotW, top, height) {
+  const dl0 = common.daylight;
+  if (!dl0 || dl0.alwaysDay) return;
+  ctx.fillStyle = 'rgba(44, 40, 37, 0.04)';
+  for (let dayOff = 0; dayOff < common.dayCount + 1; dayOff++) {
+    const dayDate = new Date(common.firstDay);
+    dayDate.setDate(dayDate.getDate() + dayOff);
+    const dl = calcDaylight(common.pinLat, common.pinLon, dayDate);
+    if (!dl || !dl.sunset || !dl.sunrise) continue;
+    const sunsetX = _fcXFor(dl.sunset, common, plotLeft, plotW);
+    const midnightDate = new Date(dayDate);
+    midnightDate.setDate(midnightDate.getDate() + 1);
+    midnightDate.setHours(0, 0, 0, 0);
+    const midnightX = _fcXFor(midnightDate, common, plotLeft, plotW);
+    if (sunsetX < plotLeft + plotW && midnightX > plotLeft) {
+      ctx.fillRect(Math.max(sunsetX, plotLeft), top,
+        Math.min(midnightX, plotLeft + plotW) - Math.max(sunsetX, plotLeft), height);
+    }
+    const morningStart = new Date(dayDate); morningStart.setHours(0, 0, 0, 0);
+    const mStartX = _fcXFor(morningStart, common, plotLeft, plotW);
+    const sunriseX = _fcXFor(dl.sunrise, common, plotLeft, plotW);
+    if (mStartX < plotLeft + plotW && sunriseX > plotLeft) {
+      ctx.fillRect(Math.max(mStartX, plotLeft), top,
+        Math.min(sunriseX, plotLeft + plotW) - Math.max(mStartX, plotLeft), height);
+    }
+  }
+}
+
+function _fcDrawDaySeparators(ctx, common, plotLeft, plotW, top, height) {
+  // Solid grey midnight verticals — appear as continuous columns when
+  // drawn on every panel canvas.
+  ctx.strokeStyle = '#c0c0c0';
+  ctx.lineWidth = 1;
+  for (let dayOff = 0; dayOff <= common.dayCount; dayOff++) {
+    const midDate = new Date(common.firstDay);
+    midDate.setDate(midDate.getDate() + dayOff);
+    const xx = _fcXFor(midDate, common, plotLeft, plotW);
+    if (xx > plotLeft && xx < plotLeft + plotW) {
+      ctx.beginPath();
+      ctx.moveTo(xx, top);
+      ctx.lineTo(xx, top + height);
+      ctx.stroke();
+    }
+  }
+}
+
+// "You are here" cue — 2px blue stripe at the LEFT EDGE of today's
+// column. Drawn on every panel canvas using identical x-coords so the
+// accent reads as one continuous vertical mark across the cards.
+function _fcDrawTodayAccent(ctx, common, plotLeft, plotW, top, height) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  // Skip if today is outside the chart window.
+  if (today.getTime() < common.t0 - 1 || today.getTime() > common.tEnd) return;
+  const xx = _fcXFor(today, common, plotLeft, plotW);
+  if (xx < plotLeft - 1 || xx > plotLeft + plotW) return;
+  ctx.save();
+  ctx.strokeStyle = '#3a5570'; // primary-swell blue
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(xx, top);
+  ctx.lineTo(xx, top + height);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── Per-panel drawers ──────────────────────────────
+
+function drawSwellPanel(common, data) {
+  const canvas = el('forecast-canvas-swell');
+  if (!canvas) return null;
+  const cssW = canvas.clientWidth || canvas.parentElement.clientWidth;
+  const cssH = canvas.clientHeight || canvas.parentElement.clientHeight;
   const ctx = canvas.getContext('2d');
-  setCanvasDPR(canvas, ctx, W, H);
+  setCanvasDPR(canvas, ctx, cssW, cssH);
 
+  const isMobile = common.isMobile;
+  const plotLeft = FC_PAD.left;
+  const plotW    = cssW - FC_PAD.left - FC_PAD.right;
+  const top      = 4;
+  const h        = cssH - 8;
+
+  // Background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, cssW, cssH);
+
+  // Night shading + day separators (full canvas height)
+  _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
+  _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
+  _fcDrawTodayAccent(ctx, common, plotLeft, plotW, 0, cssH);
+
+  const { heights, secHeights, swellDirs, wavePeriods, swellMaxY, swellStep, periodMax } = data;
+  const ySwell  = (val) => top + h - (Math.min(val, swellMaxY) / swellMaxY) * h;
+  const yPeriod = (val) => {
+    const v = Math.max(0, Math.min(periodMax, val));
+    return top + h - (v / periodMax) * h;
+  };
+  const xPos = (t) => _fcXFor(t, common, plotLeft, plotW);
+
+  // Clipped panel area
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(plotLeft, top, plotW, h);
+  ctx.clip();
+
+  // Secondary area
+  if (secHeights.length) {
+    ctx.beginPath();
+    ctx.moveTo(xPos(common.allTimes[0]), ySwell(0));
+    for (let i = 0; i <= common.lastIdx; i++) {
+      const v = secHeights[i] != null ? secHeights[i] : 0;
+      ctx.lineTo(xPos(common.allTimes[i]), ySwell(v));
+    }
+    ctx.lineTo(xPos(common.allTimes[common.lastIdx]), ySwell(0));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(140, 175, 205, 0.6)';
+    ctx.fill();
+  }
+
+  // Primary area
+  ctx.beginPath();
+  ctx.moveTo(xPos(common.allTimes[0]), ySwell(0));
+  for (let i = 0; i <= common.lastIdx; i++) {
+    const v = heights[i] != null ? heights[i] : 0;
+    ctx.lineTo(xPos(common.allTimes[i]), ySwell(v));
+  }
+  ctx.lineTo(xPos(common.allTimes[common.lastIdx]), ySwell(0));
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(74, 110, 145, 0.85)';
+  ctx.fill();
+
+  // Primary stroke
+  ctx.beginPath();
+  ctx.strokeStyle = '#3a5570';
+  ctx.lineWidth = 1.5;
+  let started = false;
+  for (let i = 0; i <= common.lastIdx; i++) {
+    const v = heights[i];
+    if (v == null) continue;
+    const x = xPos(common.allTimes[i]);
+    const y = ySwell(v);
+    if (!started) { ctx.moveTo(x, y); started = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Period line on the right axis (burnt orange) with a white halo
+  // beneath so it stays legible against the dark-blue swell area.
+  const periodPath = new Path2D();
+  let pStarted = false;
+  for (let i = 0; i <= common.lastIdx; i++) {
+    const p = wavePeriods[i];
+    if (p == null) continue;
+    const x = xPos(common.allTimes[i]);
+    const y = yPeriod(p);
+    if (!pStarted) { periodPath.moveTo(x, y); pStarted = true; }
+    else periodPath.lineTo(x, y);
+  }
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.lineWidth = 4;
+  ctx.stroke(periodPath);
+  ctx.strokeStyle = '#c46a32';
+  ctx.lineWidth = 2;
+  ctx.stroke(periodPath);
+  ctx.restore();
+
+  // Y-axis numeric labels
+  const axisFont = isMobile ? '9px' : '10px';
+  ctx.font = `${axisFont} "DM Mono", monospace`;
+  ctx.fillStyle = '#3a5570';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let v = 0; v <= swellMaxY; v += swellStep) {
+    ctx.fillText(`${v}`, plotLeft - 4, ySwell(v));
+  }
+  ctx.fillStyle = '#c46a32';
+  ctx.textAlign = 'left';
+  for (let v = 0; v <= periodMax; v += 5) {
+    ctx.fillText(`${v}`, plotLeft + plotW + 4, yPeriod(v));
+  }
+  // Unit labels in top corners (extra 4px padding off the y-axis numbers).
+  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#3a5570';
+  ctx.fillText('ft', plotLeft + 6, top + 2);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#c46a32';
+  ctx.fillText('s', plotLeft + plotW - 6, top + 2);
+
+  // Inline daily-peak direction arrows: one per day at the day's
+  // swell-height maximum. Surfline-style at-a-glance summary; replaces
+  // the old below-tide arrow strip. swell_wave_direction is the
+  // direction the swell is COMING FROM; rotate by +180 so each arrow
+  // points where the swell is HEADING (matches how surfers visualize
+  // a swell hitting a coast).
+  const dayPeaks = [];
+  for (let d = 0; d < common.dayCount; d++) {
+    const dayStart = new Date(common.firstDay);
+    dayStart.setDate(dayStart.getDate() + d);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    let bestI = -1, bestH = -Infinity;
+    for (let i = 0; i <= common.lastIdx; i++) {
+      const tt = common.allTimes[i].getTime();
+      if (tt < dayStart.getTime() || tt >= dayEnd.getTime()) continue;
+      const v = heights[i];
+      if (v == null) continue;
+      if (v > bestH) { bestH = v; bestI = i; }
+    }
+    if (bestI >= 0 && swellDirs[bestI] != null) dayPeaks.push(bestI);
+  }
+
+  const arrowSize = isMobile ? 7 : 8;
+  const arrowLineW = 1.5;
+  for (const i of dayPeaks) {
+    const t = common.allTimes[i];
+    const dir = swellDirs[i];
+    const xx = xPos(t);
+    if (xx < plotLeft || xx > plotLeft + plotW) continue;
+    const peakY = ySwell(heights[i]);
+    const arrowY = Math.max(top + arrowSize + 2, peakY - 14);
+    // White-fill / blue-stroke arrow, drawn above the swell-height curve.
+    drawArrowFilled(ctx, xx, arrowY, dir, arrowSize, '#ffffff', '#3a5570', arrowLineW);
+    ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+    ctx.fillStyle = '#666666';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(directionLabel(dir), xx, arrowY + arrowSize + 1);
+  }
+
+  return {
+    canvas, cssW, cssH, plotLeft, plotW, top, h,
+    swellMaxY, ySwell, yPeriod
+  };
+}
+
+function drawWindPanel(common, data) {
+  const canvas = el('forecast-canvas-wind');
+  if (!canvas) return null;
+  const cssW = canvas.clientWidth || canvas.parentElement.clientWidth;
+  const cssH = canvas.clientHeight || canvas.parentElement.clientHeight;
+  const ctx = canvas.getContext('2d');
+  setCanvasDPR(canvas, ctx, cssW, cssH);
+
+  const isMobile = common.isMobile;
+  const plotLeft = FC_PAD.left;
+  const plotW    = cssW - FC_PAD.left - FC_PAD.right;
+  const top      = 4;
+  const h        = cssH - 8;
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, cssW, cssH);
+  _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
+  _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
+  _fcDrawTodayAccent(ctx, common, plotLeft, plotW, 0, cssH);
+
+  const { windSpeeds, windDirs, windMaxY } = data;
+  const yWind = (val) => top + h - (Math.min(val, windMaxY) / windMaxY) * h;
+  const xPos  = (t) => _fcXFor(t, common, plotLeft, plotW);
+
+  // Wind quality colors — offshore (green) / cross-shore (yellow) / onshore (red).
+  // Light winds (<5 mph) upgrade one tier so colors don't mislead at calm hours.
+  const OFFSHORE_CENTER = 335;
+  const colorFor = (dir, speed) => {
+    if (dir == null) return 'rgba(150, 145, 138, 0.5)';
+    const gap = Math.min(((dir - OFFSHORE_CENTER) % 360 + 360) % 360,
+                        ((OFFSHORE_CENTER - dir) % 360 + 360) % 360);
+    let bucket;
+    if (gap < 60)        bucket = 'off';
+    else if (gap < 120)  bucket = 'cross';
+    else                 bucket = 'on';
+    if (speed != null && speed < 5) {
+      if (bucket === 'cross') bucket = 'off';
+      else if (bucket === 'on') bucket = 'cross';
+    }
+    if (bucket === 'off')   return 'rgba(110, 169, 107, 0.6)';
+    if (bucket === 'cross') return 'rgba(212, 179, 74, 0.6)';
+    return 'rgba(194, 94, 94, 0.6)';
+  };
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(plotLeft, top, plotW, h);
+  ctx.clip();
+  for (let i = 0; i < common.lastIdx; i++) {
+    const x1 = xPos(common.allTimes[i]);
+    const x2 = xPos(common.allTimes[i + 1]);
+    const w1 = windSpeeds[i]     != null ? windSpeeds[i]     : 0;
+    const w2 = windSpeeds[i + 1] != null ? windSpeeds[i + 1] : 0;
+    ctx.beginPath();
+    ctx.moveTo(x1, yWind(0));
+    ctx.lineTo(x1, yWind(w1));
+    ctx.lineTo(x2, yWind(w2));
+    ctx.lineTo(x2, yWind(0));
+    ctx.closePath();
+    ctx.fillStyle = colorFor(windDirs[i], windSpeeds[i]);
+    ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.strokeStyle = '#4a443e';
+  ctx.lineWidth = 1.25;
+  let wStarted = false;
+  for (let i = 0; i <= common.lastIdx; i++) {
+    const w = windSpeeds[i];
+    if (w == null) continue;
+    const x = xPos(common.allTimes[i]);
+    const y = yWind(w);
+    if (!wStarted) { ctx.moveTo(x, y); wStarted = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  const axisFont = isMobile ? '9px' : '10px';
+  ctx.font = `${axisFont} "DM Mono", monospace`;
+  ctx.fillStyle = '#5a5550';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${windMaxY}`, plotLeft - 4, yWind(windMaxY));
+  ctx.fillText('0', plotLeft - 4, yWind(0));
+  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.fillText('mph', plotLeft + 2, top + 2);
+
+  return { canvas, cssW, cssH, plotLeft, plotW, top, h, windMaxY };
+}
+
+function drawTidePanel(common, data) {
+  const canvas = el('forecast-canvas-tide');
+  if (!canvas) return null;
+  const cssW = canvas.clientWidth || canvas.parentElement.clientWidth;
+  const cssH = canvas.clientHeight || canvas.parentElement.clientHeight;
+  const ctx = canvas.getContext('2d');
+  setCanvasDPR(canvas, ctx, cssW, cssH);
+
+  const isMobile = common.isMobile;
+  const plotLeft = FC_PAD.left;
+  const plotW    = cssW - FC_PAD.left - FC_PAD.right;
+  const top      = 4;
+  const h        = cssH - 8;
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, cssW, cssH);
+  _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
+  _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
+  _fcDrawTodayAccent(ctx, common, plotLeft, plotW, 0, cssH);
+
+  const { tidePred, tideHiLo } = data;
+  let tideMin = 0, tideMax = 1, tideY = null;
+  if (tidePred && tidePred.length > 1) {
+    const vals = tidePred.map(p => parseFloat(p.v)).filter(Number.isFinite);
+    tideMin = Math.min(...vals);
+    tideMax = Math.max(...vals);
+    const tideRange = (tideMax - tideMin) || 1;
+    const padInside = 4;
+    tideY = (v) => (top + padInside) + (1 - (v - tideMin) / tideRange) * (h - 2 * padInside);
+
+    // Today's portion gets full opacity; days 2-7 fade to 0.7. Subtle
+    // "you are here" cue without breaking the curve continuity.
+    const todayEnd = new Date(); todayEnd.setHours(24, 0, 0, 0);
+    const todayEndX = _fcXFor(todayEnd, common, plotLeft, plotW);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(plotLeft, top, plotW, h);
+    ctx.clip();
+
+    const tealStroke = '#3a9aa3';
+    const drawSegment = (alpha, xClipMin, xClipMax) => {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(xClipMin, top, Math.max(0, xClipMax - xClipMin), h);
+      ctx.clip();
+      ctx.beginPath();
+      ctx.strokeStyle = tealStroke;
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = 1.5;
+      let tStarted = false;
+      for (const p of tidePred) {
+        const tt = new Date(p.t).getTime();
+        if (tt < common.t0 || tt > common.tEnd) continue;
+        const v = parseFloat(p.v);
+        if (!Number.isFinite(v)) continue;
+        const x = _fcXFor(new Date(tt), common, plotLeft, plotW);
+        const y = tideY(v);
+        if (!tStarted) { ctx.moveTo(x, y); tStarted = true; }
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    };
+    drawSegment(1.0, plotLeft, Math.min(todayEndX, plotLeft + plotW));
+    drawSegment(0.7, Math.max(todayEndX, plotLeft), plotLeft + plotW);
+    ctx.restore();
+  }
+
+  // Low-tide markers + sparse labels (with collision avoidance)
+  const nowMs = Date.now();
+  if (tideHiLo && tideY) {
+    const lowsInWindow = tideHiLo
+      .filter(p => p.type === 'L')
+      .map(p => ({ t: new Date(p.t).getTime(), v: parseFloat(p.v) }))
+      .filter(p => p.t >= common.t0 && p.t <= common.tEnd && Number.isFinite(p.v));
+    const lowsAfterNow = lowsInWindow.filter(p => p.t >= nowMs).sort((a, b) => a.t - b.t);
+    const labelSet = new Set(lowsAfterNow.slice(0, 2).map(p => p.t));
+
+    // First pass: unlabeled markers.
+    for (const lo of lowsInWindow) {
+      if (labelSet.has(lo.t)) continue;
+      const xx = _fcXFor(new Date(lo.t), common, plotLeft, plotW);
+      if (xx < plotLeft || xx > plotLeft + plotW) continue;
+      const yy = tideY(lo.v);
+      ctx.fillStyle = 'rgba(58, 125, 125, 0.55)';
+      ctx.beginPath();
+      ctx.moveTo(xx, yy + 1);
+      ctx.lineTo(xx - 3, yy - 4);
+      ctx.lineTo(xx + 3, yy - 4);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Second pass: labeled lows (the next two after nowMs).
+    // Estimate label width once so we can collision-check.
+    ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+    const labelWidth = ctx.measureText('12:00pm').width + 8;
+    const labeled = lowsAfterNow.slice(0, 2).map(lo => ({
+      ...lo,
+      xx: _fcXFor(new Date(lo.t), common, plotLeft, plotW),
+      yy: tideY(lo.v)
+    }));
+
+    for (let li = 0; li < labeled.length; li++) {
+      const lo = labeled[li];
+      const xx = lo.xx, yy = lo.yy;
+      if (xx < plotLeft || xx > plotLeft + plotW) continue;
+      const td = new Date(lo.t);
+      const hrs = td.getHours();
+      const mins = td.getMinutes();
+      const ampm = hrs >= 12 ? 'pm' : 'am';
+      const h12 = hrs % 12 || 12;
+      const timeStr = mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
+      const heightStr = `${lo.v.toFixed(1)}ft`;
+
+      // Triangle marker at the trough
+      ctx.fillStyle = 'rgba(58, 125, 125, 0.95)';
+      ctx.beginPath();
+      ctx.moveTo(xx, yy + 2);
+      ctx.lineTo(xx - 3, yy - 3);
+      ctx.lineTo(xx + 3, yy - 3);
+      ctx.closePath();
+      ctx.fill();
+
+      // Collision: if the previous labeled low is closer than labelWidth
+      // in x, push this one's stack down by ~14px and draw a connector.
+      let pushDown = false;
+      if (li > 0) {
+        const prev = labeled[li - 1];
+        if (Math.abs(xx - prev.xx) < labelWidth) pushDown = true;
+      }
+
+      ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+      ctx.fillStyle = '#3a7d7d';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const baseTop = yy + 4;
+      const lowOff = pushDown ? 14 : 0;
+      const stackBelow = (baseTop + lowOff + 9) < (top + h) - 2;
+      if (stackBelow) {
+        if (pushDown) {
+          // Connector: thin teal line from trough up to label baseline.
+          ctx.save();
+          ctx.strokeStyle = 'rgba(58, 125, 125, 0.7)';
+          ctx.lineWidth = 0.5;
+          ctx.beginPath();
+          ctx.moveTo(xx, yy + 2);
+          ctx.lineTo(xx, baseTop + lowOff - 1);
+          ctx.stroke();
+          ctx.restore();
+        }
+        ctx.fillText(timeStr,   xx, baseTop + lowOff);
+        ctx.fillText(heightStr, xx, baseTop + lowOff + 9);
+      } else {
+        ctx.textBaseline = 'bottom';
+        const baseBot = yy - 4 - lowOff;
+        if (pushDown) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(58, 125, 125, 0.7)';
+          ctx.lineWidth = 0.5;
+          ctx.beginPath();
+          ctx.moveTo(xx, yy - 2);
+          ctx.lineTo(xx, baseBot + 1);
+          ctx.stroke();
+          ctx.restore();
+        }
+        ctx.fillText(heightStr, xx, baseBot);
+        ctx.fillText(timeStr,   xx, baseBot - 9);
+      }
+    }
+  }
+
+  // Dashed "now" vertical, tide canvas only
+  if (nowMs >= common.t0 && nowMs <= common.tEnd) {
+    const nowX = _fcXFor(new Date(nowMs), common, plotLeft, plotW);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(44, 40, 37, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(nowX, top);
+    ctx.lineTo(nowX, top + h);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  return { canvas, cssW, cssH, plotLeft, plotW, top, h, tideMin, tideMax };
+}
+
+function drawDayLabels(common) {
+  const canvas = el('forecast-canvas-days');
+  if (!canvas) return null;
+  const cssW = canvas.clientWidth || canvas.parentElement.clientWidth;
+  const cssH = canvas.clientHeight || canvas.parentElement.clientHeight;
+  const ctx = canvas.getContext('2d');
+  setCanvasDPR(canvas, ctx, cssW, cssH);
+
+  const isMobile = common.isMobile;
+  const plotLeft = FC_PAD.left;
+  const plotW    = cssW - FC_PAD.left - FC_PAD.right;
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const todayLocal = new Date(); todayLocal.setHours(0, 0, 0, 0);
+  ctx.fillStyle = '#3a352f';
+  ctx.font = `600 ${isMobile ? '11px' : '13px'} "DM Mono", monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let dayOff = 0; dayOff < common.dayCount; dayOff++) {
+    const dayStart = new Date(common.firstDay);
+    dayStart.setDate(dayStart.getDate() + dayOff);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    const visStart = Math.max(_fcXFor(dayStart, common, plotLeft, plotW), plotLeft);
+    const visEnd   = Math.min(_fcXFor(dayEnd,   common, plotLeft, plotW), plotLeft + plotW);
+    if (visEnd <= visStart + 8) continue;
+    const xx = (visStart + visEnd) / 2;
+    const dayDelta = Math.round((dayStart - todayLocal) / 86400000);
+    let label;
+    if (dayDelta === 0)      label = 'Today';
+    else if (dayDelta === 1) label = 'Tomorrow';
+    else label = `${dayStart.toLocaleDateString('en-US',{weekday:'short'})} ${dayStart.getMonth()+1}/${dayStart.getDate()}`;
+    ctx.fillText(label, xx, cssH * 0.55);
+  }
+
+  // Hour ticks (00:00 / 06:00 / 12:00 / 18:00) — day 1 only.
+  ctx.fillStyle = '#b5afa8';
+  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+  ctx.textBaseline = 'bottom';
+  for (const hh of [0, 6, 12, 18]) {
+    const tick = new Date(common.firstDay);
+    tick.setHours(hh, 0, 0, 0);
+    const xx = _fcXFor(tick, common, plotLeft, plotW);
+    if (xx <= plotLeft + 8 || xx >= plotLeft + plotW - 8) continue;
+    ctx.fillText(`${String(hh).padStart(2, '0')}:00`, xx, cssH - 1);
+  }
+}
+
+function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
+  const container = el('forecast-chart-container');
+  if (!container) return;
+  const W = container.clientWidth;
   const isMobile = W < 600;
-
-  // ── Layout regions (CSS pixels) ──
-  // Vertical:
-  //   [pad.top]
-  //   [swell panel]   ← 50% of usable
-  //   [gap]
-  //   [wind panel]    ← 25% of usable
-  //   [callout band — "NEXT LOW: …" line, sits directly above the tide curve]
-  //   [tide panel]    ← 15% of usable
-  //   [arrow strip]   ← swell-direction arrows, fixed 40px
-  //   [day-label band] ← Today / Tomorrow / Thu 5/7, fixed 22px
-  //   [pad.bottom]
-  const pad = isMobile
-    ? { top: 4, right: 36, bottom: 4, left: 36 }
-    : { top: 6, right: 48, bottom: 6, left: 48 };
-  const calloutH    = 28;
-  const arrowStripH = 40;
-  const dayBandH    = 22;
-  const panelGap    = isMobile ? 10 : 14;
-
-  const plotLeft  = pad.left;
-  const plotRight = W - pad.right;
-  const plotW     = plotRight - plotLeft;
-
-  const dayBandBot  = H - pad.bottom;
-  const dayBandTop  = dayBandBot - dayBandH;
-  const arrowBot    = dayBandTop;
-  const arrowTop    = arrowBot - arrowStripH;
-  const panelsTop   = pad.top;
-  const panelsBot   = arrowTop;
-  const panelsTotal = panelsBot - panelsTop;
-  // Panels take 50+25+15 = 90 of the ratio; one inter-panel gap + the callout
-  // band consume the rest.
-  const usable      = panelsTotal - panelGap - calloutH;
-  const swellH      = Math.max(40, usable * 50 / 90);
-  const windH       = Math.max(20, usable * 25 / 90);
-  const tideH       = Math.max(16, usable * 15 / 90);
-  const swellTop = panelsTop;
-  const swellBot = swellTop + swellH;
-  const windTop  = swellBot + panelGap;
-  const windBot  = windTop + windH;
-  const calloutTop = windBot;
-  const calloutBot = calloutTop + calloutH;
-  const tideTop  = calloutBot;
-  const tideBot  = tideTop + tideH;
 
   // ── Hourly arrays ──
   const allTimes = marine.hourly.time.map(t => new Date(t));
@@ -1594,451 +2118,85 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   }
   const windMaxY = Math.max(10, Math.ceil(windPeak * 1.2 / 5) * 5);
 
-  function xPos(time) { return plotLeft + ((time.getTime() - t0) / tRange) * plotW; }
-  // Per-panel y functions — each panel has its own (top, height, max).
-  const ySwell  = (val) => swellTop + swellH - (Math.min(val, swellMaxY) / swellMaxY) * swellH;
-  const yPeriod = (val) => {
-    const v = Math.max(0, Math.min(periodMax, val));
-    return swellTop + swellH - (v / periodMax) * swellH;
-  };
-  const yWind   = (val) => windTop  + windH  - (Math.min(val, windMaxY)  / windMaxY)  * windH;
-
-  // ── Paint background ──
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, W, H);
-
-  // ── Nighttime shading: spans swell + wind + tide panels ──
-  const shadingTop = swellTop;
-  const shadingBot = tideBot;
-  const shadingH   = shadingBot - shadingTop;
-  if (daylight && !daylight.alwaysDay) {
-    for (let dayOff = 0; dayOff < dayCount + 1; dayOff++) {
-      const dayDate = new Date(firstDay);
-      dayDate.setDate(dayDate.getDate() + dayOff);
-      const dl = calcDaylight(STATE.pinLat || CONFIG.chocomount.lat, STATE.pinLon || CONFIG.chocomount.lon, dayDate);
-      if (dl && dl.sunset && dl.sunrise) {
-        const sunsetX = xPos(dl.sunset);
-        const midnightDate = new Date(dayDate);
-        midnightDate.setDate(midnightDate.getDate() + 1);
-        midnightDate.setHours(0, 0, 0, 0);
-        const midnightX = xPos(midnightDate);
-        if (sunsetX < plotLeft + plotW && midnightX > plotLeft) {
-          ctx.fillStyle = 'rgba(44, 40, 37, 0.04)';
-          ctx.fillRect(Math.max(sunsetX, plotLeft), shadingTop,
-            Math.min(midnightX, plotLeft + plotW) - Math.max(sunsetX, plotLeft), shadingH);
-        }
-        const morningStart = new Date(dayDate); morningStart.setHours(0, 0, 0, 0);
-        const mStartX = xPos(morningStart);
-        const sunriseX = xPos(dl.sunrise);
-        if (mStartX < plotLeft + plotW && sunriseX > plotLeft) {
-          ctx.fillStyle = 'rgba(44, 40, 37, 0.04)';
-          ctx.fillRect(Math.max(mStartX, plotLeft), shadingTop,
-            Math.min(sunriseX, plotLeft + plotW) - Math.max(mStartX, plotLeft), shadingH);
-        }
-      }
-    }
-  }
-
-  // ── Day separators (midnight verticals) — span all three panels + arrow strip ──
-  ctx.strokeStyle = '#e0dbd3';
-  ctx.lineWidth = 0.5;
-  for (let dayOff = 0; dayOff <= dayCount; dayOff++) {
-    const midDate = new Date(firstDay);
-    midDate.setDate(midDate.getDate() + dayOff);
-    const xx = xPos(midDate);
-    if (xx > plotLeft && xx < plotLeft + plotW) {
-      ctx.beginPath();
-      ctx.moveTo(xx, shadingTop);
-      ctx.lineTo(xx, arrowBot);
-      ctx.stroke();
-    }
-  }
-
-  // ── Faint panel dividers ──
-  ctx.strokeStyle = '#eae6e0';
-  ctx.lineWidth = 0.5;
-  for (const yLine of [swellBot, windBot, tideBot]) {
-    ctx.beginPath();
-    ctx.moveTo(plotLeft, yLine);
-    ctx.lineTo(plotLeft + plotW, yLine);
-    ctx.stroke();
-  }
-
-  // ════════════════════════════════════════════════
-  // SWELL PANEL — secondary area + primary area + period line on right axis
-  // ════════════════════════════════════════════════
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(plotLeft, swellTop, plotW, swellH);
-  ctx.clip();
-
-  // Secondary area (lighter blue, behind primary)
-  if (secHeights.length) {
-    ctx.beginPath();
-    ctx.moveTo(xPos(allTimes[extStart]), ySwell(0));
-    for (let i = extStart; i <= extEnd; i++) {
-      const h = secHeights[i] != null ? secHeights[i] : 0;
-      ctx.lineTo(xPos(allTimes[i]), ySwell(h));
-    }
-    ctx.lineTo(xPos(allTimes[extEnd]), ySwell(0));
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(140, 175, 205, 0.6)';
-    ctx.fill();
-  }
-
-  // Primary swell area (darker blue, on top)
-  ctx.beginPath();
-  ctx.moveTo(xPos(allTimes[extStart]), ySwell(0));
-  for (let i = extStart; i <= extEnd; i++) {
-    const h = heights[i] != null ? heights[i] : 0;
-    ctx.lineTo(xPos(allTimes[i]), ySwell(h));
-  }
-  ctx.lineTo(xPos(allTimes[extEnd]), ySwell(0));
-  ctx.closePath();
-  ctx.fillStyle = 'rgba(74, 110, 145, 0.85)';
-  ctx.fill();
-
-  // Primary swell stroke (top edge)
-  ctx.beginPath();
-  ctx.strokeStyle = '#3a5570';
-  ctx.lineWidth = 1.5;
-  let started = false;
-  for (let i = extStart; i <= extEnd; i++) {
-    const h = heights[i];
-    if (h == null) continue;
-    const x = xPos(allTimes[i]);
-    const y = ySwell(h);
-    if (!started) { ctx.moveTo(x, y); started = true; }
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  // Period line (right axis)
-  ctx.beginPath();
-  ctx.strokeStyle = '#b87a2e';
-  ctx.lineWidth = 1.5;
-  let pStarted = false;
-  for (let i = extStart; i <= extEnd; i++) {
-    const p = wavePeriods[i];
-    if (p == null) continue;
-    const x = xPos(allTimes[i]);
-    const y = yPeriod(p);
-    if (!pStarted) { ctx.moveTo(x, y); pStarted = true; }
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-  ctx.restore();
-
-  // Swell axis labels
-  const axisFont = isMobile ? '9px' : '10px';
-  ctx.font = `${axisFont} "DM Mono", monospace`;
-  ctx.fillStyle = '#3a5570';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  for (let v = 0; v <= swellMaxY; v += swellStep) {
-    ctx.fillText(`${v}`, plotLeft - 4, ySwell(v));
-  }
-  ctx.fillStyle = '#b87a2e';
-  ctx.textAlign = 'left';
-  for (let v = 0; v <= periodMax; v += 5) {
-    ctx.fillText(`${v}`, plotLeft + plotW + 4, yPeriod(v));
-  }
-  // unit labels
-  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
-  ctx.textBaseline = 'top';
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#3a5570';
-  ctx.fillText('ft',  plotLeft + 2, swellTop + 2);
-  ctx.textAlign = 'right';
-  ctx.fillStyle = '#b87a2e';
-  ctx.fillText('s',   plotLeft + plotW - 2, swellTop + 2);
-
-  // ════════════════════════════════════════════════
-  // WIND PANEL — single mph axis, filled area + line on top (color shading lands in next commit)
-  // ════════════════════════════════════════════════
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(plotLeft, windTop, plotW, windH);
-  ctx.clip();
-
-  // Per-hour quality color: offshore (green) / cross-shore (yellow) / onshore (red).
-  // Light winds (<5 mph) upgrade one tier so colors don't mislead at calm hours.
-  // Choc-spec offshore center = 335° (audit / Prompt #4 spec).
-  const OFFSHORE_CENTER = 335;
-  const colorFor = (dir, speed) => {
-    if (dir == null) return 'rgba(150, 145, 138, 0.5)';
-    const gap = Math.min(((dir - OFFSHORE_CENTER) % 360 + 360) % 360,
-                        ((OFFSHORE_CENTER - dir) % 360 + 360) % 360);
-    let bucket;
-    if (gap < 60)        bucket = 'off';
-    else if (gap < 120)  bucket = 'cross';
-    else                 bucket = 'on';
-    if (speed != null && speed < 5) {
-      if (bucket === 'cross') bucket = 'off';
-      else if (bucket === 'on') bucket = 'cross';
-    }
-    if (bucket === 'off')   return 'rgba(110, 169, 107, 0.6)';
-    if (bucket === 'cross') return 'rgba(212, 179, 74, 0.6)';
-    return 'rgba(194, 94, 94, 0.6)';
+  // Common payload passed to each panel drawer.
+  const common = {
+    t0, tEnd, tRange, allTimes,
+    lastIdx,
+    firstDay, dayCount,
+    daylight,
+    pinLat: STATE.pinLat || CONFIG.chocomount.lat,
+    pinLon: STATE.pinLon || CONFIG.chocomount.lon,
+    isMobile
   };
 
-  // Fill each hour-segment with its own color. Adjacent segments butt together
-  // — quality is a per-hour quantity, no smoothing.
-  for (let i = extStart; i < extEnd; i++) {
-    const x1 = xPos(allTimes[i]);
-    const x2 = xPos(allTimes[i + 1]);
-    const w1 = windSpeeds[i]     != null ? windSpeeds[i]     : 0;
-    const w2 = windSpeeds[i + 1] != null ? windSpeeds[i + 1] : 0;
-    ctx.beginPath();
-    ctx.moveTo(x1, yWind(0));
-    ctx.lineTo(x1, yWind(w1));
-    ctx.lineTo(x2, yWind(w2));
-    ctx.lineTo(x2, yWind(0));
-    ctx.closePath();
-    ctx.fillStyle = colorFor(windDirs[i], windSpeeds[i]);
-    ctx.fill();
-  }
-
-  // Top stroke
-  ctx.beginPath();
-  ctx.strokeStyle = '#4a443e';
-  ctx.lineWidth = 1.25;
-  let wStarted = false;
-  for (let i = extStart; i <= extEnd; i++) {
-    const w = windSpeeds[i];
-    if (w == null) continue;
-    const x = xPos(allTimes[i]);
-    const y = yWind(w);
-    if (!wStarted) { ctx.moveTo(x, y); wStarted = true; }
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-  ctx.restore();
-
-  ctx.font = `${axisFont} "DM Mono", monospace`;
-  ctx.fillStyle = '#5a5550';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`${windMaxY}`, plotLeft - 4, yWind(windMaxY));
-  ctx.fillText('0', plotLeft - 4, yWind(0));
-  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
-  ctx.textBaseline = 'top';
-  ctx.textAlign = 'left';
-  ctx.fillText('mph', plotLeft + 2, windTop + 2);
-
-  // ════════════════════════════════════════════════
-  // TIDE PANEL — clean teal curve + sparse low-tide labels
-  // ════════════════════════════════════════════════
-  let tideMin = 0, tideMax = 1, tideY = null;
-  if (tidePred && tidePred.length > 1) {
-    const vals = tidePred.map(p => parseFloat(p.v)).filter(Number.isFinite);
-    tideMin = Math.min(...vals);
-    tideMax = Math.max(...vals);
-    const tideRange = (tideMax - tideMin) || 1;
-    const padInside = 4;
-    tideY = (v) => (tideTop + padInside) + (1 - (v - tideMin) / tideRange) * (tideH - 2 * padInside);
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(plotLeft, tideTop, plotW, tideH);
-    ctx.clip();
-    ctx.beginPath();
-    ctx.strokeStyle = 'rgba(58, 125, 125, 0.85)';
-    ctx.lineWidth = 1.25;
-    let tStarted = false;
-    for (const p of tidePred) {
-      const tt = new Date(p.t).getTime();
-      if (tt < t0 || tt > tEnd) continue;
-      const v = parseFloat(p.v);
-      if (!Number.isFinite(v)) continue;
-      const x = plotLeft + ((tt - t0) / tRange) * plotW;
-      const y = tideY(v);
-      if (!tStarted) { ctx.moveTo(x, y); tStarted = true; }
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
-  ctx.fillStyle = '#3a7d7d';
-  ctx.textBaseline = 'top';
-  ctx.textAlign = 'left';
-  ctx.fillText('tide', plotLeft + 2, tideTop + 2);
-
-  // ── Low-tide markers + sparse labels ──
-  const nowMs = Date.now();
-  if (tideHiLo && tideY) {
-    const lowsInWindow = tideHiLo
-      .filter(p => p.type === 'L')
-      .map(p => ({ t: new Date(p.t).getTime(), v: parseFloat(p.v) }))
-      .filter(p => p.t >= t0 && p.t <= tEnd && Number.isFinite(p.v));
-    const lowsAfterNow = lowsInWindow.filter(p => p.t >= nowMs).sort((a, b) => a.t - b.t);
-    const labelSet = new Set(lowsAfterNow.slice(0, 2).map(p => p.t));
-
-    for (const lo of lowsInWindow) {
-      const xx = plotLeft + ((lo.t - t0) / tRange) * plotW;
-      if (xx < plotLeft || xx > plotLeft + plotW) continue;
-      const yy = tideY(lo.v);
-      if (labelSet.has(lo.t)) {
-        // Marker (small filled triangle) + stacked time/height label
-        ctx.fillStyle = 'rgba(58, 125, 125, 0.95)';
-        ctx.beginPath();
-        ctx.moveTo(xx, yy + 2);
-        ctx.lineTo(xx - 3, yy - 3);
-        ctx.lineTo(xx + 3, yy - 3);
-        ctx.closePath();
-        ctx.fill();
-        const td = new Date(lo.t);
-        const hrs = td.getHours();
-        const mins = td.getMinutes();
-        const ampm = hrs >= 12 ? 'pm' : 'am';
-        const h12 = hrs % 12 || 12;
-        const timeStr = mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
-        const heightStr = `${lo.v.toFixed(1)}ft`;
-        ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
-        ctx.fillStyle = '#3a7d7d';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        // Place stacked labels above or below the trough depending on room.
-        const stackBelow = (yy + 18) < tideBot - 2;
-        if (stackBelow) {
-          ctx.fillText(timeStr,   xx, yy + 4);
-          ctx.fillText(heightStr, xx, yy + 13);
-        } else {
-          ctx.textBaseline = 'bottom';
-          ctx.fillText(heightStr, xx, yy - 4);
-          ctx.fillText(timeStr,   xx, yy - 13);
-        }
-      } else {
-        // Sparse unlabeled triangle marker.
-        ctx.fillStyle = 'rgba(58, 125, 125, 0.55)';
-        ctx.beginPath();
-        ctx.moveTo(xx, yy + 1);
-        ctx.lineTo(xx - 2.5, yy - 3);
-        ctx.lineTo(xx + 2.5, yy - 3);
-        ctx.closePath();
-        ctx.fill();
-      }
-    }
-  }
-
-  // ── Dashed "now" vertical, tide panel only ──
-  if (nowMs >= t0 && nowMs <= tEnd) {
-    const nowX = plotLeft + ((nowMs - t0) / tRange) * plotW;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(44, 40, 37, 0.5)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    ctx.beginPath();
-    ctx.moveTo(nowX, tideTop);
-    ctx.lineTo(nowX, tideBot);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-
-  // ════════════════════════════════════════════════
-  // DIRECTION ARROW STRIP — one arrow per 6h, anchored to swell direction
-  // ════════════════════════════════════════════════
-  // Convention: Open-Meteo reports swell_wave_direction as the direction the
-  // swell is coming FROM (compass bearing). We point each arrow toward where
-  // the swell is going TO — i.e. (dir + 180) — so a 290° (WNW) swell arrow
-  // points eastward, matching how surfers visualize a swell hitting a coast.
-  const arrowY = arrowTop + arrowStripH * 0.45;
-  const arrowSize = isMobile ? 7 : 9;
-  const arrowLineW = isMobile ? 1.25 : 1.5;
-  const arrowColor = '#4a6e91'; // same family as the primary swell area
-  for (let i = extStart; i <= extEnd; i++) {
-    const t = allTimes[i];
-    if (t.getHours() % 6 !== 0) continue;
-    const dir = swellDirs[i];
-    if (dir == null) continue;
-    const xx = xPos(t);
-    if (xx < plotLeft || xx > plotLeft + plotW) continue;
-    drawArrow(ctx, xx, arrowY, dir, arrowSize, arrowColor, arrowLineW);
-    // Sub-label: degrees + compass abbreviation
-    ctx.font = `${isMobile ? '7px' : '8px'} "DM Mono", monospace`;
-    ctx.fillStyle = '#8a827a';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText(`${Math.round(dir)}° ${directionLabel(dir)}`, xx, arrowY + arrowSize + 2);
-  }
-
-  // ── Tide callout: HTML overlay positioned over the calloutTop band ──
-  // (Rendered in HTML so applyScrubberToHour can update its text without
-  // forcing a full canvas redraw.) Initial text is now-relative; scrub
-  // updates from applyScrubberToHour swap to "NEXT LOW AFTER <hh:mm>".
-  positionAndUpdateTideCallout(container, {
-    calloutTop, calloutH, plotLeft, plotW, isMobile, tideHiLo
+  // Draw each panel canvas.
+  const swellInfo = drawSwellPanel(common, {
+    heights, secHeights, swellDirs, wavePeriods, swellMaxY, swellStep, periodMax
   });
+  drawWindPanel(common, { windSpeeds, windDirs, windMaxY });
+  const tideInfo = drawTidePanel(common, { tidePred, tideHiLo });
+  drawDayLabels(common);
 
-  // ════════════════════════════════════════════════
-  // DAY-LABEL BAND — Today / Tomorrow / Thu 5/7
-  // ════════════════════════════════════════════════
-  // Each label is centered on its day's midpoint within the visible window
-  // (so a partial first day gets centered on the visible portion, not noon).
-  // Larger / bolder than other axis labels.
-  const todayLocal = new Date(); todayLocal.setHours(0, 0, 0, 0);
-  ctx.fillStyle = '#3a352f';
-  ctx.font = `600 ${isMobile ? '11px' : '13px'} "DM Mono", monospace`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  for (let dayOff = 0; dayOff < dayCount; dayOff++) {
-    const dayStart = new Date(firstDay);
-    dayStart.setDate(dayStart.getDate() + dayOff);
-    const dayEnd = new Date(dayStart);
-    dayEnd.setDate(dayEnd.getDate() + 1);
-    // Visible portion of this day inside the plot.
-    const visStart = Math.max(xPos(dayStart), plotLeft);
-    const visEnd   = Math.min(xPos(dayEnd),   plotLeft + plotW);
-    if (visEnd <= visStart + 8) continue;
-    const xx = (visStart + visEnd) / 2;
-    const dayDelta = Math.round((dayStart - todayLocal) / 86400000);
-    let label;
-    if (dayDelta === 0)      label = 'Today';
-    else if (dayDelta === 1) label = 'Tomorrow';
-    else label = `${dayStart.toLocaleDateString('en-US',{weekday:'short'})} ${dayStart.getMonth()+1}/${dayStart.getDate()}`;
-    ctx.fillText(label, xx, dayBandTop + dayBandH / 2);
-  }
+  // Tide callout (HTML overlay, populated as text only).
+  positionAndUpdateTideCallout(container, { tideHiLo });
 
-  // Hour ticks (00:00 / 06:00 / 12:00 / 18:00) — only on day 1, drawn just above
-  // the day-label band so they don't crowd later days.
-  ctx.fillStyle = '#b5afa8';
-  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
-  ctx.textBaseline = 'bottom';
-  for (const hh of [0, 6, 12, 18]) {
-    const tick = new Date(firstDay);
-    tick.setHours(hh, 0, 0, 0);
-    const xx = xPos(tick);
-    if (xx <= plotLeft + 8 || xx >= plotLeft + plotW - 8) continue;
-    ctx.fillText(`${String(hh).padStart(2, '0')}:00`, xx, dayBandTop - 1);
-  }
+  // Container-relative geometry for the scrubber crosshair / handle.
+  const swellCanvas = el('forecast-canvas-swell');
+  const tideCanvas  = el('forecast-canvas-tide');
+  const swellCard   = swellCanvas ? swellCanvas.parentElement : null;
+  const tideCard    = tideCanvas ? tideCanvas.parentElement : null;
+
+  const offsetTopWithin = (node, ancestor) => {
+    let y = 0, n = node;
+    while (n && n !== ancestor) { y += n.offsetTop; n = n.offsetParent; }
+    return y;
+  };
+  const offsetLeftWithin = (node, ancestor) => {
+    let x = 0, n = node;
+    while (n && n !== ancestor) { x += n.offsetLeft; n = n.offsetParent; }
+    return x;
+  };
+
+  // Container-relative plot anchor (uses swell card's canvas as reference;
+  // every canvas shares the same FC_PAD so this anchor is canonical).
+  const swellCanvasLeft = swellCanvas ? offsetLeftWithin(swellCanvas, container) : 0;
+  const plotLeft = swellCanvasLeft + FC_PAD.left;
+  const plotW    = swellInfo ? swellInfo.plotW : 0;
+
+  const swellCardTop  = swellCard ? offsetTopWithin(swellCard, container) : 0;
+  const tideCardTop   = tideCard  ? offsetTopWithin(tideCard,  container) : 0;
+  const tideCardBot   = tideCard  ? tideCardTop + tideCard.offsetHeight : 0;
+
+  // Swell drawing area within the container (for handle Y).
+  const swellPanelTop = swellCanvas
+    ? offsetTopWithin(swellCanvas, container) + (swellInfo ? swellInfo.top : 0)
+    : swellCardTop;
+  const swellPanelH = swellInfo ? swellInfo.h : 0;
 
   // ── Store chart state for interaction ──
   STATE.forecastChart = {
-    // Legacy keys retained for the scrubber/applyScrubber code path:
-    pad: { left: plotLeft, right: pad.right, top: swellTop, bottom: H - tideBot },
+    pad: { left: plotLeft, right: 0, top: swellCardTop, bottom: 0 },
     plotW,
-    plotH: swellH,                    // handle snaps to swell curve
-    W, H, t0, tEnd, tRange,
+    plotH: swellPanelH,
+    W, H: container.clientHeight,
+    t0, tEnd, tRange,
     times: allTimes,
     heights, secHeights, wavePeriods, swellDirs, windSpeeds, windDirs, windGusts,
     tideHiLo, tidePred, firstDay, dayCount,
-    // New stacked-layout fields:
     layout: {
-      plotLeft, plotRight, plotW,
-      swellTop, swellBot, swellH, swellMaxY,
-      windTop,  windBot,  windH,  windMaxY,
-      tideTop,  tideBot,  tideH,  tideMin, tideMax,
-      arrowTop, arrowBot, arrowStripH,
-      dayBandTop, dayBandBot, dayBandH,
-      calloutTop, calloutBot, calloutH,
-      crosshairTop: swellTop, crosshairBot: arrowBot
+      plotLeft, plotW,
+      swellTop: swellPanelTop,
+      swellH: swellPanelH,
+      swellMaxY,
+      tideMin: tideInfo ? tideInfo.tideMin : 0,
+      tideMax: tideInfo ? tideInfo.tideMax : 1,
+      crosshairTop: swellCardTop,
+      crosshairBot: tideCardBot
     }
   };
-  setupForecastInteraction(canvas, container);
+  setupForecastInteraction(container);
 }
+
 
 // ════════════════════════════════════════════════
 // FORECAST CHART SCRUBBER
@@ -2203,11 +2361,7 @@ function applyScrubberToHour(idx) {
     const containerEl = el('forecast-chart-container');
     if (containerEl) {
       positionAndUpdateTideCallout(containerEl, {
-        calloutTop: cs.layout.calloutTop,
-        calloutH:   cs.layout.calloutH,
-        plotLeft:   cs.layout.plotLeft,
-        plotW:      cs.layout.plotW,
-        tideHiLo:   cs.tideHiLo
+        tideHiLo: cs.tideHiLo
       }, isScrubberAtNow() ? null : t.getTime());
     }
   }
@@ -2307,7 +2461,7 @@ function applyStatGridForHour(idx) {
   // is per-day). No badge, no override.
 }
 
-function setupForecastInteraction(canvas, container) {
+function setupForecastInteraction(container) {
   if (_forecastInteractionAbort) _forecastInteractionAbort.abort();
   _forecastInteractionAbort = new AbortController();
   const signal = _forecastInteractionAbort.signal;
@@ -2316,12 +2470,18 @@ function setupForecastInteraction(canvas, container) {
   const initialIdx = getScrubberIndex();
   if (initialIdx >= 0) applyScrubberToHour(initialIdx);
 
-  function indexFromClientX(clientX) {
+  // The scrubber is interactive on each panel canvas. Click X is mapped
+  // to a chart-time using the canvas's own bounding rect; FC_PAD.left is
+  // identical across all three canvases, so any of them can drive the
+  // scrubber and the result is the same hour.
+  function indexFromClientXOnCanvas(clientX, canvasEl) {
     const cs = STATE.forecastChart;
-    if (!cs) return -1;
-    const rect = canvas.getBoundingClientRect();
-    const chartX = clientX - rect.left;
-    const tFrac = Math.max(0, Math.min(1, (chartX - cs.pad.left) / cs.plotW));
+    if (!cs || !canvasEl) return -1;
+    const rect = canvasEl.getBoundingClientRect();
+    const localX = clientX - rect.left;
+    const cssW = canvasEl.clientWidth || rect.width;
+    const plotW = cssW - FC_PAD.left - FC_PAD.right;
+    const tFrac = Math.max(0, Math.min(1, (localX - FC_PAD.left) / plotW));
     const targetT = cs.t0 + tFrac * cs.tRange;
     return findHourIndexForTime(targetT, cs);
   }
@@ -2342,43 +2502,58 @@ function setupForecastInteraction(canvas, container) {
     applyScrubberToHour(idx);
   }
 
-  // ── Mouse: click anywhere → jump; mousedown + drag → follow ──
-  let dragging = false;
-  canvas.addEventListener('mousedown', (e) => {
-    dragging = true;
-    canvas.style.cursor = 'ew-resize';
-    const idx = indexFromClientX(e.clientX);
-    setScrubberToIdx(idx, true);
-    e.preventDefault();
-  }, { signal });
+  const canvases = [
+    el('forecast-canvas-swell'),
+    el('forecast-canvas-wind'),
+    el('forecast-canvas-tide')
+  ].filter(Boolean);
 
-  canvas.addEventListener('mousemove', (e) => {
-    if (!dragging) {
-      // No hover preview — scrubber only moves on drag/click.
-      return;
-    }
-    const idx = indexFromClientX(e.clientX);
+  let dragging = false;
+  let dragSrc = null;
+
+  for (const cv of canvases) {
+    cv.addEventListener('mousedown', (e) => {
+      dragging = true;
+      dragSrc = cv;
+      cv.style.cursor = 'ew-resize';
+      const idx = indexFromClientXOnCanvas(e.clientX, cv);
+      setScrubberToIdx(idx, true);
+      e.preventDefault();
+    }, { signal });
+
+    cv.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const idx = indexFromClientXOnCanvas(e.clientX, dragSrc || cv);
+      setScrubberToIdx(idx, true);
+    }, { signal });
+
+    cv.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      const idx = indexFromClientXOnCanvas(e.touches[0].clientX, cv);
+      setScrubberToIdx(idx, true);
+    }, { passive: true, signal });
+
+    cv.addEventListener('touchmove', (e) => {
+      if (e.touches.length !== 1) return;
+      e.preventDefault();
+      const idx = indexFromClientXOnCanvas(e.touches[0].clientX, cv);
+      setScrubberToIdx(idx, true);
+    }, { passive: false, signal });
+  }
+
+  // Even when the cursor strays off a canvas, dragging should still follow
+  // until mouseup. Listen to window-level mousemove for that.
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging || !dragSrc) return;
+    const idx = indexFromClientXOnCanvas(e.clientX, dragSrc);
     setScrubberToIdx(idx, true);
   }, { signal });
 
   window.addEventListener('mouseup', () => {
     dragging = false;
-    canvas.style.cursor = '';
+    if (dragSrc) dragSrc.style.cursor = '';
+    dragSrc = null;
   }, { signal });
-
-  // ── Touch: tap to jump, drag to follow ──
-  canvas.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) return;
-    const idx = indexFromClientX(e.touches[0].clientX);
-    setScrubberToIdx(idx, true);
-  }, { passive: true, signal });
-
-  canvas.addEventListener('touchmove', (e) => {
-    if (e.touches.length !== 1) return;
-    e.preventDefault();
-    const idx = indexFromClientX(e.touches[0].clientX);
-    setScrubberToIdx(idx, true);
-  }, { passive: false, signal });
 }
 
 function resetScrubberToNow() {
@@ -2430,6 +2605,29 @@ function drawArrow(ctx, x, y, dirDeg, size, color, lineW) {
   ctx.lineTo(size - headLen, headW);
   ctx.closePath();
   ctx.fill();
+  ctx.restore();
+}
+
+// Filled triangle marker (no shaft) used for the inline daily-peak swell
+// arrows. White fill, colored stroke. dirDeg is "from" direction;
+// the arrow points where the swell is HEADING (dir + 180).
+function drawArrowFilled(ctx, x, y, dirDeg, size, fillColor, strokeColor, lineW) {
+  const rad = degToRad((dirDeg + 180) % 360 - 90);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rad);
+  ctx.beginPath();
+  ctx.moveTo(size, 0);
+  ctx.lineTo(-size * 0.7, -size * 0.7);
+  ctx.lineTo(-size * 0.4, 0);
+  ctx.lineTo(-size * 0.7, size * 0.7);
+  ctx.closePath();
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = lineW;
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -3043,11 +3241,11 @@ function drawSpectrum(spectral) {
   function attach() {
     const cc = el('compass-canvas');
     const sc = el('spectrum-canvas');
-    const fc = el('forecast-canvas');
+    const fcContainer = el('forecast-chart-container');
     const tc = el('tide-canvas');
     if (cc && cc.parentElement) observer.observe(cc.parentElement);
     if (sc && sc.parentElement) observer.observe(sc.parentElement);
-    if (fc && fc.parentElement) observer.observe(fc.parentElement);
+    if (fcContainer) observer.observe(fcContainer);
     if (tc && tc.parentElement) observer.observe(tc.parentElement);
     initRoseScaleToggle();
   }

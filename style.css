@@ -370,15 +370,84 @@ a:hover { text-decoration: underline; }
 }
 
 /* Forecast chart needs more vertical space for the stacked-panel layout
-   (tide callout + swell + wind + tide + arrow strip + day labels). */
+   (three card-wrapped canvases + callout + arrow row + day labels). */
 .chart-container-tall {
-  height: 540px;
+  height: auto;
+  min-height: 480px;
+  position: relative;
 }
 
 .chart-container canvas {
   display: block;
   height: 100%;
 }
+
+/* Forecast cards: each canvas wrapped in its own white card. The 60px
+   left padding is the section-label column ("S/W/E/L/L" etc.) so all
+   three canvases right-align with the same horizontal extent. */
+#forecast-chart-container .forecast-card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 8px 8px 8px 60px;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+  position: relative;
+}
+#forecast-chart-container .forecast-card-swell { height: 200px; }
+#forecast-chart-container .forecast-card-wind  { height: 120px; }
+/* Tide card hosts the inline NEXT LOW callout in a 24px row + the curve.
+   Total = 8 (pad-top) + 24 (callout) + 1 (divider) + 120 (curve) + 8 (pad-bot) ≈ 161. */
+#forecast-chart-container .forecast-card-tide  { height: 161px; }
+#forecast-chart-container .forecast-card canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* Tide canvas shares its card with the callout row + divider, so it
+   can't claim 100% — leave 30px on top for those rows. */
+#forecast-chart-container .forecast-card-tide canvas {
+  height: calc(100% - 30px);
+}
+/* Section label vertically aligned with the curve, not the callout row. */
+#forecast-chart-container .forecast-card-tide .forecast-section-label {
+  top: auto;
+  bottom: 8px;
+  height: calc(100% - 38px);
+  transform: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+/* Stacked-letter section label: vertically centered in the 60px column. */
+#forecast-chart-container .forecast-section-label {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 52px;
+  transform: translateY(-50%);
+  text-align: center;
+  font-family: var(--mono, monospace);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.35;
+  color: #888;
+  user-select: none;
+  pointer-events: none;
+}
+#forecast-chart-container .forecast-day-row {
+  height: 28px;
+  padding: 0 8px 0 60px;
+  box-sizing: border-box;
+}
+#forecast-chart-container .forecast-day-row canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* When the callout row is inside the tide card, it inherits the card's
+   60px left-padding (section-label column), so no extra padding needed. */
 
 /* ── Forecast header & navigation ────────────── */
 .forecast-header-row {
@@ -436,16 +505,21 @@ a:hover { text-decoration: underline; }
   user-select: none;
 }
 
-/* ── Forecast detail bar (selected hour info) ── */
+/* ── Forecast detail bar (selected hour info, floating top of chart) ── */
 .forecast-detail-bar {
   display: none;
+  position: sticky;
+  top: 0;
+  z-index: 10;
   font-family: var(--mono);
   font-size: 0.72rem;
-  color: var(--ink);
-  padding: 8px 14px;
-  border-top: 1px solid var(--border-l);
-  background: var(--bg-alt);
-  line-height: 1.6;
+  color: #f0ece6;
+  background: #2c2825;
+  padding: 6px 12px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
 }
 
 .forecast-detail-bar.active {
@@ -460,9 +534,9 @@ a:hover { text-decoration: underline; }
 }
 
 .forecast-detail-bar .detail-time {
-  font-weight: 500;
+  font-weight: 600;
   font-size: 0.78rem;
-  color: var(--ink);
+  color: #ffffff;
   margin-right: 4px;
 }
 
@@ -473,32 +547,37 @@ a:hover { text-decoration: underline; }
 }
 
 .forecast-detail-bar .detail-label {
-  color: var(--ink3);
+  color: #b5afa8;
 }
 
 .forecast-detail-bar .detail-val {
   font-weight: 500;
+  color: #f0ece6;
 }
 
 .forecast-detail-bar .detail-tide {
-  color: var(--blue);
+  color: #67e8f9;
   font-weight: 500;
 }
 
-/* ── Forecast tide callout (overlays the canvas band above the tide curve) ── */
+/* ── Forecast tide callout (top row inside the tide card) ── */
 .forecast-tide-callout {
-  position: absolute;
   display: flex;
   align-items: center;
+  height: 24px;
   font-family: var(--mono);
-  font-size: 0.74rem;
+  font-size: 0.78rem;
+  font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--ink);
   pointer-events: none;
-  z-index: 4;
-  padding: 0 4px;
   white-space: nowrap;
   overflow: hidden;
+}
+.forecast-tide-divider {
+  height: 1px;
+  background: #e8e8e8;
+  margin: 1px 0 4px;
 }
 .forecast-tide-callout .tide-callout-prefix {
   color: var(--ink3);
@@ -533,14 +612,8 @@ a:hover { text-decoration: underline; }
   transform: translate(-50%, -50%);
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
-.forecast-detail-bar { display: block; }
-.forecast-detail-bar.scrub-active {
-  background: #2c2825;
-  color: #f0ece6;
-  border-top-color: #2c2825;
-}
-.forecast-detail-bar.scrub-active .detail-label { color: #b5afa8; }
-.forecast-detail-bar.scrub-active .detail-tide { color: #67e8f9; }
+/* Always rendered as the dark sticky bar; .scrub-active is just a hint
+   for any future style differentiation. */
 .scrub-badge {
   display: inline-block;
   margin-left: 6px;
