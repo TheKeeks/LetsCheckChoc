@@ -382,12 +382,14 @@ a:hover { text-decoration: underline; }
   height: 100%;
 }
 
-/* Forecast cards: each canvas wrapped in its own white card. */
+/* Forecast cards: each canvas wrapped in its own white card. The 60px
+   left padding is the section-label column ("S/W/E/L/L" etc.) so all
+   three canvases right-align with the same horizontal extent. */
 #forecast-chart-container .forecast-card {
   background: #fff;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
-  padding: 8px;
+  padding: 8px 8px 8px 60px;
   margin-bottom: 8px;
   box-sizing: border-box;
   position: relative;
@@ -400,9 +402,26 @@ a:hover { text-decoration: underline; }
   width: 100%;
   height: 100%;
 }
+/* Stacked-letter section label: vertically centered in the 60px column. */
+#forecast-chart-container .forecast-section-label {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 52px;
+  transform: translateY(-50%);
+  text-align: center;
+  font-family: var(--mono, monospace);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.35;
+  color: #888;
+  user-select: none;
+  pointer-events: none;
+}
 #forecast-chart-container .forecast-arrow-row {
   height: 40px;
-  padding: 0 8px;
+  padding: 0 8px 0 60px;
   margin-bottom: 4px;
   box-sizing: border-box;
 }
@@ -413,13 +432,16 @@ a:hover { text-decoration: underline; }
 }
 #forecast-chart-container .forecast-day-row {
   height: 28px;
-  padding: 0 8px;
+  padding: 0 8px 0 60px;
   box-sizing: border-box;
 }
 #forecast-chart-container .forecast-day-row canvas {
   display: block;
   width: 100%;
   height: 100%;
+}
+#forecast-chart-container .forecast-tide-callout {
+  padding-left: 60px;
 }
 
 /* ── Forecast header & navigation ────────────── */
