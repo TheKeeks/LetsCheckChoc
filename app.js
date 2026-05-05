@@ -2108,31 +2108,53 @@ function applyScrubberToHour(idx) {
   const wg = cs.windGusts[idx];
 
   // ── Floating label below chart ──
+  // Field order: time | swell h @ p | swell dir | wind speed (gust) dir | tide level
   const detailBar = el('forecast-detail-bar');
   if (detailBar) {
     const dayName = t.toLocaleDateString('en-US', { weekday: 'short' });
     const timeStr = t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-    let tideHtml = '';
-    if (cs.tideHiLo) {
-      const twoHrs = 2 * 60 * 60 * 1000;
-      const nearby = cs.tideHiLo.find(pp =>
-        pp.type === 'L' && Math.abs(new Date(pp.t).getTime() - t.getTime()) < twoHrs
-      );
-      if (nearby) {
-        const td = new Date(nearby.t);
-        const tideTime = td.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-        tideHtml = `<span class="detail-item"><span class="detail-tide">Low Tide ${tideTime}</span></span>`;
+
+    const swellStr = (h != null && p != null)
+      ? `${h.toFixed(1)}ft @ ${p.toFixed(1)}s`
+      : (h != null ? `${h.toFixed(1)}ft` : '—');
+    const swellDirStr = dir != null
+      ? `${Math.round(dir)}° ${directionLabel(dir)}`
+      : '—';
+    let windStr = '—';
+    if (ws != null) {
+      windStr = `wind ${Math.round(ws)}mph`;
+      if (wg != null) windStr += ` (gust ${Math.round(wg)})`;
+      if (wd != null) windStr += ` ${directionLabel(wd)}`;
+    }
+
+    // Tide level interpolated from tidePred at t.
+    let tideStr = '';
+    if (cs.tidePred && cs.tidePred.length) {
+      const tMs = t.getTime();
+      let lo = null, hi = null;
+      for (let i = 0; i < cs.tidePred.length - 1; i++) {
+        const a = new Date(cs.tidePred[i].t).getTime();
+        const b = new Date(cs.tidePred[i + 1].t).getTime();
+        if (tMs >= a && tMs <= b) { lo = cs.tidePred[i]; hi = cs.tidePred[i + 1]; break; }
+      }
+      if (lo && hi) {
+        const a = new Date(lo.t).getTime();
+        const b = new Date(hi.t).getTime();
+        const va = parseFloat(lo.v), vb = parseFloat(hi.v);
+        if (Number.isFinite(va) && Number.isFinite(vb) && b > a) {
+          const v = va + (vb - va) * ((tMs - a) / (b - a));
+          tideStr = `tide ${v >= 0 ? '+' : ''}${v.toFixed(1)}ft`;
+        }
       }
     }
+
     detailBar.innerHTML =
       `<div class="detail-row">` +
       `<span class="detail-time">${dayName} ${timeStr}</span>` +
-      `<span class="detail-item"><span class="detail-label">Wave</span> <span class="detail-val">${h != null ? h.toFixed(1) + ' ft' : '—'}</span></span>` +
-      `<span class="detail-item"><span class="detail-label">Period</span> <span class="detail-val">${p != null ? p.toFixed(0) + 's' : '—'}</span></span>` +
-      `<span class="detail-item"><span class="detail-label">Dir</span> <span class="detail-val">${directionLabel(dir)}${dir != null ? ' (' + Math.round(dir) + '°)' : ''}</span></span>` +
-      `<span class="detail-item"><span class="detail-label">Wind</span> <span class="detail-val">${ws != null ? Math.round(ws) + ' mph ' + directionLabel(wd) : '—'}</span></span>` +
-      `<span class="detail-item"><span class="detail-label">Gusts</span> <span class="detail-val">${wg != null ? Math.round(wg) + ' mph' : '—'}</span></span>` +
-      tideHtml +
+      `<span class="detail-item"><span class="detail-val">${swellStr}</span></span>` +
+      `<span class="detail-item"><span class="detail-val">${swellDirStr}</span></span>` +
+      `<span class="detail-item"><span class="detail-val">${windStr}</span></span>` +
+      (tideStr ? `<span class="detail-item"><span class="detail-tide">${tideStr}</span></span>` : '') +
       `</div>`;
     detailBar.classList.add('active');
     detailBar.classList.toggle('scrub-active', !isScrubberAtNow());
