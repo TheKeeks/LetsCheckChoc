@@ -1974,19 +1974,32 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   });
 
   // ════════════════════════════════════════════════
-  // DAY-LABEL BAND — Mon 5/7 format (Today/Tomorrow comes in a later commit)
+  // DAY-LABEL BAND — Today / Tomorrow / Thu 5/7
   // ════════════════════════════════════════════════
-  ctx.fillStyle = '#5a5550';
-  ctx.font = `${isMobile ? '10px' : '12px'} "DM Mono", monospace`;
+  // Each label is centered on its day's midpoint within the visible window
+  // (so a partial first day gets centered on the visible portion, not noon).
+  // Larger / bolder than other axis labels.
+  const todayLocal = new Date(); todayLocal.setHours(0, 0, 0, 0);
+  ctx.fillStyle = '#3a352f';
+  ctx.font = `600 ${isMobile ? '11px' : '13px'} "DM Mono", monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   for (let dayOff = 0; dayOff < dayCount; dayOff++) {
-    const noonDate = new Date(firstDay);
-    noonDate.setDate(noonDate.getDate() + dayOff);
-    noonDate.setHours(12, 0, 0, 0);
-    const xx = xPos(noonDate);
-    if (xx <= plotLeft || xx >= plotLeft + plotW) continue;
-    ctx.fillText(formatDay(noonDate), xx, dayBandTop + dayBandH / 2);
+    const dayStart = new Date(firstDay);
+    dayStart.setDate(dayStart.getDate() + dayOff);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    // Visible portion of this day inside the plot.
+    const visStart = Math.max(xPos(dayStart), plotLeft);
+    const visEnd   = Math.min(xPos(dayEnd),   plotLeft + plotW);
+    if (visEnd <= visStart + 8) continue;
+    const xx = (visStart + visEnd) / 2;
+    const dayDelta = Math.round((dayStart - todayLocal) / 86400000);
+    let label;
+    if (dayDelta === 0)      label = 'Today';
+    else if (dayDelta === 1) label = 'Tomorrow';
+    else label = `${dayStart.toLocaleDateString('en-US',{weekday:'short'})} ${dayStart.getMonth()+1}/${dayStart.getDate()}`;
+    ctx.fillText(label, xx, dayBandTop + dayBandH / 2);
   }
 
   // Hour ticks (00:00 / 06:00 / 12:00 / 18:00) — only on day 1, drawn just above
