@@ -485,6 +485,33 @@ a:hover { text-decoration: underline; }
   font-weight: 500;
 }
 
+/* ── Forecast tide callout (overlays the canvas band above the tide curve) ── */
+.forecast-tide-callout {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  pointer-events: none;
+  z-index: 4;
+  padding: 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.forecast-tide-callout .tide-callout-prefix {
+  color: var(--ink3);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  margin-right: 8px;
+  letter-spacing: 0.08em;
+}
+.forecast-tide-callout strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
 /* ── Forecast scrubber (vertical line + circular handle) ── */
 .forecast-crosshair {
   position: absolute;

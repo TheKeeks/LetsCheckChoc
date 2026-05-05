@@ -1440,6 +1440,63 @@ function drawForecastChart(marine, wind, daylight, tideHiLo, tidePred) {
   _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred);
 }
 
+// Render the "NEXT LOW: …" callout text relative to a target ms timestamp
+// (defaults to Date.now()). Returns the formatted line.
+function formatNextLowCallout(tideHiLo, fromMs) {
+  if (!tideHiLo) return '';
+  const fm = fromMs != null ? fromMs : Date.now();
+  const lows = tideHiLo
+    .filter(p => p.type === 'L')
+    .map(p => ({ t: new Date(p.t).getTime(), v: parseFloat(p.v) }))
+    .filter(p => Number.isFinite(p.v) && p.t > fm)
+    .sort((a, b) => a.t - b.t);
+  const next = lows[0];
+  if (!next) return '';
+  const td = new Date(next.t);
+  const hrs = td.getHours();
+  const mins = td.getMinutes();
+  const ampm = hrs >= 12 ? 'pm' : 'am';
+  const h12 = hrs % 12 || 12;
+  const timeStr = mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
+  // Day word: Today / Tomorrow / weekday
+  const refDay = new Date(fm); refDay.setHours(0, 0, 0, 0);
+  const lowDay = new Date(td); lowDay.setHours(0, 0, 0, 0);
+  const dayDelta = Math.round((lowDay - refDay) / 86400000);
+  let dayWord;
+  if (dayDelta <= 0)      dayWord = 'Today';
+  else if (dayDelta === 1) dayWord = 'Tomorrow';
+  else                     dayWord = td.toLocaleDateString('en-US', { weekday: 'short' });
+  const heightStr = `${next.v.toFixed(1)}ft`;
+  // "in Xh Ym" — relative to fromMs.
+  const deltaMin = Math.max(0, Math.round((next.t - fm) / 60000));
+  const dh = Math.floor(deltaMin / 60);
+  const dm = deltaMin % 60;
+  const inStr = dh > 0 ? `${dh}h ${dm}m` : `${dm}m`;
+  return `${dayWord} ${timeStr} · ${heightStr} · in ${inStr}`;
+}
+
+function positionAndUpdateTideCallout(container, geom, scrubMs) {
+  let cal = container.querySelector('.forecast-tide-callout');
+  if (!cal) {
+    cal = document.createElement('div');
+    cal.className = 'forecast-tide-callout';
+    container.appendChild(cal);
+  }
+  cal.style.left   = geom.plotLeft + 'px';
+  cal.style.top    = geom.calloutTop + 'px';
+  cal.style.width  = geom.plotW + 'px';
+  cal.style.height = geom.calloutH + 'px';
+  const tideHiLo = geom.tideHiLo;
+  if (!tideHiLo) { cal.textContent = ''; return; }
+  const isScrub = scrubMs != null && Math.abs(scrubMs - Date.now()) > 30 * 60 * 1000;
+  const line = formatNextLowCallout(tideHiLo, isScrub ? scrubMs : null);
+  if (!line) { cal.innerHTML = ''; return; }
+  const scrubLabel = isScrub
+    ? `NEXT LOW AFTER ${new Date(scrubMs).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true})}`
+    : 'NEXT LOW';
+  cal.innerHTML = `<span class="tide-callout-prefix">${scrubLabel}:</span> <strong>${line}</strong>`;
+}
+
 function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const canvas = el('forecast-canvas');
   const container = el('forecast-chart-container');
@@ -1453,12 +1510,11 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   // ── Layout regions (CSS pixels) ──
   // Vertical:
   //   [pad.top]
-  //   [callout band — tide "NEXT LOW" line]
-  //   [swell panel]   ← 50% of plot area
+  //   [swell panel]   ← 50% of usable
   //   [gap]
-  //   [wind panel]    ← 25% of plot area
-  //   [gap]
-  //   [tide panel]    ← 15% of plot area  (panels sum to 90%; remaining 10% = the two gaps)
+  //   [wind panel]    ← 25% of usable
+  //   [callout band — "NEXT LOW: …" line, sits directly above the tide curve]
+  //   [tide panel]    ← 15% of usable
   //   [arrow strip]   ← swell-direction arrows, fixed 40px
   //   [day-label band] ← Today / Tomorrow / Thu 5/7, fixed 22px
   //   [pad.bottom]
@@ -1474,16 +1530,16 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const plotRight = W - pad.right;
   const plotW     = plotRight - plotLeft;
 
-  const calloutTop  = pad.top;
-  const calloutBot  = calloutTop + calloutH;
   const dayBandBot  = H - pad.bottom;
   const dayBandTop  = dayBandBot - dayBandH;
   const arrowBot    = dayBandTop;
   const arrowTop    = arrowBot - arrowStripH;
-  const panelsTop   = calloutBot;
+  const panelsTop   = pad.top;
   const panelsBot   = arrowTop;
   const panelsTotal = panelsBot - panelsTop;
-  const usable      = panelsTotal - 2 * panelGap;
+  // Panels take 50+25+15 = 90 of the ratio; one inter-panel gap + the callout
+  // band consume the rest.
+  const usable      = panelsTotal - panelGap - calloutH;
   const swellH      = Math.max(40, usable * 50 / 90);
   const windH       = Math.max(20, usable * 25 / 90);
   const tideH       = Math.max(16, usable * 15 / 90);
@@ -1491,7 +1547,9 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const swellBot = swellTop + swellH;
   const windTop  = swellBot + panelGap;
   const windBot  = windTop + windH;
-  const tideTop  = windBot + panelGap;
+  const calloutTop = windBot;
+  const calloutBot = calloutTop + calloutH;
+  const tideTop  = calloutBot;
   const tideBot  = tideTop + tideH;
 
   // ── Hourly arrays ──
@@ -1769,7 +1827,7 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   ctx.fillText('mph', plotLeft + 2, windTop + 2);
 
   // ════════════════════════════════════════════════
-  // TIDE PANEL — clean teal curve, no fill (callout + sparse labels land in a later commit)
+  // TIDE PANEL — clean teal curve + sparse low-tide labels
   // ════════════════════════════════════════════════
   let tideMin = 0, tideMax = 1, tideY = null;
   if (tidePred && tidePred.length > 1) {
@@ -1807,6 +1865,86 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   ctx.fillText('tide', plotLeft + 2, tideTop + 2);
+
+  // ── Low-tide markers + sparse labels ──
+  const nowMs = Date.now();
+  if (tideHiLo && tideY) {
+    const lowsInWindow = tideHiLo
+      .filter(p => p.type === 'L')
+      .map(p => ({ t: new Date(p.t).getTime(), v: parseFloat(p.v) }))
+      .filter(p => p.t >= t0 && p.t <= tEnd && Number.isFinite(p.v));
+    const lowsAfterNow = lowsInWindow.filter(p => p.t >= nowMs).sort((a, b) => a.t - b.t);
+    const labelSet = new Set(lowsAfterNow.slice(0, 2).map(p => p.t));
+
+    for (const lo of lowsInWindow) {
+      const xx = plotLeft + ((lo.t - t0) / tRange) * plotW;
+      if (xx < plotLeft || xx > plotLeft + plotW) continue;
+      const yy = tideY(lo.v);
+      if (labelSet.has(lo.t)) {
+        // Marker (small filled triangle) + stacked time/height label
+        ctx.fillStyle = 'rgba(58, 125, 125, 0.95)';
+        ctx.beginPath();
+        ctx.moveTo(xx, yy + 2);
+        ctx.lineTo(xx - 3, yy - 3);
+        ctx.lineTo(xx + 3, yy - 3);
+        ctx.closePath();
+        ctx.fill();
+        const td = new Date(lo.t);
+        const hrs = td.getHours();
+        const mins = td.getMinutes();
+        const ampm = hrs >= 12 ? 'pm' : 'am';
+        const h12 = hrs % 12 || 12;
+        const timeStr = mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
+        const heightStr = `${lo.v.toFixed(1)}ft`;
+        ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+        ctx.fillStyle = '#3a7d7d';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        // Place stacked labels above or below the trough depending on room.
+        const stackBelow = (yy + 18) < tideBot - 2;
+        if (stackBelow) {
+          ctx.fillText(timeStr,   xx, yy + 4);
+          ctx.fillText(heightStr, xx, yy + 13);
+        } else {
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(heightStr, xx, yy - 4);
+          ctx.fillText(timeStr,   xx, yy - 13);
+        }
+      } else {
+        // Sparse unlabeled triangle marker.
+        ctx.fillStyle = 'rgba(58, 125, 125, 0.55)';
+        ctx.beginPath();
+        ctx.moveTo(xx, yy + 1);
+        ctx.lineTo(xx - 2.5, yy - 3);
+        ctx.lineTo(xx + 2.5, yy - 3);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+  }
+
+  // ── Dashed "now" vertical, tide panel only ──
+  if (nowMs >= t0 && nowMs <= tEnd) {
+    const nowX = plotLeft + ((nowMs - t0) / tRange) * plotW;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(44, 40, 37, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(nowX, tideTop);
+    ctx.lineTo(nowX, tideBot);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // ── Tide callout: HTML overlay positioned over the calloutTop band ──
+  // (Rendered in HTML so applyScrubberToHour can update its text without
+  // forcing a full canvas redraw.) Initial text is now-relative; scrub
+  // updates from applyScrubberToHour swap to "NEXT LOW AFTER <hh:mm>".
+  positionAndUpdateTideCallout(container, {
+    calloutTop, calloutH, plotLeft, plotW, isMobile, tideHiLo
+  });
 
   // ════════════════════════════════════════════════
   // DAY-LABEL BAND — Mon 5/7 format (Today/Tomorrow comes in a later commit)
@@ -1997,6 +2135,20 @@ function applyScrubberToHour(idx) {
 
   // ── Cross-feature: stat grid (with +Xh / -Xh badge) ──
   applyStatGridForHour(idx);
+
+  // ── Tide callout: re-render relative to scrubbed hour ──
+  if (cs.layout) {
+    const containerEl = el('forecast-chart-container');
+    if (containerEl) {
+      positionAndUpdateTideCallout(containerEl, {
+        calloutTop: cs.layout.calloutTop,
+        calloutH:   cs.layout.calloutH,
+        plotLeft:   cs.layout.plotLeft,
+        plotW:      cs.layout.plotW,
+        tideHiLo:   cs.tideHiLo
+      }, isScrubberAtNow() ? null : t.getTime());
+    }
+  }
 
   // ── "Reset to now" link visibility ──
   const resetRow = el('forecast-reset-row');
