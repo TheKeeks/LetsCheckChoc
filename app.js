@@ -1532,8 +1532,10 @@ function _fcDrawNightShading(ctx, common, plotLeft, plotW, top, height) {
 }
 
 function _fcDrawDaySeparators(ctx, common, plotLeft, plotW, top, height) {
-  ctx.strokeStyle = '#e0dbd3';
-  ctx.lineWidth = 0.5;
+  // Solid grey midnight verticals — appear as continuous columns when
+  // drawn on every panel canvas.
+  ctx.strokeStyle = '#c0c0c0';
+  ctx.lineWidth = 1;
   for (let dayOff = 0; dayOff <= common.dayCount; dayOff++) {
     const midDate = new Date(common.firstDay);
     midDate.setDate(midDate.getDate() + dayOff);
@@ -1545,6 +1547,25 @@ function _fcDrawDaySeparators(ctx, common, plotLeft, plotW, top, height) {
       ctx.stroke();
     }
   }
+}
+
+// "You are here" cue — 2px blue stripe at the LEFT EDGE of today's
+// column. Drawn on every panel canvas using identical x-coords so the
+// accent reads as one continuous vertical mark across the cards.
+function _fcDrawTodayAccent(ctx, common, plotLeft, plotW, top, height) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  // Skip if today is outside the chart window.
+  if (today.getTime() < common.t0 - 1 || today.getTime() > common.tEnd) return;
+  const xx = _fcXFor(today, common, plotLeft, plotW);
+  if (xx < plotLeft - 1 || xx > plotLeft + plotW) return;
+  ctx.save();
+  ctx.strokeStyle = '#3a5570'; // primary-swell blue
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(xx, top);
+  ctx.lineTo(xx, top + height);
+  ctx.stroke();
+  ctx.restore();
 }
 
 // ── Per-panel drawers ──────────────────────────────
@@ -1570,6 +1591,7 @@ function drawSwellPanel(common, data) {
   // Night shading + day separators (full canvas height)
   _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
+  _fcDrawTodayAccent(ctx, common, plotLeft, plotW, 0, cssH);
 
   const { heights, secHeights, swellDirs, wavePeriods, swellMaxY, swellStep, periodMax } = data;
   const ySwell  = (val) => top + h - (Math.min(val, swellMaxY) / swellMaxY) * h;
@@ -1690,6 +1712,7 @@ function drawWindPanel(common, data) {
   ctx.fillRect(0, 0, cssW, cssH);
   _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
+  _fcDrawTodayAccent(ctx, common, plotLeft, plotW, 0, cssH);
 
   const { windSpeeds, windDirs, windMaxY } = data;
   const yWind = (val) => top + h - (Math.min(val, windMaxY) / windMaxY) * h;
@@ -1781,6 +1804,7 @@ function drawTidePanel(common, data) {
   ctx.fillRect(0, 0, cssW, cssH);
   _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
+  _fcDrawTodayAccent(ctx, common, plotLeft, plotW, 0, cssH);
 
   const { tidePred, tideHiLo } = data;
   let tideMin = 0, tideMax = 1, tideY = null;
