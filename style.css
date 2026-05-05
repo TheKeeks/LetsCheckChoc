@@ -394,7 +394,10 @@ a:hover { text-decoration: underline; }
   box-sizing: border-box;
   position: relative;
 }
-#forecast-chart-container .forecast-card-swell { height: 200px; }
+/* Swell card hosts a partitioned canvas: 180px height/period plot on top,
+   60px direction sub-panel on bottom (1px divider in-canvas at y=180).
+   Card height = 240 (canvas) + 16 (top/bot padding). */
+#forecast-chart-container .forecast-card-swell { height: 256px; }
 #forecast-chart-container .forecast-card-wind  { height: 120px; }
 /* Tide card hosts the inline NEXT LOW callout in a 24px row + the curve.
    Total = 8 (pad-top) + 24 (callout) + 1 (divider) + 120 (curve) + 8 (pad-bot) ≈ 161. */
@@ -448,6 +451,32 @@ a:hover { text-decoration: underline; }
 }
 /* When the callout row is inside the tide card, it inherits the card's
    60px left-padding (section-label column), so no extra padding needed. */
+
+/* Compass dial: small persistent canvas in the top-right of the swell
+   card. ~60px square + a "FROM" caption underneath. Sits above the
+   canvas so the swell-card data-area effectively reserves the corner. */
+#forecast-chart-container .forecast-compass {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 60px;
+  pointer-events: none;
+  z-index: 2;
+  text-align: center;
+}
+#forecast-chart-container .forecast-compass canvas {
+  display: block;
+  width: 60px;
+  height: 60px;
+}
+#forecast-chart-container .forecast-compass-caption {
+  font-family: var(--mono, monospace);
+  font-size: 8px;
+  color: #888;
+  letter-spacing: 0.12em;
+  margin-top: 1px;
+  user-select: none;
+}
 
 /* ── Forecast header & navigation ────────────── */
 .forecast-header-row {

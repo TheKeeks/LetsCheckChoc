@@ -1569,6 +1569,15 @@ function _fcDrawTodayAccent(ctx, common, plotLeft, plotW, top, height) {
 
 // ── Per-panel drawers ──────────────────────────────
 
+// Swell card sub-panel layout:
+//   ┌─ canvas ─────────────────────────────────────┐
+//   │ height + period plot           (top, 180px) │
+//   ├──────────────────────────────────────────────┤  ← 1px #e8e8e8 divider
+//   │ direction sub-panel            (bottom, 60px)│
+//   └──────────────────────────────────────────────┘
+const SWELL_UPPER_H = 180;
+const SWELL_LOWER_H = 60;
+
 function drawSwellPanel(common, data) {
   const canvas = el('forecast-canvas-swell');
   if (!canvas) return null;
@@ -1580,30 +1589,42 @@ function drawSwellPanel(common, data) {
   const isMobile = common.isMobile;
   const plotLeft = FC_PAD.left;
   const plotW    = cssW - FC_PAD.left - FC_PAD.right;
-  const top      = 4;
-  const h        = cssH - 8;
+
+  // Upper region (height + period). Lower region (direction) sits below
+  // a 1px divider. Heights derived from canvas size so the layout still
+  // works if the card is briefly resized below the design size.
+  const upperTop = 0;
+  const upperH   = Math.min(SWELL_UPPER_H, Math.max(40, cssH - SWELL_LOWER_H - 1));
+  const dividerY = upperTop + upperH;
+  const lowerTop = dividerY + 1;
+  const lowerH   = Math.max(20, cssH - lowerTop);
 
   // Background
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, cssW, cssH);
 
-  // Night shading + day separators (full canvas height)
+  // Night shading + day separators span both regions so the columns line
+  // up vertically.
   _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawTodayAccent(ctx, common, plotLeft, plotW, 0, cssH);
 
-  const { heights, secHeights, swellDirs, wavePeriods, swellMaxY, swellStep, periodMax } = data;
-  const ySwell  = (val) => top + h - (Math.min(val, swellMaxY) / swellMaxY) * h;
+  const { heights, secHeights, swellDirs, secSwellDirs, wavePeriods, swellMaxY, swellStep, periodMax } = data;
+
+  // ── UPPER REGION ───────────────────────────────
+  const padTop = 4;
+  const padBot = 6;
+  const usable = upperH - padTop - padBot;
+  const ySwell  = (val) => upperTop + padTop + usable - (Math.min(val, swellMaxY) / swellMaxY) * usable;
   const yPeriod = (val) => {
     const v = Math.max(0, Math.min(periodMax, val));
-    return top + h - (v / periodMax) * h;
+    return upperTop + padTop + usable - (v / periodMax) * usable;
   };
   const xPos = (t) => _fcXFor(t, common, plotLeft, plotW);
 
-  // Clipped panel area
   ctx.save();
   ctx.beginPath();
-  ctx.rect(plotLeft, top, plotW, h);
+  ctx.rect(plotLeft, upperTop, plotW, upperH);
   ctx.clip();
 
   // Secondary area
@@ -1687,55 +1708,133 @@ function drawSwellPanel(common, data) {
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   ctx.fillStyle = '#3a5570';
-  ctx.fillText('ft', plotLeft + 6, top + 2);
+  ctx.fillText('ft', plotLeft + 6, upperTop + padTop + 2);
   ctx.textAlign = 'right';
   ctx.fillStyle = '#c46a32';
-  ctx.fillText('s', plotLeft + plotW - 6, top + 2);
+  ctx.fillText('s', plotLeft + plotW - 6, upperTop + padTop + 2);
 
-  // Inline daily-peak direction arrows: one per day at the day's
-  // swell-height maximum. Surfline-style at-a-glance summary; replaces
-  // the old below-tide arrow strip. swell_wave_direction is the
-  // direction the swell is COMING FROM; rotate by +180 so each arrow
-  // points where the swell is HEADING (matches how surfers visualize
-  // a swell hitting a coast).
-  const dayPeaks = [];
-  for (let d = 0; d < common.dayCount; d++) {
-    const dayStart = new Date(common.firstDay);
-    dayStart.setDate(dayStart.getDate() + d);
-    const dayEnd = new Date(dayStart);
-    dayEnd.setDate(dayEnd.getDate() + 1);
-    let bestI = -1, bestH = -Infinity;
+  // ── DIVIDER ───────────────────────────────────
+  ctx.strokeStyle = '#e8e8e8';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, dividerY + 0.5);
+  ctx.lineTo(cssW, dividerY + 0.5);
+  ctx.stroke();
+
+  // ── LOWER REGION (direction sub-panel) ────────
+  // Auto-fit y-axis: ±120° around the configured swell window midpoint.
+  const winMin = (CONFIG.chocomount && typeof CONFIG.chocomount.swellWindowMin === 'number')
+    ? CONFIG.chocomount.swellWindowMin : 115;
+  const winMax = (CONFIG.chocomount && typeof CONFIG.chocomount.swellWindowMax === 'number')
+    ? CONFIG.chocomount.swellWindowMax : 158;
+  const winMid = (winMin + winMax) / 2;
+  const dirYMin = winMid - 120;
+  const dirYMax = winMid + 120;
+  const dirRange = dirYMax - dirYMin;
+
+  const lowerPadTop = 4;
+  const lowerPadBot = 4;
+  const dirUsable = lowerH - lowerPadTop - lowerPadBot;
+  // y maps degrees → canvas y. We display higher degrees lower on the
+  // axis (more S/SW at the bottom, more E/NE at the top) so the values
+  // increase downward in canvas coords — matches a standard line plot
+  // where larger numbers are higher on screen we invert: actually we
+  // want larger degree = lower position (S below E for east-coast).
+  // Plot with degrees increasing downward.
+  const yDir = (deg) => {
+    const v = Math.max(dirYMin, Math.min(dirYMax, deg));
+    return lowerTop + lowerPadTop + ((v - dirYMin) / dirRange) * dirUsable;
+  };
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(plotLeft, lowerTop, plotW, lowerH);
+  ctx.clip();
+
+  // Window band: muted-green horizontal stripe between min/max.
+  ctx.fillStyle = 'rgba(110, 169, 107, 0.18)';
+  const bandTop = yDir(winMin);
+  const bandBot = yDir(winMax);
+  ctx.fillRect(plotLeft, Math.min(bandTop, bandBot), plotW, Math.abs(bandBot - bandTop));
+
+  // Polyline drawer that breaks segments on >180° wraparound jumps so
+  // we don't draw a vertical line bridging a 350°→10° shift.
+  function drawDirSeries(values, gateValues, gateMin, dashed, color, lineW) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineW;
+    ctx.lineCap = 'round';
+    ctx.setLineDash(dashed ? [4, 3] : []);
+    let prev = null;
+    let drawing = false;
+    ctx.beginPath();
     for (let i = 0; i <= common.lastIdx; i++) {
-      const tt = common.allTimes[i].getTime();
-      if (tt < dayStart.getTime() || tt >= dayEnd.getTime()) continue;
-      const v = heights[i];
-      if (v == null) continue;
-      if (v > bestH) { bestH = v; bestI = i; }
+      const v = values[i];
+      const gate = gateValues ? gateValues[i] : null;
+      const ok = v != null && (gateValues == null || (gate != null && gate >= gateMin));
+      if (!ok) {
+        prev = null;
+        drawing = false;
+        continue;
+      }
+      const x = xPos(common.allTimes[i]);
+      const y = yDir(v);
+      // Wraparound break: if previous v exists and the unwrapped delta
+      // exceeds 180°, the line would cross the axis edge.
+      if (prev != null && Math.abs(v - prev) > 180) {
+        prev = v;
+        drawing = false;
+      }
+      if (!drawing) {
+        ctx.moveTo(x, y);
+        drawing = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
+      prev = v;
     }
-    if (bestI >= 0 && swellDirs[bestI] != null) dayPeaks.push(bestI);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
-  const arrowSize = isMobile ? 7 : 8;
-  const arrowLineW = 1.5;
-  for (const i of dayPeaks) {
-    const t = common.allTimes[i];
-    const dir = swellDirs[i];
-    const xx = xPos(t);
-    if (xx < plotLeft || xx > plotLeft + plotW) continue;
-    const peakY = ySwell(heights[i]);
-    const arrowY = Math.max(top + arrowSize + 2, peakY - 14);
-    // White-fill / blue-stroke arrow, drawn above the swell-height curve.
-    drawArrowFilled(ctx, xx, arrowY, dir, arrowSize, '#ffffff', '#3a5570', arrowLineW);
-    ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
-    ctx.fillStyle = '#666666';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText(directionLabel(dir), xx, arrowY + arrowSize + 1);
+  // Primary direction (always present): solid 1.5px primary-swell blue.
+  drawDirSeries(swellDirs, null, 0, false, '#3a5570', 1.5);
+  // Secondary direction: dashed 1.5px lighter blue, gated to hours where
+  // secondary height ≥ 1.0 ft (line breaks where it drops below).
+  if (secSwellDirs && secSwellDirs.length) {
+    drawDirSeries(secSwellDirs, secHeights, 1.0, true, '#8cafcd', 1.5);
   }
+  ctx.restore();
+
+  // Y-axis: tick + label at every cardinal/intercardinal direction
+  // (N, NE, E, SE, S, SW, W, NW = every 45°) that falls within the
+  // visible degree range.
+  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+  ctx.fillStyle = '#888888';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  const cardinals = [
+    { deg: 0,   lab: 'N' },  { deg: 45,  lab: 'NE' },
+    { deg: 90,  lab: 'E' },  { deg: 135, lab: 'SE' },
+    { deg: 180, lab: 'S' },  { deg: 225, lab: 'SW' },
+    { deg: 270, lab: 'W' },  { deg: 315, lab: 'NW' },
+    { deg: 360, lab: 'N' }
+  ];
+  for (const c of cardinals) {
+    if (c.deg < dirYMin || c.deg > dirYMax) continue;
+    ctx.fillText(c.lab, plotLeft - 4, yDir(c.deg));
+  }
+  // "FROM" label tucked in the top-left of the sub-panel.
+  ctx.font = `${isMobile ? '7px' : '8px'} "DM Mono", monospace`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#888888';
+  ctx.fillText('FROM', plotLeft + 6, lowerTop + 2);
 
   return {
-    canvas, cssW, cssH, plotLeft, plotW, top, h,
-    swellMaxY, ySwell, yPeriod
+    canvas, cssW, cssH, plotLeft, plotW,
+    top: upperTop + padTop, h: usable,
+    swellMaxY, ySwell, yPeriod,
+    upperTop, upperH, lowerTop, lowerH
   };
 }
 
@@ -1778,9 +1877,9 @@ function drawWindPanel(common, data) {
       if (bucket === 'cross') bucket = 'off';
       else if (bucket === 'on') bucket = 'cross';
     }
-    if (bucket === 'off')   return 'rgba(110, 169, 107, 0.6)';
-    if (bucket === 'cross') return 'rgba(212, 179, 74, 0.6)';
-    return 'rgba(194, 94, 94, 0.6)';
+    if (bucket === 'off')   return 'rgba(110, 169, 107, 0.7)';
+    if (bucket === 'cross') return 'rgba(212, 179, 74, 0.7)';
+    return 'rgba(194, 94, 94, 0.7)';
   };
 
   ctx.save();
@@ -2081,6 +2180,7 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const heights      = marine.hourly.swell_wave_height || marine.hourly.wave_height || [];
   const secHeights   = marine.hourly.secondary_swell_wave_height || [];
   const swellDirs    = marine.hourly.swell_wave_direction || [];
+  const secSwellDirs = marine.hourly.secondary_swell_wave_direction || [];
   // Use peak period when present, otherwise mean period. (Open-Meteo Marine
   // exposes both depending on model — we asked for both in the fetch.)
   const peakPeriods  = marine.hourly.swell_wave_peak_period || [];
@@ -2131,7 +2231,7 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
 
   // Draw each panel canvas.
   const swellInfo = drawSwellPanel(common, {
-    heights, secHeights, swellDirs, wavePeriods, swellMaxY, swellStep, periodMax
+    heights, secHeights, swellDirs, secSwellDirs, wavePeriods, swellMaxY, swellStep, periodMax
   });
   drawWindPanel(common, { windSpeeds, windDirs, windMaxY });
   const tideInfo = drawTidePanel(common, { tidePred, tideHiLo });
@@ -2181,7 +2281,8 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
     W, H: container.clientHeight,
     t0, tEnd, tRange,
     times: allTimes,
-    heights, secHeights, wavePeriods, swellDirs, windSpeeds, windDirs, windGusts,
+    heights, secHeights, wavePeriods, swellDirs, secSwellDirs,
+    windSpeeds, windDirs, windGusts,
     tideHiLo, tidePred, firstDay, dayCount,
     layout: {
       plotLeft, plotW,
@@ -2195,6 +2296,20 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
     }
   };
   setupForecastInteraction(container);
+
+  // Initial compass paint — covers the case where setupForecastInteraction
+  // can't resolve a scrubber index yet (e.g., before STATE.forecastChart
+  // is fully wired). Falls back to "now" if the scrubber index isn't set.
+  const initIdx = (typeof STATE.scrubberIdx === 'number' && STATE.scrubberIdx >= 0)
+    ? STATE.scrubberIdx
+    : findHourIndexForTime(Date.now(), STATE.forecastChart);
+  if (initIdx >= 0) {
+    drawForecastCompass(
+      swellDirs[initIdx] != null ? swellDirs[initIdx] : null,
+      secSwellDirs[initIdx] != null ? secSwellDirs[initIdx] : null,
+      secHeights[initIdx] != null ? secHeights[initIdx] : null
+    );
+  }
 }
 
 
@@ -2365,6 +2480,11 @@ function applyScrubberToHour(idx) {
       }, isScrubberAtNow() ? null : t.getTime());
     }
   }
+
+  // ── Compass dial: snap to scrubbed hour ──
+  const secDir = cs.secSwellDirs ? cs.secSwellDirs[idx] : null;
+  const secH   = cs.secHeights   ? cs.secHeights[idx]   : null;
+  drawForecastCompass(dir, secDir, secH);
 
   // ── "Reset to now" link visibility ──
   const resetRow = el('forecast-reset-row');
@@ -2606,6 +2726,92 @@ function drawArrow(ctx, x, y, dirDeg, size, color, lineW) {
   ctx.closePath();
   ctx.fill();
   ctx.restore();
+}
+
+// Persistent compass dial drawn in the top-right of the swell card.
+// Shows where the primary (and secondary, when ≥1ft) swell is COMING
+// FROM at the currently scrubbed hour. Always visible; updates on every
+// scrubber move.
+//
+// Arrow rotation math:
+//   Compass coordinates: 0° = N (up), 90° = E (right), increasing clockwise.
+//   Canvas coordinates:  0° = right (E), 90° = down (S), increasing clockwise.
+//   To draw an arrow pointing at compass direction `d` in canvas space:
+//     canvasAngle = (d - 90) * Math.PI / 180
+function drawForecastCompass(primaryDir, secondaryDir, secondaryHeight) {
+  const canvas = el('forecast-compass-canvas');
+  if (!canvas) return;
+  const cssW = canvas.clientWidth || 60;
+  const cssH = canvas.clientHeight || 60;
+  const ctx = canvas.getContext('2d');
+  setCanvasDPR(canvas, ctx, cssW, cssH);
+
+  const cx = cssW / 2;
+  const cy = cssH / 2;
+  const r  = Math.min(cx, cy) - 4;
+
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  // Outer ring
+  ctx.strokeStyle = '#d0d0d0';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Cardinal letters at 12/3/6/9
+  ctx.font = '9px "DM Mono", monospace';
+  ctx.fillStyle = '#888888';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('N', cx, cy - r + 6);
+  ctx.fillText('S', cx, cy + r - 6);
+  ctx.fillText('E', cx + r - 6, cy);
+  ctx.fillText('W', cx - r + 6, cy);
+
+  // Arrow drawer: points TOWARD the FROM direction (i.e., a swell coming
+  // FROM 290° is drawn pointing at the 290° spot on the dial).
+  function drawArrow(deg, length, color, dashed, headW) {
+    if (deg == null) return;
+    const a = (deg - 90) * Math.PI / 180;
+    const ex = cx + Math.cos(a) * length;
+    const ey = cy + Math.sin(a) * length;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1.25;
+    ctx.lineCap = 'round';
+    if (dashed) ctx.setLineDash([3, 2]);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Triangle head perpendicular to the arrow direction.
+    const px = -Math.sin(a);
+    const py =  Math.cos(a);
+    const back = 6;
+    const bx = cx + Math.cos(a) * (length - back);
+    const by = cy + Math.sin(a) * (length - back);
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(bx + px * headW, by + py * headW);
+    ctx.lineTo(bx - px * headW, by - py * headW);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  const primaryLen = r * 0.7;
+  const secondaryLen = r * 0.55;
+
+  // Secondary first (so primary draws on top when they overlap).
+  if (secondaryDir != null && secondaryHeight != null && secondaryHeight >= 1.0) {
+    drawArrow(secondaryDir, secondaryLen, '#8cafcd', true, 3);
+  }
+  if (primaryDir != null) {
+    drawArrow(primaryDir, primaryLen, '#3a5570', false, 4);
+  }
 }
 
 // Filled triangle marker (no shaft) used for the inline daily-peak swell

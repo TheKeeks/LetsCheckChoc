@@ -43,22 +43,59 @@ strokes first, then the warm-orange (#c46a32) 2px line on top. Right-axis
 seconds numbers and the 's' unit label adopt the same warmer tone.
 Unit labels get +4px padding off the canvas edge.
 
-### Inline daily-peak direction arrows (replaces arrow strip)
+### Direction sub-panel inside the swell card
 
-The 40-px direction-arrow strip below the tide card is gone. Direction
-now appears INLINE on the swell panel as 7 white-filled / blue-stroke
-triangle arrows (one per day), each anchored ~14px above the swell-height
-curve at that day's height-peak hour. Compass-only label below in 9px
-gray monospace. New `drawArrowFilled` helper renders the filled triangle.
-The floating scrubber label still shows degrees + compass for the scrubbed
-hour — that's the precision view; the inline arrows are the at-a-glance.
+The inline daily-peak arrows from the first 4.1 pass are gone. Direction
+is now its own continuous time-series in a 60px sub-panel inside the
+swell card, partitioned from the upper height/period plot by a 1px
+#e8e8e8 horizontal divider at y=180. Card height grows to 256px (240
+canvas + paddings).
+
+- Y-axis: ±120° around the swell-window midpoint
+  (`(swellWindowMin+swellWindowMax)/2`), so for Choc that's roughly
+  16.5°–256.5°. Cardinal/intercardinal labels (N/NE/E/SE/S/SW/W/NW)
+  appear at every 45° tick that falls inside the visible range. Small
+  "FROM" caption tucks into the top-left.
+- Window band: muted-green stripe between min and max degrees
+  (`rgba(110,169,107,0.18)`), no centerline.
+- Primary direction (`swell_wave_direction`): 1.5px solid primary-swell
+  blue polyline.
+- Secondary direction (`secondary_swell_wave_direction`): 1.5px DASHED
+  lighter blue, gated to hours where `secondary_swell_wave_height ≥ 1.0
+  ft`. Where height drops below threshold, the line breaks (no
+  zero-bridge).
+- Wraparound: consecutive hours whose unwrapped delta exceeds 180°
+  break the polyline, so a 350°→10° shift doesn't draw a vertical
+  trans-axis line.
+- Day separators + nighttime shading extend through the sub-panel at
+  identical x-coords as the upper region.
+
+### Persistent compass dial
+
+A 60×60 sibling canvas (`forecast-compass-canvas`) is absolute-positioned
+in the top-right of the swell card. Always visible; updates on every
+scrubber move via `drawForecastCompass(primaryDir, secondaryDir, secH)`
+called from `applyScrubberToHour` and again at the end of
+`_drawForecastChartFull` to cover the initial paint.
+
+- Outer ring: 1.5px #d0d0d0 circle, ~52px diameter.
+- Cardinal letters N/E/S/W at 12/3/6/9 in 9px monospace muted gray;
+  "FROM" caption below the dial in 8px gray.
+- Primary arrow: solid blue, ~70% radius, points TOWARD the FROM
+  direction (a swell coming from 290° points upper-left).
+- Secondary arrow: dashed lighter blue, ~55% radius, drawn only when
+  `secondary_swell_wave_height ≥ 1.0 ft` at the scrubbed hour.
+- Math: `canvasAngle = (compassDeg − 90) × π/180` so 0° = N (up).
 
 ### Wind panel polish
 
 - Card height bumped to 120px (was ~75 effective).
-- Quality-color alpha bumped 0.6 → 0.7 so the green/yellow/red read.
+- Quality-color alpha bumped 0.6 → 0.7 in `colorFor()` so the
+  green/yellow/red bands read more confidently against the white card.
 - 5mph light-wind override unchanged.
 - 'mph' unit label still top-left in-canvas.
+- No direction arrows on this panel — the color shading already
+  encodes direction quality.
 
 ### Tide panel polish
 
@@ -82,11 +119,16 @@ accent. Content unchanged: time | swell h/p | direction | wind | tide.
 ### Deletions
 
 - `forecast-canvas-arrows` element + `.forecast-arrow-row` CSS + the
-  `drawArrowStrip` function — all gone with the inline arrows replacing
-  them.
+  `drawArrowStrip` function — all gone with the direction sub-panel +
+  compass dial replacing them.
+- The 7 inline daily-peak floating direction arrows that lived on top
+  of the swell-height curve in the first 4.1 pass — replaced by the
+  continuous direction sub-panel + persistent compass dial.
 - The single-canvas internal partitioning logic (the swellTop/windTop/
   tideTop math, the giant `_drawForecastChartFull` body that drew every
-  panel into shared y-bands) — now isolated to per-panel canvases.
+  panel into shared y-bands) — now isolated to per-panel canvases. The
+  swell *card* is itself partitioned internally (upper height/period +
+  lower direction sub-panel) but that's local to one canvas.
 - The mid-canvas y-axis number duplication that came from the shared
   canvas — each canvas now draws its own axis once.
 - The `.forecast-detail-bar.scrub-active` light/dark toggle, since the
@@ -101,8 +143,12 @@ accent. Content unchanged: time | swell h/p | direction | wind | tide.
 3. `Forecast chart: bolder day separators + today-column accent`
 4. `Forecast chart: bring back period line with halo`
 5. `Forecast chart: replace arrow strip with inline daily-peak arrows`
+   *(superseded by commit 8 below)*
 6. `Forecast chart: tide panel height bump + label collision fix`
 7. `Forecast chart: float scrubber label to top`
+8. `Forecast chart: direction sub-panel with window band`
+9. `Forecast chart: persistent compass dial`
+10. `Forecast chart: wind panel polish (alpha 0.6 → 0.7)`
 
 ## [Unreleased] — Prompt #4: stacked forecast panels
 
