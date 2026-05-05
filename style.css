@@ -505,16 +505,21 @@ a:hover { text-decoration: underline; }
   user-select: none;
 }
 
-/* ── Forecast detail bar (selected hour info) ── */
+/* ── Forecast detail bar (selected hour info, floating top of chart) ── */
 .forecast-detail-bar {
   display: none;
+  position: sticky;
+  top: 0;
+  z-index: 10;
   font-family: var(--mono);
   font-size: 0.72rem;
-  color: var(--ink);
-  padding: 8px 14px;
-  border-top: 1px solid var(--border-l);
-  background: var(--bg-alt);
-  line-height: 1.6;
+  color: #f0ece6;
+  background: #2c2825;
+  padding: 6px 12px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
 }
 
 .forecast-detail-bar.active {
@@ -529,9 +534,9 @@ a:hover { text-decoration: underline; }
 }
 
 .forecast-detail-bar .detail-time {
-  font-weight: 500;
+  font-weight: 600;
   font-size: 0.78rem;
-  color: var(--ink);
+  color: #ffffff;
   margin-right: 4px;
 }
 
@@ -542,15 +547,16 @@ a:hover { text-decoration: underline; }
 }
 
 .forecast-detail-bar .detail-label {
-  color: var(--ink3);
+  color: #b5afa8;
 }
 
 .forecast-detail-bar .detail-val {
   font-weight: 500;
+  color: #f0ece6;
 }
 
 .forecast-detail-bar .detail-tide {
-  color: var(--blue);
+  color: #67e8f9;
   font-weight: 500;
 }
 
@@ -606,14 +612,8 @@ a:hover { text-decoration: underline; }
   transform: translate(-50%, -50%);
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
-.forecast-detail-bar { display: block; }
-.forecast-detail-bar.scrub-active {
-  background: #2c2825;
-  color: #f0ece6;
-  border-top-color: #2c2825;
-}
-.forecast-detail-bar.scrub-active .detail-label { color: #b5afa8; }
-.forecast-detail-bar.scrub-active .detail-tide { color: #67e8f9; }
+/* Always rendered as the dark sticky bar; .scrub-active is just a hint
+   for any future style differentiation. */
 .scrub-badge {
   display: inline-block;
   margin-left: 6px;
