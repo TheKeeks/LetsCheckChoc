@@ -1648,20 +1648,25 @@ function drawSwellPanel(common, data) {
   }
   ctx.stroke();
 
-  // Period line on the right axis (burnt orange).
-  ctx.beginPath();
-  ctx.strokeStyle = '#b87a2e';
-  ctx.lineWidth = 1.5;
+  // Period line on the right axis (burnt orange) with a white halo
+  // beneath so it stays legible against the dark-blue swell area.
+  const periodPath = new Path2D();
   let pStarted = false;
   for (let i = 0; i <= common.lastIdx; i++) {
     const p = wavePeriods[i];
     if (p == null) continue;
     const x = xPos(common.allTimes[i]);
     const y = yPeriod(p);
-    if (!pStarted) { ctx.moveTo(x, y); pStarted = true; }
-    else ctx.lineTo(x, y);
+    if (!pStarted) { periodPath.moveTo(x, y); pStarted = true; }
+    else periodPath.lineTo(x, y);
   }
-  ctx.stroke();
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.lineWidth = 4;
+  ctx.stroke(periodPath);
+  ctx.strokeStyle = '#c46a32';
+  ctx.lineWidth = 2;
+  ctx.stroke(periodPath);
   ctx.restore();
 
   // Y-axis numeric labels
@@ -1673,20 +1678,20 @@ function drawSwellPanel(common, data) {
   for (let v = 0; v <= swellMaxY; v += swellStep) {
     ctx.fillText(`${v}`, plotLeft - 4, ySwell(v));
   }
-  ctx.fillStyle = '#b87a2e';
+  ctx.fillStyle = '#c46a32';
   ctx.textAlign = 'left';
   for (let v = 0; v <= periodMax; v += 5) {
     ctx.fillText(`${v}`, plotLeft + plotW + 4, yPeriod(v));
   }
-  // Unit labels in top corners
+  // Unit labels in top corners (extra 4px padding off the y-axis numbers).
   ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   ctx.fillStyle = '#3a5570';
-  ctx.fillText('ft', plotLeft + 2, top + 2);
+  ctx.fillText('ft', plotLeft + 6, top + 2);
   ctx.textAlign = 'right';
-  ctx.fillStyle = '#b87a2e';
-  ctx.fillText('s', plotLeft + plotW - 2, top + 2);
+  ctx.fillStyle = '#c46a32';
+  ctx.fillText('s', plotLeft + plotW - 6, top + 2);
 
   return {
     canvas, cssW, cssH, plotLeft, plotW, top, h,
