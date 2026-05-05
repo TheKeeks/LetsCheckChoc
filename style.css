@@ -369,10 +369,10 @@ a:hover { text-decoration: underline; }
   height: 260px;
 }
 
-/* Forecast chart needs more vertical space for the dual-axis layout
-   (height area + period/wind right axis + day labels). */
+/* Forecast chart needs more vertical space for the stacked-panel layout
+   (tide callout + swell + wind + tide + arrow strip + day labels). */
 .chart-container-tall {
-  height: 340px;
+  height: 540px;
 }
 
 .chart-container canvas {
