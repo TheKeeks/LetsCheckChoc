@@ -1432,6 +1432,90 @@ function drawForecastChart(marine, wind, daylight, tideHiLo, tidePred) {
   _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred);
 }
 
+// ── Per-panel draw helpers (extracted from _drawForecastChartFull) ──
+
+function _fcSwellArea(ctx, args) {
+  const { allTimes, heights, swellDirs, extStart, extEnd, maxY, xPos, yPos, pad, plotH } = args;
+  ctx.beginPath();
+  ctx.moveTo(xPos(allTimes[extStart]), yPos(0));
+  for (let i = extStart; i <= extEnd; i++) {
+    const h = heights[i] != null ? heights[i] : 0;
+    ctx.lineTo(xPos(allTimes[i]), yPos(Math.min(h, maxY)));
+  }
+  ctx.lineTo(xPos(allTimes[extEnd]), yPos(0));
+  ctx.closePath();
+
+  if (STATE.isChocomount) {
+    ctx.save();
+    ctx.clip();
+    for (let i = extStart; i < extEnd; i++) {
+      const x1 = xPos(allTimes[i]);
+      const x2 = xPos(allTimes[i + 1]);
+      const dir = swellDirs[i];
+      ctx.fillStyle = swellDirColor(dir);
+      ctx.globalAlpha = 0.35;
+      ctx.fillRect(x1, pad.top, x2 - x1, plotH);
+    }
+    ctx.restore();
+  } else {
+    ctx.fillStyle = 'rgba(90, 127, 160, 0.25)';
+    ctx.fill();
+  }
+
+  // Swell height line
+  ctx.beginPath();
+  ctx.strokeStyle = STATE.isChocomount ? '#3a7d56' : '#5a7fa0';
+  ctx.lineWidth = 2;
+  let started = false;
+  for (let i = extStart; i <= extEnd; i++) {
+    const h = heights[i];
+    if (h == null) continue;
+    const x = xPos(allTimes[i]);
+    const y = yPos(Math.min(h, maxY));
+    if (!started) { ctx.moveTo(x, y); started = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+function _fcPeriodLine(ctx, args) {
+  const { allTimes, wavePeriods, extStart, extEnd, xPos, yPosRight } = args;
+  ctx.beginPath();
+  ctx.strokeStyle = '#b87a2e';
+  ctx.lineWidth = 1.5;
+  let pStarted = false;
+  for (let i = extStart; i <= extEnd; i++) {
+    const p = wavePeriods[i];
+    if (p == null) continue;
+    const x = xPos(allTimes[i]);
+    const y = yPosRight(p);
+    if (!pStarted) { ctx.moveTo(x, y); pStarted = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+function _fcWindLine(ctx, args) {
+  const { allTimes, windSpeeds, extStart, extEnd, xPos, yPosRight } = args;
+  ctx.save();
+  ctx.beginPath();
+  ctx.strokeStyle = '#4a443e';
+  ctx.lineWidth = 1.25;
+  ctx.setLineDash([4, 3]);
+  let wStarted = false;
+  for (let i = extStart; i <= extEnd; i++) {
+    const w = windSpeeds[i];
+    if (w == null) continue;
+    const x = xPos(allTimes[i]);
+    const y = yPosRight(w);
+    if (!wStarted) { ctx.moveTo(x, y); wStarted = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
 function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const canvas = el('forecast-canvas');
   const container = el('forecast-chart-container');
@@ -1602,80 +1686,9 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   ctx.rect(pad.left, 0, plotW, H); // clip to plot area
   ctx.clip();
 
-  ctx.beginPath();
-  ctx.moveTo(xPos(allTimes[extStart]), yPos(0));
-  for (let i = extStart; i <= extEnd; i++) {
-    const h = heights[i] != null ? heights[i] : 0;
-    ctx.lineTo(xPos(allTimes[i]), yPos(Math.min(h, maxY)));
-  }
-  ctx.lineTo(xPos(allTimes[extEnd]), yPos(0));
-  ctx.closePath();
-
-  if (STATE.isChocomount) {
-    ctx.save();
-    ctx.clip();
-    for (let i = extStart; i < extEnd; i++) {
-      const x1 = xPos(allTimes[i]);
-      const x2 = xPos(allTimes[i + 1]);
-      const dir = swellDirs[i];
-      ctx.fillStyle = swellDirColor(dir);
-      ctx.globalAlpha = 0.35;
-      ctx.fillRect(x1, pad.top, x2 - x1, plotH);
-    }
-    ctx.restore();
-  } else {
-    ctx.fillStyle = 'rgba(90, 127, 160, 0.25)';
-    ctx.fill();
-  }
-
-  // ── Swell height line ──
-  ctx.beginPath();
-  ctx.strokeStyle = STATE.isChocomount ? '#3a7d56' : '#5a7fa0';
-  ctx.lineWidth = 2;
-  let started = false;
-  for (let i = extStart; i <= extEnd; i++) {
-    const h = heights[i];
-    if (h == null) continue;
-    const x = xPos(allTimes[i]);
-    const y = yPos(Math.min(h, maxY));
-    if (!started) { ctx.moveTo(x, y); started = true; }
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  // ── Period line (right axis, solid) ──
-  ctx.beginPath();
-  ctx.strokeStyle = '#b87a2e'; // burnt orange
-  ctx.lineWidth = 1.5;
-  let pStarted = false;
-  for (let i = extStart; i <= extEnd; i++) {
-    const p = wavePeriods[i];
-    if (p == null) continue;
-    const x = xPos(allTimes[i]);
-    const y = yPosRight(p);
-    if (!pStarted) { ctx.moveTo(x, y); pStarted = true; }
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  // ── Wind speed line (right axis, dashed) ──
-  ctx.save();
-  ctx.beginPath();
-  ctx.strokeStyle = '#4a443e';
-  ctx.lineWidth = 1.25;
-  ctx.setLineDash([4, 3]);
-  let wStarted = false;
-  for (let i = extStart; i <= extEnd; i++) {
-    const w = windSpeeds[i];
-    if (w == null) continue;
-    const x = xPos(allTimes[i]);
-    const y = yPosRight(w);
-    if (!wStarted) { ctx.moveTo(x, y); wStarted = true; }
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
+  _fcSwellArea(ctx, { allTimes, heights, swellDirs, extStart, extEnd, maxY, xPos, yPos, pad, plotH });
+  _fcPeriodLine(ctx, { allTimes, wavePeriods, extStart, extEnd, xPos, yPosRight });
+  _fcWindLine(ctx, { allTimes, windSpeeds, extStart, extEnd, xPos, yPosRight });
 
   ctx.restore(); // remove clip
 
