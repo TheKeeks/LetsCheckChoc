@@ -1703,17 +1703,43 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   ctx.rect(plotLeft, windTop, plotW, windH);
   ctx.clip();
 
-  // Default fill — solid muted gray. (Color-by-quality lands in a later commit.)
-  ctx.beginPath();
-  ctx.moveTo(xPos(allTimes[extStart]), yWind(0));
-  for (let i = extStart; i <= extEnd; i++) {
-    const w = windSpeeds[i] != null ? windSpeeds[i] : 0;
-    ctx.lineTo(xPos(allTimes[i]), yWind(w));
+  // Per-hour quality color: offshore (green) / cross-shore (yellow) / onshore (red).
+  // Light winds (<5 mph) upgrade one tier so colors don't mislead at calm hours.
+  // Choc-spec offshore center = 335° (audit / Prompt #4 spec).
+  const OFFSHORE_CENTER = 335;
+  const colorFor = (dir, speed) => {
+    if (dir == null) return 'rgba(150, 145, 138, 0.5)';
+    const gap = Math.min(((dir - OFFSHORE_CENTER) % 360 + 360) % 360,
+                        ((OFFSHORE_CENTER - dir) % 360 + 360) % 360);
+    let bucket;
+    if (gap < 60)        bucket = 'off';
+    else if (gap < 120)  bucket = 'cross';
+    else                 bucket = 'on';
+    if (speed != null && speed < 5) {
+      if (bucket === 'cross') bucket = 'off';
+      else if (bucket === 'on') bucket = 'cross';
+    }
+    if (bucket === 'off')   return 'rgba(110, 169, 107, 0.6)';
+    if (bucket === 'cross') return 'rgba(212, 179, 74, 0.6)';
+    return 'rgba(194, 94, 94, 0.6)';
+  };
+
+  // Fill each hour-segment with its own color. Adjacent segments butt together
+  // — quality is a per-hour quantity, no smoothing.
+  for (let i = extStart; i < extEnd; i++) {
+    const x1 = xPos(allTimes[i]);
+    const x2 = xPos(allTimes[i + 1]);
+    const w1 = windSpeeds[i]     != null ? windSpeeds[i]     : 0;
+    const w2 = windSpeeds[i + 1] != null ? windSpeeds[i + 1] : 0;
+    ctx.beginPath();
+    ctx.moveTo(x1, yWind(0));
+    ctx.lineTo(x1, yWind(w1));
+    ctx.lineTo(x2, yWind(w2));
+    ctx.lineTo(x2, yWind(0));
+    ctx.closePath();
+    ctx.fillStyle = colorFor(windDirs[i], windSpeeds[i]);
+    ctx.fill();
   }
-  ctx.lineTo(xPos(allTimes[extEnd]), yWind(0));
-  ctx.closePath();
-  ctx.fillStyle = 'rgba(150, 145, 138, 0.5)';
-  ctx.fill();
 
   // Top stroke
   ctx.beginPath();
