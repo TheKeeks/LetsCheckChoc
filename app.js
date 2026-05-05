@@ -2296,6 +2296,20 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
     }
   };
   setupForecastInteraction(container);
+
+  // Initial compass paint — covers the case where setupForecastInteraction
+  // can't resolve a scrubber index yet (e.g., before STATE.forecastChart
+  // is fully wired). Falls back to "now" if the scrubber index isn't set.
+  const initIdx = (typeof STATE.scrubberIdx === 'number' && STATE.scrubberIdx >= 0)
+    ? STATE.scrubberIdx
+    : findHourIndexForTime(Date.now(), STATE.forecastChart);
+  if (initIdx >= 0) {
+    drawForecastCompass(
+      swellDirs[initIdx] != null ? swellDirs[initIdx] : null,
+      secSwellDirs[initIdx] != null ? secSwellDirs[initIdx] : null,
+      secHeights[initIdx] != null ? secHeights[initIdx] : null
+    );
+  }
 }
 
 
@@ -2466,6 +2480,11 @@ function applyScrubberToHour(idx) {
       }, isScrubberAtNow() ? null : t.getTime());
     }
   }
+
+  // ── Compass dial: snap to scrubbed hour ──
+  const secDir = cs.secSwellDirs ? cs.secSwellDirs[idx] : null;
+  const secH   = cs.secHeights   ? cs.secHeights[idx]   : null;
+  drawForecastCompass(dir, secDir, secH);
 
   // ── "Reset to now" link visibility ──
   const resetRow = el('forecast-reset-row');
@@ -2707,6 +2726,92 @@ function drawArrow(ctx, x, y, dirDeg, size, color, lineW) {
   ctx.closePath();
   ctx.fill();
   ctx.restore();
+}
+
+// Persistent compass dial drawn in the top-right of the swell card.
+// Shows where the primary (and secondary, when ≥1ft) swell is COMING
+// FROM at the currently scrubbed hour. Always visible; updates on every
+// scrubber move.
+//
+// Arrow rotation math:
+//   Compass coordinates: 0° = N (up), 90° = E (right), increasing clockwise.
+//   Canvas coordinates:  0° = right (E), 90° = down (S), increasing clockwise.
+//   To draw an arrow pointing at compass direction `d` in canvas space:
+//     canvasAngle = (d - 90) * Math.PI / 180
+function drawForecastCompass(primaryDir, secondaryDir, secondaryHeight) {
+  const canvas = el('forecast-compass-canvas');
+  if (!canvas) return;
+  const cssW = canvas.clientWidth || 60;
+  const cssH = canvas.clientHeight || 60;
+  const ctx = canvas.getContext('2d');
+  setCanvasDPR(canvas, ctx, cssW, cssH);
+
+  const cx = cssW / 2;
+  const cy = cssH / 2;
+  const r  = Math.min(cx, cy) - 4;
+
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  // Outer ring
+  ctx.strokeStyle = '#d0d0d0';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Cardinal letters at 12/3/6/9
+  ctx.font = '9px "DM Mono", monospace';
+  ctx.fillStyle = '#888888';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('N', cx, cy - r + 6);
+  ctx.fillText('S', cx, cy + r - 6);
+  ctx.fillText('E', cx + r - 6, cy);
+  ctx.fillText('W', cx - r + 6, cy);
+
+  // Arrow drawer: points TOWARD the FROM direction (i.e., a swell coming
+  // FROM 290° is drawn pointing at the 290° spot on the dial).
+  function drawArrow(deg, length, color, dashed, headW) {
+    if (deg == null) return;
+    const a = (deg - 90) * Math.PI / 180;
+    const ex = cx + Math.cos(a) * length;
+    const ey = cy + Math.sin(a) * length;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1.25;
+    ctx.lineCap = 'round';
+    if (dashed) ctx.setLineDash([3, 2]);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Triangle head perpendicular to the arrow direction.
+    const px = -Math.sin(a);
+    const py =  Math.cos(a);
+    const back = 6;
+    const bx = cx + Math.cos(a) * (length - back);
+    const by = cy + Math.sin(a) * (length - back);
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(bx + px * headW, by + py * headW);
+    ctx.lineTo(bx - px * headW, by - py * headW);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  const primaryLen = r * 0.7;
+  const secondaryLen = r * 0.55;
+
+  // Secondary first (so primary draws on top when they overlap).
+  if (secondaryDir != null && secondaryHeight != null && secondaryHeight >= 1.0) {
+    drawArrow(secondaryDir, secondaryLen, '#8cafcd', true, 3);
+  }
+  if (primaryDir != null) {
+    drawArrow(primaryDir, primaryLen, '#3a5570', false, 4);
+  }
 }
 
 // Filled triangle marker (no shaft) used for the inline daily-peak swell
