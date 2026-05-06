@@ -394,7 +394,7 @@ a:hover { text-decoration: underline; }
   box-sizing: border-box;
   position: relative;
 }
-#forecast-chart-container .forecast-card-swell { height: 256px; }
+#forecast-chart-container .forecast-card-swell { height: 267px; }
 /* Persistent compass dial in the top-right of the swell card. Reads
    the current scrubber hour and shows primary + secondary swell
    FROM-directions as arrows. */
