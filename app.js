@@ -1416,7 +1416,6 @@ function highlightNearestTideStation(lat, lon) {
 //   ┌─ #forecast-chart-container ─────────────────────────┐
 //   │  ┌─ swell card ─ canvas#forecast-canvas-swell  ──┐  │
 //   │  ┌─ wind  card ─ canvas#forecast-canvas-wind  ──┐  │
-//   │  ┌─ tide callout row (NEXT LOW …) ──────────────┐  │
 //   │  ┌─ tide  card ─ canvas#forecast-canvas-tide  ──┐  │
 //   │  ┌─ day  row ── canvas#forecast-canvas-days  ──┐  │
 //   └──────────────────────────────────────────────────────┘
@@ -1440,55 +1439,6 @@ function drawForecastChart(marine, wind, daylight, tideHiLo, tidePred) {
   // New data → re-resolve scrubber position (may reload from sessionStorage).
   STATE.scrubberIdx = -1;
   _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred);
-}
-
-// Render the "NEXT LOW: …" callout text relative to a target ms timestamp
-// (defaults to Date.now()). Returns the formatted line.
-function formatNextLowCallout(tideHiLo, fromMs) {
-  if (!tideHiLo) return '';
-  const fm = fromMs != null ? fromMs : Date.now();
-  const lows = tideHiLo
-    .filter(p => p.type === 'L')
-    .map(p => ({ t: new Date(p.t).getTime(), v: parseFloat(p.v) }))
-    .filter(p => Number.isFinite(p.v) && p.t > fm)
-    .sort((a, b) => a.t - b.t);
-  const next = lows[0];
-  if (!next) return '';
-  const td = new Date(next.t);
-  const hrs = td.getHours();
-  const mins = td.getMinutes();
-  const ampm = hrs >= 12 ? 'pm' : 'am';
-  const h12 = hrs % 12 || 12;
-  const timeStr = mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
-  // Day word: Today / Tomorrow / weekday
-  const refDay = new Date(fm); refDay.setHours(0, 0, 0, 0);
-  const lowDay = new Date(td); lowDay.setHours(0, 0, 0, 0);
-  const dayDelta = Math.round((lowDay - refDay) / 86400000);
-  let dayWord;
-  if (dayDelta <= 0)      dayWord = 'Today';
-  else if (dayDelta === 1) dayWord = 'Tomorrow';
-  else                     dayWord = td.toLocaleDateString('en-US', { weekday: 'short' });
-  const heightStr = `${next.v.toFixed(1)}ft`;
-  // "in Xh Ym" — relative to fromMs.
-  const deltaMin = Math.max(0, Math.round((next.t - fm) / 60000));
-  const dh = Math.floor(deltaMin / 60);
-  const dm = deltaMin % 60;
-  const inStr = dh > 0 ? `${dh}h ${dm}m` : `${dm}m`;
-  return `${dayWord} ${timeStr} · ${heightStr} · in ${inStr}`;
-}
-
-function positionAndUpdateTideCallout(container, geom, scrubMs) {
-  const cal = container.querySelector('#forecast-tide-callout, .forecast-tide-callout');
-  if (!cal) return;
-  const tideHiLo = geom.tideHiLo;
-  if (!tideHiLo) { cal.textContent = ''; return; }
-  const isScrub = scrubMs != null && Math.abs(scrubMs - Date.now()) > 30 * 60 * 1000;
-  const line = formatNextLowCallout(tideHiLo, isScrub ? scrubMs : null);
-  if (!line) { cal.innerHTML = ''; return; }
-  const scrubLabel = isScrub
-    ? `NEXT LOW AFTER ${new Date(scrubMs).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true})}`
-    : 'NEXT LOW';
-  cal.innerHTML = `<span class="tide-callout-prefix">${scrubLabel}:</span> <strong>${line}</strong>`;
 }
 
 // ── Shared per-canvas helpers ──────────────────────
@@ -2317,9 +2267,6 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const tideInfo = drawTidePanel(common, { tidePred, tideHiLo });
   drawDayLabels(common);
 
-  // Tide callout (HTML overlay, populated as text only).
-  positionAndUpdateTideCallout(container, { tideHiLo });
-
   // Container-relative geometry for the scrubber crosshair / handle.
   const swellCanvas = el('forecast-canvas-swell');
   const tideCanvas  = el('forecast-canvas-tide');
@@ -2538,16 +2485,6 @@ function applyScrubberToHour(idx) {
 
   // ── Cross-feature: stat grid (with +Xh / -Xh badge) ──
   applyStatGridForHour(idx);
-
-  // ── Tide callout: re-render relative to scrubbed hour ──
-  if (cs.layout) {
-    const containerEl = el('forecast-chart-container');
-    if (containerEl) {
-      positionAndUpdateTideCallout(containerEl, {
-        tideHiLo: cs.tideHiLo
-      }, isScrubberAtNow() ? null : t.getTime());
-    }
-  }
 
   // ── "Reset to now" link visibility ──
   const resetRow = el('forecast-reset-row');

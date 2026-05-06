@@ -407,28 +407,11 @@ a:hover { text-decoration: underline; }
   pointer-events: none;
 }
 #forecast-chart-container .forecast-card-wind  { height: 120px; }
-/* Tide card hosts the inline NEXT LOW callout in a 24px row + the curve.
-   Total = 8 (pad-top) + 24 (callout) + 1 (divider) + 120 (curve) + 8 (pad-bot) ≈ 161. */
-#forecast-chart-container .forecast-card-tide  { height: 161px; }
+#forecast-chart-container .forecast-card-tide  { height: 120px; }
 #forecast-chart-container .forecast-card canvas {
   display: block;
   width: 100%;
   height: 100%;
-}
-/* Tide canvas shares its card with the callout row + divider, so it
-   can't claim 100% — leave 30px on top for those rows. */
-#forecast-chart-container .forecast-card-tide canvas {
-  height: calc(100% - 30px);
-}
-/* Section label vertically aligned with the curve, not the callout row. */
-#forecast-chart-container .forecast-card-tide .forecast-section-label {
-  top: auto;
-  bottom: 8px;
-  height: calc(100% - 38px);
-  transform: none;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
 }
 /* Stacked-letter section label: vertically centered in the 60px column. */
 #forecast-chart-container .forecast-section-label {
@@ -569,37 +552,6 @@ a:hover { text-decoration: underline; }
 .forecast-detail-bar .detail-tide {
   color: #67e8f9;
   font-weight: 500;
-}
-
-/* ── Forecast tide callout (top row inside the tide card) ── */
-.forecast-tide-callout {
-  display: flex;
-  align-items: center;
-  height: 24px;
-  font-family: var(--mono);
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--ink);
-  pointer-events: none;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.forecast-tide-divider {
-  height: 1px;
-  background: #e8e8e8;
-  margin: 1px 0 4px;
-}
-.forecast-tide-callout .tide-callout-prefix {
-  color: var(--ink3);
-  font-size: 0.66rem;
-  text-transform: uppercase;
-  margin-right: 8px;
-  letter-spacing: 0.08em;
-}
-.forecast-tide-callout strong {
-  font-weight: 600;
-  color: var(--ink);
 }
 
 /* ── Forecast scrubber (vertical line + circular handle) ── */
