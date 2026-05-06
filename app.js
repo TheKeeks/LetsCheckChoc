@@ -5854,6 +5854,106 @@ function renderRegressionImportance() {
   }).join('');
 }
 
+// ── Tab 2 §8: Preferred conditions card ───────────────────────────────
+//
+// For each feature with non-trivial |w_j| (≥ 5% of max), report the
+// implicit "ideal" feature value. Linear model is monotonic in the
+// feature value: positive coefficient ⇒ "more is better" so the
+// preferred range is high; negative ⇒ low. Confidence band derived from
+// user-scoped training mean ± std.
+function _regUserScopedFeatureSeries(sub) {
+  const cfg = REG_SUBMODELS[sub];
+  const uid = window._fbUserId;
+  const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
+  const out = [];
+  for (const e of userScoped) {
+    if (!e.conditions?.swell) continue;
+    const f = cfg.extractor(e.conditions);
+    const t = cfg.targetFn(e);
+    if (!f || typeof t !== 'number' || !isFinite(t)) continue;
+    out.push({ f, t });
+  }
+  return out;
+}
+
+function _regFmtFeatureValue(name, v) {
+  const unit = regFeatureUnit(name);
+  if (typeof v !== 'number' || !isFinite(v)) return '—';
+  // Booleans / 0–1 indicators
+  if (name === 'sec_dir_in_window' || name === 'low_incoming') {
+    return v >= 0.5 ? 'in window / yes' : 'out / no';
+  }
+  if (unit === 'h') return (v >= 0 ? '+' : '') + v.toFixed(1) + unit;
+  if (unit === '°') return Math.round(v) + unit;
+  if (unit === 'mph' || unit === 'ft') return v.toFixed(1) + unit;
+  if (unit === 's') return v.toFixed(1) + unit;
+  return v.toFixed(2);
+}
+
+function renderRegressionPreferred() {
+  const container = el('reg-preferred');
+  if (!container) return;
+  const sub = _regActiveSubmodel;
+  const cfg = REG_SUBMODELS[sub];
+  const weights = STATE[cfg.weightsKey];
+  const stats = STATE[cfg.statsKey];
+  if (!weights || !stats) {
+    container.innerHTML = '<div class="reg-empty sl-hint">' + cfg.title + ' isn\'t trained yet.</div>';
+    return;
+  }
+  const series = _regUserScopedFeatureSeries(sub);
+  if (!series.length) {
+    container.innerHTML = '<div class="reg-empty sl-hint">No user-scoped sessions to summarise.</div>';
+    return;
+  }
+  const maxAbs = weights.reduce((m, w) => Math.max(m, Math.abs(w)), 0);
+  if (maxAbs < 1e-10) {
+    container.innerHTML = '<div class="reg-empty sl-hint">All weights near zero.</div>';
+    return;
+  }
+  const items = [];
+  for (let j = 0; j < weights.length; j++) {
+    const w = weights[j];
+    if (Math.abs(w) / maxAbs < 0.05) continue;   // skip noise
+    const name = cfg.featureNames[j] || ('f' + j);
+    const col = series.map(r => r.f[j]);
+    const fmin = Math.min(...col), fmax = Math.max(...col);
+    const mean = col.reduce((a, b) => a + b, 0) / col.length;
+    // Top 25% subset for the "rated highest at" range — by target value.
+    const sorted = series.slice().sort((a, b) => b.t - a.t);
+    const topQuartile = sorted.slice(0, Math.max(1, Math.ceil(sorted.length / 4)));
+    const topVals = topQuartile.map(r => r.f[j]);
+    const topMin = Math.min(...topVals), topMax = Math.max(...topVals);
+    const direction = w >= 0 ? 'higher' : 'lower';
+    const preferredRange = w >= 0
+      ? '> ' + _regFmtFeatureValue(name, mean)
+      : '< ' + _regFmtFeatureValue(name, mean);
+    const topRangeStr = '[' + _regFmtFeatureValue(name, topMin) + ', ' +
+      _regFmtFeatureValue(name, topMax) + ']';
+    items.push({
+      sortKey: Math.abs(w) / maxAbs,
+      name,
+      label: regFeatureLabel(name),
+      direction,
+      preferredRange,
+      topRangeStr,
+      n: topVals.length
+    });
+  }
+  if (!items.length) {
+    container.innerHTML = '<div class="reg-empty sl-hint">No features cleared the 5% importance threshold.</div>';
+    return;
+  }
+  items.sort((a, b) => b.sortKey - a.sortKey);
+  container.innerHTML = items.map(it =>
+    '<div class="reg-pref-row">' +
+      '<span class="reg-pref-label">' + it.label + ':</span>' +
+      ' prefers <strong>' + it.preferredRange + '</strong>' +
+      ' <span class="reg-pref-detail">(your top ' + it.n + ' sessions: ' + it.topRangeStr + ')</span>' +
+    '</div>'
+  ).join('');
+}
+
 // Per-submodel surfaces: per-feature scatters, importance bars, preferred
 // conditions, fit metrics, residual chart. Dispatcher calls each one if it
 // has shipped (renderers added incrementally per Prompt #5 commit order).

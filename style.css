@@ -2750,3 +2750,16 @@ a:hover { text-decoration: underline; }
 .reg-imp-pos .reg-imp-pct { color: var(--green); }
 .reg-imp-neg .reg-imp-pct { color: var(--red-m); }
 .reg-empty { padding: 12px; text-align: center; }
+
+/* §8 — Preferred conditions */
+.reg-preferred { display: flex; flex-direction: column; gap: 4px; }
+.reg-pref-row {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--ink2);
+  padding: 4px 6px;
+  border-bottom: 1px dashed var(--border-l);
+}
+.reg-pref-row:last-child { border-bottom: none; }
+.reg-pref-label { color: var(--ink); font-weight: 500; }
+.reg-pref-detail { color: var(--ink4); font-size: 0.72rem; }
