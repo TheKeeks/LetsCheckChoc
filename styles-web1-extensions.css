@@ -1,0 +1,852 @@
+/* ════════════════════════════════════════════════════════════════════
+   styles-web1-extensions.css — application-specific Win95 surfaces
+   ─────────────────────────────────────────────────────────────────────
+   Maps the existing LetsCheckChoc selectors (panel, tab-bar, sl-btn …)
+   to the bevel/inset/outset chrome from styles-web1.css. Loaded AFTER
+   the base stylesheet so it can override the modern defaults from
+   style.css. All selectors gated on [data-era="web1"].
+   ════════════════════════════════════════════════════════════════════ */
+
+/* App shell ============================================================ */
+
+body[data-era="web1"] {
+  margin: 0;
+  padding: 6px;
+  min-height: 100vh;
+}
+
+[data-era="web1"] #app-window.w1-window {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2px;
+  background: var(--w1-face);
+}
+
+[data-era="web1"] #app {
+  background: var(--w1-face);
+  padding: 6px;
+}
+
+/* Site title / header ================================================== */
+
+[data-era="web1"] #app-header {
+  background: var(--w1-face);
+  border: none;
+  padding: 6px;
+  margin-bottom: 6px;
+  box-shadow: none;
+}
+
+[data-era="web1"] .site-title {
+  font-family: var(--w1-serif);
+  color: var(--w1-navy);
+  font-weight: bold;
+  font-size: 22px;
+  margin: 0;
+}
+
+[data-era="web1"] .header-location {
+  font-family: var(--w1-mono);
+  font-size: 12px;
+  color: var(--w1-ink);
+}
+
+[data-era="web1"] .header-meta,
+[data-era="web1"] .auth-user-name {
+  font-family: var(--w1-mono);
+  font-size: 11px;
+  color: var(--w1-ink);
+}
+
+/* Auth & buoy-select pickup the .w1-btn / inset bevel */
+[data-era="web1"] .auth-btn {
+  background: var(--w1-face);
+  color: var(--w1-ink);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  padding: 2px 10px;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  border-radius: 0;
+  cursor: pointer;
+  min-height: 22px;
+}
+[data-era="web1"] .auth-btn:active {
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+}
+
+[data-era="web1"] .header-buoy-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+}
+
+/* Tab bar ============================================================== */
+
+[data-era="web1"] .tab-bar {
+  display: flex;
+  gap: 0;
+  padding: 0 4px;
+  margin: 8px 0 0 0;
+  border-bottom: 2px solid #ffffff;
+  background: transparent;
+  position: relative;
+  z-index: 1;
+}
+
+[data-era="web1"] .tab-bar .tab-btn {
+  background: var(--w1-face);
+  color: var(--w1-ink);
+  border: 2px solid;
+  border-color: #ffffff #404040 transparent #ffffff;
+  box-shadow: inset -1px 0 0 #808080;
+  border-radius: 4px 4px 0 0;
+  padding: 4px 14px 6px 14px;
+  margin-right: -2px;
+  margin-bottom: -2px;
+  cursor: pointer;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  position: relative;
+  top: 2px;
+}
+
+[data-era="web1"] .tab-bar .tab-btn.active {
+  z-index: 2;
+  top: 0;
+  padding-top: 6px;
+  padding-bottom: 8px;
+  font-weight: bold;
+  background: var(--w1-face);
+}
+
+/* The tab views sit inside a sunken page surface */
+[data-era="web1"] #view-forecast,
+[data-era="web1"] #view-regression,
+[data-era="web1"] #view-surflog {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  padding: 10px;
+  margin-top: 0;
+  position: relative;
+  z-index: 0;
+}
+
+/* Panels — re-skin every existing .panel as a raised bevel ============ */
+
+[data-era="web1"] .panel,
+[data-era="web1"] .panel-half {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  border-radius: 0;
+  margin: 8px 0;
+  padding: 8px 10px;
+}
+
+[data-era="web1"] .panel-title {
+  font-family: var(--w1-serif);
+  font-size: 18px;
+  color: var(--w1-navy);
+  font-weight: bold;
+  margin: 0 0 6px 0;
+}
+
+[data-era="web1"] .panel-footer {
+  font-family: var(--w1-sans);
+  font-size: 10px;
+  color: #404040;
+  border-top: 1px solid #808080;
+  margin-top: 8px;
+  padding-top: 4px;
+}
+
+/* Help <details> styled like a tooltip-fieldset */
+[data-era="web1"] .widget-help {
+  background: #ffffe0;
+  border: 1px solid #808080;
+  padding: 4px 8px;
+  margin: 6px 0;
+  font-family: var(--w1-serif);
+  font-size: 12px;
+}
+[data-era="web1"] .widget-help summary {
+  cursor: pointer;
+  color: var(--w1-link);
+  font-family: var(--w1-sans);
+  font-size: 11px;
+}
+
+/* Buoy map summary line */
+[data-era="web1"] .buoy-map-summary {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  padding: 4px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--w1-mono);
+  font-size: 12px;
+}
+[data-era="web1"] .buoy-map-expand-btn {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  padding: 1px 8px;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 0;
+}
+[data-era="web1"] .buoy-map-expand-btn:active {
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+}
+
+/* Forecast cards (SWELL/WIND/TIDE) become inset sunken panels --------- */
+
+[data-era="web1"] .forecast-card {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  border-radius: 0;
+  margin: 6px 0;
+}
+
+[data-era="web1"] .forecast-section-label {
+  font-family: var(--w1-sans);
+  font-variant: small-caps;
+  letter-spacing: 1px;
+  color: var(--w1-navy);
+  font-weight: bold;
+}
+
+[data-era="web1"] .forecast-detail-bar {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  font-family: var(--w1-mono);
+  font-size: 12px;
+  color: var(--w1-ink);
+  padding: 4px 8px;
+}
+
+[data-era="web1"] .forecast-reset-btn {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  padding: 2px 10px;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  border-radius: 0;
+  cursor: pointer;
+  color: var(--w1-ink);
+}
+
+/* Conditions row (stat grid) ----------------------------------------- */
+
+[data-era="web1"] .conditions-row {
+  display: grid;
+  gap: 8px;
+}
+
+[data-era="web1"] .condition-card {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  padding: 6px 8px;
+  border-radius: 0;
+}
+
+[data-era="web1"] .condition-label {
+  font-family: var(--w1-sans);
+  font-variant: small-caps;
+  font-size: 11px;
+  color: var(--w1-navy);
+  font-weight: bold;
+}
+
+[data-era="web1"] .condition-value {
+  font-family: var(--w1-mono);
+  font-size: 18px;
+  color: var(--w1-ink);
+}
+
+[data-era="web1"] .condition-detail,
+[data-era="web1"] .condition-extra {
+  font-family: var(--w1-mono);
+  font-size: 11px;
+  color: #404040;
+}
+
+/* Lineup frame — keep image, frame in raised bevel */
+[data-era="web1"] .lineup-frame {
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  background: #000;
+}
+
+/* Tab 2 — regression ------------------------------------------------ */
+
+[data-era="web1"] .reg-section {
+  background: var(--w1-face);
+  border: 1px solid #ffffff;
+  outline: 1px solid #808080;
+  outline-offset: -1px;
+  padding: 8px 10px 10px;
+  margin: 10px 0;
+}
+
+[data-era="web1"] .reg-section-heading {
+  font-family: var(--w1-serif);
+  color: var(--w1-navy);
+  font-size: 14px;
+  font-weight: bold;
+  margin: 0 0 6px 0;
+}
+
+[data-era="web1"] .reg-feature-mini {
+  background: #ffffff;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  border-radius: 0;
+  padding: 4px;
+}
+
+[data-era="web1"] .reg-feature-mini-title {
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  color: var(--w1-navy);
+  font-weight: bold;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-era="web1"] .reg-submodel-tabs {
+  display: flex;
+  gap: 0;
+}
+[data-era="web1"] .reg-submodel-tab {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  padding: 3px 14px;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 0;
+  color: var(--w1-ink);
+  margin-right: -1px;
+}
+[data-era="web1"] .reg-submodel-tab.active {
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  font-weight: bold;
+}
+
+[data-era="web1"] .regression-sample-summary {
+  font-family: var(--w1-mono);
+  font-size: 12px;
+  color: var(--w1-ink);
+}
+
+[data-era="web1"] .regression-source-note {
+  font-family: var(--w1-serif);
+  font-style: italic;
+  font-size: 12px;
+  color: #404040;
+}
+
+[data-era="web1"] .reg-prediction-card {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  padding: 8px 10px;
+}
+
+/* Threshold sliders / lights */
+[data-era="web1"] .reg-threshold-panel {
+  background: var(--w1-face);
+  padding: 4px;
+}
+
+/* Drill-down panel as a Win95 window */
+[data-era="web1"] .reg-drilldown {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4),
+              inset -1px -1px 0 #808080,
+              inset 1px 1px 0 #dfdfdf;
+  border-radius: 0;
+  padding: 2px;
+}
+
+[data-era="web1"] .reg-drilldown::before {
+  content: attr(data-w1-title);
+  display: block;
+  height: 18px;
+  padding: 2px 6px;
+  background: linear-gradient(to right, var(--w1-titlebar-a), var(--w1-titlebar-b));
+  color: #ffffff;
+  font-family: var(--w1-sans);
+  font-weight: bold;
+  font-size: 11px;
+  line-height: 14px;
+  margin: -2px -2px 4px -2px;
+  border-bottom: 2px solid #404040;
+}
+
+[data-era="web1"] .reg-drilldown-inner {
+  padding: 6px 10px 10px;
+}
+
+[data-era="web1"] .reg-drilldown-backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+[data-era="web1"] .reg-imp-bar-wrap {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  height: 14px;
+  padding: 1px;
+}
+[data-era="web1"] .reg-imp-bar {
+  height: 100%;
+}
+
+/* Tab 3 — surf log ---------------------------------------------------- */
+
+[data-era="web1"] .sl-input,
+[data-era="web1"] .sl-input-sm,
+[data-era="web1"] .sl-textarea {
+  background: #ffffff;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  font-family: var(--w1-mono);
+  font-size: 12px;
+  border-radius: 0;
+  padding: 2px 4px;
+}
+
+[data-era="web1"] .sl-btn {
+  background: var(--w1-face);
+  color: var(--w1-ink);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  padding: 2px 10px;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  border-radius: 0;
+  cursor: pointer;
+  min-height: 22px;
+}
+[data-era="web1"] .sl-btn:active:not(:disabled) {
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+}
+[data-era="web1"] .sl-btn:disabled {
+  color: #808080;
+  text-shadow: 1px 1px 0 #ffffff;
+  cursor: not-allowed;
+}
+[data-era="web1"] .sl-btn-primary {
+  font-weight: bold;
+}
+
+[data-era="web1"] .sl-label,
+[data-era="web1"] .sl-label-sm {
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  color: var(--w1-ink);
+  font-weight: bold;
+}
+
+[data-era="web1"] .sl-slider-val {
+  font-family: var(--w1-mono);
+  font-size: 12px;
+  color: var(--w1-navy);
+  background: #ffffff;
+  border: 1px solid #808080;
+  padding: 0 4px;
+  margin-left: 6px;
+}
+
+/* Hide the slider number while the slider is untouched. */
+[data-era="web1"] .sl-slider-group.w1-untouched .sl-slider-val {
+  visibility: hidden;
+}
+
+/* Slider placeholder hint */
+[data-era="web1"] .sl-slider-group {
+  position: relative;
+}
+[data-era="web1"] .sl-slider-group .w1-slider-placeholder {
+  display: none;
+  position: absolute;
+  pointer-events: none;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  color: #606060;
+  font-style: italic;
+  font-weight: normal;
+  /* Position above the slider track. The .sl-range stack centres it. */
+  left: 0;
+  right: 0;
+  text-align: center;
+  bottom: 18px;
+}
+[data-era="web1"] .sl-slider-group.w1-untouched .w1-slider-placeholder {
+  display: block;
+}
+
+[data-era="web1"] .sl-slider-desc {
+  font-family: var(--w1-sans);
+  font-size: 10px;
+  color: #404040;
+}
+
+[data-era="web1"] .sl-conditions-display {
+  background: #ffffff;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  padding: 6px 8px;
+  font-family: var(--w1-mono);
+  font-size: 12px;
+  color: var(--w1-ink);
+}
+
+[data-era="web1"] .sl-hint {
+  font-family: var(--w1-serif);
+  font-style: italic;
+  font-size: 12px;
+  color: #404040;
+}
+
+[data-era="web1"] .sl-note {
+  font-family: var(--w1-serif);
+  font-style: italic;
+  font-size: 11px;
+  color: #404040;
+}
+
+[data-era="web1"] .sl-crowdsource-note {
+  font-family: var(--w1-serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--w1-navy);
+  background: #ffffe0;
+  border: 1px solid #808080;
+  padding: 4px 8px;
+  margin: 6px 0;
+}
+
+[data-era="web1"] .sl-auth-prompt {
+  background: #ffffe0;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  padding: 6px 10px;
+  font-family: var(--w1-sans);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+[data-era="web1"] .sl-auth-prompt-text {
+  font-family: var(--w1-sans);
+  color: var(--w1-ink);
+}
+
+[data-era="web1"] .sl-auth-prompt-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--w1-link);
+  text-decoration: underline;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+/* Past sessions table */
+[data-era="web1"] .surflog-table {
+  border-collapse: collapse;
+  background: #ffffff;
+  width: 100%;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  color: var(--w1-ink);
+}
+[data-era="web1"] .surflog-table thead th {
+  position: relative;
+  background: var(--w1-face);
+  color: var(--w1-ink);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  padding: 3px 18px 3px 6px;
+  text-align: left;
+  font-weight: normal;
+  font-size: 11px;
+}
+[data-era="web1"] .surflog-table thead th::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  margin-top: -2px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4px solid #404040;
+  opacity: 0.6;
+}
+[data-era="web1"] .surflog-table tbody td {
+  padding: 2px 6px;
+  background: #ffffff;
+}
+[data-era="web1"] .surflog-table tbody tr:nth-child(even) td {
+  background: #f0f0f0;
+}
+[data-era="web1"] .surflog-table tbody tr:hover td {
+  background: #ffffe0;
+}
+
+/* Boat gate Win95 modal ------------------------------------------------ */
+
+[data-era="web1"] #gate-overlay {
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+[data-era="web1"] #gate-card {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.5),
+              inset -1px -1px 0 #808080,
+              inset 1px 1px 0 #dfdfdf;
+  border-radius: 0;
+  padding: 2px;
+  min-width: 320px;
+  max-width: 90vw;
+  font-family: var(--w1-sans);
+}
+
+[data-era="web1"] #gate-card .w1-titlebar {
+  margin-bottom: 0;
+}
+
+[data-era="web1"] #gate-card .gate-body {
+  padding: 14px 18px;
+}
+
+[data-era="web1"] #gate-question h2 {
+  font-family: var(--w1-sans);
+  font-size: 13px;
+  color: var(--w1-ink);
+  font-weight: normal;
+  margin: 0 0 14px 0;
+}
+
+[data-era="web1"] #gate-card .gate-icon {
+  display: inline-block;
+  vertical-align: middle;
+  font-size: 28px;
+  margin-right: 12px;
+}
+
+[data-era="web1"] #gate-card .gate-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #808080;
+  box-shadow: 0 -1px 0 #ffffff inset;
+}
+
+[data-era="web1"] #gate-card .gate-btn {
+  background: var(--w1-face);
+  color: var(--w1-ink);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  padding: 4px 22px;
+  min-width: 75px;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  border-radius: 0;
+  cursor: pointer;
+}
+[data-era="web1"] #gate-card .gate-btn:active {
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+}
+[data-era="web1"] #gate-card .gate-btn-primary {
+  font-weight: bold;
+  outline: 1px solid #000;
+  outline-offset: -3px;
+}
+
+[data-era="web1"] #gate-go-home {
+  font-family: var(--w1-serif);
+  font-size: 28px;
+  color: var(--w1-navy);
+  text-align: center;
+  padding: 28px;
+}
+
+/* Photo modal as Win95 window ---------------------------------------- */
+
+[data-era="web1"] .modal-overlay {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+[data-era="web1"] .modal-card {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.5),
+              inset -1px -1px 0 #808080,
+              inset 1px 1px 0 #dfdfdf;
+  border-radius: 0;
+  padding: 2px;
+  font-family: var(--w1-sans);
+  position: relative;
+}
+
+[data-era="web1"] .modal-card::before {
+  content: "Session Photo";
+  display: block;
+  height: 18px;
+  padding: 2px 6px;
+  background: linear-gradient(to right, var(--w1-titlebar-a), var(--w1-titlebar-b));
+  color: #ffffff;
+  font-family: var(--w1-sans);
+  font-weight: bold;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+[data-era="web1"] .modal-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 16px;
+  height: 14px;
+  background: var(--w1-face);
+  border: 1px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  color: #000;
+}
+
+[data-era="web1"] .modal-body {
+  padding: 8px 12px;
+  font-family: var(--w1-serif);
+}
+
+[data-era="web1"] .modal-title {
+  font-family: var(--w1-serif);
+  color: var(--w1-navy);
+  font-weight: bold;
+}
+
+/* Page footer / status ------------------------------------------------ */
+
+[data-era="web1"] #page-footer {
+  background: var(--w1-face);
+  border-top: 1px solid #ffffff;
+  font-family: var(--w1-sans);
+  font-size: 10px;
+  color: #404040;
+  padding: 6px;
+  margin-top: 8px;
+}
+
+/* Toast / hint refinements */
+[data-era="web1"] .toast {
+  background: #ffffe0;
+  border: 1px solid #808080;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  color: var(--w1-ink);
+  border-radius: 0;
+}
+
+/* Forecast chart container — sit on the same gray surface */
+[data-era="web1"] #forecast-chart-container {
+  background: var(--w1-face);
+}
+
+/* Keep canvases inside cards on white so chart palettes still render */
+[data-era="web1"] #forecast-canvas-swell,
+[data-era="web1"] #forecast-canvas-wind,
+[data-era="web1"] #forecast-canvas-tide,
+[data-era="web1"] #forecast-canvas-days,
+[data-era="web1"] #compass-canvas,
+[data-era="web1"] #spectrum-canvas,
+[data-era="web1"] #tide-canvas {
+  background: #ffffff;
+}
+
+/* Map containers framed as inset bevels */
+[data-era="web1"] .map-container {
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+}
+
+/* Photo gallery thumbnails */
+[data-era="web1"] .sl-photo-gallery .photo-thumb,
+[data-era="web1"] .sl-photo-thumb {
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+}
+
+/* Auth prompt sign-in inline */
+[data-era="web1"] .auth-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}

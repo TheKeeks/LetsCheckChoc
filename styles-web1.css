@@ -1,0 +1,537 @@
+/* ════════════════════════════════════════════════════════════════════
+   styles-web1.css — Win95-era visual chrome for LetsCheckChoc
+   ─────────────────────────────────────────────────────────────────────
+   Selectors are all scoped under [data-era="web1"] so this file can sit
+   alongside style.css without polluting the modern stylesheet. The body
+   rule sets the era token; the rest cascades.
+
+   Design tokens (Win95 / IE5 era):
+     #000080  navy            primary text + accents
+     #c0c0c0  battleship gray surfaces
+     #ffffff  white           raised highlights
+     #808080  dark gray       sunken shadows
+     #ffff80  light yellow    legend / emphasis
+     #0000ee  link blue       unvisited
+     #800080  link purple     visited
+     #008080  teal            titlebar gradient stop
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-era="web1"] {
+  --w1-face:   #c0c0c0;
+  --w1-shadow: #808080;
+  --w1-dark:   #404040;
+  --w1-light:  #ffffff;
+  --w1-ink:    #000000;
+  --w1-navy:   #000080;
+  --w1-accent: #ffff80;
+  --w1-link:   #0000ee;
+  --w1-vlink:  #800080;
+  --w1-titlebar-a: #000080;
+  --w1-titlebar-b: #1084d0;
+  --w1-sans: "MS Sans Serif", "Microsoft Sans Serif", Tahoma, Geneva, sans-serif;
+  --w1-serif: "Times New Roman", Times, serif;
+  --w1-mono: "Courier New", Courier, monospace;
+}
+
+/* Body baseline */
+body[data-era="web1"] {
+  background: #008080;        /* the classic teal desktop */
+  color: var(--w1-ink);
+  font-family: var(--w1-serif);
+}
+
+/* Restore default font-family on form controls etc. */
+[data-era="web1"] button,
+[data-era="web1"] input,
+[data-era="web1"] select,
+[data-era="web1"] textarea,
+[data-era="web1"] .w1-tabs .tab,
+[data-era="web1"] .w1-menubar,
+[data-era="web1"] .w1-statusbar,
+[data-era="web1"] .w1-titlebar,
+[data-era="web1"] table.w1 th,
+[data-era="web1"] table.w1 td {
+  font-family: var(--w1-sans);
+  font-size: 11px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Bevels — the heart of Win95 chrome
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-era="web1"] .w1-bevel {
+  background: var(--w1-face);
+  border-style: solid;
+  border-width: 2px;
+  /* Raised: white top/left, dark gray bottom/right with a darker outer */
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  padding: 6px;
+}
+
+[data-era="web1"] .w1-bevel.inset {
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+}
+
+[data-era="web1"] .w1-bevel.flat {
+  box-shadow: none;
+  border-width: 1px;
+  border-color: #808080;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Window frames
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-era="web1"] .w1-window {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  padding: 2px;
+}
+
+[data-era="web1"] .w1-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 18px;
+  padding: 2px 2px 2px 4px;
+  background: linear-gradient(to right, var(--w1-titlebar-a), var(--w1-titlebar-b));
+  color: #ffffff;
+  font-weight: bold;
+  font-size: 11px;
+  user-select: none;
+}
+
+[data-era="web1"] .w1-titlebar .title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+[data-era="web1"] .w1-titlebar .ctrls {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+[data-era="web1"] .w1-titlebar .ctrls button {
+  width: 16px;
+  height: 14px;
+  background: var(--w1-face);
+  border: 1px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  font-family: var(--w1-sans);
+  font-size: 10px;
+  font-weight: bold;
+  line-height: 1;
+  padding: 0;
+  cursor: default;
+  color: #000;
+}
+[data-era="web1"] .w1-titlebar .ctrls button:active {
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Menu bar / Address bar
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-era="web1"] .w1-menubar {
+  display: flex;
+  gap: 0;
+  padding: 2px 4px;
+  background: var(--w1-face);
+  border-bottom: 1px solid #808080;
+  user-select: none;
+}
+
+[data-era="web1"] .w1-menubar .item {
+  padding: 2px 8px;
+  cursor: default;
+  color: #000;
+}
+[data-era="web1"] .w1-menubar .item u {
+  text-decoration: underline;
+}
+[data-era="web1"] .w1-menubar .item:hover {
+  background: var(--w1-navy);
+  color: #fff;
+}
+
+[data-era="web1"] .w1-addrbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: var(--w1-face);
+  border-bottom: 1px solid #808080;
+}
+
+[data-era="web1"] .w1-addrbar .lbl {
+  font-family: var(--w1-sans);
+  font-size: 11px;
+}
+
+[data-era="web1"] .w1-addrbar .url {
+  flex: 1;
+  background: #ffffff;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  padding: 2px 6px;
+  font-family: var(--w1-mono);
+  font-size: 12px;
+  color: var(--w1-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+
+[data-era="web1"] .w1-addrbar .go {
+  /* uses .w1-btn styling below */
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Status bar
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-era="web1"] .w1-statusbar {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--w1-face);
+  border-top: 1px solid #ffffff;
+  font-size: 11px;
+}
+
+[data-era="web1"] .w1-statusbar .seg {
+  flex: 1;
+  padding: 2px 6px;
+  background: var(--w1-face);
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-era="web1"] .w1-statusbar .seg:last-child {
+  flex: 0 0 auto;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Tabs (Win95 tab strip)
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-era="web1"] .w1-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 4px;
+  margin: 8px 0 0 0;
+  border-bottom: 2px solid #ffffff;
+  position: relative;
+  z-index: 1;
+}
+
+[data-era="web1"] .w1-tabs .tab {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 transparent #ffffff;
+  box-shadow: inset -1px 0 0 #808080;
+  border-radius: 4px 4px 0 0;
+  padding: 4px 14px 6px 14px;
+  margin-right: -2px;
+  margin-bottom: -2px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--w1-ink);
+  position: relative;
+  top: 2px;
+}
+[data-era="web1"] .w1-tabs .tab.active {
+  z-index: 2;
+  top: 0;
+  padding-top: 6px;
+  padding-bottom: 8px;
+  font-weight: bold;
+  background: var(--w1-face);
+}
+[data-era="web1"] .w1-tabs .tab:focus {
+  outline: 1px dotted #000;
+  outline-offset: -3px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Buttons
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-era="web1"] .w1-btn,
+[data-era="web1"] button.w1-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--w1-face);
+  color: var(--w1-ink);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  padding: 2px 10px;
+  min-height: 22px;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+[data-era="web1"] .w1-btn:active:not(:disabled),
+[data-era="web1"] .w1-btn.pressed {
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  padding: 3px 9px 1px 11px;
+}
+[data-era="web1"] .w1-btn:focus {
+  outline: 1px dotted #000;
+  outline-offset: -4px;
+}
+[data-era="web1"] .w1-btn:disabled,
+[data-era="web1"] .w1-btn.disabled {
+  color: #808080;
+  text-shadow: 1px 1px 0 #ffffff;
+  cursor: not-allowed;
+}
+[data-era="web1"] .w1-btn.primary {
+  font-weight: bold;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Inputs
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-era="web1"] input[type="text"],
+[data-era="web1"] input[type="search"],
+[data-era="web1"] input[type="number"],
+[data-era="web1"] input[type="date"],
+[data-era="web1"] input[type="datetime-local"],
+[data-era="web1"] input[type="email"],
+[data-era="web1"] input[type="url"],
+[data-era="web1"] textarea,
+[data-era="web1"] select {
+  background: #ffffff;
+  color: var(--w1-ink);
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  padding: 2px 4px;
+  font-family: var(--w1-mono);
+  font-size: 12px;
+  border-radius: 0;
+}
+[data-era="web1"] input:focus,
+[data-era="web1"] textarea:focus,
+[data-era="web1"] select:focus {
+  outline: 1px dotted #000;
+  outline-offset: -4px;
+}
+
+[data-era="web1"] select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 18px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #000 50%),
+    linear-gradient(-45deg, transparent 50%, #000 50%);
+  background-position:
+    calc(100% - 9px) 9px,
+    calc(100% - 5px) 9px;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Range inputs (Win95 trackbar look)
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-era="web1"] input[type="range"].w1-range,
+[data-era="web1"] input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 22px;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  width: 100%;
+}
+[data-era="web1"] input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+}
+[data-era="web1"] input[type="range"]::-moz-range-track {
+  height: 6px;
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+}
+[data-era="web1"] input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 20px;
+  margin-top: -9px;
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  cursor: pointer;
+}
+[data-era="web1"] input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 20px;
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+/* Untouched-state: hide the thumb until the user has interacted. */
+[data-era="web1"] input[type="range"].w1-untouched::-webkit-slider-thumb {
+  visibility: hidden;
+}
+[data-era="web1"] input[type="range"].w1-untouched::-moz-range-thumb {
+  visibility: hidden;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Fieldsets
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-era="web1"] .w1-fieldset {
+  border: 1px solid #ffffff;
+  box-shadow: inset 1px 1px 0 #808080, 1px 1px 0 #ffffff;
+  padding: 8px 10px 10px;
+  margin: 8px 0;
+  background: var(--w1-face);
+  border-radius: 0;
+  position: relative;
+}
+/* True groove: layer two 1px borders by using outline + border */
+[data-era="web1"] .w1-fieldset {
+  border: 1px solid #ffffff;
+  outline: 1px solid #808080;
+  outline-offset: -1px;
+}
+
+[data-era="web1"] .w1-fieldset > legend {
+  padding: 0 4px;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  color: var(--w1-ink);
+  background: var(--w1-face);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Tables
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-era="web1"] table.w1 {
+  border-collapse: collapse;
+  background: #ffffff;
+  width: 100%;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+}
+
+[data-era="web1"] table.w1 thead th {
+  position: relative;
+  background: var(--w1-face);
+  color: var(--w1-ink);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  padding: 3px 18px 3px 6px;
+  text-align: left;
+  font-weight: normal;
+  font-size: 11px;
+}
+[data-era="web1"] table.w1 thead th::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  margin-top: -2px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4px solid #404040;
+  opacity: 0.6;
+}
+
+[data-era="web1"] table.w1 tbody td {
+  padding: 2px 6px;
+  border: none;
+  color: var(--w1-ink);
+  background: #ffffff;
+}
+[data-era="web1"] table.w1 tbody tr:nth-child(even) td {
+  background: #f0f0f0;
+}
+[data-era="web1"] table.w1 tbody tr:hover td {
+  background: #ffffe0;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Links
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-era="web1"] a {
+  color: var(--w1-link);
+  text-decoration: underline;
+}
+[data-era="web1"] a:visited {
+  color: var(--w1-vlink);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Headings (panel titles etc.)
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-era="web1"] h1,
+[data-era="web1"] h2,
+[data-era="web1"] h3,
+[data-era="web1"] h4 {
+  font-family: var(--w1-serif);
+  color: var(--w1-navy);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Monospace numerical readouts
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-era="web1"] .w1-mono {
+  font-family: var(--w1-mono);
+  font-size: 12px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Section labels (small caps)
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-era="web1"] .w1-section-label {
+  font-family: var(--w1-sans);
+  font-variant: small-caps;
+  letter-spacing: 1px;
+  color: var(--w1-navy);
+}

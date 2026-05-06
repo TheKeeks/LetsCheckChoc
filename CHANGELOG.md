@@ -1,5 +1,188 @@
 # Changelog
 
+## [Unreleased] — Prompt #6: Web 1.0 visual overhaul + Tab 3 cleanup
+
+Restyles the entire app with restrained Win95-era chrome — bevels,
+fieldsets, titlebars, address bar, status bar — and folds in the
+remaining Tab 3 / Tab 2 polish from Prompt #5. No React in production:
+the entire pass is pure CSS plus minor HTML wrapper additions and small
+JS hooks for the decorative shell. Charts are not touched — only the
+containers around them are reframed.
+
+### Stylesheets
+
+Two new files, both scoped under `[data-era="web1"]` so they layer on
+top of `style.css` without polluting the modern stylesheet:
+
+- `styles-web1.css` — design tokens (#000080 navy, #c0c0c0 face,
+  #ffffff highlight, #808080 shadow, etc.), bevel mix-ins, button /
+  input / range / fieldset / table / titlebar / menubar / addrbar /
+  statusbar / tab-strip primitives.
+- `styles-web1-extensions.css` — application-specific re-skins that
+  map existing selectors (`.panel`, `.tab-bar .tab-btn`, `.condition-card`,
+  `.forecast-card`, `.surflog-table`, `.sl-btn`, `.reg-section`,
+  `.reg-feature-mini`, `#gate-card`, `.modal-card`, `.reg-drilldown`,
+  …) to the Win95 chrome.
+
+`<body>` now carries `data-era="web1"`. The cascade does the rest.
+
+### App shell (Win95 IE5 wrapper)
+
+`#app` is wrapped in `#app-window.w1-window`, with four decorative
+chrome rows above and one below the existing app content:
+
+- **Titlebar** — `🌊 LetsCheckChoc — Microsoft Internet Explorer` plus
+  `_ □ ×` buttons (decorative, `tabindex="-1"`, do nothing).
+- **Menubar** — File · Edit · View · Favorites · Tools · Help.
+  Decorative.
+- **Address bar** — read-only URL display with a Go button.
+  `switchTab` updates the URL string to `index.html` /
+  `regression.html` / `log.html` per active tab.
+- **Status bar** — three segments at the bottom of the window:
+  `Done · N session(s) loaded` (`STATE.surfLog.length`), the active
+  buoy id or pin coords, and a fixed `🔒 Internet`. New
+  `updateW1StatusBar()` helper called from `switchTab`, `selectBuoy`,
+  `selectPin`, `loadSurfLog`, and `saveSurfLog`.
+
+`el('app').classList.remove('hidden')` is preserved verbatim so
+`test-gate.js` Test 3 still passes; an additional
+`el('app-window')?.classList.remove('hidden')` reveals the chrome.
+
+### Tabs
+
+Tab strip restyled as a Win95 raised-tab strip. Tab labels shortened
+("Current Conditions & Forecast" → "Forecast", "Regression Results" →
+"Regression", "Log a Session" → "Surf Log") to fit the tighter Win95
+metrics.
+
+### Panels and fieldsets
+
+Every visual container picks up bevel chrome:
+- `.panel`, `.condition-card`, `.forecast-card`, lineup frame, map
+  containers, photo thumbnails — all rebevelled (raised for surfaces,
+  inset for input wells / canvases).
+- Tab 2 sub-sections (per-feature scatters, feature importance,
+  preferred conditions, model fit) are now `<fieldset class="w1-fieldset">`
+  with descriptive `<legend>` text. Same for the Tab 2 PVA grid,
+  threshold tuning, and Tab 3 log form / past sessions sections.
+- Forecast cards (SWELL / WIND / TIDE) become sunken inset bevels.
+- Section labels (`.forecast-section-label`, `.condition-label`)
+  switch to small-caps MS Sans Serif.
+
+### Buttons, inputs, sliders, tables
+
+- All `.sl-btn`, `.gate-btn`, `.auth-btn`, `.buoy-map-expand-btn`,
+  `.forecast-reset-btn`, and `.reg-submodel-tab` get the Win95
+  bevel-button look (raised normally, sunken on `:active`).
+  `.sl-btn-primary` / `.gate-btn-primary` get a dotted-outline
+  default-button affordance.
+- Inputs (`<input type="text|date|datetime-local|number|search">`,
+  `<textarea>`, `<select>`) get inset bevels with white interiors,
+  Courier New monospace, and a hand-drawn dropdown caret.
+- `<input type="range">` retrofit: track styled as inset bevel,
+  thumb as raised bevel button. New `w1-untouched` class hides the
+  thumb until the user has interacted (Tab 3 default-rating fix).
+- `.surflog-table` gets the full `table.w1` treatment: bevelled
+  header cells with the down-triangle indicator, alternating row
+  backgrounds, hover row highlight.
+
+### Boat gate as Win95 modal
+
+`#gate-card` is now a `.w1-window` with a real titlebar (text:
+"Are you coming by boat today?"), the same decorative `_ □ ×`
+buttons, and Yes/No buttons styled as Win95 dialog buttons (the No
+button — the primary action — gets the dotted default-button outline).
+
+### Drill-down side panel
+
+`.reg-drilldown` becomes a Win95 window: titlebar synthesised via
+`::before` pulling from `data-w1-title` (set in
+`openRegressionDrilldown` to `Session detail · <date>`), 4×4 box
+shadow drop shadow, raised bevel border. Backdrop dimming preserved.
+
+### Photo lightbox
+
+`.modal-card` gets a synthetic Win95 titlebar ("Session Photo") via
+`::before`, raised bevel, drop shadow. The existing × close button is
+restyled as a small bevel button.
+
+### Typography & palette
+
+- Body default font: Times New Roman serif.
+- UI controls (buttons, menus, tabs, table cells, status bar):
+  MS Sans Serif / Tahoma fallback.
+- Numerical readouts (timestamps, coords, ratings, percentages):
+  Courier New monospace.
+- Panel headings: Times New Roman bold navy.
+- Charts unchanged — they render their own internal fonts and
+  palettes; only the chrome around them is Win95.
+
+### Tab 3 cleanup (folded in)
+
+a. **Rating sliders default to untouched.** New per-slider
+   `w1-untouched` state. CSS hides the slider thumb (and its numeric
+   readout) until the user has touched it; a centred italic
+   placeholder "Tap to rate" sits over the track. Touch is detected
+   on `input` / `pointerdown` / `keydown`. The Save button stays
+   `disabled` (Win95 disabled-bevel) until all three sliders are
+   touched. New helper `_slUpdateSaveEnabled()` evaluates
+   `wave.touched && wind.touched && ride.touched` and toggles the
+   button. Editing an existing entry pre-touches the sliders for any
+   already-valid stored rating; stale-rating repair candidates stay
+   untouched until the user re-rates. This addresses the (10,10)
+   cluster artifact from Prompt #5.
+
+b. **"I Surfed This" remnants** verified gone. One orphan
+   `.modal-feedback` CSS rule was found in `style.css` and deleted.
+   No markup or JS references remain.
+
+c. **Sign-in copy** verified exact: "Sign in w/ Google to log
+   sessions" on `#sl-auth-prompt`.
+
+d. **Crowdsource note** verified above the past-sessions table:
+   "Crowdsourced log — sessions from all signed-in users are
+   visible. Training uses your sessions only." Restyled as a Win95
+   tooltip-yellow (`#ffffe0`) italic note.
+
+e. **Per-feature plot title truncation.** Fixed both ways: labels
+   shortened to "Dir outside window" / "Sec in window" (was
+   "Direction outside window" / "Secondary in window"), and the
+   `.reg-feature-mini-title` rule under `[data-era="web1"]` adds
+   `white-space: nowrap; overflow: hidden; text-overflow: ellipsis`.
+
+f. **Match-modal feedback panel** confirmed gone; visual overhaul did
+   not reintroduce it.
+
+### Explicit non-inclusions
+
+No marquees, no `.w1-blink`, no hit counter, no `NEW!` badges, no
+"Best viewed in Netscape", no Comic Sans, no animated GIFs, no MIDI,
+no Geocities banners, no visitor counters. Restrained Win95 — feels
+like a 1998 productivity application.
+
+### Commits (in order)
+
+1. `Add data-era=web1 attribute and link styles-web1.css`
+2. `App shell: title bar, menu bar, address bar, status bar`
+3. `Tabs: Win95 tab strip styling`
+4. `Tab 1: wrap panels in fieldsets and bevels`
+5. `Tab 2: wrap panels in fieldsets and bevels`
+6. `Tab 3: wrap panels in fieldsets and bevels`
+7. `Buttons, inputs, sliders: Win95 styling`
+8. `Tables: Win95 row striping and headers`
+9. `Boat gate dialog: Win95 modal`
+10. `Drill-down side panel: Win95 window`
+11. `Tab 3: rating sliders default to untouched, save disabled until rated`
+12. `Tab 2: fix per-feature plot title truncation`
+13. `Tab 3: verify and fix sign-in copy + crowdsource note`
+14. `Verify and remove any 'I Surfed This' remnants`
+
+### Non-goals
+
+No mobile-specific Win95 layout (Prompt #7). No regression math
+changes. No new features. No removal of existing features. No
+marquees / blinks / hit counters.
+
 ## [Unreleased] — Prompt #5: Tab 2 regression diagnostics
 
 Builds out Tab 2 (Regression Results) into a full diagnostic page.

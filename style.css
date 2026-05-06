@@ -1971,13 +1971,6 @@ a:hover { text-decoration: underline; }
   margin-bottom: 10px;
 }
 
-.modal-feedback {
-  padding-top: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
 /* ═══════════════════════════════════════════════════
    SURF LOG — Responsive
    ═══════════════════════════════════════════════════ */
