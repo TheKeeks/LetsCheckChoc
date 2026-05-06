@@ -1894,13 +1894,28 @@ function drawWindPanel(common, data) {
   ctx.stroke();
   ctx.restore();
 
+  // Horizontal gridlines at 5 mph intervals. Drawn after the area fill
+  // so they read as faint reference lines rather than data.
+  ctx.save();
+  ctx.strokeStyle = 'rgba(90, 85, 80, 0.12)';
+  ctx.lineWidth = 1;
+  for (let v = 5; v < windMaxY; v += 5) {
+    const yy = yWind(v);
+    ctx.beginPath();
+    ctx.moveTo(plotLeft, yy);
+    ctx.lineTo(plotLeft + plotW, yy);
+    ctx.stroke();
+  }
+  ctx.restore();
+
   const axisFont = isMobile ? '9px' : '10px';
   ctx.font = `${axisFont} "DM Mono", monospace`;
   ctx.fillStyle = '#5a5550';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`${windMaxY}`, plotLeft - 4, yWind(windMaxY));
-  ctx.fillText('0', plotLeft - 4, yWind(0));
+  for (let v = 0; v <= windMaxY; v += 5) {
+    ctx.fillText(`${v}`, plotLeft - 4, yWind(v));
+  }
   ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
@@ -2278,7 +2293,10 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   for (let i = extStart; i <= extEnd; i++) {
     if (windSpeeds[i] != null && windSpeeds[i] > windPeak) windPeak = windSpeeds[i];
   }
-  const windMaxY = Math.max(10, Math.ceil(windPeak * 1.2 / 5) * 5);
+  // Fixed 0–25 mph axis. Hours that exceed 25 mph clip at the ceiling
+  // — communicates "wind is howling" without rescaling the whole panel
+  // around a single storm hour.
+  const windMaxY = 25;
 
   // Common payload passed to each panel drawer.
   const common = {
