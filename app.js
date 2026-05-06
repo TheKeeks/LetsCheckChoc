@@ -176,6 +176,47 @@ function setCanvasDPR(canvas, ctx, cssW, cssH) {
   canvas.style.height = H + 'px';
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.scale(dpr, dpr);
+  _canvasDPRCache.set(canvas, { cssW: W, cssH: H, dpr });
+}
+
+// Per-canvas cache of the CSS dimensions last applied via setCanvasDPR.
+// Used by ensureCanvasCssDims so per-frame redraws (e.g. scrubber moves)
+// do NOT re-measure canvas.clientWidth — that read compounds when the
+// canvas has a border + box-sizing: border-box (web1 era), causing the
+// canvas to shrink a few pixels every redraw.
+const _canvasDPRCache = new WeakMap();
+
+// Returns the CSS width/height to use for drawing into `canvas`. On the
+// first call (cache miss) — or after invalidateCanvasDPR — measures the
+// canvas's natural CSS size and applies DPR scaling. On subsequent calls,
+// returns the cached dims without touching canvas.width/height/ctx.scale,
+// so the canvas does not shrink across redraws.
+function ensureCanvasCssDims(canvas, ctx) {
+  const dpr = window.devicePixelRatio || 1;
+  const cached = _canvasDPRCache.get(canvas);
+  if (cached && cached.dpr === dpr) {
+    // Reset the ctx transform to the cached DPR scale so per-frame draws
+    // start from a clean baseline (matches the old setCanvasDPR call site
+    // semantics) without resetting canvas.width / height.
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { cssW: cached.cssW, cssH: cached.cssH };
+  }
+  const cssW = canvas.clientWidth || (canvas.parentElement && canvas.parentElement.clientWidth) || 0;
+  const cssH = canvas.clientHeight || (canvas.parentElement && canvas.parentElement.clientHeight) || 0;
+  setCanvasDPR(canvas, ctx, cssW, cssH);
+  return { cssW, cssH };
+}
+
+// Drop the cached CSS dims for a canvas and strip its inline width/height
+// so it reverts to its CSS-driven (typically `width: 100%`) size. Call
+// this from a ResizeObserver before re-drawing — the next draw will then
+// re-measure from the canvas's natural size, not from a previously-set
+// inline style that compounds the box-sizing shrink.
+function invalidateCanvasDPR(canvas) {
+  if (!canvas) return;
+  _canvasDPRCache.delete(canvas);
+  canvas.style.width = '';
+  canvas.style.height = '';
 }
 
 function setFooter(id, text, url, urlLabel) {
@@ -1682,10 +1723,8 @@ function drawScrubberDot(ctx, x, y, color) {
 function drawSwellPanel(common, data) {
   const canvas = el('forecast-canvas-swell');
   if (!canvas) return null;
-  const cssW = canvas.clientWidth || canvas.parentElement.clientWidth;
-  const cssH = canvas.clientHeight || canvas.parentElement.clientHeight;
   const ctx = canvas.getContext('2d');
-  setCanvasDPR(canvas, ctx, cssW, cssH);
+  const { cssW, cssH } = ensureCanvasCssDims(canvas, ctx);
 
   const isMobile = common.isMobile;
   const plotLeft = FC_PAD.left;
@@ -1966,10 +2005,8 @@ function drawSwellPanel(common, data) {
 function drawWindPanel(common, data) {
   const canvas = el('forecast-canvas-wind');
   if (!canvas) return null;
-  const cssW = canvas.clientWidth || canvas.parentElement.clientWidth;
-  const cssH = canvas.clientHeight || canvas.parentElement.clientHeight;
   const ctx = canvas.getContext('2d');
-  setCanvasDPR(canvas, ctx, cssW, cssH);
+  const { cssW, cssH } = ensureCanvasCssDims(canvas, ctx);
 
   const isMobile = common.isMobile;
   const plotLeft = FC_PAD.left;
@@ -2083,10 +2120,8 @@ function drawWindPanel(common, data) {
 function drawTidePanel(common, data) {
   const canvas = el('forecast-canvas-tide');
   if (!canvas) return null;
-  const cssW = canvas.clientWidth || canvas.parentElement.clientWidth;
-  const cssH = canvas.clientHeight || canvas.parentElement.clientHeight;
   const ctx = canvas.getContext('2d');
-  setCanvasDPR(canvas, ctx, cssW, cssH);
+  const { cssW, cssH } = ensureCanvasCssDims(canvas, ctx);
 
   const isMobile = common.isMobile;
   const plotLeft = FC_PAD.left;
@@ -3575,6 +3610,13 @@ function drawSpectrum(spectral) {
         drawSpectrum(STATE.lastSpectral);
       }
       if (STATE.forecastData && STATE.forecastData.marine) {
+        // Drop cached CSS dims and inline sizing on the chart canvases
+        // so the next draw re-measures from their CSS-driven natural
+        // size (rather than reusing dims that pre-date the resize).
+        invalidateCanvasDPR(el('forecast-canvas-swell'));
+        invalidateCanvasDPR(el('forecast-canvas-wind'));
+        invalidateCanvasDPR(el('forecast-canvas-tide'));
+        invalidateCanvasDPR(el('forecast-canvas-days'));
         const d = STATE.forecastData;
         drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo, d.tidePred);
       }
