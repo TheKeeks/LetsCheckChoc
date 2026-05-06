@@ -394,7 +394,18 @@ a:hover { text-decoration: underline; }
   box-sizing: border-box;
   position: relative;
 }
-#forecast-chart-container .forecast-card-swell { height: 200px; }
+#forecast-chart-container .forecast-card-swell { height: 256px; }
+/* Persistent compass dial in the top-right of the swell card. Reads
+   the current scrubber hour and shows primary + secondary swell
+   FROM-directions as arrows. */
+#forecast-chart-container #forecast-compass {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 60px;
+  height: 60px;
+  pointer-events: none;
+}
 #forecast-chart-container .forecast-card-wind  { height: 120px; }
 /* Tide card hosts the inline NEXT LOW callout in a 24px row + the curve.
    Total = 8 (pad-top) + 24 (callout) + 1 (divider) + 120 (curve) + 8 (pad-bot) ≈ 161. */
