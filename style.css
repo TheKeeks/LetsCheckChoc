@@ -2376,3 +2376,39 @@ a:hover { text-decoration: underline; }
   padding-top: 6px;
 }
 .reg-prediction-empty { padding: 8px 0; }
+
+/* §4 — Predicted vs Actual scatters */
+.reg-pva-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 16px;
+}
+@media (max-width: 720px) {
+  .reg-pva-grid { grid-template-columns: 1fr; }
+}
+.reg-scatter {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.reg-scatter-title {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--ink);
+  font-weight: 500;
+}
+.reg-scatter-canvas { width: 100%; max-width: 280px; height: auto; }
+.reg-scatter-caption {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink2);
+}
+.reg-r2 { font-weight: 500; }
+.reg-r2-good { color: var(--green); }
+.reg-r2-fair { color: var(--orange); }
+.reg-r2-bad  { color: var(--red-m); }
+.reg-r2-na   { color: var(--ink4); }
+.reg-scatter-empty { padding: 24px 8px; text-align: center; }

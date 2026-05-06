@@ -5610,6 +5610,7 @@ function renderRegressionTab() {
   if (submodel) submodel.style.display = '';
 
   renderRegressionPredictionWidget();
+  renderRegressionPVA();
 
   // Weights panel (renderWeightsPanel toggles its own display).
   renderWeightsPanel();
@@ -5732,10 +5733,360 @@ function renderRegressionPredictionWidget() {
 }
 
 // Lightweight notify hook called by applyScrubberToHour so Tab 2 can
-// re-render the prediction widget when the user scrubs.
+// re-render the scrubber-tracking surfaces.
 function _regNotifyScrubberMoved() {
   if (STATE.activeTab !== 'regression') return;
   try { renderRegressionPredictionWidget(); } catch (_) {}
+  try { _regUpdateThresholdLights(); } catch (_) {}
+  try { renderRegressionFeatureGrid(); } catch (_) {}
+}
+
+// ── Tab 2: Sub-model registry ─────────────────────────────────────────
+//
+// Centralises the three sub-models so per-feature/per-importance/etc.
+// renderers can pivot off a single source of truth.
+const REG_SUBMODELS = {
+  wave: {
+    label: 'Wave',
+    title: 'Wave model',
+    target: 'size',
+    targetLabel: 'Size rating',
+    extractor: extractWaveFeatures,
+    targetFn: e => e.ratings && e.ratings.size,
+    featureNames: WAVE_FEATURE_NAMES,
+    weightsKey: 'surfLogWaveWeights',
+    statsKey: 'surfLogWaveStats',
+    rmseKey: 'surfLogWaveValidation',
+    predict: predictWaveRating
+  },
+  ride: {
+    label: 'Ride',
+    title: 'Ride model',
+    target: 'rideQuality',
+    targetLabel: 'Ride rating',
+    extractor: extractRideFeatures,
+    targetFn: e => e.ratings && e.ratings.rideQuality,
+    featureNames: RIDE_FEATURE_NAMES,
+    weightsKey: 'surfLogRideWeights',
+    statsKey: 'surfLogRideStats',
+    rmseKey: 'surfLogRideValidation',
+    predict: predictRideRating
+  },
+  cond: {
+    label: 'Conditions',
+    title: 'Conditions model',
+    target: 'windQuality',
+    targetLabel: 'Wind quality rating',
+    extractor: extractCondFeatures,
+    targetFn: e => e.ratings && e.ratings.windQuality,
+    featureNames: COND_FEATURE_NAMES,
+    weightsKey: 'surfLogCondWeights',
+    statsKey: 'surfLogCondStats',
+    rmseKey: 'surfLogCondValidation',
+    predict: predictCondRating
+  }
+};
+
+// Human-readable feature names. Only feature names not already obvious from
+// the underscore form get a custom label.
+const REG_FEATURE_LABELS = {
+  swell_height: 'Swell height',
+  swell_period: 'Swell period',
+  swell_dir_alignment: 'Swell direction alignment',
+  swell_dir_outside_deg: 'Direction outside window',
+  period_x_alignment: 'Period × alignment',
+  sec_swell_height: 'Secondary swell height',
+  sec_swell_period: 'Secondary swell period',
+  sec_dir_in_window: 'Secondary in window',
+  tide_height: 'Tide height',
+  time_to_low: 'Time to low tide',
+  low_incoming: 'Low incoming',
+  wind_speed: 'Wind speed',
+  wind_offshore: 'Wind offshoreness'
+};
+const REG_FEATURE_UNITS = {
+  swell_height: 'ft', swell_period: 's',
+  swell_dir_alignment: '', swell_dir_outside_deg: '°',
+  period_x_alignment: '',
+  sec_swell_height: 'ft', sec_swell_period: 's', sec_dir_in_window: '',
+  tide_height: 'ft', time_to_low: 'h', low_incoming: '',
+  wind_speed: 'mph', wind_offshore: ''
+};
+function regFeatureLabel(name) { return REG_FEATURE_LABELS[name] || name; }
+function regFeatureUnit(name) { return REG_FEATURE_UNITS[name] || ''; }
+
+// Returns { id, timestamp, isOwn, displayName, x, target, features } for the
+// user-scoped training set, plus the leave-one-out prediction at the
+// held-out index. Mirrors leaveOneOutRMSE at app.js:4813 — same fold layout
+// — so the per-session predictions reconcile with the surfaced LOO RMSE.
+function _regComputeLOOData(sub) {
+  const cfg = REG_SUBMODELS[sub];
+  const uid = window._fbUserId;
+  const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
+  const entries = userScoped.filter(e => e.conditions?.swell);
+  const rows = [];
+  for (const e of entries) {
+    const f = cfg.extractor(e.conditions);
+    const t = cfg.targetFn(e);
+    if (!f || typeof t !== 'number' || !isFinite(t)) continue;
+    rows.push({ entry: e, features: f, target: t });
+  }
+  if (!rows.length) return { rows: [], r2: null, rmse: null, baselineRMSE: null, n: 0 };
+  const X = rows.map(r => r.features);
+  const y = rows.map(r => r.target);
+  const nF = X[0].length;
+  const minSamples = Math.max(2 * nF, 12);
+  if (X.length < minSamples + 1) {
+    return { rows: [], r2: null, rmse: null, baselineRMSE: null, n: rows.length };
+  }
+  const preds = new Array(X.length).fill(null);
+  for (let h = 0; h < X.length; h++) {
+    const Xtr = X.slice(0, h).concat(X.slice(h + 1));
+    const ytr = y.slice(0, h).concat(y.slice(h + 1));
+    const m = _trainOnArrays(Xtr, ytr);
+    if (!m) continue;
+    let p = m.stats.targetMean;
+    for (let j = 0; j < nF; j++) {
+      const z = m.stats.std[j] > 1e-10 ? (X[h][j] - m.stats.mean[j]) / m.stats.std[j] : 0;
+      p += m.weights[j] * z;
+    }
+    preds[h] = p;
+  }
+  // Aggregate metrics
+  let sse = 0, n = 0, sum = 0;
+  for (let i = 0; i < y.length; i++) {
+    if (preds[i] == null) continue;
+    sum += y[i]; n++;
+  }
+  if (!n) return { rows: [], r2: null, rmse: null, baselineRMSE: null, n: rows.length };
+  const yMean = sum / n;
+  let ssTot = 0;
+  for (let i = 0; i < y.length; i++) {
+    if (preds[i] == null) continue;
+    sse += (preds[i] - y[i]) * (preds[i] - y[i]);
+    ssTot += (y[i] - yMean) * (y[i] - yMean);
+  }
+  const rmse = Math.sqrt(sse / n);
+  const baselineRMSE = Math.sqrt(ssTot / n);
+  const r2 = ssTot > 1e-10 ? 1 - sse / ssTot : null;
+  const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (preds[i] == null) continue;
+    out.push({
+      id: rows[i].entry.id,
+      entry: rows[i].entry,
+      timestamp: rows[i].entry.timestamp,
+      target: rows[i].target,
+      pred: preds[i],
+      features: rows[i].features
+    });
+  }
+  return { rows: out, r2, rmse, baselineRMSE, n: rows.length };
+}
+
+// Cache so we don't re-run LOO for every panel that needs it.
+let _regLOOCache = { wave: null, ride: null, cond: null, key: null };
+function _regLOOFor(sub) {
+  // Bust cache when the underlying training set changes (use _lastFitAt + n
+  // as a lightweight version stamp).
+  const key = (STATE._lastFitAt || 0) + ':' + (STATE._lastFitN || 0);
+  if (_regLOOCache.key !== key) {
+    _regLOOCache = { wave: null, ride: null, cond: null, key };
+  }
+  if (!_regLOOCache[sub]) _regLOOCache[sub] = _regComputeLOOData(sub);
+  return _regLOOCache[sub];
+}
+
+// ── Tab 2 §4: Predicted-vs-actual scatter plots (3 sub-models) ────────
+//
+// Hand-rolled Canvas 2D scatter — one per sub-model. Diagonal y=x reference,
+// dot-per-session, R²/RMSE/n caption coloured by R² band.
+
+const REG_SCATTER_W = 280, REG_SCATTER_H = 280;
+const REG_SCATTER_PAD = { left: 36, right: 12, top: 18, bottom: 32 };
+const REG_DOT_RADIUS = 5;
+const REG_DOT_FILL = 'rgba(90, 127, 160, 0.7)';   // primary swell blue, alpha 0.7
+const REG_DOT_FILL_OWN = 'rgba(90, 127, 160, 0.7)';
+const REG_DOT_FILL_OTHER = 'rgba(160, 152, 144, 0.4)';
+
+function _regDrawScatterAxes(ctx, w, h, opts) {
+  const pad = REG_SCATTER_PAD;
+  const xMin = opts.xMin, xMax = opts.xMax, yMin = opts.yMin, yMax = opts.yMax;
+  const plotW = w - pad.left - pad.right;
+  const plotH = h - pad.top - pad.bottom;
+  ctx.save();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+  // Axes
+  ctx.strokeStyle = '#d0cbc3';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, pad.top);
+  ctx.lineTo(pad.left, h - pad.bottom);
+  ctx.lineTo(w - pad.right, h - pad.bottom);
+  ctx.stroke();
+  // Tick labels
+  ctx.fillStyle = '#8a827a';
+  ctx.font = '10px DM Mono, Menlo, monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  const yTicks = opts.yTicks || [0, 5, 10];
+  for (const v of yTicks) {
+    const y = pad.top + plotH * (1 - (v - yMin) / (yMax - yMin));
+    ctx.fillText(String(v), pad.left - 4, y);
+    ctx.strokeStyle = '#f0ece6';
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(w - pad.right, y);
+    ctx.stroke();
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const xTicks = opts.xTicks || [0, 5, 10];
+  for (const v of xTicks) {
+    const x = pad.left + plotW * ((v - xMin) / (xMax - xMin));
+    ctx.fillText(String(v), x, h - pad.bottom + 4);
+  }
+  // Axis labels
+  ctx.fillStyle = '#5c554d';
+  ctx.font = '10px DM Mono, Menlo, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(opts.xLabel || '', pad.left + plotW / 2, h - 2);
+  ctx.save();
+  ctx.translate(10, pad.top + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(opts.yLabel || '', 0, 0);
+  ctx.restore();
+  ctx.restore();
+  return { plotW, plotH };
+}
+
+function _regProjectXY(v, opts, plotW, plotH) {
+  const pad = REG_SCATTER_PAD;
+  const x = pad.left + plotW * ((v.x - opts.xMin) / (opts.xMax - opts.xMin));
+  const y = pad.top + plotH * (1 - (v.y - opts.yMin) / (opts.yMax - opts.yMin));
+  return { x, y };
+}
+
+function _regR2Color(r2) {
+  if (r2 == null || !isFinite(r2)) return 'var(--ink3)';
+  if (r2 > 0.5) return 'var(--green)';
+  if (r2 >= 0.2) return 'var(--orange)';
+  return 'var(--red-m)';
+}
+
+function _regBuildScatterCanvas(sub, looData) {
+  const cfg = REG_SUBMODELS[sub];
+  const wrap = document.createElement('div');
+  wrap.className = 'reg-scatter';
+  wrap.dataset.sub = sub;
+  const title = document.createElement('div');
+  title.className = 'reg-scatter-title';
+  title.textContent = cfg.title;
+  wrap.appendChild(title);
+  if (!looData.rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'reg-scatter-empty sl-hint';
+    const minSamples = Math.max(2 * cfg.featureNames.length, 12) + 1;
+    empty.textContent = looData.n < minSamples
+      ? 'Need ' + (minSamples - looData.n) + ' more session' + ((minSamples - looData.n) === 1 ? '' : 's') + ' to train this model.'
+      : 'Not enough data to plot.';
+    wrap.appendChild(empty);
+    return wrap;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.className = 'reg-scatter-canvas';
+  wrap.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  setCanvasDPR(canvas, ctx, REG_SCATTER_W, REG_SCATTER_H);
+  const opts = {
+    xMin: 0, xMax: 10, yMin: 0, yMax: 10,
+    xTicks: [0, 5, 10], yTicks: [0, 5, 10],
+    xLabel: 'Predicted', yLabel: 'Actual'
+  };
+  const { plotW, plotH } = _regDrawScatterAxes(ctx, REG_SCATTER_W, REG_SCATTER_H, opts);
+  // Diagonal y=x reference (perfect prediction line)
+  const pad = REG_SCATTER_PAD;
+  ctx.save();
+  ctx.strokeStyle = '#c0bab2';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 3]);
+  const a = _regProjectXY({ x: 0, y: 0 }, opts, plotW, plotH);
+  const b = _regProjectXY({ x: 10, y: 10 }, opts, plotW, plotH);
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Dots
+  const points = [];
+  for (const row of looData.rows) {
+    const px = pad.left + plotW * (row.pred / 10);
+    const py = pad.top + plotH * (1 - row.target / 10);
+    ctx.beginPath();
+    ctx.fillStyle = REG_DOT_FILL;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.arc(px, py, REG_DOT_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    points.push({ px, py, row });
+  }
+  ctx.restore();
+  // Caption
+  const cap = document.createElement('div');
+  cap.className = 'reg-scatter-caption';
+  const r2Class = looData.r2 == null ? 'reg-r2-na'
+    : looData.r2 > 0.5 ? 'reg-r2-good'
+    : looData.r2 >= 0.2 ? 'reg-r2-fair'
+    : 'reg-r2-bad';
+  const r2Str = looData.r2 == null ? '—' : looData.r2.toFixed(2);
+  const rmseStr = looData.rmse == null ? '—' : looData.rmse.toFixed(2);
+  cap.innerHTML = '<span class="reg-r2 ' + r2Class + '">R² ' + r2Str + '</span>'
+    + ' · RMSE ' + rmseStr
+    + ' · n=' + looData.rows.length;
+  wrap.appendChild(cap);
+  // Hover + click → drill-down (drill-down panel is a separate prompt, but
+  // wire the click target so commit 4 has the entry available).
+  canvas.style.cursor = 'pointer';
+  canvas.addEventListener('mousemove', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    let hit = null;
+    for (const p of points) {
+      const d = Math.hypot(mx - p.px, my - p.py);
+      if (d <= REG_DOT_RADIUS + 3) { hit = p; break; }
+    }
+    canvas.title = hit
+      ? new Date(hit.row.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        + ' · pred ' + hit.row.pred.toFixed(1) + ' / actual ' + hit.row.target.toFixed(1)
+      : '';
+  });
+  canvas.addEventListener('click', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    for (const p of points) {
+      const d = Math.hypot(mx - p.px, my - p.py);
+      if (d <= REG_DOT_RADIUS + 3) {
+        if (typeof openRegressionDrilldown === 'function') {
+          openRegressionDrilldown(p.row.entry, sub);
+        }
+        return;
+      }
+    }
+  });
+  return wrap;
+}
+
+function renderRegressionPVA() {
+  const grid = el('reg-pva-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  for (const sub of ['wave', 'ride', 'cond']) {
+    const looData = _regLOOFor(sub);
+    grid.appendChild(_regBuildScatterCanvas(sub, looData));
+  }
 }
 
 // ════════════════════════════════════════════════
