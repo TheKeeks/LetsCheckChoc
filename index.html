@@ -8,25 +8,65 @@
   <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="styles-web1.css">
+  <link rel="stylesheet" href="styles-web1-extensions.css">
 </head>
-<body>
-  <!-- Boat question gate -->
+<body data-era="web1">
+  <!-- Boat question gate (Win95 modal) -->
   <div id="gate-overlay">
-    <div id="gate-card">
-      <div id="gate-question">
-        <div class="gate-icon">⚓</div>
-        <h2>Are you coming by boat today?</h2>
-        <div class="gate-buttons">
-          <button id="gate-yes" class="gate-btn">Yes</button>
-          <button id="gate-no" class="gate-btn gate-btn-primary">No</button>
-        </div>
+    <div id="gate-card" class="w1-window" role="dialog" aria-modal="true" aria-labelledby="gate-titlebar-text">
+      <div class="w1-titlebar">
+        <span class="title" id="gate-titlebar-text">Are you coming by boat today?</span>
+        <span class="ctrls" aria-hidden="true">
+          <button type="button" tabindex="-1" aria-label="minimize">_</button>
+          <button type="button" tabindex="-1" aria-label="maximize">□</button>
+          <button type="button" tabindex="-1" aria-label="close">×</button>
+        </span>
       </div>
-      <div id="gate-go-home" class="hidden">Go Home</div>
+      <div class="gate-body">
+        <div id="gate-question">
+          <div style="display:flex;align-items:center;">
+            <div class="gate-icon" aria-hidden="true">⚓</div>
+            <h2>Are you coming by boat today?</h2>
+          </div>
+          <div class="gate-buttons">
+            <button id="gate-yes" class="gate-btn">Yes</button>
+            <button id="gate-no" class="gate-btn gate-btn-primary">No</button>
+          </div>
+        </div>
+        <div id="gate-go-home" class="hidden">Go Home</div>
+      </div>
     </div>
   </div>
 
-  <!-- Main app -->
-  <div id="app" class="hidden">
+  <!-- Main app — wrapped in a Win95 IE-style window -->
+  <div id="app-window" class="w1-window hidden">
+    <!-- Decorative title bar -->
+    <div class="w1-titlebar" aria-hidden="true">
+      <span class="title">🌊 LetsCheckChoc — Microsoft Internet Explorer</span>
+      <span class="ctrls">
+        <button type="button" tabindex="-1" aria-label="minimize">_</button>
+        <button type="button" tabindex="-1" aria-label="maximize">□</button>
+        <button type="button" tabindex="-1" aria-label="close">×</button>
+      </span>
+    </div>
+    <!-- Decorative menu bar -->
+    <div class="w1-menubar" aria-hidden="true">
+      <span class="item"><u>F</u>ile</span>
+      <span class="item"><u>E</u>dit</span>
+      <span class="item"><u>V</u>iew</span>
+      <span class="item">F<u>a</u>vorites</span>
+      <span class="item"><u>T</u>ools</span>
+      <span class="item"><u>H</u>elp</span>
+    </div>
+    <!-- Address bar -->
+    <div class="w1-addrbar">
+      <span class="lbl">Address:</span>
+      <span class="url" id="w1-addr-url">http://www.letscheckchoc.com/index.html</span>
+      <button type="button" class="w1-btn go" tabindex="-1" aria-hidden="true">Go</button>
+    </div>
+
+    <div id="app">
     <header id="app-header">
       <div class="header-left">
         <h1 class="site-title">LetsCheckChoc</h1>
@@ -58,9 +98,9 @@
 
     <!-- Tab navigation -->
     <nav class="tab-bar" id="tab-bar">
-      <button class="tab-btn active" data-tab="forecast" id="tab-btn-forecast">Current Conditions &amp; Forecast</button>
-      <button class="tab-btn" data-tab="regression" id="tab-btn-regression">Regression Results</button>
-      <button class="tab-btn" data-tab="surflog" id="tab-btn-surflog">Log a Session</button>
+      <button class="tab-btn active" data-tab="forecast" id="tab-btn-forecast">Forecast</button>
+      <button class="tab-btn" data-tab="regression" id="tab-btn-regression">Regression</button>
+      <button class="tab-btn" data-tab="surflog" id="tab-btn-surflog">Surf Log</button>
     </nav>
 
     <!-- ═══ TAB 1 — CURRENT CONDITIONS & FORECAST ═══ -->
@@ -283,17 +323,21 @@
 
       <!-- 3. Predicted vs Actual scatters -->
       <section class="panel" id="panel-regression-pva" style="display:none;">
-        <h3 class="panel-title">Predicted vs Actual</h3>
-        <div class="reg-pva-grid" id="reg-pva-grid"></div>
+        <fieldset class="w1-fieldset">
+          <legend>Predicted vs Actual</legend>
+          <div class="reg-pva-grid" id="reg-pva-grid"></div>
+        </fieldset>
       </section>
 
       <!-- 4. Match threshold tuning -->
       <section class="panel" id="panel-regression-thresholds" style="display:none;">
-        <h3 class="panel-title">Match Thresholds</h3>
-        <div class="reg-threshold-panel" id="reg-threshold-panel"></div>
-        <div class="reg-threshold-note sl-hint">
-          Currently scrubbed hour gets 3 lights using these thresholds.
-        </div>
+        <fieldset class="w1-fieldset">
+          <legend>Match Thresholds</legend>
+          <div class="reg-threshold-panel" id="reg-threshold-panel"></div>
+          <div class="reg-threshold-note sl-hint">
+            Currently scrubbed hour gets 3 lights using these thresholds.
+          </div>
+        </fieldset>
       </section>
 
       <!-- 5. Sub-model selector -->
@@ -307,8 +351,8 @@
         </div>
 
         <!-- 6. Per-feature scatter grid -->
-        <div class="reg-section">
-          <h4 class="reg-section-heading">Per-feature scatters</h4>
+        <fieldset class="w1-fieldset reg-section">
+          <legend id="reg-feature-legend">Per-feature scatters</legend>
           <div class="reg-feature-note sl-hint">
             Per-feature plots show all sessions in the community log. Lines are fit only to your sessions.
             <span class="reg-legend-inline">
@@ -317,28 +361,28 @@
             </span>
           </div>
           <div class="reg-feature-grid" id="reg-feature-grid"></div>
-        </div>
+        </fieldset>
 
         <!-- 7. Feature importance -->
-        <div class="reg-section">
-          <h4 class="reg-section-heading">Feature importance</h4>
+        <fieldset class="w1-fieldset reg-section">
+          <legend>Feature Importance</legend>
           <div class="reg-importance" id="reg-importance"></div>
-        </div>
+        </fieldset>
 
         <!-- 8. Preferred conditions -->
-        <div class="reg-section">
-          <h4 class="reg-section-heading">Preferred conditions</h4>
+        <fieldset class="w1-fieldset reg-section">
+          <legend>Preferred Conditions</legend>
           <div class="reg-preferred" id="reg-preferred"></div>
-        </div>
+        </fieldset>
 
         <!-- 9. Fit metrics + residual chart -->
-        <div class="reg-section">
-          <h4 class="reg-section-heading">Model fit</h4>
+        <fieldset class="w1-fieldset reg-section">
+          <legend>Model Fit</legend>
           <div class="reg-fit-row">
             <div class="reg-fit-metrics" id="reg-fit-metrics"></div>
             <div class="reg-residual" id="reg-residual"></div>
           </div>
-        </div>
+        </fieldset>
       </section>
 
       <!-- 10. Existing weights panel (collapsed by default) -->
@@ -372,7 +416,8 @@
 
       <!-- Log a session form (Choc only) -->
       <section class="panel" id="panel-surflog-form" style="display:none;">
-        <h3 class="panel-title">Log a Session</h3>
+        <fieldset class="w1-fieldset">
+          <legend>Log a Session</legend>
         <div class="surflog-form" id="surflog-form">
           <div class="sl-field">
             <label class="sl-label" for="sl-datetime">Date &amp; Time</label>
@@ -380,19 +425,22 @@
           </div>
 
           <div class="sl-ratings-row">
-            <div class="sl-slider-group">
+            <div class="sl-slider-group w1-untouched" data-rating="size">
               <label class="sl-label">Size <span class="sl-slider-val" id="sl-size-val">5</span></label>
-              <input type="range" id="sl-size" class="sl-range" min="0" max="10" value="5">
+              <span class="w1-slider-placeholder">Tap to rate</span>
+              <input type="range" id="sl-size" class="sl-range w1-untouched" min="0" max="10" value="5">
               <span class="sl-slider-desc" id="sl-size-desc"></span>
             </div>
-            <div class="sl-slider-group">
+            <div class="sl-slider-group w1-untouched" data-rating="windQuality">
               <label class="sl-label">Wind Quality <span class="sl-slider-val" id="sl-wind-val">5</span></label>
-              <input type="range" id="sl-wind-quality" class="sl-range" min="0" max="10" value="5">
+              <span class="w1-slider-placeholder">Tap to rate</span>
+              <input type="range" id="sl-wind-quality" class="sl-range w1-untouched" min="0" max="10" value="5">
               <span class="sl-slider-desc" id="sl-wind-desc"></span>
             </div>
-            <div class="sl-slider-group">
+            <div class="sl-slider-group w1-untouched" data-rating="rideQuality">
               <label class="sl-label">Ride Quality <span class="sl-slider-val" id="sl-ride-val">5</span></label>
-              <input type="range" id="sl-ride-quality" class="sl-range" min="0" max="10" value="5">
+              <span class="w1-slider-placeholder">Tap to rate</span>
+              <input type="range" id="sl-ride-quality" class="sl-range w1-untouched" min="0" max="10" value="5">
               <span class="sl-slider-desc" id="sl-ride-desc"></span>
             </div>
           </div>
@@ -425,15 +473,17 @@
 
           <div class="sl-btn-row">
             <button class="sl-btn" id="sl-lookup-btn">Lookup Historical Conditions</button>
-            <button class="sl-btn sl-btn-primary" id="sl-save-btn">Save Entry</button>
+            <button class="sl-btn sl-btn-primary" id="sl-save-btn" disabled>Save Entry</button>
             <button class="sl-btn" id="sl-cancel-edit-btn" style="display:none;">Cancel Edit</button>
           </div>
         </div>
+        </fieldset>
       </section>
 
       <!-- Past sessions table (always visible — crowdsourced view) -->
       <section class="panel" id="panel-surflog-entries">
-        <h3 class="panel-title">Past Sessions</h3>
+        <fieldset class="w1-fieldset">
+          <legend>Past Sessions</legend>
         <div class="sl-crowdsource-note">
           Crowdsourced log — sessions from all signed-in users are visible. Training uses your sessions only.
         </div>
@@ -478,6 +528,7 @@
           <button class="sl-btn sl-btn-sm" id="sl-export-csv">Export CSV</button>
           <span class="sl-storage-note" id="sl-storage-note"></span>
         </div>
+        </fieldset>
       </section>
 
     </div><!-- end #view-surflog -->
@@ -506,7 +557,15 @@
     <footer id="page-footer">
       <span>LetsCheckChoc — data from <a href="https://www.ndbc.noaa.gov/" target="_blank" rel="noopener">ndbc</a>, <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, <a href="https://tidesandcurrents.noaa.gov/" target="_blank" rel="noopener">CO-OPS</a></span>
     </footer>
-  </div>
+    </div><!-- end #app -->
+
+    <!-- Status bar -->
+    <div class="w1-statusbar" id="w1-statusbar" aria-hidden="true">
+      <span class="seg" id="w1-status-1">Done</span>
+      <span class="seg" id="w1-status-2">No buoy selected</span>
+      <span class="seg" id="w1-status-3">🔒 Internet</span>
+    </div>
+  </div><!-- end #app-window -->
 
   <!-- Firebase SDK (compat) -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
