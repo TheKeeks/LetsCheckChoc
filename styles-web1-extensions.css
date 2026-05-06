@@ -896,3 +896,74 @@ body[data-era="web1"] {
 [data-era="web1"] .reg-prediction-card {
   border-radius: 0 !important;
 }
+
+/* ── FIX 2 — canvas content sits in a sunken white inset bevel ──── */
+
+/* Forecast chart canvases inside .forecast-card raised bevels. */
+[data-era="web1"] #forecast-chart-container .forecast-card > canvas {
+  background: #ffffff;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  box-sizing: border-box;
+}
+
+/* The compass dial in the swell card top-right is *not* a plot —
+   keep it transparent and unbordered so it overlays cleanly. */
+[data-era="web1"] #forecast-chart-container #forecast-compass {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+/* Day-label band canvas — keep it on the gray panel surface (not
+   inset white) so the day text reads as a label strip, not a chart. */
+[data-era="web1"] #forecast-chart-container #forecast-canvas-days {
+  background: var(--w1-face);
+  border: none;
+  box-shadow: none;
+}
+
+/* Lineup map image wrapper — already a sunken bevel via .lineup-frame
+   above; here we just guarantee the radius is 0. */
+[data-era="web1"] .lineup-frame { border-radius: 0; }
+
+/* Compass-rose / spectrum / tide chart canvases — sunken white wells
+   inside the (raised) outer .panel. */
+[data-era="web1"] #panel-compass .chart-container,
+[data-era="web1"] #panel-spectrum .chart-container,
+[data-era="web1"] #panel-tides .chart-container {
+  background: #ffffff;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  box-sizing: border-box;
+  padding: 4px;
+}
+
+/* Per-feature scatter mini canvases inside the now-raised mini cards. */
+[data-era="web1"] .reg-feature-mini .reg-feature-mini-canvas {
+  background: #ffffff;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  box-sizing: border-box;
+}
+
+/* PVA scatter canvases inside the now-raised .reg-scatter cards. */
+[data-era="web1"] .reg-pva-grid .reg-scatter .reg-scatter-canvas {
+  background: #ffffff;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  box-sizing: border-box;
+}
+
+/* Residual chart canvas (inside .reg-residual). */
+[data-era="web1"] .reg-residual .reg-residual-canvas {
+  background: #ffffff;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  box-sizing: border-box;
+}
