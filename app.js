@@ -1692,47 +1692,6 @@ function drawSwellPanel(common, data) {
   ctx.fillStyle = '#c46a32';
   ctx.fillText('s', plotLeft + plotW - 6, top + 2);
 
-  // Inline daily-peak direction arrows: one per day at the day's
-  // swell-height maximum. Surfline-style at-a-glance summary; replaces
-  // the old below-tide arrow strip. swell_wave_direction is the
-  // direction the swell is COMING FROM; rotate by +180 so each arrow
-  // points where the swell is HEADING (matches how surfers visualize
-  // a swell hitting a coast).
-  const dayPeaks = [];
-  for (let d = 0; d < common.dayCount; d++) {
-    const dayStart = new Date(common.firstDay);
-    dayStart.setDate(dayStart.getDate() + d);
-    const dayEnd = new Date(dayStart);
-    dayEnd.setDate(dayEnd.getDate() + 1);
-    let bestI = -1, bestH = -Infinity;
-    for (let i = 0; i <= common.lastIdx; i++) {
-      const tt = common.allTimes[i].getTime();
-      if (tt < dayStart.getTime() || tt >= dayEnd.getTime()) continue;
-      const v = heights[i];
-      if (v == null) continue;
-      if (v > bestH) { bestH = v; bestI = i; }
-    }
-    if (bestI >= 0 && swellDirs[bestI] != null) dayPeaks.push(bestI);
-  }
-
-  const arrowSize = isMobile ? 7 : 8;
-  const arrowLineW = 1.5;
-  for (const i of dayPeaks) {
-    const t = common.allTimes[i];
-    const dir = swellDirs[i];
-    const xx = xPos(t);
-    if (xx < plotLeft || xx > plotLeft + plotW) continue;
-    const peakY = ySwell(heights[i]);
-    const arrowY = Math.max(top + arrowSize + 2, peakY - 14);
-    // White-fill / blue-stroke arrow, drawn above the swell-height curve.
-    drawArrowFilled(ctx, xx, arrowY, dir, arrowSize, '#ffffff', '#3a5570', arrowLineW);
-    ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
-    ctx.fillStyle = '#666666';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText(directionLabel(dir), xx, arrowY + arrowSize + 1);
-  }
-
   return {
     canvas, cssW, cssH, plotLeft, plotW, top, h,
     swellMaxY, ySwell, yPeriod
