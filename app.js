@@ -2489,6 +2489,9 @@ function applyScrubberToHour(idx) {
   // ── "Reset to now" link visibility ──
   const resetRow = el('forecast-reset-row');
   if (resetRow) resetRow.style.display = isScrubberAtNow() ? 'none' : '';
+
+  // ── Cross-feature: Tab 2 prediction widget tracks the scrubber too. ──
+  if (typeof _regNotifyScrubberMoved === 'function') _regNotifyScrubberMoved();
 }
 
 function applyStatGridForHour(idx) {
@@ -5600,15 +5603,139 @@ function renderRegressionTab() {
       ' · last refit <strong>' + fitText + '</strong>';
   }
 
-  // The remaining sections are populated by subsequent prompts/commits.
-  // Keep them visible so their (currently empty) shells are present.
+  // The remaining sections are populated incrementally per Prompt #5.
   if (prediction) prediction.style.display = '';
   if (pva) pva.style.display = '';
   if (thresholds) thresholds.style.display = '';
   if (submodel) submodel.style.display = '';
 
+  renderRegressionPredictionWidget();
+
   // Weights panel (renderWeightsPanel toggles its own display).
   renderWeightsPanel();
+}
+
+// ── Tab 2 §3: "If I went at scrubbed time" prediction widget ──────────
+//
+// Reads the scrubbed hour index from STATE.scrubberIdx (or the persisted
+// sessionStorage hour). Pulls the same cached marine/wind/tide data Tab 1
+// uses, runs buildForecastConditions + the three predict* helpers, and
+// renders three rating bars with forecast detail.
+function _regResolveScrubberHour() {
+  const cs = STATE.forecastChart;
+  const marine = STATE._cachedMarine, wind = STATE._cachedWind;
+  if (!marine?.hourly?.time?.length || !wind?.hourly) return null;
+  let idx = (typeof STATE.scrubberIdx === 'number' && STATE.scrubberIdx >= 0)
+    ? STATE.scrubberIdx
+    : -1;
+  // Fall back to sessionStorage if scrubber state isn't initialized yet.
+  if (idx < 0) {
+    let stored = null;
+    try { stored = sessionStorage.getItem('lcc-scrubber-hour'); } catch (_) {}
+    if (stored && cs) {
+      const targetMs = new Date(stored).getTime();
+      if (Number.isFinite(targetMs)) idx = findHourIndexForTime(targetMs, cs);
+    }
+  }
+  if (idx < 0) {
+    // Default to "now" — find the hour closest to now in marine.hourly.time.
+    const now = Date.now();
+    const times = marine.hourly.time;
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < times.length; i++) {
+      const d = Math.abs(new Date(times[i]).getTime() - now);
+      if (d < bd) { bd = d; best = i; }
+    }
+    idx = best;
+  }
+  return idx;
+}
+
+function _regRatingBar(label, value) {
+  const v = (typeof value === 'number' && isFinite(value)) ? value : null;
+  const filled = v == null ? 0 : Math.max(0, Math.min(10, Math.round(v)));
+  const dots = [];
+  for (let i = 0; i < 10; i++) {
+    dots.push('<span class="reg-dot' + (i < filled ? ' filled' : '') + '"></span>');
+  }
+  const right = v == null ? '<span class="reg-rating-empty">— / 10 · needs more sessions</span>'
+    : '<span class="reg-rating-num">' + v.toFixed(1) + ' / 10</span>';
+  return '<div class="reg-rating-row">' +
+    '<span class="reg-rating-label">' + label + '</span>' +
+    '<span class="reg-rating-dots">' + dots.join('') + '</span>' +
+    right +
+    '</div>';
+}
+
+function _regForecastSummaryLine(cond) {
+  if (!cond?.swell) return '';
+  const s = cond.swell, w = cond.wind || {}, t = cond.tide || {};
+  const swH = (s.height != null) ? s.height.toFixed(1) + 'ft' : '—';
+  const swP = (s.period != null) ? s.period.toFixed(1) + 's' : '—';
+  const swD = (s.direction != null) ? directionLabel(s.direction) : '—';
+  const wSpd = (w.speed != null) ? Math.round(w.speed) : '—';
+  const wDir = (w.direction != null) ? directionLabel(w.direction) : '';
+  const tH = (t.height != null) ? (t.height >= 0 ? '+' : '') + t.height.toFixed(1) + 'ft' : '—';
+  return 'Forecast: ' + swH + ' @ ' + swP + ' ' + swD + ' · wind ' + wSpd + 'mph ' + wDir + ' · tide ' + tH;
+}
+
+function _regHeaderLabelForHour(hourMs) {
+  const cs = STATE.forecastChart;
+  const nowIdx = cs ? findHourIndexForTime(Date.now(), cs) : -1;
+  const t = new Date(hourMs);
+  const dayMs = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
+  const todayMs = (() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime(); })();
+  const diffDays = Math.round((dayMs - todayMs) / 86400000);
+  const isNow = (cs && nowIdx >= 0 && cs.times && cs.times[nowIdx] && cs.times[nowIdx].getTime() === t.getTime());
+  if (isNow) return 'IF I WENT NOW';
+  let dayLabel;
+  if (diffDays === 0) dayLabel = 'Today';
+  else if (diffDays === 1) dayLabel = 'Tomorrow';
+  else dayLabel = t.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
+  const timeLabel = formatTime(t);
+  return 'IF I WENT AT ' + dayLabel + ', ' + timeLabel.replace(/\s/g, '');
+}
+
+function renderRegressionPredictionWidget() {
+  const card = el('reg-prediction-card');
+  if (!card) return;
+  const marine = STATE._cachedMarine, wind = STATE._cachedWind, tideHiLo = STATE._cachedTideHiLo;
+  if (!marine?.hourly || !wind?.hourly) {
+    card.innerHTML = '<div class="reg-prediction-empty sl-hint">Forecast not loaded yet — predictions will appear once the chart is populated.</div>';
+    return;
+  }
+  const idx = _regResolveScrubberHour();
+  if (idx == null || idx < 0) {
+    card.innerHTML = '<div class="reg-prediction-empty sl-hint">Couldn\'t resolve the scrubbed hour.</div>';
+    return;
+  }
+  const hourTimeStr = marine.hourly.time?.[idx];
+  if (!hourTimeStr) {
+    card.innerHTML = '<div class="reg-prediction-empty sl-hint">Hour out of range.</div>';
+    return;
+  }
+  const cond = buildForecastConditions(marine, wind, tideHiLo, idx);
+  const wf = cond ? extractWaveFeatures(cond) : null;
+  const rf = cond ? extractRideFeatures(cond) : null;
+  const cf = cond ? extractCondFeatures(cond) : null;
+  const wavePred = wf ? predictWaveRating(wf) : null;
+  const ridePred = rf ? predictRideRating(rf) : null;
+  const condPred = cf ? predictCondRating(cf) : null;
+  const header = _regHeaderLabelForHour(new Date(hourTimeStr).getTime());
+  const bars = _regRatingBar('Wave size', wavePred) +
+    _regRatingBar('Ride quality', ridePred) +
+    _regRatingBar('Wind/conditions', condPred);
+  const summary = _regForecastSummaryLine(cond);
+  card.innerHTML = '<div class="reg-prediction-header">' + header + '</div>' +
+    '<div class="reg-prediction-bars">' + bars + '</div>' +
+    (summary ? '<div class="reg-prediction-summary">' + summary + '</div>' : '');
+}
+
+// Lightweight notify hook called by applyScrubberToHour so Tab 2 can
+// re-render the prediction widget when the user scrubs.
+function _regNotifyScrubberMoved() {
+  if (STATE.activeTab !== 'regression') return;
+  try { renderRegressionPredictionWidget(); } catch (_) {}
 }
 
 // ════════════════════════════════════════════════

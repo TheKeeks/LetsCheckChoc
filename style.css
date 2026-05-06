@@ -2327,3 +2327,52 @@ a:hover { text-decoration: underline; }
   padding: 0 4px;
   border-radius: 2px;
 }
+
+/* §3 — "If I went at scrubbed time" prediction widget */
+.reg-prediction-card {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--card-r);
+  background: var(--bg-alt);
+}
+.reg-prediction-header {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink);
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+.reg-prediction-bars {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.reg-rating-row {
+  display: grid;
+  grid-template-columns: 140px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+.reg-rating-label { color: var(--ink2); }
+.reg-rating-dots { display: inline-flex; gap: 2px; }
+.reg-rating-dots .reg-dot {
+  display: inline-block;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+.reg-rating-dots .reg-dot.filled {
+  background: var(--blue);
+  border-color: var(--blue);
+}
+.reg-rating-num { color: var(--ink); font-weight: 500; }
+.reg-rating-empty { color: var(--ink4); font-style: italic; font-size: 0.72rem; }
+.reg-prediction-summary {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink3);
+  border-top: 1px dashed var(--border);
+  padding-top: 6px;
+}
+.reg-prediction-empty { padding: 8px 0; }
