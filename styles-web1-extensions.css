@@ -967,3 +967,18 @@ body[data-era="web1"] {
   box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
   box-sizing: border-box;
 }
+
+/* ── FIX 3 — section labels onto the gray bevel margin ──────────── */
+
+/* SWELL / WIND / TIDE labels sit in the .forecast-card's left padding
+   column (gray, 64px wide), readable as navy MS Sans Serif. */
+[data-era="web1"] #forecast-chart-container .forecast-section-label {
+  background: var(--w1-face);
+  color: var(--w1-navy);
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  font-weight: bold;
+  font-variant: normal;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
