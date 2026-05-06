@@ -850,3 +850,49 @@ body[data-era="web1"] {
   gap: 6px;
   align-items: center;
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   Prompt #6 follow-up — kill remaining 2020s card styling
+   ─────────────────────────────────────────────────────────────────────
+   Selectors here run higher-specificity than the modern style.css
+   defaults so the Win95 bevels actually win the cascade.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── FIX 1 — outer card containers are raised bevels ─────────────── */
+
+/* Inner forecast cards (SWELL / WIND / TIDE) — raised gray bevel.
+   Beats `#forecast-chart-container .forecast-card` in style.css. */
+[data-era="web1"] #forecast-chart-container .forecast-card {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  border-radius: 0;
+}
+
+/* Tab 2 PVA scatter cards — raised bevel; beats `.reg-scatter`. */
+[data-era="web1"] .reg-pva-grid .reg-scatter {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  border-radius: 0;
+}
+
+/* Per-feature mini cards — flip from sunken to raised so the canvas
+   inside can be the sunken inset. */
+[data-era="web1"] .reg-feature-grid .reg-feature-mini {
+  background: var(--w1-face);
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+}
+
+/* Make sure no panel (outer or inner) keeps its modern card border /
+   radius / drop shadow. */
+[data-era="web1"] .panel,
+[data-era="web1"] .panel-half,
+[data-era="web1"] .reg-section,
+[data-era="web1"] .condition-card,
+[data-era="web1"] .reg-prediction-card {
+  border-radius: 0 !important;
+}
