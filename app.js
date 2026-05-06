@@ -267,6 +267,7 @@ function initGate() {
     STATE.boatGatePassed = true;
     el('gate-overlay').classList.add('hidden');
     el('app').classList.remove('hidden');
+    el('app-window')?.classList.remove('hidden');
     initApp();
     return;
   }
@@ -292,6 +293,7 @@ function initGate() {
     STATE.boatGatePassed = true;
     el('gate-overlay').classList.add('hidden');
     el('app').classList.remove('hidden');
+    el('app-window')?.classList.remove('hidden');
     initApp();
   });
 }
@@ -842,6 +844,7 @@ function selectBuoy(buoy) {
 
   // Load all data
   loadAllData(buoy);
+  if (typeof updateW1StatusBar === 'function') updateW1StatusBar();
 }
 
 function selectPin(lat, lon) {
@@ -856,6 +859,7 @@ function selectPin(lat, lon) {
   syncBuoySelectDropdown();
   collapseBuoyMapForSelection(null, lat, lon);
   loadPinData(lat, lon);
+  if (typeof updateW1StatusBar === 'function') updateW1StatusBar();
 }
 
 async function selectTideStation(station) {
@@ -3489,6 +3493,7 @@ async function loadSurfLog() {
       STATE.surfLog = raw ? JSON.parse(raw) : [];
     } catch (e2) { STATE.surfLog = []; }
   }
+  if (typeof updateW1StatusBar === 'function') updateW1StatusBar();
 }
 
 function saveSurfLog() {
@@ -3496,6 +3501,7 @@ function saveSurfLog() {
     localStorage.setItem('lcc_surfLog', JSON.stringify(STATE.surfLog));
     updateStorageNote();
   } catch (e) { alert('Storage full — try removing photos or exporting.'); }
+  if (typeof updateW1StatusBar === 'function') updateW1StatusBar();
 }
 
 async function addLogEntry(entry) {
@@ -3741,6 +3747,12 @@ function switchTab(tab) {
   if (vF) vF.style.display = tab === 'forecast' ? '' : 'none';
   if (vR) vR.style.display = tab === 'regression' ? '' : 'none';
   if (vS) vS.style.display = tab === 'surflog' ? '' : 'none';
+  // Win95 chrome: update the decorative address bar to mirror the active tab.
+  const addr = el('w1-addr-url');
+  if (addr) {
+    const file = tab === 'regression' ? 'regression.html' : tab === 'surflog' ? 'log.html' : 'index.html';
+    addr.textContent = 'http://www.letscheckchoc.com/' + file;
+  }
   if (tab === 'regression') {
     renderRegressionTab();
   }
@@ -3749,6 +3761,26 @@ function switchTab(tab) {
     const authPrompt = el('sl-auth-prompt');
     if (authPrompt && window._fbUserIsAnon !== false) {
       authPrompt.style.display = '';
+    }
+  }
+  if (typeof updateW1StatusBar === 'function') updateW1StatusBar();
+}
+
+// Win95 status bar: mirrors session count + active buoy. Decorative.
+function updateW1StatusBar() {
+  const seg1 = document.getElementById('w1-status-1');
+  const seg2 = document.getElementById('w1-status-2');
+  if (seg1) {
+    const n = (STATE.surfLog && STATE.surfLog.length) || 0;
+    seg1.textContent = 'Done · ' + n + ' session' + (n === 1 ? '' : 's') + ' loaded';
+  }
+  if (seg2) {
+    if (STATE.selectedBuoy) {
+      seg2.textContent = 'Buoy ' + STATE.selectedBuoy.id;
+    } else if (STATE.pinLat != null && STATE.pinLon != null) {
+      seg2.textContent = 'Pin ' + STATE.pinLat.toFixed(2) + '°N, ' + STATE.pinLon.toFixed(2) + '°W';
+    } else {
+      seg2.textContent = 'No buoy selected';
     }
   }
 }
@@ -4252,23 +4284,50 @@ function updateSliderDesc(sliderId, descId, val) {
   else if (sliderId.includes('ride')) descEl.textContent = RIDE_DESCS[v] || '';
 }
 
+// Save button stays disabled until all three rating sliders have been
+// touched. Editing an existing entry pre-touches the sliders.
+function _slUpdateSaveEnabled() {
+  const btn = document.getElementById('sl-save-btn');
+  if (!btn) return;
+  const ids = ['sl-size','sl-wind-quality','sl-ride-quality'];
+  const allTouched = ids.every(id => {
+    const s = document.getElementById(id);
+    return s && !s.classList.contains('w1-untouched');
+  });
+  btn.disabled = !allTouched;
+}
+
 function initSurfLogForm() {
   const dtInput = el('sl-datetime');
   if (dtInput) {
     const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     dtInput.value = now.toISOString().slice(0, 16);
   }
-  // Main form sliders
+  // Main form sliders. Each slider starts in the "untouched" state (thumb
+  // hidden via CSS, "Tap to rate" placeholder visible) and the Save button
+  // stays disabled until all three sliders have been touched at least once.
+  // This avoids the (10,10) cluster artifact where unmoved defaults were
+  // saved as user ratings.
   [['sl-size','sl-size-val','sl-size-desc','size'],['sl-wind-quality','sl-wind-val','sl-wind-desc','windQuality'],['sl-ride-quality','sl-ride-val','sl-ride-desc','rideQuality']].forEach(([id,vid,did,fieldName]) => {
     const s = el(id);
     const descFn = id === 'sl-size' ? getSizeDesc : id === 'sl-wind-quality' ? getWindDesc : getRideDesc;
+    const markTouched = () => {
+      const grp = s?.closest('.sl-slider-group');
+      if (s) s.classList.remove('w1-untouched');
+      if (grp) grp.classList.remove('w1-untouched');
+      _slUpdateSaveEnabled();
+    };
     s?.addEventListener('input', () => {
+      markTouched();
       el(vid).textContent = s.value; if(el(did)) el(did).textContent = descFn(s.value);
       s.closest('.sl-slider-group')?.classList.remove('sl-needs-review');
       if (Array.isArray(STATE.surfLogEditRepairCandidates)) STATE.surfLogEditRepairCandidates = STATE.surfLogEditRepairCandidates.filter(n => n !== fieldName);
     });
+    s?.addEventListener('pointerdown', markTouched);
+    s?.addEventListener('keydown', markTouched);
     if (s && el(did)) el(did).textContent = descFn(s.value);
   });
+  _slUpdateSaveEnabled();
   el('sl-add-url')?.addEventListener('click', () => {
     const input = el('sl-photo-url'), url = (input.value||'').trim();
     if (url) { _slPhotos.push(url); _slPhotoFiles.push(null); input.value = ''; renderPhotoGallery(); }
@@ -4298,6 +4357,14 @@ function initSurfLogForm() {
     }
   });
   el('sl-save-btn')?.addEventListener('click', async () => {
+    // Defensive: re-check the touched-state guard. The :disabled attribute
+    // should already prevent clicks, but a stale handler call shouldn't sneak
+    // through.
+    const ratingIds = ['sl-size','sl-wind-quality','sl-ride-quality'];
+    if (ratingIds.some(id => el(id)?.classList.contains('w1-untouched'))) {
+      showToast('Set Size, Wind, and Ride before saving.', 'warn');
+      return;
+    }
     const repairCandidates = Array.isArray(STATE.surfLogEditRepairCandidates) ? STATE.surfLogEditRepairCandidates : [];
     const formPanel = el('panel-surflog-form');
     const flaggedCount = formPanel ? formPanel.querySelectorAll('.sl-needs-review').length : 0;
@@ -4348,12 +4415,20 @@ function initSurfLogForm() {
 function resetSurfLogForm() {
   const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
   if (el('sl-datetime')) el('sl-datetime').value = now.toISOString().slice(0, 16);
-  ['sl-size','sl-wind-quality','sl-ride-quality'].forEach(id => { if(el(id)) el(id).value = 5; });
+  ['sl-size','sl-wind-quality','sl-ride-quality'].forEach(id => {
+    const s = el(id);
+    if (s) {
+      s.value = 5;
+      s.classList.add('w1-untouched');
+      s.closest('.sl-slider-group')?.classList.add('w1-untouched');
+    }
+  });
   ['sl-size-val','sl-wind-val','sl-ride-val'].forEach(id => { if(el(id)) el(id).textContent = '5'; });
   if (el('sl-size-desc')) el('sl-size-desc').textContent = getSizeDesc(5);
   if (el('sl-wind-desc')) el('sl-wind-desc').textContent = getWindDesc(5);
   if (el('sl-ride-desc')) el('sl-ride-desc').textContent = getRideDesc(5);
   if (el('sl-notes')) el('sl-notes').value = '';
+  _slUpdateSaveEnabled();
   _slPhotos = []; _slPhotoFiles = []; _slConditions = null; renderPhotoGallery();
   STATE.surfLogEditRepairCandidates = [];
   document.querySelectorAll('#panel-surflog-form .sl-needs-review').forEach(elx => elx.classList.remove('sl-needs-review'));
@@ -4386,18 +4461,25 @@ function editLogEntry(id) {
       if (el(valId)) el(valId).textContent = stored;
       if (el(descId)) el(descId).textContent = descFn(stored);
       wrapper?.classList.remove('sl-needs-review');
+      // Existing valid rating ⇒ slider counts as touched.
+      slider.classList.remove('w1-untouched');
+      wrapper?.classList.remove('w1-untouched');
     } else {
       const fallback = parseInt(slider.defaultValue, 10);
       slider.value = isFinite(fallback) ? fallback : 5;
       if (el(valId)) el(valId).textContent = slider.value;
       if (el(descId)) el(descId).textContent = '⚠ previously blank — fill in';
       wrapper?.classList.add('sl-needs-review');
+      // Stale entries with bad ratings still need user input → keep untouched.
+      slider.classList.add('w1-untouched');
+      wrapper?.classList.add('w1-untouched');
       STATE.surfLogEditRepairCandidates.push(fieldName);
     }
   };
   setupRatingSlider('size', 'sl-size', 'sl-size-val', 'sl-size-desc', getSizeDesc);
   setupRatingSlider('windQuality', 'sl-wind-quality', 'sl-wind-val', 'sl-wind-desc', getWindDesc);
   setupRatingSlider('rideQuality', 'sl-ride-quality', 'sl-ride-val', 'sl-ride-desc', getRideDesc);
+  _slUpdateSaveEnabled();
 
   if (el('sl-notes')) el('sl-notes').value = e.notes || '';
   _slPhotos = (e.photos||[]).map(p => photoUrl(p) || p).filter(Boolean); _slPhotoFiles = new Array(_slPhotos.length).fill(null); _slConditions = e.conditions || null;
@@ -6297,11 +6379,11 @@ const REG_FEATURE_LABELS = {
   swell_height: 'Swell height',
   swell_period: 'Swell period',
   swell_dir_alignment: 'Swell direction alignment',
-  swell_dir_outside_deg: 'Direction outside window',
+  swell_dir_outside_deg: 'Dir outside window',
   period_x_alignment: 'Period × alignment',
   sec_swell_height: 'Secondary swell height',
   sec_swell_period: 'Secondary swell period',
-  sec_dir_in_window: 'Secondary in window',
+  sec_dir_in_window: 'Sec in window',
   tide_height: 'Tide height',
   time_to_low: 'Time to low tide',
   low_incoming: 'Low incoming',
@@ -6853,6 +6935,7 @@ function openRegressionDrilldown(entry, sub) {
       entry.notes.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) + '</div></div>'
     : '';
 
+  panel.setAttribute('data-w1-title', 'Session detail · ' + dtStr);
   inner.innerHTML =
     '<div class="reg-drill-header">' +
       '<div class="reg-drill-header-text">' +
