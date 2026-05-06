@@ -394,7 +394,7 @@ a:hover { text-decoration: underline; }
   box-sizing: border-box;
   position: relative;
 }
-#forecast-chart-container .forecast-card-swell { height: 200px; }
+#forecast-chart-container .forecast-card-swell { height: 256px; }
 #forecast-chart-container .forecast-card-wind  { height: 120px; }
 /* Tide card hosts the inline NEXT LOW callout in a 24px row + the curve.
    Total = 8 (pad-top) + 24 (callout) + 1 (divider) + 120 (curve) + 8 (pad-bot) ≈ 161. */

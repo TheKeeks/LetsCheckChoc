@@ -1580,19 +1580,25 @@ function drawSwellPanel(common, data) {
   const isMobile = common.isMobile;
   const plotLeft = FC_PAD.left;
   const plotW    = cssW - FC_PAD.left - FC_PAD.right;
+  // Upper region (height + period) is fixed-height; the divider sits at
+  // y=180 and the direction sub-panel occupies the remaining space below.
   const top      = 4;
-  const h        = cssH - 8;
+  const h        = 176;
+  const dividerY = 180;
+  const subTop   = dividerY + 1;
+  const subBot   = cssH;
 
   // Background
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, cssW, cssH);
 
-  // Night shading + day separators (full canvas height)
+  // Night shading + day separators (full canvas height — they extend
+  // through the direction sub-panel using the same x-coords).
   _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawTodayAccent(ctx, common, plotLeft, plotW, 0, cssH);
 
-  const { heights, secHeights, swellDirs, wavePeriods, swellMaxY, swellStep, periodMax } = data;
+  const { heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellStep, periodMax } = data;
   const ySwell  = (val) => top + h - (Math.min(val, swellMaxY) / swellMaxY) * h;
   const yPeriod = (val) => {
     const v = Math.max(0, Math.min(periodMax, val));
@@ -1691,6 +1697,110 @@ function drawSwellPanel(common, data) {
   ctx.textAlign = 'right';
   ctx.fillStyle = '#c46a32';
   ctx.fillText('s', plotLeft + plotW - 6, top + 2);
+
+  // ── Divider between upper region and direction sub-panel ──
+  ctx.fillStyle = '#e8e8e8';
+  ctx.fillRect(0, dividerY, cssW, 1);
+
+  // ── Direction sub-panel ──
+  // Y-axis is compass degrees the swell is COMING FROM. The visible band
+  // is auto-fit to ±120° around the configured swell-window midpoint, so
+  // the window band itself + plenty of headroom for adjacent directions
+  // is always in view.
+  const winMin = CONFIG.chocomount.swellWindowMin;
+  const winMax = CONFIG.chocomount.swellWindowMax;
+  const winMid = (winMin + winMax) / 2;
+  const dirRangeMin = winMid - 120;
+  const dirRangeMax = winMid + 120;
+  const dirRange    = dirRangeMax - dirRangeMin;
+  const subInsetT = subTop + 4;
+  const subInsetB = subBot - 4;
+  const subInsetH = subInsetB - subInsetT;
+  const yDir = (deg) => subInsetT + ((deg - dirRangeMin) / dirRange) * subInsetH;
+
+  // Window band: shaded rectangle covering the swellWindow degrees.
+  ctx.fillStyle = 'rgba(110, 169, 107, 0.18)';
+  const yWinTop = yDir(winMin);
+  const yWinBot = yDir(winMax);
+  ctx.fillRect(plotLeft, Math.min(yWinTop, yWinBot), plotW, Math.abs(yWinBot - yWinTop));
+
+  // Helper: draw a polyline through compass-degree values, breaking the
+  // line wherever the absolute jump between consecutive samples exceeds
+  // 180° (interpreted as a wraparound, not a real direction change).
+  const drawDirPolyline = (ctx2, dirs, opts) => {
+    const include = opts.include || (() => true);
+    ctx2.save();
+    ctx2.beginPath();
+    ctx2.rect(plotLeft, subTop, plotW, subBot - subTop);
+    ctx2.clip();
+    if (opts.dash) ctx2.setLineDash(opts.dash);
+    ctx2.strokeStyle = opts.color;
+    ctx2.lineWidth = opts.lineWidth || 1.5;
+    ctx2.lineCap = 'round';
+    ctx2.beginPath();
+    let prevVal = null;
+    let prevOk = false;
+    for (let i = 0; i <= common.lastIdx; i++) {
+      const v = dirs[i];
+      const ok = (v != null) && include(i);
+      if (!ok) { prevOk = false; prevVal = null; continue; }
+      const x = xPos(common.allTimes[i]);
+      const y = yDir(v);
+      if (!prevOk) {
+        ctx2.moveTo(x, y);
+      } else if (Math.abs(v - prevVal) > 180) {
+        // Wraparound — start a new sub-segment instead of drawing a long
+        // diagonal across the panel.
+        ctx2.moveTo(x, y);
+      } else {
+        ctx2.lineTo(x, y);
+      }
+      prevVal = v;
+      prevOk = true;
+    }
+    ctx2.stroke();
+    ctx2.restore();
+  };
+
+  if (swellDirs && swellDirs.length) {
+    drawDirPolyline(ctx, swellDirs, { color: '#3a5570', lineWidth: 1.5 });
+  }
+  if (secDirs && secDirs.length) {
+    drawDirPolyline(ctx, secDirs, {
+      color: '#8cafcd',
+      lineWidth: 1.5,
+      dash: [4, 3],
+      // Only draw secondary direction where the secondary height is
+      // meaningful — leaves natural gaps when there's no real secondary
+      // swell to attribute the line to.
+      include: (i) => secHeights[i] != null && secHeights[i] >= 1.0
+    });
+  }
+
+  // Y-axis tick labels (compass abbreviations falling inside the
+  // visible direction range).
+  const compassPoints = [
+    { deg:   0, label: 'N'   }, { deg:  45, label: 'NE'  },
+    { deg:  90, label: 'E'   }, { deg: 135, label: 'SE'  },
+    { deg: 180, label: 'S'   }, { deg: 225, label: 'SW'  },
+    { deg: 270, label: 'W'   }, { deg: 315, label: 'NW'  }
+  ];
+  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+  ctx.fillStyle = '#888';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (const cp of compassPoints) {
+    if (cp.deg < dirRangeMin || cp.deg > dirRangeMax) continue;
+    ctx.fillText(cp.label, plotLeft - 4, yDir(cp.deg));
+  }
+
+  // "FROM" label clarifies the y-axis represents the direction the
+  // swell is COMING FROM (oceanographic convention).
+  ctx.font = `${isMobile ? '7px' : '8px'} "DM Mono", monospace`;
+  ctx.fillStyle = '#888';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText('FROM', plotLeft + 6, subTop + 3);
 
   return {
     canvas, cssW, cssH, plotLeft, plotW, top, h,
@@ -2040,6 +2150,7 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const heights      = marine.hourly.swell_wave_height || marine.hourly.wave_height || [];
   const secHeights   = marine.hourly.secondary_swell_wave_height || [];
   const swellDirs    = marine.hourly.swell_wave_direction || [];
+  const secDirs      = marine.hourly.secondary_swell_wave_direction || [];
   // Use peak period when present, otherwise mean period. (Open-Meteo Marine
   // exposes both depending on model — we asked for both in the fetch.)
   const peakPeriods  = marine.hourly.swell_wave_peak_period || [];
@@ -2090,7 +2201,7 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
 
   // Draw each panel canvas.
   const swellInfo = drawSwellPanel(common, {
-    heights, secHeights, swellDirs, wavePeriods, swellMaxY, swellStep, periodMax
+    heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellStep, periodMax
   });
   drawWindPanel(common, { windSpeeds, windDirs, windMaxY });
   const tideInfo = drawTidePanel(common, { tidePred, tideHiLo });
@@ -2140,7 +2251,7 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
     W, H: container.clientHeight,
     t0, tEnd, tRange,
     times: allTimes,
-    heights, secHeights, wavePeriods, swellDirs, windSpeeds, windDirs, windGusts,
+    heights, secHeights, wavePeriods, swellDirs, secDirs, windSpeeds, windDirs, windGusts,
     tideHiLo, tidePred, firstDay, dayCount,
     layout: {
       plotLeft, plotW,
