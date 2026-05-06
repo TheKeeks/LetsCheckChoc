@@ -382,19 +382,19 @@ a:hover { text-decoration: underline; }
   height: 100%;
 }
 
-/* Forecast cards: each canvas wrapped in its own white card. The 60px
+/* Forecast cards: each canvas wrapped in its own white card. The 64px
    left padding is the section-label column ("S/W/E/L/L" etc.) so all
    three canvases right-align with the same horizontal extent. */
 #forecast-chart-container .forecast-card {
   background: #fff;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
-  padding: 8px 8px 8px 60px;
+  padding: 8px 8px 8px 64px;
   margin-bottom: 8px;
   box-sizing: border-box;
   position: relative;
 }
-#forecast-chart-container .forecast-card-swell { height: 256px; }
+#forecast-chart-container .forecast-card-swell { height: 267px; }
 /* Persistent compass dial in the top-right of the swell card. Reads
    the current scrubber hour and shows primary + secondary swell
    FROM-directions as arrows. */
@@ -402,40 +402,23 @@ a:hover { text-decoration: underline; }
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 60px;
-  height: 60px;
+  width: 72px;
+  height: 72px;
   pointer-events: none;
 }
 #forecast-chart-container .forecast-card-wind  { height: 120px; }
-/* Tide card hosts the inline NEXT LOW callout in a 24px row + the curve.
-   Total = 8 (pad-top) + 24 (callout) + 1 (divider) + 120 (curve) + 8 (pad-bot) ≈ 161. */
-#forecast-chart-container .forecast-card-tide  { height: 161px; }
+#forecast-chart-container .forecast-card-tide  { height: 120px; }
 #forecast-chart-container .forecast-card canvas {
   display: block;
   width: 100%;
   height: 100%;
 }
-/* Tide canvas shares its card with the callout row + divider, so it
-   can't claim 100% — leave 30px on top for those rows. */
-#forecast-chart-container .forecast-card-tide canvas {
-  height: calc(100% - 30px);
-}
-/* Section label vertically aligned with the curve, not the callout row. */
-#forecast-chart-container .forecast-card-tide .forecast-section-label {
-  top: auto;
-  bottom: 8px;
-  height: calc(100% - 38px);
-  transform: none;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-/* Stacked-letter section label: vertically centered in the 60px column. */
+/* Stacked-letter section label: vertically centered in the 64px column. */
 #forecast-chart-container .forecast-section-label {
   position: absolute;
   top: 50%;
   left: 0;
-  width: 52px;
+  width: 56px;
   transform: translateY(-50%);
   text-align: center;
   font-family: var(--mono, monospace);
@@ -449,7 +432,7 @@ a:hover { text-decoration: underline; }
 }
 #forecast-chart-container .forecast-day-row {
   height: 28px;
-  padding: 0 8px 0 60px;
+  padding: 0 8px 0 64px;
   box-sizing: border-box;
 }
 #forecast-chart-container .forecast-day-row canvas {
@@ -569,37 +552,6 @@ a:hover { text-decoration: underline; }
 .forecast-detail-bar .detail-tide {
   color: #67e8f9;
   font-weight: 500;
-}
-
-/* ── Forecast tide callout (top row inside the tide card) ── */
-.forecast-tide-callout {
-  display: flex;
-  align-items: center;
-  height: 24px;
-  font-family: var(--mono);
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--ink);
-  pointer-events: none;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.forecast-tide-divider {
-  height: 1px;
-  background: #e8e8e8;
-  margin: 1px 0 4px;
-}
-.forecast-tide-callout .tide-callout-prefix {
-  color: var(--ink3);
-  font-size: 0.66rem;
-  text-transform: uppercase;
-  margin-right: 8px;
-  letter-spacing: 0.08em;
-}
-.forecast-tide-callout strong {
-  font-weight: 600;
-  color: var(--ink);
 }
 
 /* ── Forecast scrubber (vertical line + circular handle) ── */
@@ -2271,11 +2223,13 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
 }
 
-/* Lineup satellite map (Choc only). Container sized to image aspect. */
+/* Lineup satellite map (Choc only). Container sized to image aspect.
+   Capped at 280px tall — the matching max-width preserves the
+   1992:949 aspect ratio at the cap. */
 .lineup-frame {
   position: relative;
   width: 100%;
-  max-width: 720px;
+  max-width: 588px; /* 280 × 1992 / 949 */
   margin: 0 auto;
   aspect-ratio: 1992 / 949;
   background: #0a0c18;
@@ -2297,14 +2251,31 @@ a:hover { text-decoration: underline; }
   pointer-events: none;
   overflow: visible;
 }
-.lineup-legend {
-  display: flex;
-  gap: 16px;
-  justify-content: center;
-  margin-top: 8px;
+/* Caption + legend overlay styling shared base — semi-transparent dark
+   pill with white monospace text, inset 8px from the frame edges. */
+.lineup-caption,
+.lineup-legend-overlay {
+  position: absolute;
   font-family: var(--mono, monospace);
-  font-size: 0.78rem;
-  color: var(--ink3, #5a5450);
+  font-size: 11px;
+  line-height: 1.35;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 4px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+  max-width: calc(100% - 16px);
+}
+.lineup-caption {
+  bottom: 8px;
+  left: 8px;
+}
+.lineup-caption:empty { display: none; }
+.lineup-legend-overlay {
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 12px;
 }
 .lineup-legend-item {
   display: inline-flex;

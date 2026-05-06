@@ -1416,7 +1416,6 @@ function highlightNearestTideStation(lat, lon) {
 //   ┌─ #forecast-chart-container ─────────────────────────┐
 //   │  ┌─ swell card ─ canvas#forecast-canvas-swell  ──┐  │
 //   │  ┌─ wind  card ─ canvas#forecast-canvas-wind  ──┐  │
-//   │  ┌─ tide callout row (NEXT LOW …) ──────────────┐  │
 //   │  ┌─ tide  card ─ canvas#forecast-canvas-tide  ──┐  │
 //   │  ┌─ day  row ── canvas#forecast-canvas-days  ──┐  │
 //   └──────────────────────────────────────────────────────┘
@@ -1440,55 +1439,6 @@ function drawForecastChart(marine, wind, daylight, tideHiLo, tidePred) {
   // New data → re-resolve scrubber position (may reload from sessionStorage).
   STATE.scrubberIdx = -1;
   _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred);
-}
-
-// Render the "NEXT LOW: …" callout text relative to a target ms timestamp
-// (defaults to Date.now()). Returns the formatted line.
-function formatNextLowCallout(tideHiLo, fromMs) {
-  if (!tideHiLo) return '';
-  const fm = fromMs != null ? fromMs : Date.now();
-  const lows = tideHiLo
-    .filter(p => p.type === 'L')
-    .map(p => ({ t: new Date(p.t).getTime(), v: parseFloat(p.v) }))
-    .filter(p => Number.isFinite(p.v) && p.t > fm)
-    .sort((a, b) => a.t - b.t);
-  const next = lows[0];
-  if (!next) return '';
-  const td = new Date(next.t);
-  const hrs = td.getHours();
-  const mins = td.getMinutes();
-  const ampm = hrs >= 12 ? 'pm' : 'am';
-  const h12 = hrs % 12 || 12;
-  const timeStr = mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
-  // Day word: Today / Tomorrow / weekday
-  const refDay = new Date(fm); refDay.setHours(0, 0, 0, 0);
-  const lowDay = new Date(td); lowDay.setHours(0, 0, 0, 0);
-  const dayDelta = Math.round((lowDay - refDay) / 86400000);
-  let dayWord;
-  if (dayDelta <= 0)      dayWord = 'Today';
-  else if (dayDelta === 1) dayWord = 'Tomorrow';
-  else                     dayWord = td.toLocaleDateString('en-US', { weekday: 'short' });
-  const heightStr = `${next.v.toFixed(1)}ft`;
-  // "in Xh Ym" — relative to fromMs.
-  const deltaMin = Math.max(0, Math.round((next.t - fm) / 60000));
-  const dh = Math.floor(deltaMin / 60);
-  const dm = deltaMin % 60;
-  const inStr = dh > 0 ? `${dh}h ${dm}m` : `${dm}m`;
-  return `${dayWord} ${timeStr} · ${heightStr} · in ${inStr}`;
-}
-
-function positionAndUpdateTideCallout(container, geom, scrubMs) {
-  const cal = container.querySelector('#forecast-tide-callout, .forecast-tide-callout');
-  if (!cal) return;
-  const tideHiLo = geom.tideHiLo;
-  if (!tideHiLo) { cal.textContent = ''; return; }
-  const isScrub = scrubMs != null && Math.abs(scrubMs - Date.now()) > 30 * 60 * 1000;
-  const line = formatNextLowCallout(tideHiLo, isScrub ? scrubMs : null);
-  if (!line) { cal.innerHTML = ''; return; }
-  const scrubLabel = isScrub
-    ? `NEXT LOW AFTER ${new Date(scrubMs).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true})}`
-    : 'NEXT LOW';
-  cal.innerHTML = `<span class="tide-callout-prefix">${scrubLabel}:</span> <strong>${line}</strong>`;
 }
 
 // ── Shared per-canvas helpers ──────────────────────
@@ -1654,24 +1604,33 @@ function drawSwellPanel(common, data) {
   ctx.stroke();
 
   // Period line on the right axis (burnt orange) with a white halo
-  // beneath so it stays legible against the dark-blue swell area.
-  const periodPath = new Path2D();
-  let pStarted = false;
+  // beneath so it stays legible against the dark-blue swell area. Two
+  // passes over the same coordinates: 4px white at 0.95 alpha, then
+  // 2px solid orange. Direct beginPath avoids any Path2D edge cases.
+  const periodPts = [];
   for (let i = 0; i <= common.lastIdx; i++) {
     const p = wavePeriods[i];
-    if (p == null) continue;
-    const x = xPos(common.allTimes[i]);
-    const y = yPeriod(p);
-    if (!pStarted) { periodPath.moveTo(x, y); pStarted = true; }
-    else periodPath.lineTo(x, y);
+    if (p == null || !Number.isFinite(p)) continue;
+    periodPts.push([xPos(common.allTimes[i]), yPeriod(p)]);
   }
-  ctx.lineCap = 'round';
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-  ctx.lineWidth = 4;
-  ctx.stroke(periodPath);
-  ctx.strokeStyle = '#c46a32';
-  ctx.lineWidth = 2;
-  ctx.stroke(periodPath);
+  if (periodPts.length >= 2) {
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // Halo
+    ctx.beginPath();
+    ctx.moveTo(periodPts[0][0], periodPts[0][1]);
+    for (let i = 1; i < periodPts.length; i++) ctx.lineTo(periodPts[i][0], periodPts[i][1]);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    // Orange line
+    ctx.beginPath();
+    ctx.moveTo(periodPts[0][0], periodPts[0][1]);
+    for (let i = 1; i < periodPts.length; i++) ctx.lineTo(periodPts[i][0], periodPts[i][1]);
+    ctx.strokeStyle = '#c46a32';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
   ctx.restore();
 
   // Y-axis numeric labels
@@ -1885,13 +1844,28 @@ function drawWindPanel(common, data) {
   ctx.stroke();
   ctx.restore();
 
+  // Horizontal gridlines at 5 mph intervals. Drawn after the area fill
+  // so they read as faint reference lines rather than data.
+  ctx.save();
+  ctx.strokeStyle = 'rgba(90, 85, 80, 0.12)';
+  ctx.lineWidth = 1;
+  for (let v = 5; v < windMaxY; v += 5) {
+    const yy = yWind(v);
+    ctx.beginPath();
+    ctx.moveTo(plotLeft, yy);
+    ctx.lineTo(plotLeft + plotW, yy);
+    ctx.stroke();
+  }
+  ctx.restore();
+
   const axisFont = isMobile ? '9px' : '10px';
   ctx.font = `${axisFont} "DM Mono", monospace`;
   ctx.fillStyle = '#5a5550';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`${windMaxY}`, plotLeft - 4, yWind(windMaxY));
-  ctx.fillText('0', plotLeft - 4, yWind(0));
+  for (let v = 0; v <= windMaxY; v += 5) {
+    ctx.fillText(`${v}`, plotLeft - 4, yWind(v));
+  }
   ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
@@ -2148,13 +2122,14 @@ function drawDayLabels(common) {
 function drawCompassDial(scrubberIdx) {
   const canvas = el('forecast-compass');
   if (!canvas) return;
-  const cssW = canvas.clientWidth || 60;
-  const cssH = canvas.clientHeight || 60;
+  const cssW = canvas.clientWidth || 72;
+  const cssH = canvas.clientHeight || 72;
   const ctx = canvas.getContext('2d');
   setCanvasDPR(canvas, ctx, cssW, cssH);
   ctx.clearRect(0, 0, cssW, cssH);
 
-  const cx = 30, cy = 30, r = 26;
+  const cx = cssW / 2, cy = cssH / 2;
+  const r = Math.min(cx, cy) - 4;
 
   // Outline circle.
   ctx.strokeStyle = '#d0d0d0';
@@ -2164,20 +2139,14 @@ function drawCompassDial(scrubberIdx) {
   ctx.stroke();
 
   // Cardinal letters.
-  ctx.fillStyle = '#888';
-  ctx.font = '9px "DM Mono", monospace';
+  ctx.fillStyle = '#666';
+  ctx.font = '600 10px "DM Mono", monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('N', cx,         cy - r + 6);
-  ctx.fillText('S', cx,         cy + r - 6);
-  ctx.fillText('W', cx - r + 6, cy);
-  ctx.fillText('E', cx + r - 6, cy);
-
-  // "FROM" caption beneath the dial.
-  ctx.font = '8px "DM Mono", monospace';
-  ctx.fillStyle = '#888';
-  ctx.textBaseline = 'top';
-  ctx.fillText('FROM', cx, cssH - 8);
+  ctx.fillText('N', cx,         cy - r + 7);
+  ctx.fillText('S', cx,         cy + r - 7);
+  ctx.fillText('W', cx - r + 7, cy);
+  ctx.fillText('E', cx + r - 7, cy);
 
   const marine = STATE.forecastData && STATE.forecastData.marine;
   if (!marine || !marine.hourly) return;
@@ -2236,11 +2205,14 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const secHeights   = marine.hourly.secondary_swell_wave_height || [];
   const swellDirs    = marine.hourly.swell_wave_direction || [];
   const secDirs      = marine.hourly.secondary_swell_wave_direction || [];
-  // Use peak period when present, otherwise mean period. (Open-Meteo Marine
-  // exposes both depending on model — we asked for both in the fetch.)
+  // Use peak period when the API actually filled it in, otherwise mean
+  // period. Some Open-Meteo models return the peak_period key as an
+  // array of all nulls — checking length alone hides the line because
+  // every sample then fails the `p == null` guard at draw time.
   const peakPeriods  = marine.hourly.swell_wave_peak_period || [];
   const meanPeriods  = marine.hourly.swell_wave_period || marine.hourly.wave_period || [];
-  const wavePeriods  = peakPeriods.length ? peakPeriods : meanPeriods;
+  const peakHasData  = peakPeriods.some(v => v != null && Number.isFinite(v));
+  const wavePeriods  = peakHasData ? peakPeriods : meanPeriods;
   const windSpeeds   = wind && wind.hourly ? wind.hourly.wind_speed_10m   || [] : [];
   const windDirs     = wind && wind.hourly ? wind.hourly.wind_direction_10m || [] : [];
   const windGusts    = wind && wind.hourly ? wind.hourly.wind_gusts_10m   || [] : [];
@@ -2271,7 +2243,10 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   for (let i = extStart; i <= extEnd; i++) {
     if (windSpeeds[i] != null && windSpeeds[i] > windPeak) windPeak = windSpeeds[i];
   }
-  const windMaxY = Math.max(10, Math.ceil(windPeak * 1.2 / 5) * 5);
+  // Fixed 0–25 mph axis. Hours that exceed 25 mph clip at the ceiling
+  // — communicates "wind is howling" without rescaling the whole panel
+  // around a single storm hour.
+  const windMaxY = 25;
 
   // Common payload passed to each panel drawer.
   const common = {
@@ -2291,9 +2266,6 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   drawWindPanel(common, { windSpeeds, windDirs, windMaxY });
   const tideInfo = drawTidePanel(common, { tidePred, tideHiLo });
   drawDayLabels(common);
-
-  // Tide callout (HTML overlay, populated as text only).
-  positionAndUpdateTideCallout(container, { tideHiLo });
 
   // Container-relative geometry for the scrubber crosshair / handle.
   const swellCanvas = el('forecast-canvas-swell');
@@ -2513,16 +2485,6 @@ function applyScrubberToHour(idx) {
 
   // ── Cross-feature: stat grid (with +Xh / -Xh badge) ──
   applyStatGridForHour(idx);
-
-  // ── Tide callout: re-render relative to scrubbed hour ──
-  if (cs.layout) {
-    const containerEl = el('forecast-chart-container');
-    if (containerEl) {
-      positionAndUpdateTideCallout(containerEl, {
-        tideHiLo: cs.tideHiLo
-      }, isScrubberAtNow() ? null : t.getTime());
-    }
-  }
 
   // ── "Reset to now" link visibility ──
   const resetRow = el('forecast-reset-row');
@@ -5455,12 +5417,15 @@ function drawLineupMap(marine, wind, buoyParsed, hourIdx) {
     const lbl = (wSpd != null ? Math.round(wSpd) : '–') + 'mph ' + directionLabel(wDir);
     _lineupArrow(svg, wDir, len, '#fbbf24', lbl);
   }
-  if (useScrub && hr && hr.time && hr.time[i]) {
-    const t = new Date(hr.time[i]);
-    const stamp = t.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
-    setFooter('footer-lineup', `Scrubbed to ${stamp} — primary swell, secondary swell, wind. Arrows converge on the lineup.`);
-  } else {
-    setFooter('footer-lineup', 'Live "now" — primary swell, secondary swell, wind. Arrows converge on the lineup.');
+  const caption = el('lineup-caption');
+  if (caption) {
+    if (useScrub && hr && hr.time && hr.time[i]) {
+      const t = new Date(hr.time[i]);
+      const stamp = t.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+      caption.textContent = `Scrubbed to ${stamp} — primary swell, secondary swell, wind. Arrows converge on the lineup.`;
+    } else {
+      caption.textContent = 'Live "now" — primary swell, secondary swell, wind. Arrows converge on the lineup.';
+    }
   }
 }
 
