@@ -2101,19 +2101,7 @@ function drawDayLabels(common) {
     if (dayDelta === 0)      label = 'Today';
     else if (dayDelta === 1) label = 'Tomorrow';
     else label = `${dayStart.toLocaleDateString('en-US',{weekday:'short'})} ${dayStart.getMonth()+1}/${dayStart.getDate()}`;
-    ctx.fillText(label, xx, cssH * 0.55);
-  }
-
-  // Hour ticks (00:00 / 06:00 / 12:00 / 18:00) — day 1 only.
-  ctx.fillStyle = '#b5afa8';
-  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
-  ctx.textBaseline = 'bottom';
-  for (const hh of [0, 6, 12, 18]) {
-    const tick = new Date(common.firstDay);
-    tick.setHours(hh, 0, 0, 0);
-    const xx = _fcXFor(tick, common, plotLeft, plotW);
-    if (xx <= plotLeft + 8 || xx >= plotLeft + plotW - 8) continue;
-    ctx.fillText(`${String(hh).padStart(2, '0')}:00`, xx, cssH - 1);
+    ctx.fillText(label, xx, cssH / 2);
   }
 }
 

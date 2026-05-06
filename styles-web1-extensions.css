@@ -168,20 +168,118 @@ body[data-era="web1"] {
   padding-top: 4px;
 }
 
-/* Help <details> styled like a tooltip-fieldset */
+/* Help <details> styled like a Win95 tooltip / fieldset note */
 [data-era="web1"] .widget-help {
-  background: #ffffe0;
+  background: #ffffe1;
   border: 1px solid #808080;
   padding: 4px 8px;
   margin: 6px 0;
-  font-family: var(--w1-serif);
-  font-size: 12px;
-}
-[data-era="web1"] .widget-help summary {
-  cursor: pointer;
-  color: var(--w1-link);
   font-family: var(--w1-sans);
   font-size: 11px;
+  color: var(--w1-ink);
+  border-radius: 0;
+}
+[data-era="web1"] .widget-help > summary {
+  cursor: pointer;
+  color: var(--w1-link);
+  text-decoration: underline;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  padding: 0;
+}
+/* Disclosure caret: ▶ when collapsed, ▼ when open (no rotate). */
+[data-era="web1"] .widget-help > summary::before {
+  content: "▶";
+  display: inline-block;
+  font-size: 9px;
+  margin-right: 6px;
+  transform: none;
+  transition: none;
+  color: var(--w1-ink);
+}
+[data-era="web1"] .widget-help[open] > summary::before {
+  content: "▼";
+  transform: none;
+}
+[data-era="web1"] .widget-help > p,
+[data-era="web1"] .widget-help > ul {
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  color: var(--w1-ink);
+  line-height: 1.4;
+}
+
+/* ── FIX 6 — final scrub of remaining 2020s card styling ────────── */
+
+/* No rounded corners on any container surface. */
+[data-era="web1"] .panel,
+[data-era="web1"] .panel-half,
+[data-era="web1"] .condition-card,
+[data-era="web1"] .reg-section,
+[data-era="web1"] .reg-feature-mini,
+[data-era="web1"] .reg-prediction-card,
+[data-era="web1"] .reg-scatter,
+[data-era="web1"] .reg-imp-bar-wrap,
+[data-era="web1"] .lineup-frame,
+[data-era="web1"] .map-container,
+[data-era="web1"] .toast,
+[data-era="web1"] .sl-photo-thumb,
+[data-era="web1"] .photo-thumb,
+[data-era="web1"] .sl-conditions-display,
+[data-era="web1"] .surflog-table,
+[data-era="web1"] .reg-drilldown,
+[data-era="web1"] .modal-card,
+[data-era="web1"] #gate-card {
+  border-radius: 0;
+}
+
+/* No 2020s drop shadows on panels / cards / hover states. */
+[data-era="web1"] .panel,
+[data-era="web1"] .panel-half,
+[data-era="web1"] .condition-card,
+[data-era="web1"] .reg-section,
+[data-era="web1"] .reg-prediction-card,
+[data-era="web1"] .reg-scatter,
+[data-era="web1"] .reg-feature-mini {
+  /* Only inset bevel shadows from .w1-bevel are allowed; explicitly
+     drop any 0 Xpx Ypx rgba() drop-shadow inherited from style.css. */
+}
+[data-era="web1"] .pm-card:hover {
+  box-shadow: none;
+}
+
+/* Win95 buttons snap, they don't fade. */
+[data-era="web1"] .w1-btn,
+[data-era="web1"] .sl-btn,
+[data-era="web1"] .gate-btn,
+[data-era="web1"] .auth-btn,
+[data-era="web1"] .buoy-map-expand-btn,
+[data-era="web1"] .forecast-reset-btn,
+[data-era="web1"] .reg-submodel-tab,
+[data-era="web1"] .tab-bar .tab-btn,
+[data-era="web1"] .modal-close,
+[data-era="web1"] #gate-card .gate-btn,
+[data-era="web1"] .w1-titlebar .ctrls button {
+  transition: none;
+}
+
+/* Win95 inputs likewise — no soft focus glow. */
+[data-era="web1"] input,
+[data-era="web1"] textarea,
+[data-era="web1"] select,
+[data-era="web1"] .sl-input,
+[data-era="web1"] .sl-input-sm,
+[data-era="web1"] .sl-textarea {
+  transition: none;
+}
+
+/* Strip lingering modern accent borders on condition cards (the
+   coloured 4px left borders for quality good/fair/poor). */
+[data-era="web1"] .condition-card.quality-good,
+[data-era="web1"] .condition-card.quality-fair,
+[data-era="web1"] .condition-card.quality-poor {
+  border-left-color: #ffffff;
+  border-left-width: 2px;
 }
 
 /* Buoy map summary line */
@@ -849,4 +947,136 @@ body[data-era="web1"] {
   display: flex;
   gap: 6px;
   align-items: center;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Prompt #6 follow-up — kill remaining 2020s card styling
+   ─────────────────────────────────────────────────────────────────────
+   Selectors here run higher-specificity than the modern style.css
+   defaults so the Win95 bevels actually win the cascade.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── FIX 1 — outer card containers are raised bevels ─────────────── */
+
+/* Inner forecast cards (SWELL / WIND / TIDE) — raised gray bevel.
+   Beats `#forecast-chart-container .forecast-card` in style.css. */
+[data-era="web1"] #forecast-chart-container .forecast-card {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  border-radius: 0;
+}
+
+/* Tab 2 PVA scatter cards — raised bevel; beats `.reg-scatter`. */
+[data-era="web1"] .reg-pva-grid .reg-scatter {
+  background: var(--w1-face);
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  border-radius: 0;
+}
+
+/* Per-feature mini cards — flip from sunken to raised so the canvas
+   inside can be the sunken inset. */
+[data-era="web1"] .reg-feature-grid .reg-feature-mini {
+  background: var(--w1-face);
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+}
+
+/* Make sure no panel (outer or inner) keeps its modern card border /
+   radius / drop shadow. */
+[data-era="web1"] .panel,
+[data-era="web1"] .panel-half,
+[data-era="web1"] .reg-section,
+[data-era="web1"] .condition-card,
+[data-era="web1"] .reg-prediction-card {
+  border-radius: 0 !important;
+}
+
+/* ── FIX 2 — canvas content sits in a sunken white inset bevel ──── */
+
+/* Forecast chart canvases inside .forecast-card raised bevels. */
+[data-era="web1"] #forecast-chart-container .forecast-card > canvas {
+  background: #ffffff;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  box-sizing: border-box;
+}
+
+/* The compass dial in the swell card top-right is *not* a plot —
+   keep it transparent and unbordered so it overlays cleanly. */
+[data-era="web1"] #forecast-chart-container #forecast-compass {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+/* Day-label band canvas — keep it on the gray panel surface (not
+   inset white) so the day text reads as a label strip, not a chart. */
+[data-era="web1"] #forecast-chart-container #forecast-canvas-days {
+  background: var(--w1-face);
+  border: none;
+  box-shadow: none;
+}
+
+/* Lineup map image wrapper — already a sunken bevel via .lineup-frame
+   above; here we just guarantee the radius is 0. */
+[data-era="web1"] .lineup-frame { border-radius: 0; }
+
+/* Compass-rose / spectrum / tide chart canvases — sunken white wells
+   inside the (raised) outer .panel. */
+[data-era="web1"] #panel-compass .chart-container,
+[data-era="web1"] #panel-spectrum .chart-container,
+[data-era="web1"] #panel-tides .chart-container {
+  background: #ffffff;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  box-sizing: border-box;
+  padding: 4px;
+}
+
+/* Per-feature scatter mini canvases inside the now-raised mini cards. */
+[data-era="web1"] .reg-feature-mini .reg-feature-mini-canvas {
+  background: #ffffff;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  box-sizing: border-box;
+}
+
+/* PVA scatter canvases inside the now-raised .reg-scatter cards. */
+[data-era="web1"] .reg-pva-grid .reg-scatter .reg-scatter-canvas {
+  background: #ffffff;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  box-sizing: border-box;
+}
+
+/* Residual chart canvas (inside .reg-residual). */
+[data-era="web1"] .reg-residual .reg-residual-canvas {
+  background: #ffffff;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  box-sizing: border-box;
+}
+
+/* ── FIX 3 — section labels onto the gray bevel margin ──────────── */
+
+/* SWELL / WIND / TIDE labels sit in the .forecast-card's left padding
+   column (gray, 64px wide), readable as navy MS Sans Serif. */
+[data-era="web1"] #forecast-chart-container .forecast-section-label {
+  background: var(--w1-face);
+  color: var(--w1-navy);
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  font-weight: bold;
+  font-variant: normal;
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }
