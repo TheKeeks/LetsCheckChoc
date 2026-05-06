@@ -2157,13 +2157,14 @@ function drawDayLabels(common) {
 function drawCompassDial(scrubberIdx) {
   const canvas = el('forecast-compass');
   if (!canvas) return;
-  const cssW = canvas.clientWidth || 60;
-  const cssH = canvas.clientHeight || 60;
+  const cssW = canvas.clientWidth || 72;
+  const cssH = canvas.clientHeight || 72;
   const ctx = canvas.getContext('2d');
   setCanvasDPR(canvas, ctx, cssW, cssH);
   ctx.clearRect(0, 0, cssW, cssH);
 
-  const cx = 30, cy = 30, r = 26;
+  const cx = cssW / 2, cy = cssH / 2;
+  const r = Math.min(cx, cy) - 4;
 
   // Outline circle.
   ctx.strokeStyle = '#d0d0d0';
@@ -2173,20 +2174,14 @@ function drawCompassDial(scrubberIdx) {
   ctx.stroke();
 
   // Cardinal letters.
-  ctx.fillStyle = '#888';
-  ctx.font = '9px "DM Mono", monospace';
+  ctx.fillStyle = '#666';
+  ctx.font = '600 10px "DM Mono", monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('N', cx,         cy - r + 6);
-  ctx.fillText('S', cx,         cy + r - 6);
-  ctx.fillText('W', cx - r + 6, cy);
-  ctx.fillText('E', cx + r - 6, cy);
-
-  // "FROM" caption beneath the dial.
-  ctx.font = '8px "DM Mono", monospace';
-  ctx.fillStyle = '#888';
-  ctx.textBaseline = 'top';
-  ctx.fillText('FROM', cx, cssH - 8);
+  ctx.fillText('N', cx,         cy - r + 7);
+  ctx.fillText('S', cx,         cy + r - 7);
+  ctx.fillText('W', cx - r + 7, cy);
+  ctx.fillText('E', cx + r - 7, cy);
 
   const marine = STATE.forecastData && STATE.forecastData.marine;
   if (!marine || !marine.hourly) return;

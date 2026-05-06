@@ -402,8 +402,8 @@ a:hover { text-decoration: underline; }
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 60px;
-  height: 60px;
+  width: 72px;
+  height: 72px;
   pointer-events: none;
 }
 #forecast-chart-container .forecast-card-wind  { height: 120px; }
