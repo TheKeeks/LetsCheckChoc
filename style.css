@@ -2223,11 +2223,13 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
 }
 
-/* Lineup satellite map (Choc only). Container sized to image aspect. */
+/* Lineup satellite map (Choc only). Container sized to image aspect.
+   Capped at 280px tall — the matching max-width preserves the
+   1992:949 aspect ratio at the cap. */
 .lineup-frame {
   position: relative;
   width: 100%;
-  max-width: 720px;
+  max-width: 588px; /* 280 × 1992 / 949 */
   margin: 0 auto;
   aspect-ratio: 1992 / 949;
   background: #0a0c18;
@@ -2249,14 +2251,31 @@ a:hover { text-decoration: underline; }
   pointer-events: none;
   overflow: visible;
 }
-.lineup-legend {
-  display: flex;
-  gap: 16px;
-  justify-content: center;
-  margin-top: 8px;
+/* Caption + legend overlay styling shared base — semi-transparent dark
+   pill with white monospace text, inset 8px from the frame edges. */
+.lineup-caption,
+.lineup-legend-overlay {
+  position: absolute;
   font-family: var(--mono, monospace);
-  font-size: 0.78rem;
-  color: var(--ink3, #5a5450);
+  font-size: 11px;
+  line-height: 1.35;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 4px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+  max-width: calc(100% - 16px);
+}
+.lineup-caption {
+  bottom: 8px;
+  left: 8px;
+}
+.lineup-caption:empty { display: none; }
+.lineup-legend-overlay {
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 12px;
 }
 .lineup-legend-item {
   display: inline-flex;

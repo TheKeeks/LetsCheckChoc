@@ -5417,12 +5417,15 @@ function drawLineupMap(marine, wind, buoyParsed, hourIdx) {
     const lbl = (wSpd != null ? Math.round(wSpd) : '–') + 'mph ' + directionLabel(wDir);
     _lineupArrow(svg, wDir, len, '#fbbf24', lbl);
   }
-  if (useScrub && hr && hr.time && hr.time[i]) {
-    const t = new Date(hr.time[i]);
-    const stamp = t.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
-    setFooter('footer-lineup', `Scrubbed to ${stamp} — primary swell, secondary swell, wind. Arrows converge on the lineup.`);
-  } else {
-    setFooter('footer-lineup', 'Live "now" — primary swell, secondary swell, wind. Arrows converge on the lineup.');
+  const caption = el('lineup-caption');
+  if (caption) {
+    if (useScrub && hr && hr.time && hr.time[i]) {
+      const t = new Date(hr.time[i]);
+      const stamp = t.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+      caption.textContent = `Scrubbed to ${stamp} — primary swell, secondary swell, wind. Arrows converge on the lineup.`;
+    } else {
+      caption.textContent = 'Live "now" — primary swell, secondary swell, wind. Arrows converge on the lineup.';
+    }
   }
 }
 
