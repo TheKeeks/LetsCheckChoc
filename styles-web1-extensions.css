@@ -168,20 +168,45 @@ body[data-era="web1"] {
   padding-top: 4px;
 }
 
-/* Help <details> styled like a tooltip-fieldset */
+/* Help <details> styled like a Win95 tooltip / fieldset note */
 [data-era="web1"] .widget-help {
-  background: #ffffe0;
+  background: #ffffe1;
   border: 1px solid #808080;
   padding: 4px 8px;
   margin: 6px 0;
-  font-family: var(--w1-serif);
-  font-size: 12px;
-}
-[data-era="web1"] .widget-help summary {
-  cursor: pointer;
-  color: var(--w1-link);
   font-family: var(--w1-sans);
   font-size: 11px;
+  color: var(--w1-ink);
+  border-radius: 0;
+}
+[data-era="web1"] .widget-help > summary {
+  cursor: pointer;
+  color: var(--w1-link);
+  text-decoration: underline;
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  padding: 0;
+}
+/* Disclosure caret: ▶ when collapsed, ▼ when open (no rotate). */
+[data-era="web1"] .widget-help > summary::before {
+  content: "▶";
+  display: inline-block;
+  font-size: 9px;
+  margin-right: 6px;
+  transform: none;
+  transition: none;
+  color: var(--w1-ink);
+}
+[data-era="web1"] .widget-help[open] > summary::before {
+  content: "▼";
+  transform: none;
+}
+[data-era="web1"] .widget-help > p,
+[data-era="web1"] .widget-help > ul {
+  font-family: var(--w1-sans);
+  font-size: 11px;
+  color: var(--w1-ink);
+  line-height: 1.4;
 }
 
 /* Buoy map summary line */
