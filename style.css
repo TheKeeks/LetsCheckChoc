@@ -2587,3 +2587,39 @@ a:hover { text-decoration: underline; }
 .reg-attr-mag { font-weight: 500; text-align: right; }
 .reg-attr-detail { color: var(--ink4); font-size: 0.7rem; }
 .reg-attr-reconcile { margin-top: 6px; font-size: 0.7rem; }
+
+/* §5 — Match threshold tuning */
+.reg-threshold-panel {
+  display: flex; flex-direction: column;
+  gap: 8px;
+}
+.reg-threshold-row {
+  display: grid;
+  grid-template-columns: 200px 1fr 56px 14px 56px;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+@media (max-width: 540px) {
+  .reg-threshold-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+.reg-threshold-label { color: var(--ink2); }
+.reg-threshold-slider { width: 100%; }
+.reg-threshold-value { color: var(--ink); text-align: right; }
+.reg-threshold-light {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--ink4);
+  border: 1px solid var(--border);
+}
+.reg-threshold-light.reg-light-green  { background: var(--green); border-color: var(--green); }
+.reg-threshold-light.reg-light-yellow { background: #d4b34a; border-color: #d4b34a; }
+.reg-threshold-light.reg-light-red    { background: var(--red-m); border-color: var(--red-m); }
+.reg-threshold-light.reg-light-none   { background: var(--ink4); }
+.reg-threshold-pct {
+  font-size: 0.72rem; color: var(--ink3);
+}
+.reg-threshold-note { margin-top: 6px; }

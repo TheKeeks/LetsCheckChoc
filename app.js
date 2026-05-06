@@ -5611,6 +5611,7 @@ function renderRegressionTab() {
 
   renderRegressionPredictionWidget();
   renderRegressionPVA();
+  renderRegressionThresholds();
 
   // Weights panel (renderWeightsPanel toggles its own display).
   renderWeightsPanel();
@@ -6220,6 +6221,108 @@ function _regBuildAttribution(entry, sub) {
 // Compatibility shim — older call sites invoked the placeholder name.
 function _regBuildAttributionPlaceholder(entry, sub) {
   return _regBuildAttribution(entry, sub);
+}
+
+// ── Tab 2 §5: Match threshold tuning ──────────────────────────────────
+//
+// Three independent sliders (wave / ride / cond), 0–100 step 5, default 60.
+// Stored at lcc-match-threshold-{wave,ride,cond}. Live preview light shows
+// how the currently-scrubbed hour scores against the user's average past
+// session — green ≥ threshold, yellow ≥ (threshold − 15), red otherwise.
+const REG_THRESHOLD_KEYS = {
+  wave: 'lcc-match-threshold-wave',
+  ride: 'lcc-match-threshold-ride',
+  cond: 'lcc-match-threshold-cond'
+};
+function _regGetThreshold(sub) {
+  let raw = null;
+  try { raw = localStorage.getItem(REG_THRESHOLD_KEYS[sub]); } catch (_) {}
+  const v = parseInt(raw, 10);
+  return (isFinite(v) && v >= 0 && v <= 100) ? v : 60;
+}
+function _regSetThreshold(sub, v) {
+  try { localStorage.setItem(REG_THRESHOLD_KEYS[sub], String(v)); } catch (_) {}
+}
+
+// Computes the best match score at the scrubbed hour for the given sub-
+// model: pick the past session whose features are closest to the scrubbed-
+// hour features under the current sub-model's match formula.
+function _regBestMatchAtScrub(sub) {
+  const cfg = REG_SUBMODELS[sub];
+  const marine = STATE._cachedMarine, wind = STATE._cachedWind, tideHiLo = STATE._cachedTideHiLo;
+  if (!marine?.hourly || !wind?.hourly) return null;
+  const idx = _regResolveScrubberHour();
+  if (idx == null || idx < 0) return null;
+  const fc = buildForecastConditions(marine, wind, tideHiLo, idx);
+  if (!fc) return null;
+  const ff = cfg.extractor(fc);
+  if (!ff) return null;
+  const stats = STATE[cfg.statsKey];
+  const weights = STATE[cfg.weightsKey];
+  if (!stats) return null;
+  const uid = window._fbUserId;
+  const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
+  let best = 0;
+  for (const e of userScoped) {
+    if (!e.conditions?.swell) continue;
+    const ef = cfg.extractor(e.conditions);
+    if (!ef) continue;
+    const m = _matchPct(ef, ff, weights, stats);
+    if (m > best) best = m;
+  }
+  return best;
+}
+
+function _regThresholdLightClass(matchPct, threshold) {
+  if (matchPct == null) return 'reg-light-none';
+  if (matchPct >= threshold) return 'reg-light-green';
+  if (matchPct >= threshold - 15) return 'reg-light-yellow';
+  return 'reg-light-red';
+}
+
+function renderRegressionThresholds() {
+  const panel = el('reg-threshold-panel');
+  if (!panel) return;
+  const rows = ['wave', 'ride', 'cond'].map(sub => {
+    const cfg = REG_SUBMODELS[sub];
+    const v = _regGetThreshold(sub);
+    const lbl = sub === 'wave' ? 'Wave (size match)'
+      : sub === 'ride' ? 'Ride (quality match)'
+      : 'Conditions match';
+    return '<div class="reg-threshold-row" data-sub="' + sub + '">' +
+      '<label class="reg-threshold-label" for="reg-thresh-' + sub + '">' + lbl + '</label>' +
+      '<input type="range" id="reg-thresh-' + sub + '" class="reg-threshold-slider" ' +
+        'min="0" max="100" step="5" value="' + v + '" data-sub="' + sub + '">' +
+      '<span class="reg-threshold-value" id="reg-thresh-val-' + sub + '">' + v + '%</span>' +
+      '<span class="reg-threshold-light" id="reg-thresh-light-' + sub + '"></span>' +
+      '<span class="reg-threshold-pct" id="reg-thresh-pct-' + sub + '"></span>' +
+      '</div>';
+  }).join('');
+  panel.innerHTML = rows;
+  for (const sub of ['wave', 'ride', 'cond']) {
+    const slider = el('reg-thresh-' + sub);
+    if (!slider) continue;
+    slider.addEventListener('input', () => {
+      const v = parseInt(slider.value, 10);
+      _regSetThreshold(sub, v);
+      const valEl = el('reg-thresh-val-' + sub);
+      if (valEl) valEl.textContent = v + '%';
+      _regUpdateThresholdLights();
+    });
+  }
+  _regUpdateThresholdLights();
+}
+
+function _regUpdateThresholdLights() {
+  for (const sub of ['wave', 'ride', 'cond']) {
+    const lightEl = el('reg-thresh-light-' + sub);
+    const pctEl = el('reg-thresh-pct-' + sub);
+    if (!lightEl) continue;
+    const threshold = _regGetThreshold(sub);
+    const matchPct = _regBestMatchAtScrub(sub);
+    lightEl.className = 'reg-threshold-light ' + _regThresholdLightClass(matchPct, threshold);
+    if (pctEl) pctEl.textContent = matchPct == null ? '—' : matchPct + '%';
+  }
 }
 
 function openRegressionDrilldown(entry, sub) {
