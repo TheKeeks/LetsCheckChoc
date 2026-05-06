@@ -604,6 +604,18 @@ a:hover { text-decoration: underline; }
   font-size: 0.75rem;
   color: var(--ink2, #5a5550);
 }
+.forecast-cache-indicator {
+  font-family: var(--mono, monospace);
+  font-size: 0.7rem;
+  font-style: italic;
+  color: var(--ink2, #5a5550);
+  opacity: 0.75;
+  animation: forecast-cache-pulse 1.4s ease-in-out infinite;
+}
+@keyframes forecast-cache-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.9;  }
+}
 .forecast-model-label-txt { white-space: nowrap; }
 #forecast-model-select {
   font-family: var(--mono, monospace);

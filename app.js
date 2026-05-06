@@ -315,6 +315,56 @@ async function fetchJSON(url, timeout = 10000) {
   }
 }
 
+// ── Forecast cache (TTL-backed localStorage) ─────
+// Goal: warm page loads render the chart from cache before the network call
+// even returns. Open-Meteo and CO-OPS responses are deterministic over
+// short windows, so caching them is safe; live spectral / Firestore reads
+// are excluded.
+const CACHE_TTL = {
+  marine:   30 * 60 * 1000,
+  wind:     30 * 60 * 1000,
+  tide:      6 * 60 * 60 * 1000,
+  hilo:      6 * 60 * 60 * 1000,
+  water:    30 * 60 * 1000,
+  pipeline: 30 * 60 * 1000
+};
+const PIPELINE_CACHE_KEY = 'lcc-cache-pipeline';
+
+function roundCoord(v) { return Math.round(v * 1000) / 1000; }
+
+function readCache(key, ttlMs) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const { ts, data } = JSON.parse(raw);
+    if (Date.now() - ts < ttlMs) return data;
+  } catch (_) { /* fall through */ }
+  return null;
+}
+
+function writeCache(key, data) {
+  if (data == null) return;
+  try {
+    localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }));
+  } catch (_) { /* quota or serialization failure — non-fatal */ }
+}
+
+function marineCacheKey(lat, lon, model) {
+  return `lcc-cache-marine-${roundCoord(lat)}-${roundCoord(lon)}-${model || 'default'}`;
+}
+function windCacheKey(lat, lon) {
+  return `lcc-cache-wind-${roundCoord(lat)}-${roundCoord(lon)}`;
+}
+function tidePredCacheKey(stationId, rangeDays, rangeHours) {
+  return `lcc-cache-tide-${stationId}-d${rangeDays || ''}-h${rangeHours || ''}`;
+}
+function tideHiLoCacheKey(stationId, rangeDays) {
+  return `lcc-cache-hilo-${stationId}-d${rangeDays}`;
+}
+function waterTempCacheKey(stationId) {
+  return `lcc-cache-water-${stationId}`;
+}
+
 async function fetchText(url, timeout = 10000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
@@ -418,7 +468,9 @@ async function fetchMarineForecast(lat, lon, model) {
     forecast_days: 7
   });
   if (model) params.set('models', model);
-  return fetchJSON(`${CONFIG.api.openMeteoMarine}?${params}`);
+  const data = await fetchJSON(`${CONFIG.api.openMeteoMarine}?${params}`);
+  if (data) writeCache(marineCacheKey(lat, lon, model), data);
+  return data;
 }
 
 // ── API: Open-Meteo Weather (wind) ───────────────
@@ -432,7 +484,9 @@ async function fetchWindForecast(lat, lon) {
     timezone: 'auto',
     forecast_days: 7
   });
-  return fetchJSON(`${CONFIG.api.openMeteoWeather}?${params}`);
+  const data = await fetchJSON(`${CONFIG.api.openMeteoWeather}?${params}`);
+  if (data) writeCache(windCacheKey(lat, lon), data);
+  return data;
 }
 
 // ── API: CO-OPS tides ────────────────────────────
@@ -457,7 +511,9 @@ async function fetchTidePredictions(stationId, rangeDays = 3, rangeHours) {
     application: 'letscheckchoc',
     format: 'json'
   });
-  return fetchJSON(`${CONFIG.api.coops}?${params}`);
+  const data = await fetchJSON(`${CONFIG.api.coops}?${params}`);
+  if (data) writeCache(tidePredCacheKey(stationId, rangeDays, rangeHours), data);
+  return data;
 }
 
 async function fetchTideHiLo(stationId, rangeDays = 3) {
@@ -479,10 +535,14 @@ async function fetchTideHiLo(stationId, rangeDays = 3) {
     application: 'letscheckchoc',
     format: 'json'
   });
-  return fetchJSON(`${CONFIG.api.coops}?${params}`);
+  const data = await fetchJSON(`${CONFIG.api.coops}?${params}`);
+  if (data) writeCache(tideHiLoCacheKey(stationId, rangeDays), data);
+  return data;
 }
 
 async function fetchWaterTemp(stationId) {
+  const cached = readCache(waterTempCacheKey(stationId), CACHE_TTL.water);
+  if (cached) return cached;
   const params = new URLSearchParams({
     date: 'latest',
     station: stationId,
@@ -492,7 +552,9 @@ async function fetchWaterTemp(stationId) {
     application: 'letscheckchoc',
     format: 'json'
   });
-  return fetchJSON(`${CONFIG.api.coops}?${params}`);
+  const data = await fetchJSON(`${CONFIG.api.coops}?${params}`);
+  if (data) writeCache(waterTempCacheKey(stationId), data);
+  return data;
 }
 
 // ── API: NDBC via CORS proxy ─────────────────────
@@ -515,7 +577,11 @@ async function fetchNDBCSpectral(buoyId) {
 
 // ── API: Pipeline fallback for Chocomount ────────
 async function fetchPipelineBuoy() {
-  return fetchJSON('data/buoy.json');
+  const cached = readCache(PIPELINE_CACHE_KEY, CACHE_TTL.pipeline);
+  if (cached) return cached;
+  const data = await fetchJSON('data/buoy.json');
+  if (data) writeCache(PIPELINE_CACHE_KEY, data);
+  return data;
 }
 
 // ── Parse NDBC stdmet text ───────────────────────
@@ -895,6 +961,80 @@ async function selectTideStation(station) {
 // DATA LOADING
 // ════════════════════════════════════════════════
 
+// Renders condition cards + forecast chart for a buoy/pin context. Reused
+// by the SWR pre-render path (cached data) and the post-fetch refresh.
+function renderForecastSet(ctx) {
+  const {
+    buoy, isChoc, selectedModel,
+    forecastLat, forecastLon, displayLat, displayLon,
+    marine, wind, buoyParsed, pipelineData,
+    tideHiLo, tidePred, tideStn
+  } = ctx;
+
+  updateSwellCard(buoyParsed, marine, buoy, pipelineData?.spectral_summary);
+  updateWindCard(wind, buoyParsed, isChoc, displayLat, displayLon);
+  updateWaterTempCard(buoyParsed, marine, isChoc);
+  updateDaylightCard(displayLat, displayLon);
+  updateSecondarySwellCard(marine, isChoc, forecastLat, forecastLon);
+  updateCoordFooters(buoy, forecastLat, forecastLon, displayLat, displayLon);
+
+  if (marine && marine.hourly) {
+    const daylight = calcDaylight(displayLat, displayLon, new Date());
+
+    STATE._cachedMarine = marine;
+    STATE._cachedWind = wind;
+    STATE._cachedTideHiLo = tideHiLo;
+    STATE._cachedTidePred = tidePred;
+
+    updateTideCard(tideHiLo, tideStn);
+    drawForecastChart(marine, wind, daylight, tideHiLo, tidePred);
+
+    if (isChoc) drawLineupMap(marine, wind, buoyParsed);
+
+    const coordLabel = isChoc
+      ? `${forecastLat}°N, ${Math.abs(forecastLon)}°W (open water)`
+      : `${forecastLat.toFixed(3)}°N, ${Math.abs(forecastLon).toFixed(3)}°W`;
+    setFooter('footer-forecast',
+      `Open-Meteo Marine · ${describeForecastModel(selectedModel)} · ${coordLabel}`,
+      'https://open-meteo.com/en/docs/marine-weather-api',
+      'open-meteo.com'
+    );
+  }
+}
+
+// Same as above, minus buoy-specific bits (used by pin loads).
+function renderPinForecastSet(ctx) {
+  const {
+    selectedModel, lat, lon,
+    marine, wind, tideHiLo, tidePred, tideStn
+  } = ctx;
+
+  updateSwellCard(null, marine, null);
+  updateWindCard(wind, null, false, lat, lon);
+  updateWaterTempCard(null, marine, false);
+  updateDaylightCard(lat, lon);
+  updateSecondarySwellCard(marine, false, lat, lon);
+  updateCoordFooters(null, lat, lon, lat, lon);
+
+  if (marine && marine.hourly) {
+    const daylight = calcDaylight(lat, lon, new Date());
+    STATE._cachedTidePred = tidePred;
+    updateTideCard(tideHiLo, tideStn);
+    drawForecastChart(marine, wind, daylight, tideHiLo, tidePred);
+    setFooter('footer-forecast',
+      `Open-Meteo Marine · ${describeForecastModel(selectedModel)} · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`,
+      'https://open-meteo.com/en/docs/marine-weather-api',
+      'open-meteo.com'
+    );
+  }
+}
+
+function setCacheRefreshIndicator(visible) {
+  const ind = el('forecast-cache-indicator');
+  if (!ind) return;
+  ind.style.display = visible ? '' : 'none';
+}
+
 async function loadAllData(buoy) {
   const lat = buoy.lat;
   const lon = buoy.lon;
@@ -909,19 +1049,60 @@ async function loadAllData(buoy) {
   const displayLat = isChoc ? CONFIG.chocomount.lat : lat;
   const displayLon = isChoc ? CONFIG.chocomount.lon : lon;
 
-  // Show loading states
-  el('val-swell-height').textContent = '···';
-  el('val-wind-speed').textContent = '···';
-  el('val-water-temp').textContent = '···';
-  el('val-tide').textContent = '···';
-
-  // Fetch all in parallel
   const selectedModel = getForecastModel();
-  let [marine, wind, buoyData, pipelineData] = await Promise.all([
+  const tideStn = findNearestTideStation(displayLat, displayLon);
+  STATE.nearestTideStation = tideStn;
+
+  // ── SWR: paint from cache before any network hits ──
+  const cachedMarine   = readCache(marineCacheKey(forecastLat, forecastLon, selectedModel), CACHE_TTL.marine);
+  const cachedWind     = readCache(windCacheKey(displayLat, displayLon), CACHE_TTL.wind);
+  const cachedPipeline = isChoc ? readCache(PIPELINE_CACHE_KEY, CACHE_TTL.pipeline) : null;
+  const cachedHiLoRaw  = tideStn ? readCache(tideHiLoCacheKey(tideStn.id, 10), CACHE_TTL.hilo) : null;
+  const cachedPredRaw  = tideStn ? readCache(tidePredCacheKey(tideStn.id, undefined, 168), CACHE_TTL.tide) : null;
+  const cachedHiLo = cachedHiLoRaw && cachedHiLoRaw.predictions ? cachedHiLoRaw.predictions : null;
+  const cachedPred = cachedPredRaw && cachedPredRaw.predictions ? cachedPredRaw.predictions : null;
+
+  const tidesCacheReady = !tideStn || (cachedHiLo && cachedPred);
+  const canRenderFromCache = !!(cachedMarine && cachedMarine.hourly && cachedWind && tidesCacheReady);
+
+  if (canRenderFromCache) {
+    let cachedBuoyParsed = STATE._cachedBuoyParsed || null;
+    if (!cachedBuoyParsed && cachedPipeline && cachedPipeline.buoy) {
+      cachedBuoyParsed = {
+        waveHeight: cachedPipeline.buoy.wave_height,
+        dominantPeriod: cachedPipeline.buoy.dominant_period,
+        meanDirection: cachedPipeline.buoy.mean_wave_direction,
+        waterTemp: cachedPipeline.buoy.water_temp,
+        windSpeed: cachedPipeline.buoy.wind_speed,
+        windDir: cachedPipeline.buoy.wind_direction,
+        windGust: cachedPipeline.buoy.wind_gust,
+        time: cachedPipeline.buoy.time || 'pipeline data'
+      };
+    }
+    renderForecastSet({
+      buoy, isChoc, selectedModel,
+      forecastLat, forecastLon, displayLat, displayLon,
+      marine: cachedMarine, wind: cachedWind,
+      buoyParsed: cachedBuoyParsed, pipelineData: cachedPipeline,
+      tideHiLo: cachedHiLo, tidePred: cachedPred, tideStn
+    });
+    setCacheRefreshIndicator(true);
+  } else {
+    el('val-swell-height').textContent = '···';
+    el('val-wind-speed').textContent = '···';
+    el('val-water-temp').textContent = '···';
+    el('val-tide').textContent = '···';
+    setCacheRefreshIndicator(false);
+  }
+
+  // ── Fire all parallel fetches (forecast chart deps) ──
+  let [marine, wind, buoyData, pipelineData, hiloRaw, predRaw] = await Promise.all([
     fetchMarineForecast(forecastLat, forecastLon, selectedModel),
     fetchWindForecast(displayLat, displayLon),
     buoy.spectral ? fetchNDBCStdmet(buoy.id) : Promise.resolve(null),
-    isChoc ? fetchPipelineBuoy() : Promise.resolve(null)
+    isChoc ? fetchPipelineBuoy() : Promise.resolve(null),
+    tideStn ? fetchTideHiLo(tideStn.id, 10) : Promise.resolve(null),
+    tideStn ? fetchTidePredictions(tideStn.id, undefined, 168) : Promise.resolve(null)
   ]);
   if (selectedModel && !marineHasUsableData(marine)) {
     showToast(`Model ${selectedModel} unavailable, falling back to best_match`, 'warn');
@@ -943,57 +1124,18 @@ async function loadAllData(buoy) {
       time: pipelineData.buoy.time || 'pipeline data'
     };
   }
-
-  // ── Current conditions cards ──
   STATE._cachedBuoyParsed = buoyParsed;
-  updateSwellCard(buoyParsed, marine, buoy, pipelineData?.spectral_summary);
-  updateWindCard(wind, buoyParsed, isChoc, displayLat, displayLon);
-  updateWaterTempCard(buoyParsed, marine, isChoc);
-  updateDaylightCard(displayLat, displayLon);
 
-  // ── Secondary swell card ──
-  updateSecondarySwellCard(marine, isChoc, forecastLat, forecastLon);
+  const tideHiLoForChart = hiloRaw && hiloRaw.predictions ? hiloRaw.predictions : null;
+  const tidePredForChart = predRaw && predRaw.predictions ? predRaw.predictions : null;
 
-  // ── Coord footers under each card ──
-  updateCoordFooters(buoy, forecastLat, forecastLon, displayLat, displayLon);
-
-  // ── Swell forecast chart ──
-  if (marine && marine.hourly) {
-    const daylight = calcDaylight(displayLat, displayLon, new Date());
-    const tideStn = findNearestTideStation(displayLat, displayLon);
-    STATE.nearestTideStation = tideStn;
-    let tideHiLoForChart = null;
-    let tidePredForChart = null;
-    if (tideStn) {
-      const [td, predData] = await Promise.all([
-        fetchTideHiLo(tideStn.id, 10),
-        fetchTidePredictions(tideStn.id, undefined, 168)
-      ]);
-      tideHiLoForChart = td && td.predictions ? td.predictions : null;
-      tidePredForChart = predData && predData.predictions ? predData.predictions : null;
-    }
-
-    // Cache forecast data for personal-match scoring (consumed by Tab 2 / future).
-    STATE._cachedMarine = marine;
-    STATE._cachedWind = wind;
-    STATE._cachedTideHiLo = tideHiLoForChart;
-    STATE._cachedTidePred = tidePredForChart;
-
-    // ── Tide condition card ──
-    updateTideCard(tideHiLoForChart, tideStn);
-
-    drawForecastChart(marine, wind, daylight, tideHiLoForChart, tidePredForChart);
-
-    // Refresh lineup overlay (Choc only — uses current Open-Meteo + wind values).
-    if (isChoc) drawLineupMap(marine, wind, buoyParsed);
-
-    const coordLabel = isChoc ? `${forecastLat}°N, ${Math.abs(forecastLon)}°W (open water)` : `${forecastLat.toFixed(3)}°N, ${Math.abs(forecastLon).toFixed(3)}°W`;
-    setFooter('footer-forecast',
-      `Open-Meteo Marine · ${describeForecastModel(selectedModel)} · ${coordLabel}`,
-      'https://open-meteo.com/en/docs/marine-weather-api',
-      'open-meteo.com'
-    );
-  }
+  renderForecastSet({
+    buoy, isChoc, selectedModel,
+    forecastLat, forecastLon, displayLat, displayLon,
+    marine, wind, buoyParsed, pipelineData,
+    tideHiLo: tideHiLoForChart, tidePred: tidePredForChart, tideStn
+  });
+  setCacheRefreshIndicator(false);
 
   // ── Tides panel ──
   if (STATE.nearestTideStation) {
@@ -1082,15 +1224,42 @@ async function loadAllData(buoy) {
 }
 
 async function loadPinData(lat, lon) {
-  el('val-swell-height').textContent = '···';
-  el('val-wind-speed').textContent = '···';
-  el('val-water-temp').textContent = '···';
-  el('val-tide').textContent = '···';
-
   const selectedModel = getForecastModel();
-  let [marine, wind] = await Promise.all([
+  const tideStn = findNearestTideStation(lat, lon);
+  STATE.nearestTideStation = tideStn;
+
+  // ── SWR: paint from cache before any network hits ──
+  const cachedMarine  = readCache(marineCacheKey(lat, lon, selectedModel), CACHE_TTL.marine);
+  const cachedWind    = readCache(windCacheKey(lat, lon), CACHE_TTL.wind);
+  const cachedHiLoRaw = tideStn ? readCache(tideHiLoCacheKey(tideStn.id, 10), CACHE_TTL.hilo) : null;
+  const cachedPredRaw = tideStn ? readCache(tidePredCacheKey(tideStn.id, undefined, 168), CACHE_TTL.tide) : null;
+  const cachedHiLo = cachedHiLoRaw && cachedHiLoRaw.predictions ? cachedHiLoRaw.predictions : null;
+  const cachedPred = cachedPredRaw && cachedPredRaw.predictions ? cachedPredRaw.predictions : null;
+
+  const tidesCacheReady = !tideStn || (cachedHiLo && cachedPred);
+  const canRenderFromCache = !!(cachedMarine && cachedMarine.hourly && cachedWind && tidesCacheReady);
+
+  if (canRenderFromCache) {
+    renderPinForecastSet({
+      selectedModel, lat, lon,
+      marine: cachedMarine, wind: cachedWind,
+      tideHiLo: cachedHiLo, tidePred: cachedPred, tideStn
+    });
+    setCacheRefreshIndicator(true);
+  } else {
+    el('val-swell-height').textContent = '···';
+    el('val-wind-speed').textContent = '···';
+    el('val-water-temp').textContent = '···';
+    el('val-tide').textContent = '···';
+    setCacheRefreshIndicator(false);
+  }
+
+  // ── Fire fresh fetches in parallel ──
+  let [marine, wind, hiloRaw, predRaw] = await Promise.all([
     fetchMarineForecast(lat, lon, selectedModel),
-    fetchWindForecast(lat, lon)
+    fetchWindForecast(lat, lon),
+    tideStn ? fetchTideHiLo(tideStn.id, 10) : Promise.resolve(null),
+    tideStn ? fetchTidePredictions(tideStn.id, undefined, 168) : Promise.resolve(null)
   ]);
   if (selectedModel && !marineHasUsableData(marine)) {
     showToast(`Model ${selectedModel} unavailable, falling back to best_match`, 'warn');
@@ -1098,43 +1267,15 @@ async function loadPinData(lat, lon) {
     marine = await fetchMarineForecast(lat, lon, null);
   }
 
-  // Current conditions from Open-Meteo only
-  updateSwellCard(null, marine, null);
-  updateWindCard(wind, null, false, lat, lon);
-  updateWaterTempCard(null, marine, false);
-  updateDaylightCard(lat, lon);
+  const tideHiLoForChart = hiloRaw && hiloRaw.predictions ? hiloRaw.predictions : null;
+  const tidePredForChart = predRaw && predRaw.predictions ? predRaw.predictions : null;
 
-  updateSecondarySwellCard(marine, false, lat, lon);
-
-  // Coord footer (single line — pin coord only).
-  updateCoordFooters(null, lat, lon, lat, lon);
-
-  // Forecast chart
-  if (marine && marine.hourly) {
-    const daylight = calcDaylight(lat, lon, new Date());
-    const tideStn = findNearestTideStation(lat, lon);
-    STATE.nearestTideStation = tideStn;
-    let tideHiLoForChart = null;
-    let tidePredForChart = null;
-    if (tideStn) {
-      const [td, predData] = await Promise.all([
-        fetchTideHiLo(tideStn.id, 10),
-        fetchTidePredictions(tideStn.id, undefined, 168)
-      ]);
-      tideHiLoForChart = td && td.predictions ? td.predictions : null;
-      tidePredForChart = predData && predData.predictions ? predData.predictions : null;
-    }
-
-    STATE._cachedTidePred = tidePredForChart;
-    updateTideCard(tideHiLoForChart, tideStn);
-
-    drawForecastChart(marine, wind, daylight, tideHiLoForChart, tidePredForChart);
-    setFooter('footer-forecast',
-      `Open-Meteo Marine · ${describeForecastModel(selectedModel)} · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`,
-      'https://open-meteo.com/en/docs/marine-weather-api',
-      'open-meteo.com'
-    );
-  }
+  renderPinForecastSet({
+    selectedModel, lat, lon,
+    marine, wind,
+    tideHiLo: tideHiLoForChart, tidePred: tidePredForChart, tideStn
+  });
+  setCacheRefreshIndicator(false);
 
   if (STATE.nearestTideStation) {
     await loadTidesPanel(STATE.nearestTideStation);
