@@ -5637,6 +5637,181 @@ function _regWireSubmodelTabs() {
   tabs.forEach(t => t.classList.toggle('active', t.dataset.submodel === _regActiveSubmodel));
 }
 
+// ── Tab 2 §6: Per-feature scatter grid (per active sub-model) ──────────
+//
+// One mini-scatter per feature in the active sub-model. Dots include the
+// whole community surf log; the OLS fit line is computed from the
+// user-scoped subset only. User dots in primary blue, community dots in
+// muted gray.
+const REG_FG_W = 220, REG_FG_H = 160;
+const REG_FG_PAD = { left: 32, right: 8, top: 12, bottom: 26 };
+
+function _regNiceTicks(min, max) {
+  if (!isFinite(min) || !isFinite(max) || min === max) return [min];
+  const span = max - min;
+  const step = Math.pow(10, Math.floor(Math.log10(span))) * (span / Math.pow(10, Math.floor(Math.log10(span))) >= 5 ? 1 : 0.5);
+  const ticks = [];
+  for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) {
+    ticks.push(Math.round(v * 100) / 100);
+    if (ticks.length > 6) break;
+  }
+  return ticks;
+}
+
+function _regOLSFit(xs, ys) {
+  if (xs.length < 2) return null;
+  const n = xs.length;
+  let sx = 0, sy = 0, sxx = 0, sxy = 0;
+  for (let i = 0; i < n; i++) { sx += xs[i]; sy += ys[i]; sxx += xs[i] * xs[i]; sxy += xs[i] * ys[i]; }
+  const denom = n * sxx - sx * sx;
+  if (Math.abs(denom) < 1e-10) return null;
+  const m = (n * sxy - sx * sy) / denom;
+  const b = (sy - m * sx) / n;
+  return { m, b };
+}
+
+function _regBuildFeatureMini(sub, featureIdx) {
+  const cfg = REG_SUBMODELS[sub];
+  const featureName = cfg.featureNames[featureIdx];
+  const wrap = document.createElement('div');
+  wrap.className = 'reg-feature-mini';
+  const title = document.createElement('div');
+  title.className = 'reg-feature-mini-title';
+  const unit = regFeatureUnit(featureName);
+  title.textContent = regFeatureLabel(featureName) + (unit ? ' (' + unit + ')' : '');
+  wrap.appendChild(title);
+
+  // Build all-sessions feature/target arrays
+  const uid = window._fbUserId;
+  const all = STATE.surfLog.filter(e => e.conditions?.swell);
+  const points = [];
+  for (const e of all) {
+    const f = cfg.extractor(e.conditions);
+    const t = cfg.targetFn(e);
+    if (!f || typeof t !== 'number' || !isFinite(t)) continue;
+    const isOwn = uid && e.userId === uid;
+    points.push({ entry: e, x: f[featureIdx], y: t, isOwn: !!isOwn });
+  }
+  if (!points.length) {
+    const empty = document.createElement('div');
+    empty.className = 'reg-feature-mini-empty sl-hint';
+    empty.textContent = 'No data';
+    wrap.appendChild(empty);
+    return wrap;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.className = 'reg-feature-mini-canvas';
+  wrap.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  setCanvasDPR(canvas, ctx, REG_FG_W, REG_FG_H);
+  // Axis bounds
+  const xs = points.map(p => p.x), ys = points.map(p => p.y);
+  let xMin = Math.min(...xs), xMax = Math.max(...xs);
+  if (xMin === xMax) { xMin -= 1; xMax += 1; }
+  const xPad = (xMax - xMin) * 0.05;
+  xMin -= xPad; xMax += xPad;
+  const yMin = 0, yMax = 10;
+  const pad = REG_FG_PAD;
+  const plotW = REG_FG_W - pad.left - pad.right;
+  const plotH = REG_FG_H - pad.top - pad.bottom;
+  // Background + axes
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, REG_FG_W, REG_FG_H);
+  ctx.strokeStyle = '#d0cbc3';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, pad.top);
+  ctx.lineTo(pad.left, REG_FG_H - pad.bottom);
+  ctx.lineTo(REG_FG_W - pad.right, REG_FG_H - pad.bottom);
+  ctx.stroke();
+  // Tick labels
+  ctx.fillStyle = '#8a827a';
+  ctx.font = '9px DM Mono, Menlo, monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (const v of [0, 5, 10]) {
+    const y = pad.top + plotH * (1 - (v - yMin) / (yMax - yMin));
+    ctx.fillText(String(v), pad.left - 3, y);
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const xTicks = _regNiceTicks(xMin, xMax);
+  for (const v of xTicks) {
+    const x = pad.left + plotW * ((v - xMin) / (xMax - xMin));
+    ctx.fillText(String(v), x, REG_FG_H - pad.bottom + 3);
+  }
+  // Dots
+  const projected = [];
+  for (const p of points) {
+    const x = pad.left + plotW * ((p.x - xMin) / (xMax - xMin));
+    const y = pad.top + plotH * (1 - (p.y - yMin) / (yMax - yMin));
+    projected.push({ x, y, p });
+  }
+  // Draw community first, user on top
+  ctx.lineWidth = 0.5;
+  for (const pt of projected.filter(p => !p.p.isOwn)) {
+    ctx.fillStyle = REG_DOT_FILL_OTHER;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (const pt of projected.filter(p => p.p.isOwn)) {
+    ctx.fillStyle = REG_DOT_FILL_OWN;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  // OLS fit line on user-scoped subset only
+  const ownXs = points.filter(p => p.isOwn).map(p => p.x);
+  const ownYs = points.filter(p => p.isOwn).map(p => p.y);
+  if (ownXs.length >= 2) {
+    const fit = _regOLSFit(ownXs, ownYs);
+    if (fit) {
+      const x0 = xMin, x1 = xMax;
+      const y0 = fit.m * x0 + fit.b, y1 = fit.m * x1 + fit.b;
+      const px0 = pad.left + plotW * ((x0 - xMin) / (xMax - xMin));
+      const py0 = pad.top + plotH * (1 - (Math.max(yMin, Math.min(yMax, y0)) - yMin) / (yMax - yMin));
+      const px1 = pad.left + plotW * ((x1 - xMin) / (xMax - xMin));
+      const py1 = pad.top + plotH * (1 - (Math.max(yMin, Math.min(yMax, y1)) - yMin) / (yMax - yMin));
+      ctx.strokeStyle = '#5a7fa0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(px0, py0);
+      ctx.lineTo(px1, py1);
+      ctx.stroke();
+    }
+  }
+  // Click → drilldown
+  canvas.style.cursor = 'pointer';
+  canvas.addEventListener('click', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    let hit = null;
+    for (const pt of projected) {
+      const d = Math.hypot(mx - pt.x, my - pt.y);
+      if (d <= 5) { hit = pt; break; }
+    }
+    if (hit && typeof openRegressionDrilldown === 'function') {
+      openRegressionDrilldown(hit.p.entry, sub);
+    }
+  });
+  return wrap;
+}
+
+function renderRegressionFeatureGrid() {
+  const grid = el('reg-feature-grid');
+  if (!grid) return;
+  const sub = _regActiveSubmodel;
+  const cfg = REG_SUBMODELS[sub];
+  grid.innerHTML = '';
+  for (let i = 0; i < cfg.featureNames.length; i++) {
+    grid.appendChild(_regBuildFeatureMini(sub, i));
+  }
+}
+
 // Per-submodel surfaces: per-feature scatters, importance bars, preferred
 // conditions, fit metrics, residual chart. Dispatcher calls each one if it
 // has shipped (renderers added incrementally per Prompt #5 commit order).
