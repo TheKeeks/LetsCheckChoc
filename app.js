@@ -1654,24 +1654,33 @@ function drawSwellPanel(common, data) {
   ctx.stroke();
 
   // Period line on the right axis (burnt orange) with a white halo
-  // beneath so it stays legible against the dark-blue swell area.
-  const periodPath = new Path2D();
-  let pStarted = false;
+  // beneath so it stays legible against the dark-blue swell area. Two
+  // passes over the same coordinates: 4px white at 0.95 alpha, then
+  // 2px solid orange. Direct beginPath avoids any Path2D edge cases.
+  const periodPts = [];
   for (let i = 0; i <= common.lastIdx; i++) {
     const p = wavePeriods[i];
-    if (p == null) continue;
-    const x = xPos(common.allTimes[i]);
-    const y = yPeriod(p);
-    if (!pStarted) { periodPath.moveTo(x, y); pStarted = true; }
-    else periodPath.lineTo(x, y);
+    if (p == null || !Number.isFinite(p)) continue;
+    periodPts.push([xPos(common.allTimes[i]), yPeriod(p)]);
   }
-  ctx.lineCap = 'round';
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-  ctx.lineWidth = 4;
-  ctx.stroke(periodPath);
-  ctx.strokeStyle = '#c46a32';
-  ctx.lineWidth = 2;
-  ctx.stroke(periodPath);
+  if (periodPts.length >= 2) {
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // Halo
+    ctx.beginPath();
+    ctx.moveTo(periodPts[0][0], periodPts[0][1]);
+    for (let i = 1; i < periodPts.length; i++) ctx.lineTo(periodPts[i][0], periodPts[i][1]);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    // Orange line
+    ctx.beginPath();
+    ctx.moveTo(periodPts[0][0], periodPts[0][1]);
+    for (let i = 1; i < periodPts.length; i++) ctx.lineTo(periodPts[i][0], periodPts[i][1]);
+    ctx.strokeStyle = '#c46a32';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
   ctx.restore();
 
   // Y-axis numeric labels
@@ -2236,11 +2245,14 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const secHeights   = marine.hourly.secondary_swell_wave_height || [];
   const swellDirs    = marine.hourly.swell_wave_direction || [];
   const secDirs      = marine.hourly.secondary_swell_wave_direction || [];
-  // Use peak period when present, otherwise mean period. (Open-Meteo Marine
-  // exposes both depending on model — we asked for both in the fetch.)
+  // Use peak period when the API actually filled it in, otherwise mean
+  // period. Some Open-Meteo models return the peak_period key as an
+  // array of all nulls — checking length alone hides the line because
+  // every sample then fails the `p == null` guard at draw time.
   const peakPeriods  = marine.hourly.swell_wave_peak_period || [];
   const meanPeriods  = marine.hourly.swell_wave_period || marine.hourly.wave_period || [];
-  const wavePeriods  = peakPeriods.length ? peakPeriods : meanPeriods;
+  const peakHasData  = peakPeriods.some(v => v != null && Number.isFinite(v));
+  const wavePeriods  = peakHasData ? peakPeriods : meanPeriods;
   const windSpeeds   = wind && wind.hourly ? wind.hourly.wind_speed_10m   || [] : [];
   const windDirs     = wind && wind.hourly ? wind.hourly.wind_direction_10m || [] : [];
   const windGusts    = wind && wind.hourly ? wind.hourly.wind_gusts_10m   || [] : [];
