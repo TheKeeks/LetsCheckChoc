@@ -6155,11 +6155,71 @@ function _regFmtRatingsBlock(entry, isOwn) {
     row('Wind/conditions', r.windQuality, cPred);
 }
 
+// Per-feature attribution: contribution_j = w_j × ((feature_value − mean_j) / std_j)
+// Predictions computed manually here (rather than via _predict) so we can
+// also report the unbounded sum before the [1, 10] clamp at app.js:5054.
+function _regBuildAttribution(entry, sub) {
+  const cfg = REG_SUBMODELS[sub] || REG_SUBMODELS.wave;
+  const weights = STATE[cfg.weightsKey];
+  const stats = STATE[cfg.statsKey];
+  if (!weights || !stats) {
+    return '<div class="reg-drill-section-heading">Per-feature attribution</div>' +
+      '<div class="reg-drill-empty sl-hint">' + cfg.title + ' isn\'t trained yet — log more sessions.</div>';
+  }
+  const features = cfg.extractor(entry.conditions);
+  if (!features) {
+    return '<div class="reg-drill-section-heading">Per-feature attribution</div>' +
+      '<div class="reg-drill-empty sl-hint">No conditions on this session.</div>';
+  }
+  const targetMean = stats.targetMean || 0;
+  const contribs = [];
+  let sumContrib = 0;
+  for (let j = 0; j < features.length; j++) {
+    const sd = stats.std[j];
+    const z = sd > 1e-10 ? (features[j] - stats.mean[j]) / sd : 0;
+    const w = weights[j];
+    const c = w * z;
+    sumContrib += c;
+    contribs.push({
+      name: cfg.featureNames[j] || ('f' + j),
+      label: regFeatureLabel(cfg.featureNames[j] || ''),
+      z, w, contribution: c
+    });
+  }
+  const predictedRaw = targetMean + sumContrib;
+  const predictedBounded = Math.max(1, Math.min(10, Math.round(predictedRaw * 10) / 10));
+  contribs.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
+  const top = contribs.slice(0, 5);
+  const subModelTitle = cfg.title;
+  const rows = top.map(c => {
+    const sign = c.contribution >= 0 ? '+' : '−';
+    const cls = c.contribution >= 0 ? 'reg-attr-pos' : 'reg-attr-neg';
+    const mag = Math.abs(c.contribution).toFixed(1);
+    const zStr = (c.z >= 0 ? '+' : '') + c.z.toFixed(2);
+    const wStr = (c.w >= 0 ? '+' : '') + c.w.toFixed(2);
+    return '<div class="reg-attr-row ' + cls + '">' +
+      '<span class="reg-attr-sign">' + sign + '</span>' +
+      '<span class="reg-attr-mag">' + mag + '</span>' +
+      '<span class="reg-attr-name">' + c.label + '</span>' +
+      '<span class="reg-attr-detail">(z ' + zStr + ' × w ' + wStr + ')</span>' +
+      '</div>';
+  }).join('');
+  const sumStr = (sumContrib >= 0 ? '+' : '') + sumContrib.toFixed(2);
+  const reconcile = '<div class="reg-attr-reconcile sl-hint">' +
+    'Sum ' + sumStr + ' + target mean ' + targetMean.toFixed(2) +
+    ' = predicted ' + predictedRaw.toFixed(2) +
+    ' → bounded to ' + predictedBounded.toFixed(1) +
+    '</div>';
+  const tip = 'Each feature\'s contribution to the prediction. Positive contributions push the prediction up; negative push it down.';
+  return '<div class="reg-drill-section-heading">Per-feature attribution <span class="reg-tooltip" title="' + tip + '">?</span></div>' +
+    '<div class="reg-attr-summary">' + subModelTitle + ' predicted ' + predictedBounded.toFixed(1) +
+    ' (target mean: ' + targetMean.toFixed(1) + ')</div>' +
+    '<div class="reg-attr-list">' + rows + '</div>' +
+    reconcile;
+}
+// Compatibility shim — older call sites invoked the placeholder name.
 function _regBuildAttributionPlaceholder(entry, sub) {
-  // Filled in by commit 5. Header here so commit 4 has the section
-  // shell without the math.
-  return '<div class="reg-drill-section-heading">Per-feature attribution</div>' +
-    '<div class="reg-drill-empty sl-hint">Attribution will appear here.</div>';
+  return _regBuildAttribution(entry, sub);
 }
 
 function openRegressionDrilldown(entry, sub) {

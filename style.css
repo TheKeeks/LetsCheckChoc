@@ -2552,3 +2552,38 @@ a:hover { text-decoration: underline; }
   font-size: 0.78rem;
 }
 .reg-drill-empty { padding: 8px 0; }
+
+/* Per-feature attribution */
+.reg-tooltip {
+  display: inline-block;
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--ink4);
+  color: #fff;
+  text-align: center; line-height: 13px;
+  font-size: 0.65rem;
+  cursor: help;
+  margin-left: 4px;
+}
+.reg-attr-summary {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.reg-attr-list { display: flex; flex-direction: column; gap: 2px; }
+.reg-attr-row {
+  display: grid;
+  grid-template-columns: 16px 36px 1fr auto;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--ink2);
+}
+.reg-attr-pos .reg-attr-sign,
+.reg-attr-pos .reg-attr-mag { color: var(--green); }
+.reg-attr-neg .reg-attr-sign,
+.reg-attr-neg .reg-attr-mag { color: var(--red-m); }
+.reg-attr-mag { font-weight: 500; text-align: right; }
+.reg-attr-detail { color: var(--ink4); font-size: 0.7rem; }
+.reg-attr-reconcile { margin-top: 6px; font-size: 0.7rem; }
