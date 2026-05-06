@@ -6089,6 +6089,176 @@ function renderRegressionPVA() {
   }
 }
 
+// ── Tab 2 §11: Drill-down side panel ──────────────────────────────────
+//
+// Shared overlay rendered for any dot click. The structure is built in
+// commit 4; per-feature attribution (the most informative section) is
+// layered on in commit 5.
+
+let _regDrilldownState = { entry: null, sub: 'wave', photoIdx: 0 };
+
+function _regFmtConditionsBlock(cond) {
+  if (!cond) return '<div class="reg-drill-empty sl-hint">No conditions recorded</div>';
+  const s = cond.swell || {}, w = cond.wind || {}, t = cond.tide || {};
+  const swellH = (s.height != null ? s.height.toFixed(1) : '—') + 'ft';
+  const swellP = (s.period != null ? s.period.toFixed(1) : '—') + 's';
+  const swellD = (s.direction != null ? directionLabel(s.direction) + ' (' + Math.round(s.direction) + '°)' : '—');
+  const secLine = s.secondary
+    ? '<div class="reg-drill-line"><span class="reg-drill-key">Secondary:</span> ' +
+      (s.secondary.height != null ? s.secondary.height.toFixed(1) + 'ft' : '—') + ' @ ' +
+      (s.secondary.period != null ? s.secondary.period.toFixed(1) + 's' : '—') + ' · ' +
+      (s.secondary.direction != null ? directionLabel(s.secondary.direction) : '—') + '</div>'
+    : '';
+  const windLine = (w.speed != null ? Math.round(w.speed) : '—') + 'mph · ' +
+    (w.direction != null ? directionLabel(w.direction) : '—') +
+    (w.direction != null ? ' (' + Math.round(w.direction) + '°)' : '');
+  const tideLine = (t.height != null ? (t.height >= 0 ? '+' : '') + t.height.toFixed(1) + 'ft' : '—') +
+    ' · ' + (t.stage || '—') +
+    (t.timeToNearest != null ? ' · time to nearest: ' + t.timeToNearest + 'h' : '');
+  const sourceLabel = cond.source === 'ndbc'
+    ? 'NDBC buoy 44097 (measured)'
+    : 'Open-Meteo marine API';
+  return '<div class="reg-drill-line"><span class="reg-drill-key">Swell:</span> ' + swellH + ' @ ' + swellP + ' · ' + swellD + '</div>' +
+    secLine +
+    '<div class="reg-drill-line"><span class="reg-drill-key">Wind:</span> ' + windLine + '</div>' +
+    '<div class="reg-drill-line"><span class="reg-drill-key">Tide:</span> ' + tideLine + '</div>' +
+    '<div class="reg-drill-line reg-drill-source">Source: ' + sourceLabel + '</div>';
+}
+
+function _regFmtRatingsBlock(entry, isOwn) {
+  const r = entry.ratings || {};
+  const stats = STATE.surfLogWaveStats;
+  // Each predicted rating + residual: actual − predicted.
+  const wf = entry.conditions ? extractWaveFeatures(entry.conditions) : null;
+  const rf = entry.conditions ? extractRideFeatures(entry.conditions) : null;
+  const cf = entry.conditions ? extractCondFeatures(entry.conditions) : null;
+  const wPred = wf ? predictWaveRating(wf) : null;
+  const rPred = rf ? predictRideRating(rf) : null;
+  const cPred = cf ? predictCondRating(cf) : null;
+  const row = (label, actual, pred) => {
+    const aStr = (typeof actual === 'number') ? actual.toFixed(1) : '—';
+    const pStr = (typeof pred === 'number') ? pred.toFixed(1) : '—';
+    const resStr = (typeof actual === 'number' && typeof pred === 'number')
+      ? (() => { const r = actual - pred; return (r >= 0 ? '+' : '') + r.toFixed(1); })()
+      : '—';
+    return '<div class="reg-drill-rating-row">' +
+      '<span class="reg-drill-rating-label">' + label + ':</span>' +
+      '<span>actual <strong>' + aStr + '</strong></span>' +
+      '<span>predicted <strong>' + pStr + '</strong></span>' +
+      '<span class="reg-drill-resid">(residual ' + resStr + ')</span>' +
+      '</div>';
+  };
+  const heading = isOwn ? 'Your ratings vs predicted' : 'Their ratings vs predicted';
+  return '<div class="reg-drill-section-heading">' + heading + '</div>' +
+    row('Wave size', r.size, wPred) +
+    row('Ride quality', r.rideQuality, rPred) +
+    row('Wind/conditions', r.windQuality, cPred);
+}
+
+function _regBuildAttributionPlaceholder(entry, sub) {
+  // Filled in by commit 5. Header here so commit 4 has the section
+  // shell without the math.
+  return '<div class="reg-drill-section-heading">Per-feature attribution</div>' +
+    '<div class="reg-drill-empty sl-hint">Attribution will appear here.</div>';
+}
+
+function openRegressionDrilldown(entry, sub) {
+  if (!entry) return;
+  _regDrilldownState = { entry, sub: sub || 'wave', photoIdx: 0 };
+  const panel = el('reg-drilldown');
+  const backdrop = el('reg-drilldown-backdrop');
+  const inner = el('reg-drilldown-inner');
+  if (!panel || !inner) return;
+  const isOwn = entry.userId === window._fbUserId;
+  const dt = new Date(entry.timestamp);
+  const dtStr = dt.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }) +
+    ' · ' + formatTime(dt);
+  const photos = (entry.photos || []).map(p => photoUrl(p) || p).filter(Boolean);
+  const photoBlock = photos.length
+    ? '<div class="reg-drill-photo-wrap">' +
+      '<img class="reg-drill-photo" src="' + photos[0] + '" alt="Session photo" onerror="this.style.display=\'none\'">' +
+      (photos.length > 1 ? '<span class="reg-drill-photo-counter">1/' + photos.length + '</span>' : '') +
+      '</div>'
+    : '';
+  const communityBadge = !isOwn ? '<span class="reg-drill-badge">from community log</span>' : '';
+  const loggedBy = isOwn ? 'you' : (entry.displayName || 'Anonymous');
+  const notesBlock = entry.notes
+    ? '<div class="reg-drill-section"><div class="reg-drill-section-heading">Notes</div><div class="reg-drill-notes">' +
+      entry.notes.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) + '</div></div>'
+    : '';
+
+  inner.innerHTML =
+    '<div class="reg-drill-header">' +
+      '<div class="reg-drill-header-text">' +
+        '<div class="reg-drill-date">' + dtStr + '</div>' +
+        '<div class="reg-drill-meta">Logged by ' + loggedBy + ' ' + communityBadge + '</div>' +
+      '</div>' +
+      '<button class="reg-drill-close" id="reg-drill-close" aria-label="Close">&times;</button>' +
+    '</div>' +
+    photoBlock +
+    '<div class="reg-drill-section">' + _regFmtRatingsBlock(entry, isOwn) + '</div>' +
+    '<div class="reg-drill-section">' +
+      '<div class="reg-drill-section-heading">Conditions snapshot</div>' +
+      _regFmtConditionsBlock(entry.conditions) +
+    '</div>' +
+    '<div class="reg-drill-section">' + _regBuildAttributionPlaceholder(entry, _regDrilldownState.sub) + '</div>' +
+    notesBlock +
+    '<div class="reg-drill-section reg-drill-footer">' +
+      '<a href="#" class="reg-drill-link" id="reg-drill-open-log">Open in surf log →</a>' +
+    '</div>';
+  panel.style.display = '';
+  panel.setAttribute('aria-hidden', 'false');
+  if (backdrop) backdrop.style.display = '';
+  // Reflow so the slide-in transition fires.
+  // eslint-disable-next-line no-unused-expressions
+  panel.offsetWidth;
+  panel.classList.add('open');
+  if (backdrop) backdrop.classList.add('open');
+  el('reg-drill-close')?.addEventListener('click', closeRegressionDrilldown);
+  el('reg-drill-open-log')?.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    closeRegressionDrilldown();
+    if (typeof switchTab === 'function') switchTab('surflog');
+    setTimeout(() => {
+      const tbody = el('surflog-tbody');
+      if (!tbody) return;
+      // Match by inspecting Edit button data-id (rendered for own rows) — for
+      // community rows, fall back to scrolling to the table top.
+      const target = tbody.querySelector('button[data-id="' + entry.id + '"]');
+      const row = target ? target.closest('tr') : null;
+      (row || el('panel-surflog-entries'))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  });
+}
+
+function closeRegressionDrilldown() {
+  const panel = el('reg-drilldown');
+  const backdrop = el('reg-drilldown-backdrop');
+  if (panel) {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+  }
+  if (backdrop) backdrop.classList.remove('open');
+  setTimeout(() => {
+    if (panel && !panel.classList.contains('open')) panel.style.display = 'none';
+    if (backdrop && !backdrop.classList.contains('open')) backdrop.style.display = 'none';
+  }, 220);
+}
+
+(function _regWireDrilldown() {
+  if (typeof document === 'undefined') return;
+  document.addEventListener('click', (ev) => {
+    const target = ev.target;
+    if (target && target.id === 'reg-drilldown-backdrop') closeRegressionDrilldown();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') {
+      const panel = el('reg-drilldown');
+      if (panel && panel.classList.contains('open')) closeRegressionDrilldown();
+    }
+  });
+})();
+
 // ════════════════════════════════════════════════
 // INITIALIZATION
 // ════════════════════════════════════════════════
