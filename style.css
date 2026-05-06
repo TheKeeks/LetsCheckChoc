@@ -2302,7 +2302,11 @@ a:hover { text-decoration: underline; }
   margin-bottom: 8px;
 }
 
-/* Sample summary block on the Regression Results tab */
+/* ── Tab 2 — Regression Results ─────────────────────────── */
+
+/* Header strip */
+.reg-header-strip { display: flex; flex-direction: column; gap: 4px; }
+.reg-header-title { margin: 0; }
 .regression-sample-summary {
   font-family: var(--mono, monospace);
   font-size: 0.85rem;
@@ -2310,3 +2314,16 @@ a:hover { text-decoration: underline; }
   line-height: 1.55;
 }
 .regression-sample-summary strong { color: var(--ink, #1a1714); }
+.regression-source-note {
+  font-family: var(--mono, monospace);
+  font-size: 0.72rem;
+  color: var(--ink3);
+  font-style: italic;
+}
+.regression-source-note code {
+  font-family: var(--mono, monospace);
+  font-size: 0.72rem;
+  background: var(--bg-alt);
+  padding: 0 4px;
+  border-radius: 2px;
+}

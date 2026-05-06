@@ -5546,34 +5546,67 @@ function syncBuoySelectDropdown() {
 // REGRESSION TAB (Tab 2)
 // ════════════════════════════════════════════════
 
+// Tab 2 sub-model state — drives §6, §7, §8, §9 below.
+let _regActiveSubmodel = 'wave';
+
+// Trim a trailing "now" indicator off the summary so it reads cleanly.
+function _regFmtFitTimestamp(ms) {
+  if (!ms) return '—';
+  const d = new Date(ms);
+  // ISO-ish UTC stamp matches the spec's "2026-05-04 14:32 UTC" form.
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mi = String(d.getUTCMinutes()).padStart(2, '0');
+  return yyyy + '-' + mm + '-' + dd + ' ' + hh + ':' + mi + ' UTC';
+}
+
+function _regFmtDate(ms) {
+  if (!ms) return '—';
+  const d = new Date(ms);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 function renderRegressionTab() {
   const isChoc = STATE.isChocomount;
   const empty = el('panel-regression-empty');
   const summary = el('panel-regression-summary');
+  const prediction = el('panel-regression-prediction');
+  const pva = el('panel-regression-pva');
+  const thresholds = el('panel-regression-thresholds');
+  const submodel = el('panel-regression-submodel');
   const weights = el('panel-surflog-weights');
-  const future = el('panel-tab2-future');
+  const sections = [summary, prediction, pva, thresholds, submodel, weights];
   if (!isChoc) {
     if (empty) empty.style.display = '';
-    if (summary) summary.style.display = 'none';
-    if (weights) weights.style.display = 'none';
-    if (future) future.style.display = 'none';
+    sections.forEach(s => { if (s) s.style.display = 'none'; });
     return;
   }
   if (empty) empty.style.display = 'none';
   if (summary) summary.style.display = '';
-  if (future) future.style.display = '';
-  // Sample summary line
+
+  // Header strip
   const box = el('regression-sample-summary');
   if (box) {
     const n = STATE._lastFitN || 0;
     const range = STATE._lastFitDateRange;
-    const fmt = ms => new Date(ms).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-    const rangeText = range ? fmt(range.min) + ' → ' + fmt(range.max) : '—';
-    const fitText = STATE._lastFitAt ? new Date(STATE._lastFitAt).toLocaleString() : 'not yet fit';
-    box.innerHTML = '<div><strong>Sample size:</strong> ' + n + ' session' + (n === 1 ? '' : 's') + ' used in training</div>' +
-      '<div><strong>Date range:</strong> ' + rangeText + '</div>' +
-      '<div><strong>Last refitted:</strong> ' + fitText + '</div>';
+    const earliest = range ? _regFmtDate(range.min) : '—';
+    const latest = range ? _regFmtDate(range.max) : '—';
+    const fitText = _regFmtFitTimestamp(STATE._lastFitAt);
+    box.innerHTML = 'Trained on <strong>' + n + '</strong> session' + (n === 1 ? '' : 's') +
+      ' · earliest <strong>' + earliest + '</strong>' +
+      ' · latest <strong>' + latest + '</strong>' +
+      ' · last refit <strong>' + fitText + '</strong>';
   }
+
+  // The remaining sections are populated by subsequent prompts/commits.
+  // Keep them visible so their (currently empty) shells are present.
+  if (prediction) prediction.style.display = '';
+  if (pva) pva.style.display = '';
+  if (thresholds) thresholds.style.display = '';
+  if (submodel) submodel.style.display = '';
+
   // Weights panel (renderWeightsPanel toggles its own display).
   renderWeightsPanel();
 }
