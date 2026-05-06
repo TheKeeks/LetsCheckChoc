@@ -5812,6 +5812,48 @@ function renderRegressionFeatureGrid() {
   }
 }
 
+// ── Tab 2 §7: Feature importance bars ─────────────────────────────────
+//
+// Sortable bar chart of |w_j| normalised so the largest is 100%. Bar
+// colour = green for positive, red for negative. Sign suffix after the
+// percentage. Sourced from STATE.surfLog{Wave,Ride,Cond}Weights — same
+// data the existing weights panel renders, just visualised differently.
+function renderRegressionImportance() {
+  const container = el('reg-importance');
+  if (!container) return;
+  const sub = _regActiveSubmodel;
+  const cfg = REG_SUBMODELS[sub];
+  const weights = STATE[cfg.weightsKey];
+  if (!weights) {
+    container.innerHTML = '<div class="reg-empty sl-hint">' + cfg.title + ' isn\'t trained yet.</div>';
+    return;
+  }
+  const maxAbs = weights.reduce((m, w) => Math.max(m, Math.abs(w)), 0);
+  if (maxAbs < 1e-10) {
+    container.innerHTML = '<div class="reg-empty sl-hint">All weights near zero.</div>';
+    return;
+  }
+  const rows = weights.map((w, i) => ({
+    name: cfg.featureNames[i] || ('f' + i),
+    label: regFeatureLabel(cfg.featureNames[i] || ''),
+    weight: w,
+    pct: Math.abs(w) / maxAbs * 100
+  }));
+  rows.sort((a, b) => b.pct - a.pct);
+  container.innerHTML = rows.map(r => {
+    const sign = r.weight >= 0 ? '+' : '−';
+    const cls = r.weight >= 0 ? 'reg-imp-pos' : 'reg-imp-neg';
+    const pct = Math.round(r.pct);
+    return '<div class="reg-imp-row ' + cls + '">' +
+      '<span class="reg-imp-label">' + r.label + '</span>' +
+      '<div class="reg-imp-bar-wrap">' +
+        '<div class="reg-imp-bar" style="width:' + pct + '%"></div>' +
+      '</div>' +
+      '<span class="reg-imp-pct">' + pct + '% (' + sign + ')</span>' +
+      '</div>';
+  }).join('');
+}
+
 // Per-submodel surfaces: per-feature scatters, importance bars, preferred
 // conditions, fit metrics, residual chart. Dispatcher calls each one if it
 // has shipped (renderers added incrementally per Prompt #5 commit order).
