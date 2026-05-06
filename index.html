@@ -265,21 +265,98 @@
         <p class="sl-hint">Regression is currently Chocomount-only.</p>
       </section>
 
+      <!-- 1. Header strip -->
       <section class="panel" id="panel-regression-summary" style="display:none;">
-        <h3 class="panel-title">Regression Results</h3>
-        <div id="regression-sample-summary" class="regression-sample-summary"></div>
-      </section>
-
-      <section class="panel" id="panel-surflog-weights" style="display:none;">
-        <h3 class="panel-title">Learned Preferences (Wave &amp; Conditions)</h3>
-        <div id="surflog-weights" class="surflog-weights"></div>
-      </section>
-
-      <section class="panel" id="panel-tab2-future" style="display:none;">
-        <div id="tab2-future" class="sl-hint">
-          Predicted vs Actual scatter, per-feature scatters, feature importance, and threshold tuning UI coming next.
+        <div class="reg-header-strip">
+          <h3 class="panel-title reg-header-title">Regression Results</h3>
+          <div id="regression-sample-summary" class="regression-sample-summary"></div>
+          <div class="regression-source-note">
+            Model trained on Open-Meteo <code>best_match</code> historical conditions · refits on every session save
+          </div>
         </div>
       </section>
+
+      <!-- 2. "If I went at scrubbed time" prediction widget -->
+      <section class="panel" id="panel-regression-prediction" style="display:none;">
+        <div class="reg-prediction-card" id="reg-prediction-card"></div>
+      </section>
+
+      <!-- 3. Predicted vs Actual scatters -->
+      <section class="panel" id="panel-regression-pva" style="display:none;">
+        <h3 class="panel-title">Predicted vs Actual</h3>
+        <div class="reg-pva-grid" id="reg-pva-grid"></div>
+      </section>
+
+      <!-- 4. Match threshold tuning -->
+      <section class="panel" id="panel-regression-thresholds" style="display:none;">
+        <h3 class="panel-title">Match Thresholds</h3>
+        <div class="reg-threshold-panel" id="reg-threshold-panel"></div>
+        <div class="reg-threshold-note sl-hint">
+          Currently scrubbed hour gets 3 lights using these thresholds.
+        </div>
+      </section>
+
+      <!-- 5. Sub-model selector -->
+      <section class="panel" id="panel-regression-submodel" style="display:none;">
+        <div class="reg-submodel-row">
+          <div class="reg-submodel-tabs" role="tablist" aria-label="Sub-model">
+            <button type="button" class="reg-submodel-tab active" data-submodel="wave" role="tab">Wave</button>
+            <button type="button" class="reg-submodel-tab" data-submodel="ride" role="tab">Ride</button>
+            <button type="button" class="reg-submodel-tab" data-submodel="cond" role="tab">Conditions</button>
+          </div>
+        </div>
+
+        <!-- 6. Per-feature scatter grid -->
+        <div class="reg-section">
+          <h4 class="reg-section-heading">Per-feature scatters</h4>
+          <div class="reg-feature-note sl-hint">
+            Per-feature plots show all sessions in the community log. Lines are fit only to your sessions.
+            <span class="reg-legend-inline">
+              <span class="reg-legend-dot reg-legend-dot-self"></span>your sessions
+              <span class="reg-legend-dot reg-legend-dot-other"></span>community
+            </span>
+          </div>
+          <div class="reg-feature-grid" id="reg-feature-grid"></div>
+        </div>
+
+        <!-- 7. Feature importance -->
+        <div class="reg-section">
+          <h4 class="reg-section-heading">Feature importance</h4>
+          <div class="reg-importance" id="reg-importance"></div>
+        </div>
+
+        <!-- 8. Preferred conditions -->
+        <div class="reg-section">
+          <h4 class="reg-section-heading">Preferred conditions</h4>
+          <div class="reg-preferred" id="reg-preferred"></div>
+        </div>
+
+        <!-- 9. Fit metrics + residual chart -->
+        <div class="reg-section">
+          <h4 class="reg-section-heading">Model fit</h4>
+          <div class="reg-fit-row">
+            <div class="reg-fit-metrics" id="reg-fit-metrics"></div>
+            <div class="reg-residual" id="reg-residual"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 10. Existing weights panel (collapsed by default) -->
+      <section class="panel" id="panel-surflog-weights" style="display:none;">
+        <details class="reg-raw-weights-details">
+          <summary>Raw weights (advanced)</summary>
+          <div class="reg-raw-weights-body">
+            <h4 class="panel-title" style="margin-top:8px;">Learned Preferences (Wave &amp; Conditions)</h4>
+            <div id="surflog-weights" class="surflog-weights"></div>
+          </div>
+        </details>
+      </section>
+
+      <!-- Drill-down side panel -->
+      <div id="reg-drilldown-backdrop" class="reg-drilldown-backdrop" style="display:none;"></div>
+      <aside id="reg-drilldown" class="reg-drilldown" style="display:none;" aria-hidden="true">
+        <div class="reg-drilldown-inner" id="reg-drilldown-inner"></div>
+      </aside>
 
     </div><!-- end #view-regression -->
 

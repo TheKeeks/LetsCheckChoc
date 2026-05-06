@@ -1,5 +1,154 @@
 # Changelog
 
+## [Unreleased] — Prompt #5: Tab 2 regression diagnostics
+
+Builds out Tab 2 (Regression Results) into a full diagnostic page.
+Replaces the placeholder summary + raw-weights panel with a stacked
+visualisation surface, all painted with the same hand-rolled
+Canvas / SVG approach as Tab 1 — no React in production. The
+underlying regression math is unchanged: this is purely a visualisation
+layer over the existing in-memory three-sub-model OLS fit at
+`app.js:4767-4892` (audit §10).
+
+### Section 1 — Header strip
+
+Single-row strip at the top: `Trained on N sessions · earliest YYYY-MM-DD ·
+latest YYYY-MM-DD · last refit YYYY-MM-DD HH:MM UTC`, plus an explicit
+italic note "Model trained on Open-Meteo `best_match` historical
+conditions · refits on every session save". Reads `STATE._lastFitN /
+_lastFitDateRange / _lastFitAt` set by `slRetrain` at `app.js:4875-4888`.
+
+### Section 2 — "If I went at scrubbed time" prediction widget
+
+Wide card showing predicted Wave / Ride / Conditions ratings for the
+scrubbed hour from Tab 1. Reads the scrubber index from
+`STATE.scrubberIdx` (or the persisted `lcc-scrubber-hour` session key),
+runs `buildForecastConditions` (`app.js:5065`) +
+`predictWaveRating / predictRideRating / predictCondRating`
+(`app.js:5056-5058`). Header label flips between `IF I WENT NOW` and
+`IF I WENT AT [Day, Time]`. Re-renders silently when the scrubber moves
+via a notify hook in `applyScrubberToHour`.
+
+### Section 3 — Predicted vs Actual scatters
+
+Three side-by-side hand-rolled Canvas 2D scatters (wave / ride / cond),
+~280×280, with diagonal y=x reference, dot per session, R²/RMSE/n
+caption. Dot positions use the same fold layout as
+`leaveOneOutRMSE` (`app.js:4813`) so each predicted value mathematically
+reconciles with the surfaced LOO RMSE. R² caption coloured green > 0.5,
+orange 0.2–0.5, red < 0.2 — surfaces R² from `_logSanityModel` at
+`app.js:4959`, previously console-only.
+
+A new `_regLOOCache` keyed off `(_lastFitAt, _lastFitN)` lets the
+per-feature scatters, residual chart, and fit metrics share the same
+fold without recomputing.
+
+### Section 4 — Match threshold tuning
+
+Three independent sliders (wave / ride / cond), 0–100 step 5, default
+60%. Persisted to `lcc-match-threshold-{wave,ride,cond}` in localStorage.
+Per-row preview light shows how the currently scrubbed hour scores
+against the user's best-matching past session under that sub-model's
+`_matchPct` formula (`app.js:5034`) — green ≥ threshold, yellow ≥
+(threshold − 15), red otherwise. Updates on slider input AND scrubber
+movement. Sliders don't drive Tab 1 yet (deferred per spec non-goal).
+
+### Section 5 — Sub-model selector
+
+Segmented `[Wave | Ride | Conditions]` control, default Wave. Drives
+the five sub-model surfaces below it (per-feature scatters, importance,
+preferred conditions, fit metrics, residual chart). A central
+`REG_SUBMODELS` registry encodes (label / extractor / target fn /
+feature-name array / weights/stats keys) per sub-model so each surface
+pivots off a single source of truth.
+
+### Section 6 — Per-feature scatter grid
+
+8 minis for wave, 6 for ride, 2 for cond — keyed off
+`WAVE_FEATURE_NAMES / RIDE_FEATURE_NAMES / COND_FEATURE_NAMES` at
+`app.js:4653-4671`. Each mini ~220×160 with x = feature value, y =
+target. Dots include the whole crowdsourced log; user dots are primary
+blue, community dots muted gray at lower alpha. The OLS fit line is
+computed from the user-scoped subset only — community sessions are
+visualised but not used for fitting. Inline legend documents the
+convention. Click any dot → drilldown.
+
+### Section 7 — Feature importance bars
+
+Horizontal bars sorted by `|w_j|` descending, normalised so the largest
+weight = 100%. Green for positive coefficients, red for negative.
+Sourced from `STATE.surfLog{Wave,Ride,Cond}Weights` — visualises the
+same data the existing weights panel renders as raw text.
+
+### Section 8 — Preferred conditions
+
+For each feature with `|w_j| ≥ 5%` of the largest weight, surfaces the
+implicit preferred direction (positive coefficient ⇒ "prefers >mean";
+negative ⇒ "<mean") plus a "your top N sessions" range derived from the
+top quartile of user-scoped sessions sorted by target.
+
+### Section 9 — Model fit metrics + residual chart
+
+Two-column layout:
+- LEFT: R², LOO RMSE, baseline RMSE (= std of actuals), improvement %
+  = 1 − rmse/baseline, N sessions, last-refit relative time. When
+  improvement ≤ 0, percentage turns red and a warning surfaces:
+  *"Model is no better than guessing the mean."*
+- RIGHT: residual chart, ~280×220 — x = predicted, y = actual − predicted,
+  dashed zero line, dot per session. Click any dot → drilldown.
+
+Surfaces R², baseline RMSE, and improvement that today only run inside
+`_logRegressionSanity` (`app.js:4983`).
+
+### Section 10 — Existing weights panel (collapsed)
+
+`renderWeightsPanel` (`app.js:5018`) is wrapped in a `<details>` element,
+collapsed by default with summary "Raw weights (advanced)". Lives at the
+bottom of the tab — kept as the numerical complement to the
+visualisations.
+
+### Section 11 — Drill-down side panel
+
+Right-anchored slide-in panel (full-screen modal on mobile) opened when
+any scatter dot is clicked. Header shows session date / "logged by" /
+community badge for non-own sessions. Photo, your-vs-predicted ratings
+with residuals, conditions snapshot, top-5 per-feature attribution,
+notes, and an "Open in surf log" deep link.
+
+The attribution math reconciles the dot's predicted value:
+`contribution_j = w_j × ((feature_j − mean_j) / std_j)`, sorted by
+`|contribution|`, top 5 displayed. Footer shows
+`Σcontributions + targetMean = predicted_raw → bounded to [1, 10]` so
+the user can verify the dot's pred matches what the regression
+actually computed. Backdrop click and Escape close the panel.
+
+### New keys
+
+- `localStorage.lcc-match-threshold-wave`  (`'0'`–`'100'`, step 5)
+- `localStorage.lcc-match-threshold-ride`  (same)
+- `localStorage.lcc-match-threshold-cond`  (same)
+
+### Non-goals
+
+No CSS overhaul (Web 1.0 redesign is Prompt #7). No mobile-specific
+layout (Prompt #8). No Tab 1 / Tab 3 changes. No regression math
+changes. No threshold-driven match lights on Tab 1.
+
+### Commits (in order)
+
+1. `Tab 2: header strip with sample summary + last-fit timestamp`
+2. `Tab 2: 'If I went at scrubbed time' prediction widget + scrubber listener`
+3. `Tab 2: predicted-vs-actual scatters (3 sub-models)`
+4. `Tab 2: drill-down side panel (basic structure)`
+5. `Tab 2: drill-down per-feature attribution`
+6. `Tab 2: match threshold tuning sliders`
+7. `Tab 2: sub-model selector`
+8. `Tab 2: per-feature scatter grid`
+9. `Tab 2: feature importance bars`
+10. `Tab 2: preferred conditions card`
+11. `Tab 2: model fit metrics + residual chart`
+12. `Tab 2: move existing weights panel into <details> at bottom`
+
 ## [Unreleased] — Prompt #4.1: forecast chart fix-up
 
 Restructures Prompt #4's single partitioned canvas into the Surfline-style

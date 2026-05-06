@@ -2489,6 +2489,9 @@ function applyScrubberToHour(idx) {
   // ── "Reset to now" link visibility ──
   const resetRow = el('forecast-reset-row');
   if (resetRow) resetRow.style.display = isScrubberAtNow() ? 'none' : '';
+
+  // ── Cross-feature: Tab 2 prediction widget tracks the scrubber too. ──
+  if (typeof _regNotifyScrubberMoved === 'function') _regNotifyScrubberMoved();
 }
 
 function applyStatGridForHour(idx) {
@@ -5546,37 +5549,1381 @@ function syncBuoySelectDropdown() {
 // REGRESSION TAB (Tab 2)
 // ════════════════════════════════════════════════
 
+// Tab 2 sub-model state — drives §6, §7, §8, §9 below.
+let _regActiveSubmodel = 'wave';
+
+// Trim a trailing "now" indicator off the summary so it reads cleanly.
+function _regFmtFitTimestamp(ms) {
+  if (!ms) return '—';
+  const d = new Date(ms);
+  // ISO-ish UTC stamp matches the spec's "2026-05-04 14:32 UTC" form.
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mi = String(d.getUTCMinutes()).padStart(2, '0');
+  return yyyy + '-' + mm + '-' + dd + ' ' + hh + ':' + mi + ' UTC';
+}
+
+function _regFmtDate(ms) {
+  if (!ms) return '—';
+  const d = new Date(ms);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 function renderRegressionTab() {
   const isChoc = STATE.isChocomount;
   const empty = el('panel-regression-empty');
   const summary = el('panel-regression-summary');
+  const prediction = el('panel-regression-prediction');
+  const pva = el('panel-regression-pva');
+  const thresholds = el('panel-regression-thresholds');
+  const submodel = el('panel-regression-submodel');
   const weights = el('panel-surflog-weights');
-  const future = el('panel-tab2-future');
+  const sections = [summary, prediction, pva, thresholds, submodel, weights];
   if (!isChoc) {
     if (empty) empty.style.display = '';
-    if (summary) summary.style.display = 'none';
-    if (weights) weights.style.display = 'none';
-    if (future) future.style.display = 'none';
+    sections.forEach(s => { if (s) s.style.display = 'none'; });
     return;
   }
   if (empty) empty.style.display = 'none';
   if (summary) summary.style.display = '';
-  if (future) future.style.display = '';
-  // Sample summary line
+
+  // Header strip
   const box = el('regression-sample-summary');
   if (box) {
     const n = STATE._lastFitN || 0;
     const range = STATE._lastFitDateRange;
-    const fmt = ms => new Date(ms).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-    const rangeText = range ? fmt(range.min) + ' → ' + fmt(range.max) : '—';
-    const fitText = STATE._lastFitAt ? new Date(STATE._lastFitAt).toLocaleString() : 'not yet fit';
-    box.innerHTML = '<div><strong>Sample size:</strong> ' + n + ' session' + (n === 1 ? '' : 's') + ' used in training</div>' +
-      '<div><strong>Date range:</strong> ' + rangeText + '</div>' +
-      '<div><strong>Last refitted:</strong> ' + fitText + '</div>';
+    const earliest = range ? _regFmtDate(range.min) : '—';
+    const latest = range ? _regFmtDate(range.max) : '—';
+    const fitText = _regFmtFitTimestamp(STATE._lastFitAt);
+    box.innerHTML = 'Trained on <strong>' + n + '</strong> session' + (n === 1 ? '' : 's') +
+      ' · earliest <strong>' + earliest + '</strong>' +
+      ' · latest <strong>' + latest + '</strong>' +
+      ' · last refit <strong>' + fitText + '</strong>';
   }
+
+  // The remaining sections are populated incrementally per Prompt #5.
+  if (prediction) prediction.style.display = '';
+  if (pva) pva.style.display = '';
+  if (thresholds) thresholds.style.display = '';
+  if (submodel) submodel.style.display = '';
+
+  renderRegressionPredictionWidget();
+  renderRegressionPVA();
+  renderRegressionThresholds();
+  _regWireSubmodelTabs();
+  _regUpdateSubmodelSurfaces();
+
   // Weights panel (renderWeightsPanel toggles its own display).
   renderWeightsPanel();
 }
+
+// ── Tab 2 §6: Sub-model selector ──────────────────────────────────────
+function _regWireSubmodelTabs() {
+  const tabs = document.querySelectorAll('.reg-submodel-tab');
+  tabs.forEach(t => {
+    if (t._wired) return;
+    t._wired = true;
+    t.addEventListener('click', () => {
+      const sub = t.dataset.submodel;
+      if (!sub || !REG_SUBMODELS[sub]) return;
+      _regActiveSubmodel = sub;
+      tabs.forEach(x => x.classList.toggle('active', x.dataset.submodel === sub));
+      _regUpdateSubmodelSurfaces();
+    });
+  });
+  // Restore active class to currently-selected submodel.
+  tabs.forEach(t => t.classList.toggle('active', t.dataset.submodel === _regActiveSubmodel));
+}
+
+// ── Tab 2 §6: Per-feature scatter grid (per active sub-model) ──────────
+//
+// One mini-scatter per feature in the active sub-model. Dots include the
+// whole community surf log; the OLS fit line is computed from the
+// user-scoped subset only. User dots in primary blue, community dots in
+// muted gray.
+const REG_FG_W = 220, REG_FG_H = 160;
+const REG_FG_PAD = { left: 32, right: 8, top: 12, bottom: 26 };
+
+function _regNiceTicks(min, max) {
+  if (!isFinite(min) || !isFinite(max) || min === max) return [min];
+  const span = max - min;
+  const step = Math.pow(10, Math.floor(Math.log10(span))) * (span / Math.pow(10, Math.floor(Math.log10(span))) >= 5 ? 1 : 0.5);
+  const ticks = [];
+  for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) {
+    ticks.push(Math.round(v * 100) / 100);
+    if (ticks.length > 6) break;
+  }
+  return ticks;
+}
+
+function _regOLSFit(xs, ys) {
+  if (xs.length < 2) return null;
+  const n = xs.length;
+  let sx = 0, sy = 0, sxx = 0, sxy = 0;
+  for (let i = 0; i < n; i++) { sx += xs[i]; sy += ys[i]; sxx += xs[i] * xs[i]; sxy += xs[i] * ys[i]; }
+  const denom = n * sxx - sx * sx;
+  if (Math.abs(denom) < 1e-10) return null;
+  const m = (n * sxy - sx * sy) / denom;
+  const b = (sy - m * sx) / n;
+  return { m, b };
+}
+
+function _regBuildFeatureMini(sub, featureIdx) {
+  const cfg = REG_SUBMODELS[sub];
+  const featureName = cfg.featureNames[featureIdx];
+  const wrap = document.createElement('div');
+  wrap.className = 'reg-feature-mini';
+  const title = document.createElement('div');
+  title.className = 'reg-feature-mini-title';
+  const unit = regFeatureUnit(featureName);
+  title.textContent = regFeatureLabel(featureName) + (unit ? ' (' + unit + ')' : '');
+  wrap.appendChild(title);
+
+  // Build all-sessions feature/target arrays
+  const uid = window._fbUserId;
+  const all = STATE.surfLog.filter(e => e.conditions?.swell);
+  const points = [];
+  for (const e of all) {
+    const f = cfg.extractor(e.conditions);
+    const t = cfg.targetFn(e);
+    if (!f || typeof t !== 'number' || !isFinite(t)) continue;
+    const isOwn = uid && e.userId === uid;
+    points.push({ entry: e, x: f[featureIdx], y: t, isOwn: !!isOwn });
+  }
+  if (!points.length) {
+    const empty = document.createElement('div');
+    empty.className = 'reg-feature-mini-empty sl-hint';
+    empty.textContent = 'No data';
+    wrap.appendChild(empty);
+    return wrap;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.className = 'reg-feature-mini-canvas';
+  wrap.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  setCanvasDPR(canvas, ctx, REG_FG_W, REG_FG_H);
+  // Axis bounds
+  const xs = points.map(p => p.x), ys = points.map(p => p.y);
+  let xMin = Math.min(...xs), xMax = Math.max(...xs);
+  if (xMin === xMax) { xMin -= 1; xMax += 1; }
+  const xPad = (xMax - xMin) * 0.05;
+  xMin -= xPad; xMax += xPad;
+  const yMin = 0, yMax = 10;
+  const pad = REG_FG_PAD;
+  const plotW = REG_FG_W - pad.left - pad.right;
+  const plotH = REG_FG_H - pad.top - pad.bottom;
+  // Background + axes
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, REG_FG_W, REG_FG_H);
+  ctx.strokeStyle = '#d0cbc3';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, pad.top);
+  ctx.lineTo(pad.left, REG_FG_H - pad.bottom);
+  ctx.lineTo(REG_FG_W - pad.right, REG_FG_H - pad.bottom);
+  ctx.stroke();
+  // Tick labels
+  ctx.fillStyle = '#8a827a';
+  ctx.font = '9px DM Mono, Menlo, monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (const v of [0, 5, 10]) {
+    const y = pad.top + plotH * (1 - (v - yMin) / (yMax - yMin));
+    ctx.fillText(String(v), pad.left - 3, y);
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const xTicks = _regNiceTicks(xMin, xMax);
+  for (const v of xTicks) {
+    const x = pad.left + plotW * ((v - xMin) / (xMax - xMin));
+    ctx.fillText(String(v), x, REG_FG_H - pad.bottom + 3);
+  }
+  // Dots
+  const projected = [];
+  for (const p of points) {
+    const x = pad.left + plotW * ((p.x - xMin) / (xMax - xMin));
+    const y = pad.top + plotH * (1 - (p.y - yMin) / (yMax - yMin));
+    projected.push({ x, y, p });
+  }
+  // Draw community first, user on top
+  ctx.lineWidth = 0.5;
+  for (const pt of projected.filter(p => !p.p.isOwn)) {
+    ctx.fillStyle = REG_DOT_FILL_OTHER;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (const pt of projected.filter(p => p.p.isOwn)) {
+    ctx.fillStyle = REG_DOT_FILL_OWN;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  // OLS fit line on user-scoped subset only
+  const ownXs = points.filter(p => p.isOwn).map(p => p.x);
+  const ownYs = points.filter(p => p.isOwn).map(p => p.y);
+  if (ownXs.length >= 2) {
+    const fit = _regOLSFit(ownXs, ownYs);
+    if (fit) {
+      const x0 = xMin, x1 = xMax;
+      const y0 = fit.m * x0 + fit.b, y1 = fit.m * x1 + fit.b;
+      const px0 = pad.left + plotW * ((x0 - xMin) / (xMax - xMin));
+      const py0 = pad.top + plotH * (1 - (Math.max(yMin, Math.min(yMax, y0)) - yMin) / (yMax - yMin));
+      const px1 = pad.left + plotW * ((x1 - xMin) / (xMax - xMin));
+      const py1 = pad.top + plotH * (1 - (Math.max(yMin, Math.min(yMax, y1)) - yMin) / (yMax - yMin));
+      ctx.strokeStyle = '#5a7fa0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(px0, py0);
+      ctx.lineTo(px1, py1);
+      ctx.stroke();
+    }
+  }
+  // Click → drilldown
+  canvas.style.cursor = 'pointer';
+  canvas.addEventListener('click', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    let hit = null;
+    for (const pt of projected) {
+      const d = Math.hypot(mx - pt.x, my - pt.y);
+      if (d <= 5) { hit = pt; break; }
+    }
+    if (hit && typeof openRegressionDrilldown === 'function') {
+      openRegressionDrilldown(hit.p.entry, sub);
+    }
+  });
+  return wrap;
+}
+
+function renderRegressionFeatureGrid() {
+  const grid = el('reg-feature-grid');
+  if (!grid) return;
+  const sub = _regActiveSubmodel;
+  const cfg = REG_SUBMODELS[sub];
+  grid.innerHTML = '';
+  for (let i = 0; i < cfg.featureNames.length; i++) {
+    grid.appendChild(_regBuildFeatureMini(sub, i));
+  }
+}
+
+// ── Tab 2 §7: Feature importance bars ─────────────────────────────────
+//
+// Sortable bar chart of |w_j| normalised so the largest is 100%. Bar
+// colour = green for positive, red for negative. Sign suffix after the
+// percentage. Sourced from STATE.surfLog{Wave,Ride,Cond}Weights — same
+// data the existing weights panel renders, just visualised differently.
+function renderRegressionImportance() {
+  const container = el('reg-importance');
+  if (!container) return;
+  const sub = _regActiveSubmodel;
+  const cfg = REG_SUBMODELS[sub];
+  const weights = STATE[cfg.weightsKey];
+  if (!weights) {
+    container.innerHTML = '<div class="reg-empty sl-hint">' + cfg.title + ' isn\'t trained yet.</div>';
+    return;
+  }
+  const maxAbs = weights.reduce((m, w) => Math.max(m, Math.abs(w)), 0);
+  if (maxAbs < 1e-10) {
+    container.innerHTML = '<div class="reg-empty sl-hint">All weights near zero.</div>';
+    return;
+  }
+  const rows = weights.map((w, i) => ({
+    name: cfg.featureNames[i] || ('f' + i),
+    label: regFeatureLabel(cfg.featureNames[i] || ''),
+    weight: w,
+    pct: Math.abs(w) / maxAbs * 100
+  }));
+  rows.sort((a, b) => b.pct - a.pct);
+  container.innerHTML = rows.map(r => {
+    const sign = r.weight >= 0 ? '+' : '−';
+    const cls = r.weight >= 0 ? 'reg-imp-pos' : 'reg-imp-neg';
+    const pct = Math.round(r.pct);
+    return '<div class="reg-imp-row ' + cls + '">' +
+      '<span class="reg-imp-label">' + r.label + '</span>' +
+      '<div class="reg-imp-bar-wrap">' +
+        '<div class="reg-imp-bar" style="width:' + pct + '%"></div>' +
+      '</div>' +
+      '<span class="reg-imp-pct">' + pct + '% (' + sign + ')</span>' +
+      '</div>';
+  }).join('');
+}
+
+// ── Tab 2 §8: Preferred conditions card ───────────────────────────────
+//
+// For each feature with non-trivial |w_j| (≥ 5% of max), report the
+// implicit "ideal" feature value. Linear model is monotonic in the
+// feature value: positive coefficient ⇒ "more is better" so the
+// preferred range is high; negative ⇒ low. Confidence band derived from
+// user-scoped training mean ± std.
+function _regUserScopedFeatureSeries(sub) {
+  const cfg = REG_SUBMODELS[sub];
+  const uid = window._fbUserId;
+  const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
+  const out = [];
+  for (const e of userScoped) {
+    if (!e.conditions?.swell) continue;
+    const f = cfg.extractor(e.conditions);
+    const t = cfg.targetFn(e);
+    if (!f || typeof t !== 'number' || !isFinite(t)) continue;
+    out.push({ f, t });
+  }
+  return out;
+}
+
+function _regFmtFeatureValue(name, v) {
+  const unit = regFeatureUnit(name);
+  if (typeof v !== 'number' || !isFinite(v)) return '—';
+  // Booleans / 0–1 indicators
+  if (name === 'sec_dir_in_window' || name === 'low_incoming') {
+    return v >= 0.5 ? 'in window / yes' : 'out / no';
+  }
+  if (unit === 'h') return (v >= 0 ? '+' : '') + v.toFixed(1) + unit;
+  if (unit === '°') return Math.round(v) + unit;
+  if (unit === 'mph' || unit === 'ft') return v.toFixed(1) + unit;
+  if (unit === 's') return v.toFixed(1) + unit;
+  return v.toFixed(2);
+}
+
+function renderRegressionPreferred() {
+  const container = el('reg-preferred');
+  if (!container) return;
+  const sub = _regActiveSubmodel;
+  const cfg = REG_SUBMODELS[sub];
+  const weights = STATE[cfg.weightsKey];
+  const stats = STATE[cfg.statsKey];
+  if (!weights || !stats) {
+    container.innerHTML = '<div class="reg-empty sl-hint">' + cfg.title + ' isn\'t trained yet.</div>';
+    return;
+  }
+  const series = _regUserScopedFeatureSeries(sub);
+  if (!series.length) {
+    container.innerHTML = '<div class="reg-empty sl-hint">No user-scoped sessions to summarise.</div>';
+    return;
+  }
+  const maxAbs = weights.reduce((m, w) => Math.max(m, Math.abs(w)), 0);
+  if (maxAbs < 1e-10) {
+    container.innerHTML = '<div class="reg-empty sl-hint">All weights near zero.</div>';
+    return;
+  }
+  const items = [];
+  for (let j = 0; j < weights.length; j++) {
+    const w = weights[j];
+    if (Math.abs(w) / maxAbs < 0.05) continue;   // skip noise
+    const name = cfg.featureNames[j] || ('f' + j);
+    const col = series.map(r => r.f[j]);
+    const fmin = Math.min(...col), fmax = Math.max(...col);
+    const mean = col.reduce((a, b) => a + b, 0) / col.length;
+    // Top 25% subset for the "rated highest at" range — by target value.
+    const sorted = series.slice().sort((a, b) => b.t - a.t);
+    const topQuartile = sorted.slice(0, Math.max(1, Math.ceil(sorted.length / 4)));
+    const topVals = topQuartile.map(r => r.f[j]);
+    const topMin = Math.min(...topVals), topMax = Math.max(...topVals);
+    const direction = w >= 0 ? 'higher' : 'lower';
+    const preferredRange = w >= 0
+      ? '> ' + _regFmtFeatureValue(name, mean)
+      : '< ' + _regFmtFeatureValue(name, mean);
+    const topRangeStr = '[' + _regFmtFeatureValue(name, topMin) + ', ' +
+      _regFmtFeatureValue(name, topMax) + ']';
+    items.push({
+      sortKey: Math.abs(w) / maxAbs,
+      name,
+      label: regFeatureLabel(name),
+      direction,
+      preferredRange,
+      topRangeStr,
+      n: topVals.length
+    });
+  }
+  if (!items.length) {
+    container.innerHTML = '<div class="reg-empty sl-hint">No features cleared the 5% importance threshold.</div>';
+    return;
+  }
+  items.sort((a, b) => b.sortKey - a.sortKey);
+  container.innerHTML = items.map(it =>
+    '<div class="reg-pref-row">' +
+      '<span class="reg-pref-label">' + it.label + ':</span>' +
+      ' prefers <strong>' + it.preferredRange + '</strong>' +
+      ' <span class="reg-pref-detail">(your top ' + it.n + ' sessions: ' + it.topRangeStr + ')</span>' +
+    '</div>'
+  ).join('');
+}
+
+// ── Tab 2 §9: Fit metrics + residual chart ────────────────────────────
+function _regHumanRefitAge(ms) {
+  if (!ms) return '—';
+  const ageS = (Date.now() - ms) / 1000;
+  if (ageS < 60) return Math.max(1, Math.floor(ageS)) + 's ago';
+  if (ageS < 3600) return Math.floor(ageS / 60) + ' min ago';
+  if (ageS < 86400) return Math.floor(ageS / 3600) + 'h ago';
+  return Math.floor(ageS / 86400) + 'd ago';
+}
+
+function renderRegressionFitMetrics() {
+  const container = el('reg-fit-metrics');
+  if (!container) return;
+  const sub = _regActiveSubmodel;
+  const cfg = REG_SUBMODELS[sub];
+  const looData = _regLOOFor(sub);
+  if (!looData.rows.length) {
+    container.innerHTML = '<div class="reg-empty sl-hint">' + cfg.title + ' isn\'t trained yet.</div>';
+    return;
+  }
+  const r2 = looData.r2 == null ? '—' : looData.r2.toFixed(2);
+  const rmse = looData.rmse == null ? '—' : looData.rmse.toFixed(2);
+  const baseline = looData.baselineRMSE == null ? '—' : looData.baselineRMSE.toFixed(2);
+  let improvementHtml;
+  let improvementWarning = '';
+  if (looData.rmse != null && looData.baselineRMSE != null && looData.baselineRMSE > 0) {
+    const improvement = 1 - looData.rmse / looData.baselineRMSE;
+    const pct = Math.round(improvement * 100);
+    if (improvement <= 0) {
+      improvementHtml = '<span class="reg-fit-bad">' + pct + '%</span>';
+      improvementWarning = '<div class="reg-fit-warning">⚠ Model is no better than guessing the mean. ' +
+        'Consider logging more sessions or removing the model from match scoring.</div>';
+    } else {
+      improvementHtml = pct + '%';
+    }
+  } else {
+    improvementHtml = '—';
+  }
+  const lastFit = _regHumanRefitAge(STATE._lastFitAt);
+  const rowsHtml =
+    '<div class="reg-fit-metric-row"><span class="reg-fit-key">R²:</span><span class="reg-fit-val">' + r2 + '</span></div>' +
+    '<div class="reg-fit-metric-row"><span class="reg-fit-key">RMSE (LOO):</span><span class="reg-fit-val">' + rmse + '</span></div>' +
+    '<div class="reg-fit-metric-row"><span class="reg-fit-key">Baseline RMSE:</span><span class="reg-fit-val">' + baseline + '</span></div>' +
+    '<div class="reg-fit-metric-row"><span class="reg-fit-key">Improvement:</span><span class="reg-fit-val">' + improvementHtml + '</span></div>' +
+    '<div class="reg-fit-metric-row"><span class="reg-fit-key">N sessions:</span><span class="reg-fit-val">' + looData.rows.length + '</span></div>' +
+    '<div class="reg-fit-metric-row"><span class="reg-fit-key">Last refit:</span><span class="reg-fit-val">' + lastFit + '</span></div>';
+  container.innerHTML = rowsHtml + improvementWarning;
+}
+
+const REG_RESID_W = 280, REG_RESID_H = 220;
+const REG_RESID_PAD = { left: 36, right: 12, top: 16, bottom: 32 };
+
+function renderRegressionResidual() {
+  const container = el('reg-residual');
+  if (!container) return;
+  const sub = _regActiveSubmodel;
+  const cfg = REG_SUBMODELS[sub];
+  const looData = _regLOOFor(sub);
+  container.innerHTML = '';
+  const heading = document.createElement('div');
+  heading.className = 'reg-residual-title';
+  heading.textContent = 'Residuals — should hover around zero. Patterns indicate model bias.';
+  container.appendChild(heading);
+  if (!looData.rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'reg-empty sl-hint';
+    empty.textContent = cfg.title + ' isn\'t trained yet.';
+    container.appendChild(empty);
+    return;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.className = 'reg-residual-canvas';
+  container.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  setCanvasDPR(canvas, ctx, REG_RESID_W, REG_RESID_H);
+  const xMin = 0, xMax = 10, yMin = -5, yMax = 5;
+  const pad = REG_RESID_PAD;
+  const plotW = REG_RESID_W - pad.left - pad.right;
+  const plotH = REG_RESID_H - pad.top - pad.bottom;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, REG_RESID_W, REG_RESID_H);
+  // Axes
+  ctx.strokeStyle = '#d0cbc3';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, pad.top);
+  ctx.lineTo(pad.left, REG_RESID_H - pad.bottom);
+  ctx.lineTo(REG_RESID_W - pad.right, REG_RESID_H - pad.bottom);
+  ctx.stroke();
+  // Tick labels
+  ctx.fillStyle = '#8a827a';
+  ctx.font = '10px DM Mono, Menlo, monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (const v of [-5, -2.5, 0, 2.5, 5]) {
+    const y = pad.top + plotH * (1 - (v - yMin) / (yMax - yMin));
+    ctx.fillText(String(v), pad.left - 4, y);
+    ctx.strokeStyle = v === 0 ? '#a8a098' : '#f0ece6';
+    ctx.beginPath();
+    if (v === 0) ctx.setLineDash([4, 3]);
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(REG_RESID_W - pad.right, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (const v of [0, 5, 10]) {
+    const x = pad.left + plotW * ((v - xMin) / (xMax - xMin));
+    ctx.fillText(String(v), x, REG_RESID_H - pad.bottom + 4);
+  }
+  ctx.fillStyle = '#5c554d';
+  ctx.fillText('Predicted', pad.left + plotW / 2, REG_RESID_H - 14);
+  ctx.save();
+  ctx.translate(10, pad.top + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('Residual', 0, 0);
+  ctx.restore();
+  // Dots
+  const projected = [];
+  for (const row of looData.rows) {
+    const resid = row.target - row.pred;
+    const px = pad.left + plotW * ((row.pred - xMin) / (xMax - xMin));
+    const py = pad.top + plotH * (1 - (resid - yMin) / (yMax - yMin));
+    ctx.fillStyle = REG_DOT_FILL;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(px, py, REG_DOT_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    projected.push({ px, py, row });
+  }
+  canvas.style.cursor = 'pointer';
+  canvas.addEventListener('click', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    for (const p of projected) {
+      const d = Math.hypot(mx - p.px, my - p.py);
+      if (d <= REG_DOT_RADIUS + 3) {
+        if (typeof openRegressionDrilldown === 'function') {
+          openRegressionDrilldown(p.row.entry, sub);
+        }
+        return;
+      }
+    }
+  });
+}
+
+// Per-submodel surfaces: per-feature scatters, importance bars, preferred
+// conditions, fit metrics, residual chart. Dispatcher calls each one if it
+// has shipped (renderers added incrementally per Prompt #5 commit order).
+function _regUpdateSubmodelSurfaces() {
+  ['renderRegressionFeatureGrid',
+   'renderRegressionImportance',
+   'renderRegressionPreferred',
+   'renderRegressionFitMetrics',
+   'renderRegressionResidual'].forEach(name => {
+    const fn = window[name];
+    if (typeof fn === 'function') {
+      try { fn(); } catch (e) { console.warn('[reg]', name, e); }
+    }
+  });
+}
+
+// ── Tab 2 §3: "If I went at scrubbed time" prediction widget ──────────
+//
+// Reads the scrubbed hour index from STATE.scrubberIdx (or the persisted
+// sessionStorage hour). Pulls the same cached marine/wind/tide data Tab 1
+// uses, runs buildForecastConditions + the three predict* helpers, and
+// renders three rating bars with forecast detail.
+function _regResolveScrubberHour() {
+  const cs = STATE.forecastChart;
+  const marine = STATE._cachedMarine, wind = STATE._cachedWind;
+  if (!marine?.hourly?.time?.length || !wind?.hourly) return null;
+  let idx = (typeof STATE.scrubberIdx === 'number' && STATE.scrubberIdx >= 0)
+    ? STATE.scrubberIdx
+    : -1;
+  // Fall back to sessionStorage if scrubber state isn't initialized yet.
+  if (idx < 0) {
+    let stored = null;
+    try { stored = sessionStorage.getItem('lcc-scrubber-hour'); } catch (_) {}
+    if (stored && cs) {
+      const targetMs = new Date(stored).getTime();
+      if (Number.isFinite(targetMs)) idx = findHourIndexForTime(targetMs, cs);
+    }
+  }
+  if (idx < 0) {
+    // Default to "now" — find the hour closest to now in marine.hourly.time.
+    const now = Date.now();
+    const times = marine.hourly.time;
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < times.length; i++) {
+      const d = Math.abs(new Date(times[i]).getTime() - now);
+      if (d < bd) { bd = d; best = i; }
+    }
+    idx = best;
+  }
+  return idx;
+}
+
+function _regRatingBar(label, value) {
+  const v = (typeof value === 'number' && isFinite(value)) ? value : null;
+  const filled = v == null ? 0 : Math.max(0, Math.min(10, Math.round(v)));
+  const dots = [];
+  for (let i = 0; i < 10; i++) {
+    dots.push('<span class="reg-dot' + (i < filled ? ' filled' : '') + '"></span>');
+  }
+  const right = v == null ? '<span class="reg-rating-empty">— / 10 · needs more sessions</span>'
+    : '<span class="reg-rating-num">' + v.toFixed(1) + ' / 10</span>';
+  return '<div class="reg-rating-row">' +
+    '<span class="reg-rating-label">' + label + '</span>' +
+    '<span class="reg-rating-dots">' + dots.join('') + '</span>' +
+    right +
+    '</div>';
+}
+
+function _regForecastSummaryLine(cond) {
+  if (!cond?.swell) return '';
+  const s = cond.swell, w = cond.wind || {}, t = cond.tide || {};
+  const swH = (s.height != null) ? s.height.toFixed(1) + 'ft' : '—';
+  const swP = (s.period != null) ? s.period.toFixed(1) + 's' : '—';
+  const swD = (s.direction != null) ? directionLabel(s.direction) : '—';
+  const wSpd = (w.speed != null) ? Math.round(w.speed) : '—';
+  const wDir = (w.direction != null) ? directionLabel(w.direction) : '';
+  const tH = (t.height != null) ? (t.height >= 0 ? '+' : '') + t.height.toFixed(1) + 'ft' : '—';
+  return 'Forecast: ' + swH + ' @ ' + swP + ' ' + swD + ' · wind ' + wSpd + 'mph ' + wDir + ' · tide ' + tH;
+}
+
+function _regHeaderLabelForHour(hourMs) {
+  const cs = STATE.forecastChart;
+  const nowIdx = cs ? findHourIndexForTime(Date.now(), cs) : -1;
+  const t = new Date(hourMs);
+  const dayMs = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
+  const todayMs = (() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime(); })();
+  const diffDays = Math.round((dayMs - todayMs) / 86400000);
+  const isNow = (cs && nowIdx >= 0 && cs.times && cs.times[nowIdx] && cs.times[nowIdx].getTime() === t.getTime());
+  if (isNow) return 'IF I WENT NOW';
+  let dayLabel;
+  if (diffDays === 0) dayLabel = 'Today';
+  else if (diffDays === 1) dayLabel = 'Tomorrow';
+  else dayLabel = t.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
+  const timeLabel = formatTime(t);
+  return 'IF I WENT AT ' + dayLabel + ', ' + timeLabel.replace(/\s/g, '');
+}
+
+function renderRegressionPredictionWidget() {
+  const card = el('reg-prediction-card');
+  if (!card) return;
+  const marine = STATE._cachedMarine, wind = STATE._cachedWind, tideHiLo = STATE._cachedTideHiLo;
+  if (!marine?.hourly || !wind?.hourly) {
+    card.innerHTML = '<div class="reg-prediction-empty sl-hint">Forecast not loaded yet — predictions will appear once the chart is populated.</div>';
+    return;
+  }
+  const idx = _regResolveScrubberHour();
+  if (idx == null || idx < 0) {
+    card.innerHTML = '<div class="reg-prediction-empty sl-hint">Couldn\'t resolve the scrubbed hour.</div>';
+    return;
+  }
+  const hourTimeStr = marine.hourly.time?.[idx];
+  if (!hourTimeStr) {
+    card.innerHTML = '<div class="reg-prediction-empty sl-hint">Hour out of range.</div>';
+    return;
+  }
+  const cond = buildForecastConditions(marine, wind, tideHiLo, idx);
+  const wf = cond ? extractWaveFeatures(cond) : null;
+  const rf = cond ? extractRideFeatures(cond) : null;
+  const cf = cond ? extractCondFeatures(cond) : null;
+  const wavePred = wf ? predictWaveRating(wf) : null;
+  const ridePred = rf ? predictRideRating(rf) : null;
+  const condPred = cf ? predictCondRating(cf) : null;
+  const header = _regHeaderLabelForHour(new Date(hourTimeStr).getTime());
+  const bars = _regRatingBar('Wave size', wavePred) +
+    _regRatingBar('Ride quality', ridePred) +
+    _regRatingBar('Wind/conditions', condPred);
+  const summary = _regForecastSummaryLine(cond);
+  card.innerHTML = '<div class="reg-prediction-header">' + header + '</div>' +
+    '<div class="reg-prediction-bars">' + bars + '</div>' +
+    (summary ? '<div class="reg-prediction-summary">' + summary + '</div>' : '');
+}
+
+// Lightweight notify hook called by applyScrubberToHour so Tab 2 can
+// re-render the scrubber-tracking surfaces.
+function _regNotifyScrubberMoved() {
+  if (STATE.activeTab !== 'regression') return;
+  try { renderRegressionPredictionWidget(); } catch (_) {}
+  try { _regUpdateThresholdLights(); } catch (_) {}
+  try { renderRegressionFeatureGrid(); } catch (_) {}
+}
+
+// ── Tab 2: Sub-model registry ─────────────────────────────────────────
+//
+// Centralises the three sub-models so per-feature/per-importance/etc.
+// renderers can pivot off a single source of truth.
+const REG_SUBMODELS = {
+  wave: {
+    label: 'Wave',
+    title: 'Wave model',
+    target: 'size',
+    targetLabel: 'Size rating',
+    extractor: extractWaveFeatures,
+    targetFn: e => e.ratings && e.ratings.size,
+    featureNames: WAVE_FEATURE_NAMES,
+    weightsKey: 'surfLogWaveWeights',
+    statsKey: 'surfLogWaveStats',
+    rmseKey: 'surfLogWaveValidation',
+    predict: predictWaveRating
+  },
+  ride: {
+    label: 'Ride',
+    title: 'Ride model',
+    target: 'rideQuality',
+    targetLabel: 'Ride rating',
+    extractor: extractRideFeatures,
+    targetFn: e => e.ratings && e.ratings.rideQuality,
+    featureNames: RIDE_FEATURE_NAMES,
+    weightsKey: 'surfLogRideWeights',
+    statsKey: 'surfLogRideStats',
+    rmseKey: 'surfLogRideValidation',
+    predict: predictRideRating
+  },
+  cond: {
+    label: 'Conditions',
+    title: 'Conditions model',
+    target: 'windQuality',
+    targetLabel: 'Wind quality rating',
+    extractor: extractCondFeatures,
+    targetFn: e => e.ratings && e.ratings.windQuality,
+    featureNames: COND_FEATURE_NAMES,
+    weightsKey: 'surfLogCondWeights',
+    statsKey: 'surfLogCondStats',
+    rmseKey: 'surfLogCondValidation',
+    predict: predictCondRating
+  }
+};
+
+// Human-readable feature names. Only feature names not already obvious from
+// the underscore form get a custom label.
+const REG_FEATURE_LABELS = {
+  swell_height: 'Swell height',
+  swell_period: 'Swell period',
+  swell_dir_alignment: 'Swell direction alignment',
+  swell_dir_outside_deg: 'Direction outside window',
+  period_x_alignment: 'Period × alignment',
+  sec_swell_height: 'Secondary swell height',
+  sec_swell_period: 'Secondary swell period',
+  sec_dir_in_window: 'Secondary in window',
+  tide_height: 'Tide height',
+  time_to_low: 'Time to low tide',
+  low_incoming: 'Low incoming',
+  wind_speed: 'Wind speed',
+  wind_offshore: 'Wind offshoreness'
+};
+const REG_FEATURE_UNITS = {
+  swell_height: 'ft', swell_period: 's',
+  swell_dir_alignment: '', swell_dir_outside_deg: '°',
+  period_x_alignment: '',
+  sec_swell_height: 'ft', sec_swell_period: 's', sec_dir_in_window: '',
+  tide_height: 'ft', time_to_low: 'h', low_incoming: '',
+  wind_speed: 'mph', wind_offshore: ''
+};
+function regFeatureLabel(name) { return REG_FEATURE_LABELS[name] || name; }
+function regFeatureUnit(name) { return REG_FEATURE_UNITS[name] || ''; }
+
+// Returns { id, timestamp, isOwn, displayName, x, target, features } for the
+// user-scoped training set, plus the leave-one-out prediction at the
+// held-out index. Mirrors leaveOneOutRMSE at app.js:4813 — same fold layout
+// — so the per-session predictions reconcile with the surfaced LOO RMSE.
+function _regComputeLOOData(sub) {
+  const cfg = REG_SUBMODELS[sub];
+  const uid = window._fbUserId;
+  const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
+  const entries = userScoped.filter(e => e.conditions?.swell);
+  const rows = [];
+  for (const e of entries) {
+    const f = cfg.extractor(e.conditions);
+    const t = cfg.targetFn(e);
+    if (!f || typeof t !== 'number' || !isFinite(t)) continue;
+    rows.push({ entry: e, features: f, target: t });
+  }
+  if (!rows.length) return { rows: [], r2: null, rmse: null, baselineRMSE: null, n: 0 };
+  const X = rows.map(r => r.features);
+  const y = rows.map(r => r.target);
+  const nF = X[0].length;
+  const minSamples = Math.max(2 * nF, 12);
+  if (X.length < minSamples + 1) {
+    return { rows: [], r2: null, rmse: null, baselineRMSE: null, n: rows.length };
+  }
+  const preds = new Array(X.length).fill(null);
+  for (let h = 0; h < X.length; h++) {
+    const Xtr = X.slice(0, h).concat(X.slice(h + 1));
+    const ytr = y.slice(0, h).concat(y.slice(h + 1));
+    const m = _trainOnArrays(Xtr, ytr);
+    if (!m) continue;
+    let p = m.stats.targetMean;
+    for (let j = 0; j < nF; j++) {
+      const z = m.stats.std[j] > 1e-10 ? (X[h][j] - m.stats.mean[j]) / m.stats.std[j] : 0;
+      p += m.weights[j] * z;
+    }
+    preds[h] = p;
+  }
+  // Aggregate metrics
+  let sse = 0, n = 0, sum = 0;
+  for (let i = 0; i < y.length; i++) {
+    if (preds[i] == null) continue;
+    sum += y[i]; n++;
+  }
+  if (!n) return { rows: [], r2: null, rmse: null, baselineRMSE: null, n: rows.length };
+  const yMean = sum / n;
+  let ssTot = 0;
+  for (let i = 0; i < y.length; i++) {
+    if (preds[i] == null) continue;
+    sse += (preds[i] - y[i]) * (preds[i] - y[i]);
+    ssTot += (y[i] - yMean) * (y[i] - yMean);
+  }
+  const rmse = Math.sqrt(sse / n);
+  const baselineRMSE = Math.sqrt(ssTot / n);
+  const r2 = ssTot > 1e-10 ? 1 - sse / ssTot : null;
+  const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (preds[i] == null) continue;
+    out.push({
+      id: rows[i].entry.id,
+      entry: rows[i].entry,
+      timestamp: rows[i].entry.timestamp,
+      target: rows[i].target,
+      pred: preds[i],
+      features: rows[i].features
+    });
+  }
+  return { rows: out, r2, rmse, baselineRMSE, n: rows.length };
+}
+
+// Cache so we don't re-run LOO for every panel that needs it.
+let _regLOOCache = { wave: null, ride: null, cond: null, key: null };
+function _regLOOFor(sub) {
+  // Bust cache when the underlying training set changes (use _lastFitAt + n
+  // as a lightweight version stamp).
+  const key = (STATE._lastFitAt || 0) + ':' + (STATE._lastFitN || 0);
+  if (_regLOOCache.key !== key) {
+    _regLOOCache = { wave: null, ride: null, cond: null, key };
+  }
+  if (!_regLOOCache[sub]) _regLOOCache[sub] = _regComputeLOOData(sub);
+  return _regLOOCache[sub];
+}
+
+// ── Tab 2 §4: Predicted-vs-actual scatter plots (3 sub-models) ────────
+//
+// Hand-rolled Canvas 2D scatter — one per sub-model. Diagonal y=x reference,
+// dot-per-session, R²/RMSE/n caption coloured by R² band.
+
+const REG_SCATTER_W = 280, REG_SCATTER_H = 280;
+const REG_SCATTER_PAD = { left: 36, right: 12, top: 18, bottom: 32 };
+const REG_DOT_RADIUS = 5;
+const REG_DOT_FILL = 'rgba(90, 127, 160, 0.7)';   // primary swell blue, alpha 0.7
+const REG_DOT_FILL_OWN = 'rgba(90, 127, 160, 0.7)';
+const REG_DOT_FILL_OTHER = 'rgba(160, 152, 144, 0.4)';
+
+function _regDrawScatterAxes(ctx, w, h, opts) {
+  const pad = REG_SCATTER_PAD;
+  const xMin = opts.xMin, xMax = opts.xMax, yMin = opts.yMin, yMax = opts.yMax;
+  const plotW = w - pad.left - pad.right;
+  const plotH = h - pad.top - pad.bottom;
+  ctx.save();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+  // Axes
+  ctx.strokeStyle = '#d0cbc3';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, pad.top);
+  ctx.lineTo(pad.left, h - pad.bottom);
+  ctx.lineTo(w - pad.right, h - pad.bottom);
+  ctx.stroke();
+  // Tick labels
+  ctx.fillStyle = '#8a827a';
+  ctx.font = '10px DM Mono, Menlo, monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  const yTicks = opts.yTicks || [0, 5, 10];
+  for (const v of yTicks) {
+    const y = pad.top + plotH * (1 - (v - yMin) / (yMax - yMin));
+    ctx.fillText(String(v), pad.left - 4, y);
+    ctx.strokeStyle = '#f0ece6';
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(w - pad.right, y);
+    ctx.stroke();
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const xTicks = opts.xTicks || [0, 5, 10];
+  for (const v of xTicks) {
+    const x = pad.left + plotW * ((v - xMin) / (xMax - xMin));
+    ctx.fillText(String(v), x, h - pad.bottom + 4);
+  }
+  // Axis labels
+  ctx.fillStyle = '#5c554d';
+  ctx.font = '10px DM Mono, Menlo, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(opts.xLabel || '', pad.left + plotW / 2, h - 2);
+  ctx.save();
+  ctx.translate(10, pad.top + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(opts.yLabel || '', 0, 0);
+  ctx.restore();
+  ctx.restore();
+  return { plotW, plotH };
+}
+
+function _regProjectXY(v, opts, plotW, plotH) {
+  const pad = REG_SCATTER_PAD;
+  const x = pad.left + plotW * ((v.x - opts.xMin) / (opts.xMax - opts.xMin));
+  const y = pad.top + plotH * (1 - (v.y - opts.yMin) / (opts.yMax - opts.yMin));
+  return { x, y };
+}
+
+function _regR2Color(r2) {
+  if (r2 == null || !isFinite(r2)) return 'var(--ink3)';
+  if (r2 > 0.5) return 'var(--green)';
+  if (r2 >= 0.2) return 'var(--orange)';
+  return 'var(--red-m)';
+}
+
+function _regBuildScatterCanvas(sub, looData) {
+  const cfg = REG_SUBMODELS[sub];
+  const wrap = document.createElement('div');
+  wrap.className = 'reg-scatter';
+  wrap.dataset.sub = sub;
+  const title = document.createElement('div');
+  title.className = 'reg-scatter-title';
+  title.textContent = cfg.title;
+  wrap.appendChild(title);
+  if (!looData.rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'reg-scatter-empty sl-hint';
+    const minSamples = Math.max(2 * cfg.featureNames.length, 12) + 1;
+    empty.textContent = looData.n < minSamples
+      ? 'Need ' + (minSamples - looData.n) + ' more session' + ((minSamples - looData.n) === 1 ? '' : 's') + ' to train this model.'
+      : 'Not enough data to plot.';
+    wrap.appendChild(empty);
+    return wrap;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.className = 'reg-scatter-canvas';
+  wrap.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  setCanvasDPR(canvas, ctx, REG_SCATTER_W, REG_SCATTER_H);
+  const opts = {
+    xMin: 0, xMax: 10, yMin: 0, yMax: 10,
+    xTicks: [0, 5, 10], yTicks: [0, 5, 10],
+    xLabel: 'Predicted', yLabel: 'Actual'
+  };
+  const { plotW, plotH } = _regDrawScatterAxes(ctx, REG_SCATTER_W, REG_SCATTER_H, opts);
+  // Diagonal y=x reference (perfect prediction line)
+  const pad = REG_SCATTER_PAD;
+  ctx.save();
+  ctx.strokeStyle = '#c0bab2';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 3]);
+  const a = _regProjectXY({ x: 0, y: 0 }, opts, plotW, plotH);
+  const b = _regProjectXY({ x: 10, y: 10 }, opts, plotW, plotH);
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Dots
+  const points = [];
+  for (const row of looData.rows) {
+    const px = pad.left + plotW * (row.pred / 10);
+    const py = pad.top + plotH * (1 - row.target / 10);
+    ctx.beginPath();
+    ctx.fillStyle = REG_DOT_FILL;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.arc(px, py, REG_DOT_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    points.push({ px, py, row });
+  }
+  ctx.restore();
+  // Caption
+  const cap = document.createElement('div');
+  cap.className = 'reg-scatter-caption';
+  const r2Class = looData.r2 == null ? 'reg-r2-na'
+    : looData.r2 > 0.5 ? 'reg-r2-good'
+    : looData.r2 >= 0.2 ? 'reg-r2-fair'
+    : 'reg-r2-bad';
+  const r2Str = looData.r2 == null ? '—' : looData.r2.toFixed(2);
+  const rmseStr = looData.rmse == null ? '—' : looData.rmse.toFixed(2);
+  cap.innerHTML = '<span class="reg-r2 ' + r2Class + '">R² ' + r2Str + '</span>'
+    + ' · RMSE ' + rmseStr
+    + ' · n=' + looData.rows.length;
+  wrap.appendChild(cap);
+  // Hover + click → drill-down (drill-down panel is a separate prompt, but
+  // wire the click target so commit 4 has the entry available).
+  canvas.style.cursor = 'pointer';
+  canvas.addEventListener('mousemove', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    let hit = null;
+    for (const p of points) {
+      const d = Math.hypot(mx - p.px, my - p.py);
+      if (d <= REG_DOT_RADIUS + 3) { hit = p; break; }
+    }
+    canvas.title = hit
+      ? new Date(hit.row.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        + ' · pred ' + hit.row.pred.toFixed(1) + ' / actual ' + hit.row.target.toFixed(1)
+      : '';
+  });
+  canvas.addEventListener('click', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    for (const p of points) {
+      const d = Math.hypot(mx - p.px, my - p.py);
+      if (d <= REG_DOT_RADIUS + 3) {
+        if (typeof openRegressionDrilldown === 'function') {
+          openRegressionDrilldown(p.row.entry, sub);
+        }
+        return;
+      }
+    }
+  });
+  return wrap;
+}
+
+function renderRegressionPVA() {
+  const grid = el('reg-pva-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  for (const sub of ['wave', 'ride', 'cond']) {
+    const looData = _regLOOFor(sub);
+    grid.appendChild(_regBuildScatterCanvas(sub, looData));
+  }
+}
+
+// ── Tab 2 §11: Drill-down side panel ──────────────────────────────────
+//
+// Shared overlay rendered for any dot click. The structure is built in
+// commit 4; per-feature attribution (the most informative section) is
+// layered on in commit 5.
+
+let _regDrilldownState = { entry: null, sub: 'wave', photoIdx: 0 };
+
+function _regFmtConditionsBlock(cond) {
+  if (!cond) return '<div class="reg-drill-empty sl-hint">No conditions recorded</div>';
+  const s = cond.swell || {}, w = cond.wind || {}, t = cond.tide || {};
+  const swellH = (s.height != null ? s.height.toFixed(1) : '—') + 'ft';
+  const swellP = (s.period != null ? s.period.toFixed(1) : '—') + 's';
+  const swellD = (s.direction != null ? directionLabel(s.direction) + ' (' + Math.round(s.direction) + '°)' : '—');
+  const secLine = s.secondary
+    ? '<div class="reg-drill-line"><span class="reg-drill-key">Secondary:</span> ' +
+      (s.secondary.height != null ? s.secondary.height.toFixed(1) + 'ft' : '—') + ' @ ' +
+      (s.secondary.period != null ? s.secondary.period.toFixed(1) + 's' : '—') + ' · ' +
+      (s.secondary.direction != null ? directionLabel(s.secondary.direction) : '—') + '</div>'
+    : '';
+  const windLine = (w.speed != null ? Math.round(w.speed) : '—') + 'mph · ' +
+    (w.direction != null ? directionLabel(w.direction) : '—') +
+    (w.direction != null ? ' (' + Math.round(w.direction) + '°)' : '');
+  const tideLine = (t.height != null ? (t.height >= 0 ? '+' : '') + t.height.toFixed(1) + 'ft' : '—') +
+    ' · ' + (t.stage || '—') +
+    (t.timeToNearest != null ? ' · time to nearest: ' + t.timeToNearest + 'h' : '');
+  const sourceLabel = cond.source === 'ndbc'
+    ? 'NDBC buoy 44097 (measured)'
+    : 'Open-Meteo marine API';
+  return '<div class="reg-drill-line"><span class="reg-drill-key">Swell:</span> ' + swellH + ' @ ' + swellP + ' · ' + swellD + '</div>' +
+    secLine +
+    '<div class="reg-drill-line"><span class="reg-drill-key">Wind:</span> ' + windLine + '</div>' +
+    '<div class="reg-drill-line"><span class="reg-drill-key">Tide:</span> ' + tideLine + '</div>' +
+    '<div class="reg-drill-line reg-drill-source">Source: ' + sourceLabel + '</div>';
+}
+
+function _regFmtRatingsBlock(entry, isOwn) {
+  const r = entry.ratings || {};
+  const stats = STATE.surfLogWaveStats;
+  // Each predicted rating + residual: actual − predicted.
+  const wf = entry.conditions ? extractWaveFeatures(entry.conditions) : null;
+  const rf = entry.conditions ? extractRideFeatures(entry.conditions) : null;
+  const cf = entry.conditions ? extractCondFeatures(entry.conditions) : null;
+  const wPred = wf ? predictWaveRating(wf) : null;
+  const rPred = rf ? predictRideRating(rf) : null;
+  const cPred = cf ? predictCondRating(cf) : null;
+  const row = (label, actual, pred) => {
+    const aStr = (typeof actual === 'number') ? actual.toFixed(1) : '—';
+    const pStr = (typeof pred === 'number') ? pred.toFixed(1) : '—';
+    const resStr = (typeof actual === 'number' && typeof pred === 'number')
+      ? (() => { const r = actual - pred; return (r >= 0 ? '+' : '') + r.toFixed(1); })()
+      : '—';
+    return '<div class="reg-drill-rating-row">' +
+      '<span class="reg-drill-rating-label">' + label + ':</span>' +
+      '<span>actual <strong>' + aStr + '</strong></span>' +
+      '<span>predicted <strong>' + pStr + '</strong></span>' +
+      '<span class="reg-drill-resid">(residual ' + resStr + ')</span>' +
+      '</div>';
+  };
+  const heading = isOwn ? 'Your ratings vs predicted' : 'Their ratings vs predicted';
+  return '<div class="reg-drill-section-heading">' + heading + '</div>' +
+    row('Wave size', r.size, wPred) +
+    row('Ride quality', r.rideQuality, rPred) +
+    row('Wind/conditions', r.windQuality, cPred);
+}
+
+// Per-feature attribution: contribution_j = w_j × ((feature_value − mean_j) / std_j)
+// Predictions computed manually here (rather than via _predict) so we can
+// also report the unbounded sum before the [1, 10] clamp at app.js:5054.
+function _regBuildAttribution(entry, sub) {
+  const cfg = REG_SUBMODELS[sub] || REG_SUBMODELS.wave;
+  const weights = STATE[cfg.weightsKey];
+  const stats = STATE[cfg.statsKey];
+  if (!weights || !stats) {
+    return '<div class="reg-drill-section-heading">Per-feature attribution</div>' +
+      '<div class="reg-drill-empty sl-hint">' + cfg.title + ' isn\'t trained yet — log more sessions.</div>';
+  }
+  const features = cfg.extractor(entry.conditions);
+  if (!features) {
+    return '<div class="reg-drill-section-heading">Per-feature attribution</div>' +
+      '<div class="reg-drill-empty sl-hint">No conditions on this session.</div>';
+  }
+  const targetMean = stats.targetMean || 0;
+  const contribs = [];
+  let sumContrib = 0;
+  for (let j = 0; j < features.length; j++) {
+    const sd = stats.std[j];
+    const z = sd > 1e-10 ? (features[j] - stats.mean[j]) / sd : 0;
+    const w = weights[j];
+    const c = w * z;
+    sumContrib += c;
+    contribs.push({
+      name: cfg.featureNames[j] || ('f' + j),
+      label: regFeatureLabel(cfg.featureNames[j] || ''),
+      z, w, contribution: c
+    });
+  }
+  const predictedRaw = targetMean + sumContrib;
+  const predictedBounded = Math.max(1, Math.min(10, Math.round(predictedRaw * 10) / 10));
+  contribs.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
+  const top = contribs.slice(0, 5);
+  const subModelTitle = cfg.title;
+  const rows = top.map(c => {
+    const sign = c.contribution >= 0 ? '+' : '−';
+    const cls = c.contribution >= 0 ? 'reg-attr-pos' : 'reg-attr-neg';
+    const mag = Math.abs(c.contribution).toFixed(1);
+    const zStr = (c.z >= 0 ? '+' : '') + c.z.toFixed(2);
+    const wStr = (c.w >= 0 ? '+' : '') + c.w.toFixed(2);
+    return '<div class="reg-attr-row ' + cls + '">' +
+      '<span class="reg-attr-sign">' + sign + '</span>' +
+      '<span class="reg-attr-mag">' + mag + '</span>' +
+      '<span class="reg-attr-name">' + c.label + '</span>' +
+      '<span class="reg-attr-detail">(z ' + zStr + ' × w ' + wStr + ')</span>' +
+      '</div>';
+  }).join('');
+  const sumStr = (sumContrib >= 0 ? '+' : '') + sumContrib.toFixed(2);
+  const reconcile = '<div class="reg-attr-reconcile sl-hint">' +
+    'Sum ' + sumStr + ' + target mean ' + targetMean.toFixed(2) +
+    ' = predicted ' + predictedRaw.toFixed(2) +
+    ' → bounded to ' + predictedBounded.toFixed(1) +
+    '</div>';
+  const tip = 'Each feature\'s contribution to the prediction. Positive contributions push the prediction up; negative push it down.';
+  return '<div class="reg-drill-section-heading">Per-feature attribution <span class="reg-tooltip" title="' + tip + '">?</span></div>' +
+    '<div class="reg-attr-summary">' + subModelTitle + ' predicted ' + predictedBounded.toFixed(1) +
+    ' (target mean: ' + targetMean.toFixed(1) + ')</div>' +
+    '<div class="reg-attr-list">' + rows + '</div>' +
+    reconcile;
+}
+// Compatibility shim — older call sites invoked the placeholder name.
+function _regBuildAttributionPlaceholder(entry, sub) {
+  return _regBuildAttribution(entry, sub);
+}
+
+// ── Tab 2 §5: Match threshold tuning ──────────────────────────────────
+//
+// Three independent sliders (wave / ride / cond), 0–100 step 5, default 60.
+// Stored at lcc-match-threshold-{wave,ride,cond}. Live preview light shows
+// how the currently-scrubbed hour scores against the user's average past
+// session — green ≥ threshold, yellow ≥ (threshold − 15), red otherwise.
+const REG_THRESHOLD_KEYS = {
+  wave: 'lcc-match-threshold-wave',
+  ride: 'lcc-match-threshold-ride',
+  cond: 'lcc-match-threshold-cond'
+};
+function _regGetThreshold(sub) {
+  let raw = null;
+  try { raw = localStorage.getItem(REG_THRESHOLD_KEYS[sub]); } catch (_) {}
+  const v = parseInt(raw, 10);
+  return (isFinite(v) && v >= 0 && v <= 100) ? v : 60;
+}
+function _regSetThreshold(sub, v) {
+  try { localStorage.setItem(REG_THRESHOLD_KEYS[sub], String(v)); } catch (_) {}
+}
+
+// Computes the best match score at the scrubbed hour for the given sub-
+// model: pick the past session whose features are closest to the scrubbed-
+// hour features under the current sub-model's match formula.
+function _regBestMatchAtScrub(sub) {
+  const cfg = REG_SUBMODELS[sub];
+  const marine = STATE._cachedMarine, wind = STATE._cachedWind, tideHiLo = STATE._cachedTideHiLo;
+  if (!marine?.hourly || !wind?.hourly) return null;
+  const idx = _regResolveScrubberHour();
+  if (idx == null || idx < 0) return null;
+  const fc = buildForecastConditions(marine, wind, tideHiLo, idx);
+  if (!fc) return null;
+  const ff = cfg.extractor(fc);
+  if (!ff) return null;
+  const stats = STATE[cfg.statsKey];
+  const weights = STATE[cfg.weightsKey];
+  if (!stats) return null;
+  const uid = window._fbUserId;
+  const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
+  let best = 0;
+  for (const e of userScoped) {
+    if (!e.conditions?.swell) continue;
+    const ef = cfg.extractor(e.conditions);
+    if (!ef) continue;
+    const m = _matchPct(ef, ff, weights, stats);
+    if (m > best) best = m;
+  }
+  return best;
+}
+
+function _regThresholdLightClass(matchPct, threshold) {
+  if (matchPct == null) return 'reg-light-none';
+  if (matchPct >= threshold) return 'reg-light-green';
+  if (matchPct >= threshold - 15) return 'reg-light-yellow';
+  return 'reg-light-red';
+}
+
+function renderRegressionThresholds() {
+  const panel = el('reg-threshold-panel');
+  if (!panel) return;
+  const rows = ['wave', 'ride', 'cond'].map(sub => {
+    const cfg = REG_SUBMODELS[sub];
+    const v = _regGetThreshold(sub);
+    const lbl = sub === 'wave' ? 'Wave (size match)'
+      : sub === 'ride' ? 'Ride (quality match)'
+      : 'Conditions match';
+    return '<div class="reg-threshold-row" data-sub="' + sub + '">' +
+      '<label class="reg-threshold-label" for="reg-thresh-' + sub + '">' + lbl + '</label>' +
+      '<input type="range" id="reg-thresh-' + sub + '" class="reg-threshold-slider" ' +
+        'min="0" max="100" step="5" value="' + v + '" data-sub="' + sub + '">' +
+      '<span class="reg-threshold-value" id="reg-thresh-val-' + sub + '">' + v + '%</span>' +
+      '<span class="reg-threshold-light" id="reg-thresh-light-' + sub + '"></span>' +
+      '<span class="reg-threshold-pct" id="reg-thresh-pct-' + sub + '"></span>' +
+      '</div>';
+  }).join('');
+  panel.innerHTML = rows;
+  for (const sub of ['wave', 'ride', 'cond']) {
+    const slider = el('reg-thresh-' + sub);
+    if (!slider) continue;
+    slider.addEventListener('input', () => {
+      const v = parseInt(slider.value, 10);
+      _regSetThreshold(sub, v);
+      const valEl = el('reg-thresh-val-' + sub);
+      if (valEl) valEl.textContent = v + '%';
+      _regUpdateThresholdLights();
+    });
+  }
+  _regUpdateThresholdLights();
+}
+
+function _regUpdateThresholdLights() {
+  for (const sub of ['wave', 'ride', 'cond']) {
+    const lightEl = el('reg-thresh-light-' + sub);
+    const pctEl = el('reg-thresh-pct-' + sub);
+    if (!lightEl) continue;
+    const threshold = _regGetThreshold(sub);
+    const matchPct = _regBestMatchAtScrub(sub);
+    lightEl.className = 'reg-threshold-light ' + _regThresholdLightClass(matchPct, threshold);
+    if (pctEl) pctEl.textContent = matchPct == null ? '—' : matchPct + '%';
+  }
+}
+
+function openRegressionDrilldown(entry, sub) {
+  if (!entry) return;
+  _regDrilldownState = { entry, sub: sub || 'wave', photoIdx: 0 };
+  const panel = el('reg-drilldown');
+  const backdrop = el('reg-drilldown-backdrop');
+  const inner = el('reg-drilldown-inner');
+  if (!panel || !inner) return;
+  const isOwn = entry.userId === window._fbUserId;
+  const dt = new Date(entry.timestamp);
+  const dtStr = dt.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }) +
+    ' · ' + formatTime(dt);
+  const photos = (entry.photos || []).map(p => photoUrl(p) || p).filter(Boolean);
+  const photoBlock = photos.length
+    ? '<div class="reg-drill-photo-wrap">' +
+      '<img class="reg-drill-photo" src="' + photos[0] + '" alt="Session photo" onerror="this.style.display=\'none\'">' +
+      (photos.length > 1 ? '<span class="reg-drill-photo-counter">1/' + photos.length + '</span>' : '') +
+      '</div>'
+    : '';
+  const communityBadge = !isOwn ? '<span class="reg-drill-badge">from community log</span>' : '';
+  const loggedBy = isOwn ? 'you' : (entry.displayName || 'Anonymous');
+  const notesBlock = entry.notes
+    ? '<div class="reg-drill-section"><div class="reg-drill-section-heading">Notes</div><div class="reg-drill-notes">' +
+      entry.notes.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) + '</div></div>'
+    : '';
+
+  inner.innerHTML =
+    '<div class="reg-drill-header">' +
+      '<div class="reg-drill-header-text">' +
+        '<div class="reg-drill-date">' + dtStr + '</div>' +
+        '<div class="reg-drill-meta">Logged by ' + loggedBy + ' ' + communityBadge + '</div>' +
+      '</div>' +
+      '<button class="reg-drill-close" id="reg-drill-close" aria-label="Close">&times;</button>' +
+    '</div>' +
+    photoBlock +
+    '<div class="reg-drill-section">' + _regFmtRatingsBlock(entry, isOwn) + '</div>' +
+    '<div class="reg-drill-section">' +
+      '<div class="reg-drill-section-heading">Conditions snapshot</div>' +
+      _regFmtConditionsBlock(entry.conditions) +
+    '</div>' +
+    '<div class="reg-drill-section">' + _regBuildAttributionPlaceholder(entry, _regDrilldownState.sub) + '</div>' +
+    notesBlock +
+    '<div class="reg-drill-section reg-drill-footer">' +
+      '<a href="#" class="reg-drill-link" id="reg-drill-open-log">Open in surf log →</a>' +
+    '</div>';
+  panel.style.display = '';
+  panel.setAttribute('aria-hidden', 'false');
+  if (backdrop) backdrop.style.display = '';
+  // Reflow so the slide-in transition fires.
+  // eslint-disable-next-line no-unused-expressions
+  panel.offsetWidth;
+  panel.classList.add('open');
+  if (backdrop) backdrop.classList.add('open');
+  el('reg-drill-close')?.addEventListener('click', closeRegressionDrilldown);
+  el('reg-drill-open-log')?.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    closeRegressionDrilldown();
+    if (typeof switchTab === 'function') switchTab('surflog');
+    setTimeout(() => {
+      const tbody = el('surflog-tbody');
+      if (!tbody) return;
+      // Match by inspecting Edit button data-id (rendered for own rows) — for
+      // community rows, fall back to scrolling to the table top.
+      const target = tbody.querySelector('button[data-id="' + entry.id + '"]');
+      const row = target ? target.closest('tr') : null;
+      (row || el('panel-surflog-entries'))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  });
+}
+
+function closeRegressionDrilldown() {
+  const panel = el('reg-drilldown');
+  const backdrop = el('reg-drilldown-backdrop');
+  if (panel) {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+  }
+  if (backdrop) backdrop.classList.remove('open');
+  setTimeout(() => {
+    if (panel && !panel.classList.contains('open')) panel.style.display = 'none';
+    if (backdrop && !backdrop.classList.contains('open')) backdrop.style.display = 'none';
+  }, 220);
+}
+
+(function _regWireDrilldown() {
+  if (typeof document === 'undefined') return;
+  document.addEventListener('click', (ev) => {
+    const target = ev.target;
+    if (target && target.id === 'reg-drilldown-backdrop') closeRegressionDrilldown();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') {
+      const panel = el('reg-drilldown');
+      if (panel && panel.classList.contains('open')) closeRegressionDrilldown();
+    }
+  });
+})();
 
 // ════════════════════════════════════════════════
 // INITIALIZATION
