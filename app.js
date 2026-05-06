@@ -2139,6 +2139,91 @@ function drawDayLabels(common) {
   }
 }
 
+// ── Persistent compass dial (top-right of the swell card) ──
+//
+// Renders a small ~60x60 dial showing the primary and (when present)
+// secondary swell FROM directions for the currently-scrubbed hour.
+// Arrow points TOWARD the FROM direction (oceanographic convention),
+// not where the swell is heading.
+function drawCompassDial(scrubberIdx) {
+  const canvas = el('forecast-compass');
+  if (!canvas) return;
+  const cssW = canvas.clientWidth || 60;
+  const cssH = canvas.clientHeight || 60;
+  const ctx = canvas.getContext('2d');
+  setCanvasDPR(canvas, ctx, cssW, cssH);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const cx = 30, cy = 30, r = 26;
+
+  // Outline circle.
+  ctx.strokeStyle = '#d0d0d0';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Cardinal letters.
+  ctx.fillStyle = '#888';
+  ctx.font = '9px "DM Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('N', cx,         cy - r + 6);
+  ctx.fillText('S', cx,         cy + r - 6);
+  ctx.fillText('W', cx - r + 6, cy);
+  ctx.fillText('E', cx + r - 6, cy);
+
+  // "FROM" caption beneath the dial.
+  ctx.font = '8px "DM Mono", monospace';
+  ctx.fillStyle = '#888';
+  ctx.textBaseline = 'top';
+  ctx.fillText('FROM', cx, cssH - 8);
+
+  const marine = STATE.forecastData && STATE.forecastData.marine;
+  if (!marine || !marine.hourly) return;
+  const mh = marine.hourly;
+  const idx = (typeof scrubberIdx === 'number' && scrubberIdx >= 0)
+    ? scrubberIdx
+    : null;
+  if (idx == null) return;
+
+  // Arrow points TOWARD the FROM direction. Compass 0° = N (up); canvas
+  // 0° = E (right) so subtract 90° to align frames.
+  const drawArrow = (deg, fillColor, lengthFactor) => {
+    if (deg == null) return;
+    const length = r * lengthFactor;
+    const angle = (deg - 90) * Math.PI / 180;
+    const tipX = cx + length * Math.cos(angle);
+    const tipY = cy + length * Math.sin(angle);
+    // Base perpendicular to the arrow axis, centered on the dial.
+    const baseHalf = 4;
+    const perp = angle + Math.PI / 2;
+    const baseLX = cx + baseHalf * Math.cos(perp);
+    const baseLY = cy + baseHalf * Math.sin(perp);
+    const baseRX = cx - baseHalf * Math.cos(perp);
+    const baseRY = cy - baseHalf * Math.sin(perp);
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(baseLX, baseLY);
+    ctx.lineTo(baseRX, baseRY);
+    ctx.closePath();
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+  };
+
+  // Secondary first so primary draws on top.
+  const secHt  = mh.secondary_swell_wave_height    ? mh.secondary_swell_wave_height[idx]    : null;
+  const secDir = mh.secondary_swell_wave_direction ? mh.secondary_swell_wave_direction[idx] : null;
+  if (secDir != null && secHt != null && secHt >= 1.0) {
+    drawArrow(secDir, '#8cafcd', 0.6);
+  }
+
+  const priDir = mh.swell_wave_direction ? mh.swell_wave_direction[idx] : null;
+  if (priDir != null) {
+    drawArrow(priDir, '#3a5570', 0.7);
+  }
+}
+
 function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const container = el('forecast-chart-container');
   if (!container) return;
@@ -2416,6 +2501,9 @@ function applyScrubberToHour(idx) {
     const handleY = L.swellTop + L.swellH - (Math.min(h != null ? h : 0, L.swellMaxY) / L.swellMaxY) * L.swellH;
     handle.style.top = handleY + 'px';
   }
+
+  // ── Compass dial in swell card top-right ──
+  drawCompassDial(idx);
 
   // ── Cross-feature: lineup map arrows ──
   if (STATE.isChocomount && STATE.forecastData) {
