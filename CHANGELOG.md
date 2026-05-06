@@ -177,6 +177,52 @@ like a 1998 productivity application.
 13. `Tab 3: verify and fix sign-in copy + crowdsource note`
 14. `Verify and remove any 'I Surfed This' remnants`
 
+### Prompt #6 follow-up — card containers properly Win95
+
+After the initial app-shell pass landed, the inner chart cards still
+read as 2020s Material cards (white background, rounded corners,
+soft drop shadows) because the modern `style.css` selectors
+out-specified the `[data-era="web1"]` overrides for `.forecast-card`
+et al. Six follow-up commits address this:
+
+1. **`Win95: card containers become raised bevels`** — bumps
+   specificity on inner forecast cards (SWELL/WIND/TIDE), Tab 2 PVA
+   scatter cards, and per-feature mini cards so they read as raised
+   gray (`#c0c0c0`) Win95 panels. Adds `border-radius: 0` enforcement
+   on every panel/card/section selector.
+2. **`Win95: canvas content sits in sunken inset bevels`** — every
+   chart canvas inside a raised bevel is now a sunken white well
+   (`#ffffff` bg, dark top/left + light bottom/right border). Applies
+   to forecast SWELL/WIND/TIDE canvases, PVA scatters, per-feature
+   mini canvases, residual chart, compass rose, spectrum, and tide
+   canvases. Day-label band stays on gray (it's a label strip, not
+   a chart); the small `forecast-compass` overlay stays transparent.
+3. **`Win95: section labels onto gray bevel margin`** — chose the
+   stacked-letter option: SWELL/WIND/TIDE labels stay in the
+   `.forecast-card`'s 64px left padding column, but on the gray panel
+   surface in navy MS Sans Serif 11px (was Times-ish 10.5px gray with
+   small-caps + letter-spacing). No more teal-ish strip behind them.
+4. **`Win95: hide overlapping hour ticks under day labels`** — drops
+   the `06:00 / 12:00 / 18:00` tick row under "Today" entirely
+   (`drawDayLabels` in `app.js`); the day labels now centre vertically
+   in the band. Precise time is still readable via the scrubber's
+   sticky header.
+5. **`Win95: 'What is this?' disclosures restyled`** — `.widget-help`
+   now Win95-tooltip-yellow (`#ffffe1`) with 1px `#808080` border, MS
+   Sans Serif 11px, summary text styled as a Win95 link
+   (`#0000ee` underlined), and the disclosure caret is a literal `▶`
+   when collapsed and `▼` when open (replaces the rotating triangle).
+6. **`Win95: scrub remaining modern card styling`** — final pass that
+   forces `border-radius: 0` on every panel/card/section selector,
+   removes the lingering hover drop shadow on `.pm-card`, kills CSS
+   transitions on every Win95 button/tab/input (Win95 buttons snap,
+   not fade), and strips the green/orange/gray quality-indicator
+   left border on condition cards in favour of the standard Win95
+   raised highlight.
+
+Charts and chart-drawing code unchanged. Only their containers
+moved.
+
 ### Non-goals
 
 No mobile-specific Win95 layout (Prompt #7). No regression math
