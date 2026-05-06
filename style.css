@@ -2813,3 +2813,16 @@ a:hover { text-decoration: underline; }
   color: var(--ink3);
 }
 .reg-residual-canvas { width: 100%; max-width: 280px; height: auto; }
+
+/* §10 — Raw weights panel (collapsed by default) */
+.reg-raw-weights-details { padding: 4px 0; }
+.reg-raw-weights-details > summary {
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--ink2);
+  padding: 6px 0;
+  list-style: revert;
+}
+.reg-raw-weights-details > summary:hover { color: var(--ink); }
+.reg-raw-weights-body { padding-top: 8px; }
