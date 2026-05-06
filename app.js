@@ -1662,6 +1662,21 @@ function _fcDrawTodayAccent(ctx, common, plotLeft, plotW, top, height) {
   ctx.restore();
 }
 
+// Filled dot in line color with a 1.5px white halo for separation.
+// Drawn last in each panel so it sits above all data lines.
+function drawScrubberDot(ctx, x, y, color) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.restore();
+}
+
 // ── Per-panel drawers ──────────────────────────────
 
 function drawSwellPanel(common, data) {
@@ -1906,6 +1921,42 @@ function drawSwellPanel(common, data) {
   ctx.textBaseline = 'top';
   ctx.fillText('FROM', plotLeft + 6, subTop + 3);
 
+  // Scrubber dots — one per data line at the scrubbed hour.
+  const sIdx = STATE.scrubberIdx;
+  if (typeof sIdx === 'number' && sIdx >= 0 && sIdx <= common.lastIdx) {
+    const tx = xPos(common.allTimes[sIdx]);
+    // Upper region: secondary height, primary height, period.
+    const secH = secHeights[sIdx];
+    if (secH != null && secH >= 1.0) {
+      drawScrubberDot(ctx, tx, ySwell(secH), '#8cafcd');
+    }
+    const priH = heights[sIdx];
+    if (priH != null) {
+      drawScrubberDot(ctx, tx, ySwell(priH), '#3a5570');
+    }
+    const per = wavePeriods[sIdx];
+    if (per != null && Number.isFinite(per)) {
+      drawScrubberDot(ctx, tx, yPeriod(per), '#c46a32');
+    }
+    // Direction sub-panel: primary direction, secondary direction
+    // (gated by secondary height ≥ 1ft, matching the line's gating).
+    // Clipped so a direction outside the visible y-range is hidden — same
+    // treatment the existing direction polylines get.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(plotLeft, subTop, plotW, subBot - subTop);
+    ctx.clip();
+    const priDir = swellDirs ? swellDirs[sIdx] : null;
+    if (priDir != null) {
+      drawScrubberDot(ctx, tx, yDir(priDir), '#3a5570');
+    }
+    const secDir = secDirs ? secDirs[sIdx] : null;
+    if (secDir != null && secH != null && secH >= 1.0) {
+      drawScrubberDot(ctx, tx, yDir(secDir), '#8cafcd');
+    }
+    ctx.restore();
+  }
+
   return {
     canvas, cssW, cssH, plotLeft, plotW, top, h,
     swellMaxY, ySwell, yPeriod
@@ -2015,6 +2066,16 @@ function drawWindPanel(common, data) {
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   ctx.fillText('mph', plotLeft + 2, top + 2);
+
+  // Scrubber dot on the wind speed line. Color matches the dark-gray line
+  // stroke so the dot stays legible against any quality-shade fill color.
+  const sIdx = STATE.scrubberIdx;
+  if (typeof sIdx === 'number' && sIdx >= 0 && sIdx <= common.lastIdx) {
+    const ws = windSpeeds[sIdx];
+    if (ws != null) {
+      drawScrubberDot(ctx, xPos(common.allTimes[sIdx]), yWind(ws), '#4a443e');
+    }
+  }
 
   return { canvas, cssW, cssH, plotLeft, plotW, top, h, windMaxY };
 }
@@ -2188,6 +2249,31 @@ function drawTidePanel(common, data) {
         }
         ctx.fillText(heightStr, xx, baseBot);
         ctx.fillText(timeStr,   xx, baseBot - 9);
+      }
+    }
+  }
+
+  // Scrubber dot on the tide curve. Tide values come from tidePred
+  // (non-hourly samples), so interpolate to the scrubbed hour timestamp.
+  const sIdx = STATE.scrubberIdx;
+  if (typeof sIdx === 'number' && sIdx >= 0 && sIdx <= common.lastIdx
+      && tideY && tidePred && tidePred.length > 1) {
+    const ts = common.allTimes[sIdx];
+    const tMs = ts.getTime();
+    let lo = null, hi = null;
+    for (let i = 0; i < tidePred.length - 1; i++) {
+      const a = new Date(tidePred[i].t).getTime();
+      const b = new Date(tidePred[i + 1].t).getTime();
+      if (tMs >= a && tMs <= b) { lo = tidePred[i]; hi = tidePred[i + 1]; break; }
+    }
+    if (lo && hi) {
+      const a = new Date(lo.t).getTime();
+      const b = new Date(hi.t).getTime();
+      const va = parseFloat(lo.v), vb = parseFloat(hi.v);
+      if (Number.isFinite(va) && Number.isFinite(vb) && b > a) {
+        const v = va + (vb - va) * ((tMs - a) / (b - a));
+        const tx = _fcXFor(ts, common, plotLeft, plotW);
+        drawScrubberDot(ctx, tx, tideY(v), '#3a9aa3');
       }
     }
   }
@@ -2393,12 +2479,16 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   };
 
   // Draw each panel canvas.
-  const swellInfo = drawSwellPanel(common, {
-    heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellStep, periodMax
-  });
-  drawWindPanel(common, { windSpeeds, windDirs, windMaxY });
-  const tideInfo = drawTidePanel(common, { tidePred, tideHiLo });
+  const swellPayload = { heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellStep, periodMax };
+  const windPayload  = { windSpeeds, windDirs, windMaxY };
+  const tidePayload  = { tidePred, tideHiLo };
+  const swellInfo = drawSwellPanel(common, swellPayload);
+  drawWindPanel(common, windPayload);
+  const tideInfo = drawTidePanel(common, tidePayload);
   drawDayLabels(common);
+
+  // Cache so the scrubber can re-render dots without recomputing axes.
+  STATE._forecastPanelPayloads = { common, swellPayload, windPayload, tidePayload };
 
   // Container-relative geometry for the scrubber crosshair / handle.
   const swellCanvas = el('forecast-canvas-swell');
@@ -2578,7 +2668,9 @@ function applyScrubberToHour(idx) {
     detailBar.classList.toggle('scrub-active', !isScrubberAtNow());
   }
 
-  // ── Move overlay crosshair + handle ──
+  // ── Move overlay crosshair ──
+  // The handle is now drawn on canvas as one of seven scrubber dots,
+  // each tracking its own data line (see drawScrubberDot).
   const container = el('forecast-chart-container');
   if (container) {
     let crosshair = container.querySelector('.forecast-crosshair');
@@ -2587,12 +2679,6 @@ function applyScrubberToHour(idx) {
       crosshair.className = 'forecast-crosshair';
       container.appendChild(crosshair);
     }
-    let handle = container.querySelector('.forecast-handle');
-    if (!handle) {
-      handle = document.createElement('div');
-      handle.className = 'forecast-handle';
-      container.appendChild(handle);
-    }
     const L = cs.layout;
     const dataXPx = L.plotLeft + ((t.getTime() - cs.t0) / cs.tRange) * L.plotW;
     // Crosshair spans swell + wind + tide panels + arrow strip.
@@ -2600,11 +2686,14 @@ function applyScrubberToHour(idx) {
     crosshair.style.left = dataXPx + 'px';
     crosshair.style.top = L.crosshairTop + 'px';
     crosshair.style.height = (L.crosshairBot - L.crosshairTop) + 'px';
-    // Handle snaps to the swell-height curve in the swell panel.
-    handle.style.display = '';
-    handle.style.left = dataXPx + 'px';
-    const handleY = L.swellTop + L.swellH - (Math.min(h != null ? h : 0, L.swellMaxY) / L.swellMaxY) * L.swellH;
-    handle.style.top = handleY + 'px';
+  }
+
+  // ── Repaint canvas panels so the scrubber dots snap to the new hour. ──
+  const pp = STATE._forecastPanelPayloads;
+  if (pp) {
+    drawSwellPanel(pp.common, pp.swellPayload);
+    drawWindPanel(pp.common, pp.windPayload);
+    drawTidePanel(pp.common, pp.tidePayload);
   }
 
   // ── Compass dial in swell card top-right ──
