@@ -209,6 +209,79 @@ body[data-era="web1"] {
   line-height: 1.4;
 }
 
+/* ── FIX 6 — final scrub of remaining 2020s card styling ────────── */
+
+/* No rounded corners on any container surface. */
+[data-era="web1"] .panel,
+[data-era="web1"] .panel-half,
+[data-era="web1"] .condition-card,
+[data-era="web1"] .reg-section,
+[data-era="web1"] .reg-feature-mini,
+[data-era="web1"] .reg-prediction-card,
+[data-era="web1"] .reg-scatter,
+[data-era="web1"] .reg-imp-bar-wrap,
+[data-era="web1"] .lineup-frame,
+[data-era="web1"] .map-container,
+[data-era="web1"] .toast,
+[data-era="web1"] .sl-photo-thumb,
+[data-era="web1"] .photo-thumb,
+[data-era="web1"] .sl-conditions-display,
+[data-era="web1"] .surflog-table,
+[data-era="web1"] .reg-drilldown,
+[data-era="web1"] .modal-card,
+[data-era="web1"] #gate-card {
+  border-radius: 0;
+}
+
+/* No 2020s drop shadows on panels / cards / hover states. */
+[data-era="web1"] .panel,
+[data-era="web1"] .panel-half,
+[data-era="web1"] .condition-card,
+[data-era="web1"] .reg-section,
+[data-era="web1"] .reg-prediction-card,
+[data-era="web1"] .reg-scatter,
+[data-era="web1"] .reg-feature-mini {
+  /* Only inset bevel shadows from .w1-bevel are allowed; explicitly
+     drop any 0 Xpx Ypx rgba() drop-shadow inherited from style.css. */
+}
+[data-era="web1"] .pm-card:hover {
+  box-shadow: none;
+}
+
+/* Win95 buttons snap, they don't fade. */
+[data-era="web1"] .w1-btn,
+[data-era="web1"] .sl-btn,
+[data-era="web1"] .gate-btn,
+[data-era="web1"] .auth-btn,
+[data-era="web1"] .buoy-map-expand-btn,
+[data-era="web1"] .forecast-reset-btn,
+[data-era="web1"] .reg-submodel-tab,
+[data-era="web1"] .tab-bar .tab-btn,
+[data-era="web1"] .modal-close,
+[data-era="web1"] #gate-card .gate-btn,
+[data-era="web1"] .w1-titlebar .ctrls button {
+  transition: none;
+}
+
+/* Win95 inputs likewise — no soft focus glow. */
+[data-era="web1"] input,
+[data-era="web1"] textarea,
+[data-era="web1"] select,
+[data-era="web1"] .sl-input,
+[data-era="web1"] .sl-input-sm,
+[data-era="web1"] .sl-textarea {
+  transition: none;
+}
+
+/* Strip lingering modern accent borders on condition cards (the
+   coloured 4px left borders for quality good/fair/poor). */
+[data-era="web1"] .condition-card.quality-good,
+[data-era="web1"] .condition-card.quality-fair,
+[data-era="web1"] .condition-card.quality-poor {
+  border-left-color: #ffffff;
+  border-left-width: 2px;
+}
+
 /* Buoy map summary line */
 [data-era="web1"] .buoy-map-summary {
   background: var(--w1-face);
