@@ -5954,6 +5954,156 @@ function renderRegressionPreferred() {
   ).join('');
 }
 
+// ── Tab 2 §9: Fit metrics + residual chart ────────────────────────────
+function _regHumanRefitAge(ms) {
+  if (!ms) return '—';
+  const ageS = (Date.now() - ms) / 1000;
+  if (ageS < 60) return Math.max(1, Math.floor(ageS)) + 's ago';
+  if (ageS < 3600) return Math.floor(ageS / 60) + ' min ago';
+  if (ageS < 86400) return Math.floor(ageS / 3600) + 'h ago';
+  return Math.floor(ageS / 86400) + 'd ago';
+}
+
+function renderRegressionFitMetrics() {
+  const container = el('reg-fit-metrics');
+  if (!container) return;
+  const sub = _regActiveSubmodel;
+  const cfg = REG_SUBMODELS[sub];
+  const looData = _regLOOFor(sub);
+  if (!looData.rows.length) {
+    container.innerHTML = '<div class="reg-empty sl-hint">' + cfg.title + ' isn\'t trained yet.</div>';
+    return;
+  }
+  const r2 = looData.r2 == null ? '—' : looData.r2.toFixed(2);
+  const rmse = looData.rmse == null ? '—' : looData.rmse.toFixed(2);
+  const baseline = looData.baselineRMSE == null ? '—' : looData.baselineRMSE.toFixed(2);
+  let improvementHtml;
+  let improvementWarning = '';
+  if (looData.rmse != null && looData.baselineRMSE != null && looData.baselineRMSE > 0) {
+    const improvement = 1 - looData.rmse / looData.baselineRMSE;
+    const pct = Math.round(improvement * 100);
+    if (improvement <= 0) {
+      improvementHtml = '<span class="reg-fit-bad">' + pct + '%</span>';
+      improvementWarning = '<div class="reg-fit-warning">⚠ Model is no better than guessing the mean. ' +
+        'Consider logging more sessions or removing the model from match scoring.</div>';
+    } else {
+      improvementHtml = pct + '%';
+    }
+  } else {
+    improvementHtml = '—';
+  }
+  const lastFit = _regHumanRefitAge(STATE._lastFitAt);
+  const rowsHtml =
+    '<div class="reg-fit-metric-row"><span class="reg-fit-key">R²:</span><span class="reg-fit-val">' + r2 + '</span></div>' +
+    '<div class="reg-fit-metric-row"><span class="reg-fit-key">RMSE (LOO):</span><span class="reg-fit-val">' + rmse + '</span></div>' +
+    '<div class="reg-fit-metric-row"><span class="reg-fit-key">Baseline RMSE:</span><span class="reg-fit-val">' + baseline + '</span></div>' +
+    '<div class="reg-fit-metric-row"><span class="reg-fit-key">Improvement:</span><span class="reg-fit-val">' + improvementHtml + '</span></div>' +
+    '<div class="reg-fit-metric-row"><span class="reg-fit-key">N sessions:</span><span class="reg-fit-val">' + looData.rows.length + '</span></div>' +
+    '<div class="reg-fit-metric-row"><span class="reg-fit-key">Last refit:</span><span class="reg-fit-val">' + lastFit + '</span></div>';
+  container.innerHTML = rowsHtml + improvementWarning;
+}
+
+const REG_RESID_W = 280, REG_RESID_H = 220;
+const REG_RESID_PAD = { left: 36, right: 12, top: 16, bottom: 32 };
+
+function renderRegressionResidual() {
+  const container = el('reg-residual');
+  if (!container) return;
+  const sub = _regActiveSubmodel;
+  const cfg = REG_SUBMODELS[sub];
+  const looData = _regLOOFor(sub);
+  container.innerHTML = '';
+  const heading = document.createElement('div');
+  heading.className = 'reg-residual-title';
+  heading.textContent = 'Residuals — should hover around zero. Patterns indicate model bias.';
+  container.appendChild(heading);
+  if (!looData.rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'reg-empty sl-hint';
+    empty.textContent = cfg.title + ' isn\'t trained yet.';
+    container.appendChild(empty);
+    return;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.className = 'reg-residual-canvas';
+  container.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  setCanvasDPR(canvas, ctx, REG_RESID_W, REG_RESID_H);
+  const xMin = 0, xMax = 10, yMin = -5, yMax = 5;
+  const pad = REG_RESID_PAD;
+  const plotW = REG_RESID_W - pad.left - pad.right;
+  const plotH = REG_RESID_H - pad.top - pad.bottom;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, REG_RESID_W, REG_RESID_H);
+  // Axes
+  ctx.strokeStyle = '#d0cbc3';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, pad.top);
+  ctx.lineTo(pad.left, REG_RESID_H - pad.bottom);
+  ctx.lineTo(REG_RESID_W - pad.right, REG_RESID_H - pad.bottom);
+  ctx.stroke();
+  // Tick labels
+  ctx.fillStyle = '#8a827a';
+  ctx.font = '10px DM Mono, Menlo, monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (const v of [-5, -2.5, 0, 2.5, 5]) {
+    const y = pad.top + plotH * (1 - (v - yMin) / (yMax - yMin));
+    ctx.fillText(String(v), pad.left - 4, y);
+    ctx.strokeStyle = v === 0 ? '#a8a098' : '#f0ece6';
+    ctx.beginPath();
+    if (v === 0) ctx.setLineDash([4, 3]);
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(REG_RESID_W - pad.right, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (const v of [0, 5, 10]) {
+    const x = pad.left + plotW * ((v - xMin) / (xMax - xMin));
+    ctx.fillText(String(v), x, REG_RESID_H - pad.bottom + 4);
+  }
+  ctx.fillStyle = '#5c554d';
+  ctx.fillText('Predicted', pad.left + plotW / 2, REG_RESID_H - 14);
+  ctx.save();
+  ctx.translate(10, pad.top + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('Residual', 0, 0);
+  ctx.restore();
+  // Dots
+  const projected = [];
+  for (const row of looData.rows) {
+    const resid = row.target - row.pred;
+    const px = pad.left + plotW * ((row.pred - xMin) / (xMax - xMin));
+    const py = pad.top + plotH * (1 - (resid - yMin) / (yMax - yMin));
+    ctx.fillStyle = REG_DOT_FILL;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(px, py, REG_DOT_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    projected.push({ px, py, row });
+  }
+  canvas.style.cursor = 'pointer';
+  canvas.addEventListener('click', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    for (const p of projected) {
+      const d = Math.hypot(mx - p.px, my - p.py);
+      if (d <= REG_DOT_RADIUS + 3) {
+        if (typeof openRegressionDrilldown === 'function') {
+          openRegressionDrilldown(p.row.entry, sub);
+        }
+        return;
+      }
+    }
+  });
+}
+
 // Per-submodel surfaces: per-feature scatters, importance bars, preferred
 // conditions, fit metrics, residual chart. Dispatcher calls each one if it
 // has shipped (renderers added incrementally per Prompt #5 commit order).

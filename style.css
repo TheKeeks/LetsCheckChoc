@@ -2763,3 +2763,53 @@ a:hover { text-decoration: underline; }
 .reg-pref-row:last-child { border-bottom: none; }
 .reg-pref-label { color: var(--ink); font-weight: 500; }
 .reg-pref-detail { color: var(--ink4); font-size: 0.72rem; }
+
+/* §9 — Fit metrics + residual chart */
+.reg-fit-row {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
+  gap: 16px;
+  align-items: flex-start;
+}
+@media (max-width: 720px) {
+  .reg-fit-row { grid-template-columns: 1fr; }
+}
+.reg-fit-metrics {
+  display: flex; flex-direction: column;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+.reg-fit-metric-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 2px 0;
+  border-bottom: 1px dashed var(--border-l);
+}
+.reg-fit-metric-row:last-of-type { border-bottom: none; }
+.reg-fit-key { color: var(--ink3); }
+.reg-fit-val { color: var(--ink); font-weight: 500; }
+.reg-fit-bad { color: var(--red-m); font-weight: 500; }
+.reg-fit-warning {
+  margin-top: 8px;
+  padding: 8px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--red-m);
+  background: #f8efed;
+  border-left: 3px solid var(--red-m);
+  border-radius: 3px;
+  line-height: 1.4;
+}
+.reg-residual {
+  display: flex; flex-direction: column;
+  gap: 6px;
+}
+.reg-residual-title {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink3);
+}
+.reg-residual-canvas { width: 100%; max-width: 280px; height: auto; }
