@@ -2623,3 +2623,45 @@ a:hover { text-decoration: underline; }
   font-size: 0.72rem; color: var(--ink3);
 }
 .reg-threshold-note { margin-top: 6px; }
+
+/* §6 — Sub-model selector */
+.reg-submodel-row {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+.reg-submodel-tabs {
+  display: inline-flex;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.reg-submodel-tab {
+  background: transparent;
+  border: none;
+  padding: 6px 14px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--ink2);
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+}
+.reg-submodel-tab:last-child { border-right: none; }
+.reg-submodel-tab.active {
+  background: var(--ink);
+  color: var(--bg-card);
+}
+.reg-submodel-tab:hover:not(.active) { background: var(--bg-card); }
+
+.reg-section { margin-top: 18px; }
+.reg-section-heading {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--ink);
+  margin-bottom: 8px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

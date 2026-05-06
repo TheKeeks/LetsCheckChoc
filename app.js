@@ -5612,9 +5612,45 @@ function renderRegressionTab() {
   renderRegressionPredictionWidget();
   renderRegressionPVA();
   renderRegressionThresholds();
+  _regWireSubmodelTabs();
+  _regUpdateSubmodelSurfaces();
 
   // Weights panel (renderWeightsPanel toggles its own display).
   renderWeightsPanel();
+}
+
+// ── Tab 2 §6: Sub-model selector ──────────────────────────────────────
+function _regWireSubmodelTabs() {
+  const tabs = document.querySelectorAll('.reg-submodel-tab');
+  tabs.forEach(t => {
+    if (t._wired) return;
+    t._wired = true;
+    t.addEventListener('click', () => {
+      const sub = t.dataset.submodel;
+      if (!sub || !REG_SUBMODELS[sub]) return;
+      _regActiveSubmodel = sub;
+      tabs.forEach(x => x.classList.toggle('active', x.dataset.submodel === sub));
+      _regUpdateSubmodelSurfaces();
+    });
+  });
+  // Restore active class to currently-selected submodel.
+  tabs.forEach(t => t.classList.toggle('active', t.dataset.submodel === _regActiveSubmodel));
+}
+
+// Per-submodel surfaces: per-feature scatters, importance bars, preferred
+// conditions, fit metrics, residual chart. Dispatcher calls each one if it
+// has shipped (renderers added incrementally per Prompt #5 commit order).
+function _regUpdateSubmodelSurfaces() {
+  ['renderRegressionFeatureGrid',
+   'renderRegressionImportance',
+   'renderRegressionPreferred',
+   'renderRegressionFitMetrics',
+   'renderRegressionResidual'].forEach(name => {
+    const fn = window[name];
+    if (typeof fn === 'function') {
+      try { fn(); } catch (e) { console.warn('[reg]', name, e); }
+    }
+  });
 }
 
 // ── Tab 2 §3: "If I went at scrubbed time" prediction widget ──────────
