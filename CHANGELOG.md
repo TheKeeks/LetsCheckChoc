@@ -104,6 +104,62 @@ accent. Content unchanged: time | swell h/p | direction | wind | tide.
 6. `Forecast chart: tide panel height bump + label collision fix`
 7. `Forecast chart: float scrubber label to top`
 
+### Follow-up fixes
+
+After deploy + screenshot, seven additional fixes landed before
+Prompt #5:
+
+- **Period line visibility (real fix)** — the line was drawing in
+  theory but never rendering because some Open-Meteo models return
+  `swell_wave_peak_period` as an array of all nulls. The previous
+  `peakPeriods.length ? peakPeriods : meanPeriods` picker chose that
+  null array, so every per-hour `p == null` guard skipped the sample.
+  Now the picker requires at least one finite value before preferring
+  peak; otherwise it falls through to `swell_wave_period` /
+  `wave_period`. Also re-implemented the line draw with explicit
+  `beginPath` / `moveTo` / `lineTo` (no Path2D), required ≥ 2 valid
+  samples before stroking, and bumped the halo alpha 0.85 → 0.95.
+- **Direction sub-panel 70px** — swell card 256 → 267, sub-panel
+  doubles in height so the E/SE/S/SW tick labels have ≥ 4px between
+  them and the line isn't squashed.
+- **Compass dial 72px, no FROM** — dial 60 → 72, cardinal letters
+  bolder (600/10px) and darker (#666), centre/radius derived from
+  live canvas size so DPR scaling is right. Dropped the "FROM"
+  caption — the direction sub-panel's y-axis already labels the
+  convention.
+- **Wind panel fixed 0–25 mph** — replaces the auto-fit
+  `Math.max(10, ceil(peak × 1.2 / 5) × 5)` axis. Faint gridlines at
+  every 5 mph; tick labels at 0/5/10/15/20/25. Existing
+  `Math.min(val, windMaxY)` clamp pins area fills to the ceiling
+  visually on storm hours.
+- **Tide NEXT LOW callout removed** — the "NEXT LOW AFTER hh:mm: …"
+  row above the tide curve duplicated info that's already on the curve
+  itself (next two lows after now get triangle markers + time + height
+  baked in). Card 161 → 120, canvas reclaims the whole card,
+  `formatNextLowCallout` / `positionAndUpdateTideCallout` /
+  `.forecast-tide-callout` / `.forecast-tide-divider` all deleted.
+- **Lineup card shrink + overlay labels** — frame max-width 720 → 588
+  so it caps at 280px tall while preserving aspect ratio. Caption
+  ("Scrubbed to … — primary swell, secondary swell, wind. Arrows
+  converge on the lineup.") moves into the bottom-left corner of the
+  image as an overlay pill (rgba(0,0,0,0.55) / 11px white mono / 4px
+  padding / 4px radius), legend ("Swell direction · Wind direction")
+  moves to the top-right corner with the same treatment. Previous
+  panel-footer + dedicated legend row are gone.
+- **WIND label clipping** — section-label column 60 → 64px (label
+  content 52 → 56) so "WIND" doesn't clip at the W/N edges. Day-row
+  padding bumped to match.
+
+### Follow-up commits (in order)
+
+1. `Forecast chart: period line visibility — fall back to mean period when peak is empty`
+2. `Forecast chart: direction sub-panel 70px tall, more room for compass ticks`
+3. `Forecast chart: compass dial 72px, drop FROM caption`
+4. `Forecast chart: wind panel fixed 0–25 mph axis with gridlines`
+5. `Forecast chart: remove tide NEXT LOW callout row`
+6. `Lineup card: shrink to 280px max, overlay caption + legend on the image`
+7. `Forecast chart: section-label column 60 → 64 to fix WIND clipping`
+
 ## [Unreleased] — Prompt #4: stacked forecast panels
 
 ### Forecast chart layout
