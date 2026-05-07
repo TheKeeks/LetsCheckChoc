@@ -5085,21 +5085,24 @@ function importJSON(ev) {
 // SURF LOG — Backfill (re-fetch all sessions from Open-Meteo archive)
 // ════════════════════════════════════════════════
 //
-// Replaces each logged session's `cond.swell` block with reanalysis data
-// from the Open-Meteo archive endpoint. Subjective ratings (size, wind
-// quality, ride quality), notes, and photos are untouched. Wind and tide
-// blocks on each entry are preserved (their sources don't change in this
-// migration). NDBC stdmet is the fallback when archive returns no data.
+// Replaces each logged session's `cond.swell` AND `cond.tide` blocks with
+// reanalysis data. Subjective ratings (size, wind quality, ride quality),
+// notes, and photos are untouched. The wind block is preserved per entry
+// (wind source unchanged); the tide block is REWRITTEN because we are
+// migrating from the old hilo-extremum lookup (cond.tide.height was the
+// next hi/lo value) to the new hourly-interpolated lookup (cond.tide.height
+// is the actual water level at session time, and cond.tide.rate is added).
+// NDBC stdmet is the fallback when archive returns no data.
 async function backfillAllSessionsFromArchive() {
   if (!Array.isArray(STATE.surfLog) || STATE.surfLog.length === 0) {
     alert('No sessions to backfill.');
     return;
   }
   const proceed = confirm(
-    'This will re-fetch conditions for all your logged sessions from Open-Meteo archive. ' +
-    'Your subjective ratings (size, wind quality, ride quality) will not be touched. ' +
-    'The conditions snapshot for each session will be replaced with reanalysis data, ' +
-    'which is more accurate than the forecast data used for some sessions. Proceed?'
+    'This will re-fetch conditions for all your logged sessions from Open-Meteo archive ' +
+    'AND re-fetch tide data from CO-OPS using hourly predictions (interpolated water ' +
+    'level at session time, with signed ft/hr rate). Your subjective ratings (size, wind ' +
+    'quality, ride quality) will not be touched. Proceed?'
   );
   if (!proceed) return;
 
@@ -5114,6 +5117,7 @@ async function backfillAllSessionsFromArchive() {
   const entries = STATE.surfLog.slice();
   const total = entries.length;
   let processed = 0, archive = 0, ndbc = 0, failed = 0;
+  let tideRising = 0, tideFalling = 0, tideSlack = 0;
   const failures = [];
 
   for (const entry of entries) {
@@ -5146,13 +5150,15 @@ async function backfillAllSessionsFromArchive() {
         else delete newCond.originalLoggedTime;
         if (result.note) newCond.note = result.note; else delete newCond.note;
 
-        // Wind + tide blocks: preserve existing values where present (their
-        // sources don't change in this migration); fall back to whatever
-        // the lookup returned only if the entry had nothing recorded.
+        // Wind: preserve existing (source unchanged in this migration).
+        // Tide: ALWAYS overwrite with the freshly-computed block — we are
+        // migrating from hilo-nearest-extremum to hourly-interpolated
+        // height plus a new signed ft/hr `rate` field, so any tide values
+        // already on the entry are stale by definition.
         if (oldCond.wind) newCond.wind = oldCond.wind;
         else if (result.wind) newCond.wind = result.wind;
-        if (oldCond.tide) newCond.tide = oldCond.tide;
-        else if (result.tide) newCond.tide = result.tide;
+        if (result.tide) newCond.tide = result.tide;
+        else if (oldCond.tide) newCond.tide = oldCond.tide;
 
         entry.conditions = newCond;
         try {
@@ -5163,6 +5169,13 @@ async function backfillAllSessionsFromArchive() {
 
         if (result.source === 'openmeteo-archive') archive++;
         else if (result.source === 'ndbc-stdmet') ndbc++;
+
+        const r = result.tide?.rate;
+        if (typeof r === 'number') {
+          if (Math.abs(r) < 0.1) tideSlack++;
+          else if (r > 0) tideRising++;
+          else tideFalling++;
+        }
       }
     } catch (err) {
       failed++;
@@ -5179,15 +5192,26 @@ async function backfillAllSessionsFromArchive() {
   if (typeof renderSurfLogTable === 'function') renderSurfLogTable();
   if (btn) { btn.disabled = false; btn.textContent = 'Re-fetch all session conditions from Open-Meteo archive'; }
 
+  const tideTotal = tideRising + tideFalling + tideSlack;
+  const tideSummary = tideTotal
+    ? '\n\nTide rate distribution across ' + tideTotal + ' sessions: ' +
+      tideRising + ' positive (rising), ' +
+      tideFalling + ' negative (falling), ' +
+      tideSlack + ' near-zero (slack).'
+    : '';
   const summary =
     processed + ' sessions processed.\n\n' +
     archive + ' populated with archive data (openmeteo-archive)\n' +
     ndbc + ' populated with NDBC fallback (ndbc-stdmet)\n' +
     failed + ' failed' +
+    tideSummary +
     (failures.length
       ? '\n\nFailures:\n' + failures.slice(0, 8).map(f => '• ' + new Date(f.ts).toLocaleDateString() + ' — ' + f.reason).join('\n')
       : '');
   if (status) status.textContent = 'Done. ' + archive + ' archive · ' + ndbc + ' NDBC · ' + failed + ' failed.';
+  console.log('Tide rate distribution across ' + tideTotal + ' sessions: ' +
+    tideRising + ' positive (rising), ' + tideFalling + ' negative (falling), ' +
+    tideSlack + ' near-zero (slack).');
   alert(summary);
 }
 
