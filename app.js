@@ -4457,9 +4457,10 @@ async function fetchHistoricalWind(dateStr) {
 
 // Hourly predictions over a 24h window centered on the session's local date.
 // `interval=h` lets us linearly interpolate water level at the exact session
-// time. The previous `hilo` interval returned only 2-4 extrema per day,
-// which forced cond.tide.height to be the next-extremum value rather than
-// the actual water level under the wave at session time.
+// time and compute a ±30-min central-difference rate. The previous `hilo`
+// interval returned only 2-4 extrema per day, which forced cond.tide.height
+// to be the next-extremum value rather than the actual water level under the
+// wave at session time.
 async function fetchHistoricalTide(dateStr) {
   const d = new Date(dateStr);
   const bd = [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('');
@@ -4489,8 +4490,8 @@ function _normalizeTidePredictions(tideData) {
 }
 
 // Linear interpolation of water level at sessionDateTime, given a
-// time-sorted array of {t,v} samples. Returns null only when the array
-// is empty; otherwise clamps to the nearest endpoint.
+// time-sorted array of {t,v} samples. Returns null if the session falls
+// entirely outside the sample range and only one side has data.
 function tideHeightAt(predictions, sessionDateTime) {
   if (!predictions.length) return null;
   const ts = sessionDateTime.getTime();
@@ -4508,8 +4509,8 @@ function tideHeightAt(predictions, sessionDateTime) {
 }
 
 // Central difference: water level at T+30min minus T-30min. Divisor is
-// 1.0 hr so the result is signed ft/hr (positive = rising / incoming,
-// negative = falling / outgoing).
+// 1.0 hr so the result is signed ft/hr (positive = rising tide / incoming,
+// negative = falling tide / outgoing).
 function tideRateAt(predictions, sessionDateTime) {
   const tPlus  = new Date(sessionDateTime.getTime() + 30 * 60 * 1000);
   const tMinus = new Date(sessionDateTime.getTime() - 30 * 60 * 1000);
@@ -4520,8 +4521,8 @@ function tideRateAt(predictions, sessionDateTime) {
 }
 
 // Detect local extrema in a time-sorted samples array. Used to compute
-// timeToNearest when the payload doesn't carry an explicit `type` field
-// (the hourly product doesn't, the hilo product does).
+// timeToNearest from hourly samples (sub-classifying as 'H'/'L') when the
+// payload doesn't carry an explicit `type` field.
 function _detectTideExtrema(predictions) {
   const out = [];
   for (let i = 1; i < predictions.length - 1; i++) {
@@ -4532,9 +4533,9 @@ function _detectTideExtrema(predictions) {
   return out;
 }
 
-// Hours to the nearest hi/lo extremum (rounded to 0.1h). Uses explicitly
-// type-tagged samples (CO-OPS hilo product) when present; otherwise scans
-// for local maxima/minima in the hourly series.
+// Hours to nearest hi/lo extremum (signed magnitude, rounded to 0.1h).
+// Prefers explicit `type`-tagged samples (CO-OPS hilo product) when
+// present; otherwise scans for local extrema in the hourly series.
 function _timeToNearestExtremum(predictions, sessionDateTime) {
   const tagged = predictions.filter(p => p.type === 'H' || p.type === 'L');
   const extrema = tagged.length ? tagged : _detectTideExtrema(predictions);
@@ -4548,7 +4549,7 @@ function _timeToNearestExtremum(predictions, sessionDateTime) {
   return Math.round(best / 3600000 * 10) / 10;
 }
 
-// |rate| < 0.1 ft/hr is slack (sub-classified by absolute height
+// Stage: |rate| < 0.1 ft/hr is slack (sub-classified by absolute height
 // percentile across the day), otherwise rising / falling per sign.
 function _tideStageFromRate(rate, height, predictions) {
   if (Math.abs(rate) < 0.1) {
@@ -4565,11 +4566,10 @@ function _tideStageFromRate(rate, height, predictions) {
 //
 // `height` is the linear-interpolated water level at sessionDateTime
 // (NOT the next hi/lo value, as the previous hilo-only implementation
-// returned). `rate` is the signed central-difference slope in ft/hr
-// (positive = rising / incoming, negative = falling / outgoing).
-// `stage` is derived from `rate` (`rising` / `falling` / `slack-high` /
-// `slack-low`). `timeToNearest` is hours to the nearest hi/lo extremum,
-// kept for UI display.
+// returned). `rate` is the signed central-difference water-level slope
+// in ft/hr. `stage` is derived from `rate` ('rising' / 'falling' /
+// 'slack-high' / 'slack-low'). `timeToNearest` is hours to the nearest
+// hi/lo extremum, kept for UI display.
 function parseTideAtTime(tideData, dateStr) {
   const preds = _normalizeTidePredictions(tideData);
   if (!preds.length) return { height: 0, rate: 0, stage: 'rising', timeToNearest: 0 };
@@ -4751,6 +4751,20 @@ async function lookupHistoricalConditions(lat, lon, dateStr) {
   return null;
 }
 
+// "2.4ft rising at +0.6 ft/hr (2.4h to next)" — falls back gracefully when
+// rate is missing (sessions logged before the hourly-interpolation backfill).
+function _formatTideReadout(tide) {
+  if (!tide) return '—';
+  const h = (typeof tide.height === 'number') ? tide.height.toFixed(1) : (tide.height ?? '?');
+  const stage = tide.stage || '';
+  const ttn = (tide.timeToNearest != null) ? tide.timeToNearest : '?';
+  if (typeof tide.rate === 'number') {
+    const sign = tide.rate >= 0 ? '+' : '';
+    return h + 'ft ' + stage + ' at ' + sign + tide.rate.toFixed(2) + ' ft/hr (' + ttn + 'h to next)';
+  }
+  return h + 'ft ' + stage + ' (' + ttn + 'h to next)';
+}
+
 function renderConditionsDisplay(cond) {
   const display = el('sl-conditions-display');
   if (!display || !cond) return;
@@ -4761,7 +4775,7 @@ function renderConditionsDisplay(cond) {
   if (cond.swell.secondary) h += dl('2nd:', cond.swell.secondary.height+'ft '+(cond.swell.secondary.period||'')+'s '+directionLabel(cond.swell.secondary.direction));
   h += '</div><div class="sl-cond-row">';
   h += dl('Wind:', cond.wind.speed+' mph '+directionLabel(cond.wind.direction)+' ('+cond.wind.direction+'\u00b0)');
-  h += dl('Tide:', cond.tide.height+'ft '+cond.tide.stage+' ('+cond.tide.timeToNearest+'h to next)');
+  h += dl('Tide:', _formatTideReadout(cond.tide));
   h += '</div>';
   if (cond.swellLagHours > 0) {
     h += `<div class="sl-cond-row"><span class="sl-hint">Using swell from ~${cond.swellLagHours}h ago at buoy (travel time estimate)</span></div>`;
@@ -5043,13 +5057,14 @@ function exportJSON() {
 }
 
 function exportCSV() {
-  const rows = [['id','date','size','windQuality','rideQuality','avg','notes','swellH','swellDir','swellPer','windSpd','windDir','tideH','tideStage']];
+  const rows = [['id','date','size','windQuality','rideQuality','avg','notes','swellH','swellDir','swellPer','windSpd','windDir','tideH','tideRate','tideStage']];
   STATE.surfLog.forEach(e => {
     const c = e.conditions||{}, s = c.swell||{}, w = c.wind||{}, t = c.tide||{};
     rows.push([e.id,e.timestamp,e.ratings.size,e.ratings.windQuality,e.ratings.rideQuality,
       ((e.ratings.size+e.ratings.windQuality+e.ratings.rideQuality)/3).toFixed(1),
       '"'+(e.notes||'').replace(/"/g,'""')+'"',
-      s.height||'',s.direction||'',s.period||'',w.speed||'',w.direction||'',t.height||'',t.stage||'']);
+      s.height||'',s.direction||'',s.period||'',w.speed||'',w.direction||'',
+      t.height||'',(t.rate!=null?t.rate:''),t.stage||'']);
   });
   const blob = new Blob([rows.map(r=>r.join(',')).join('\n')], { type: 'text/csv' });
   const a = document.createElement('a');
@@ -5369,7 +5384,7 @@ function toggleEntryDetail(entry, tr) {
     h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Swell</span>'+c.swell.height+'ft '+c.swell.period+'s '+directionLabel(c.swell.direction)+' ('+c.swell.direction+'\u00b0)';
     if (c.swell.secondary) h += '<br>2nd: '+c.swell.secondary.height+'ft '+c.swell.secondary.period+'s '+directionLabel(c.swell.secondary.direction);
     h += '</div><div class="sl-cond-group"><span class="sl-cond-group-title">Wind</span>'+c.wind.speed+' mph '+directionLabel(c.wind.direction)+' ('+c.wind.direction+'\u00b0)</div>';
-    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Tide</span>'+c.tide.height+'ft '+c.tide.stage+' ('+c.tide.timeToNearest+'h to next)</div>';
+    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Tide</span>'+_formatTideReadout(c.tide)+'</div>';
   } else { h += '<div style="grid-column:1/-1;color:var(--ink4)">No conditions recorded</div>'; }
   h += '</div></td>';
   dr.innerHTML = h; tr.after(dr);
@@ -5804,9 +5819,9 @@ function simpleMatchPct(a,b) {
 }
 
 // `tidePred` is the 6-min predictions series (CO-OPS interval=6) and is
-// used for height via interpolation. `tideHiLo` is consulted only for
-// `timeToNearest` — it has explicit H/L type tags so the readout is
-// exact rather than detected.
+// used for height + rate via interpolation. `tideHiLo` is consulted only
+// for `timeToNearest` (hours to the next labelled extremum) — it has
+// explicit H/L type tags so the readout is exact rather than detected.
 function buildForecastConditions(marine, wind, tideHiLo, tidePred, hi) {
   if (!marine?.hourly||!wind?.hourly) return null;
   const swH=marine.hourly.swell_wave_height?.[hi]??marine.hourly.wave_height?.[hi]??0;
@@ -5817,7 +5832,7 @@ function buildForecastConditions(marine, wind, tideHiLo, tidePred, hi) {
   const secP=marine.hourly.secondary_swell_wave_period?.[hi]??0;
   const wSpd=wind.hourly.wind_speed_10m?.[hi]??0, wDir=wind.hourly.wind_direction_10m?.[hi]??0;
   const targetTime = marine.hourly.time?.[hi];
-  let tideInfo = { height: 0, stage: 'rising', timeToNearest: 0 };
+  let tideInfo = { height: 0, rate: 0, stage: 'rising', timeToNearest: 0 };
   if (targetTime && tidePred && tidePred.length) {
     tideInfo = parseTideAtTime({ predictions: tidePred }, targetTime);
     if (tideHiLo && tideHiLo.length) {
@@ -5923,7 +5938,8 @@ function openMatchModal(entry, forecastDay, hi) {
   const ce = el('modal-conditions');
   if (ce && entry.conditions) {
     const c=entry.conditions, dl=(l,v)=>'<span class="mc-label">'+l+'</span><span class="mc-val">'+v+'</span>';
-    ce.innerHTML = [dl('Swell',c.swell.height+'ft '+c.swell.period+'s '+directionLabel(c.swell.direction)), dl('Wind',c.wind.speed+'mph '+directionLabel(c.wind.direction)), dl('Tide',c.tide.height+'ft '+c.tide.stage), fc?dl('Fcst Wind',Math.round(fc.wind.speed)+'mph '+directionLabel(fc.wind.direction)):''].join('');
+    const tideStr = c.tide ? (c.tide.height+'ft '+c.tide.stage + (typeof c.tide.rate === 'number' ? ' ('+(c.tide.rate>=0?'+':'')+c.tide.rate.toFixed(2)+' ft/hr)' : '')) : '—';
+    ce.innerHTML = [dl('Swell',c.swell.height+'ft '+c.swell.period+'s '+directionLabel(c.swell.direction)), dl('Wind',c.wind.speed+'mph '+directionLabel(c.wind.direction)), dl('Tide',tideStr), fc?dl('Fcst Wind',Math.round(fc.wind.speed)+'mph '+directionLabel(fc.wind.direction)):''].join('');
   }
   el('modal-ratings').innerHTML = ratingBadge(entry.ratings.size)+' Size '+ratingBadge(entry.ratings.windQuality)+' Wind '+ratingBadge(entry.ratings.rideQuality)+' Ride';
   el('modal-notes').textContent = entry.notes || '';
@@ -7370,6 +7386,7 @@ function _regFmtConditionsBlock(cond) {
     (w.direction != null ? ' (' + Math.round(w.direction) + '°)' : '');
   const tideLine = (t.height != null ? (t.height >= 0 ? '+' : '') + t.height.toFixed(1) + 'ft' : '—') +
     ' · ' + (t.stage || '—') +
+    (typeof t.rate === 'number' ? ' · ' + (t.rate >= 0 ? '+' : '') + t.rate.toFixed(2) + ' ft/hr' : '') +
     (t.timeToNearest != null ? ' · time to nearest: ' + t.timeToNearest + 'h' : '');
   let sourceLabel;
   if (cond.source === 'openmeteo-archive')      sourceLabel = 'Open-Meteo archive (reanalysis)';
