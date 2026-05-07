@@ -469,7 +469,7 @@
             <div class="sl-conditions-display" id="sl-conditions-display">
               <span class="sl-hint">Click "Lookup" to auto-fill from historical data</span>
             </div>
-            <div class="sl-note">Weather archive has a ~5 day delay. Very recent sessions may show partial data.</div>
+            <div class="sl-note">Conditions are loaded from Open-Meteo's archive (reanalysis). Data is typically available within 1–2 days of the session date.</div>
           </div>
 
           <div class="sl-btn-row">
@@ -527,7 +527,14 @@
           <button class="sl-btn sl-btn-sm" id="sl-import-json-btn">Import JSON</button>
           <input type="file" id="sl-import-json" accept=".json" style="display:none;">
           <button class="sl-btn sl-btn-sm" id="sl-export-csv">Export CSV</button>
+          <button class="sl-btn sl-btn-sm" id="sl-backfill-archive-btn">Re-fetch all session conditions from Open-Meteo archive</button>
           <span class="sl-storage-note" id="sl-storage-note"></span>
+        </div>
+        <div id="sl-backfill-progress" style="display:none; padding:8px 14px; font-family: var(--mono, monospace); font-size: 0.72rem;">
+          <div style="height:10px; background:#c0c0c0; border:1px solid #808080; box-shadow: inset 1px 1px 0 #404040, inset -1px -1px 0 #ffffff; padding:1px;">
+            <div id="sl-backfill-bar-fill" style="height:100%; width:0%; background:#000080; transition: width 0.2s linear;"></div>
+          </div>
+          <div id="sl-backfill-status" style="margin-top:4px; color:#404040;"></div>
         </div>
         </fieldset>
       </section>
