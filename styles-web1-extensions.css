@@ -1080,3 +1080,85 @@ body[data-era="web1"] {
   letter-spacing: 1px;
   text-transform: uppercase;
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   FIX 8 — Full-viewport-width cards on mobile (≤640px)
+   ─────────────────────────────────────────────────────────────────────
+   Collapse outer Win95 chrome + page-container padding so cards extend
+   nearly edge-to-edge. Card bevels (raised/inset) still render fully —
+   only the surrounding gray gutter is removed. ~4px sliver each side.
+   ════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 640px) {
+  /* Body and outer Win95 window: no horizontal margin/padding. */
+  body[data-era="web1"] {
+    padding: 0;
+  }
+  [data-era="web1"] #app-window.w1-window {
+    padding: 0;
+    margin: 0;
+    max-width: 100%;
+  }
+
+  /* Inner app + tab-view surfaces: 4px breathing room each side. */
+  [data-era="web1"] #app {
+    padding: 4px;
+  }
+  [data-era="web1"] #view-forecast,
+  [data-era="web1"] #view-regression,
+  [data-era="web1"] #view-surflog {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  /* Cards/panels: zero horizontal margin so they fill inner width.
+     Override the unscoped 700px rule from style.css via specificity. */
+  [data-era="web1"] .panel,
+  [data-era="web1"] .panel-half,
+  [data-era="web1"] .panel-buoy-map,
+  [data-era="web1"] .forecast-card,
+  [data-era="web1"] .conditions-summary,
+  [data-era="web1"] .advanced-toggle-wrap {
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  /* Grid/row helpers that previously inset themselves with --gap padding. */
+  [data-era="web1"] .conditions-row,
+  [data-era="web1"] .panel-row {
+    padding-left: 0;
+    padding-right: 0;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  /* Tighten card inner horizontal padding so charts get more pixels. */
+  [data-era="web1"] .panel,
+  [data-era="web1"] .panel-half {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  /* Tab strip + header flush with viewport. */
+  [data-era="web1"] .tab-bar {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  [data-era="web1"] #app-header {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  /* Buoy summary line at the top — already inside .panel, but its own
+     inner padding can tighten. */
+  [data-era="web1"] .buoy-map-summary {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  /* Page footer stays a hair off the edge. */
+  [data-era="web1"] #page-footer {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+}
