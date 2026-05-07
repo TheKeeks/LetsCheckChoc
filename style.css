@@ -563,7 +563,8 @@ a:hover { text-decoration: underline; }
   user-select: none;
 }
 
-/* ── Forecast detail bar (selected hour info, floating top of chart) ── */
+/* ── Forecast detail bar (selected hour info, floating top of chart) ──
+   White inset bevel (Win95 text-display field), black Courier mono text. */
 .forecast-detail-bar {
   display: none;
   position: sticky;
@@ -571,12 +572,14 @@ a:hover { text-decoration: underline; }
   z-index: 10;
   align-items: center;
   gap: 8px;
-  font-family: var(--mono);
+  font-family: "Courier New", Courier, var(--mono, monospace);
   font-size: 0.72rem;
-  color: #f0ece6;
-  background: #2c2825;
-  padding: 6px 12px;
-  border-radius: 4px;
+  color: #000000;
+  background: #ffffff;
+  border: 1px solid #c0c0c0;
+  box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #ffffff;
+  padding: 4px 8px;
+  border-radius: 2px;
   margin-bottom: 8px;
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
@@ -589,16 +592,16 @@ a:hover { text-decoration: underline; }
 .forecast-detail-bar .detail-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 16px;
+  gap: 4px 14px;
   align-items: baseline;
   flex: 1 1 auto;
   min-width: 0;
 }
 
 .forecast-detail-bar .detail-time {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 0.78rem;
-  color: #ffffff;
+  color: #000000;
   margin-right: 4px;
 }
 
@@ -609,17 +612,17 @@ a:hover { text-decoration: underline; }
 }
 
 .forecast-detail-bar .detail-label {
-  color: #b5afa8;
+  color: #404040;
 }
 
 .forecast-detail-bar .detail-val {
   font-weight: 500;
-  color: #f0ece6;
+  color: #000000;
 }
 
 .forecast-detail-bar .detail-tide {
-  color: #67e8f9;
-  font-weight: 500;
+  color: #000080;
+  font-weight: 700;
 }
 
 /* ── Forecast scrubber (vertical line + circular handle) ── */
@@ -643,18 +646,18 @@ a:hover { text-decoration: underline; }
   transform: translate(-50%, -50%);
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
-/* Always rendered as the dark sticky bar; .scrub-active is just a hint
-   for any future style differentiation. */
+/* Sticky-bar hint badge; matches the white-inset detail-bar treatment. */
 .scrub-badge {
   display: inline-block;
   margin-left: 6px;
   padding: 1px 5px;
-  border-radius: 3px;
-  background: #2c2825;
-  color: #f0ece6;
-  font-family: var(--mono, monospace);
+  border-radius: 2px;
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #808080;
+  font-family: "Courier New", Courier, monospace;
   font-size: 0.65rem;
-  font-weight: 500;
+  font-weight: 600;
   vertical-align: middle;
 }
 
@@ -716,15 +719,15 @@ a:hover { text-decoration: underline; }
   flex: 0 0 auto;
   background: transparent;
   border: none;
-  color: #ffd9b3;
-  font-family: var(--mono, monospace);
+  color: #0000ee;
+  font-family: "Courier New", Courier, monospace;
   font-size: 0.72rem;
   cursor: pointer;
   padding: 0;
   white-space: nowrap;
   text-decoration: underline;
 }
-.forecast-reset-btn:hover { color: #fff; }
+.forecast-reset-btn:hover { color: #800080; }
 
 /* ── Panel row (compass + spectrum side by side) ─ */
 .panel-row {

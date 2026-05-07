@@ -1,5 +1,32 @@
 # Changelog
 
+## [Unreleased] — Forecast page: scrubber header colors (black on white inset)
+
+The sticky scrubber detail bar previously used white/cream text on a
+dark gray (`#2c2825`) background, which read as modern web styling
+rather than proper Win95 chrome.
+
+- `style.css` `.forecast-detail-bar`: switched to a white inset bevel
+  (`background: #ffffff`, `box-shadow: inset 1px 1px 0 #808080,
+  inset -1px -1px 0 #ffffff`, 1px `#c0c0c0` border) with black
+  Courier New monospace text. The tide accent is now `#000080` navy
+  (the Win95 title-bar accent) instead of cyan. Detail values use
+  `#000000`, the day/time stamp is bold black, secondary labels use
+  `#404040`.
+- `style.css` `.forecast-reset-btn`: re-skinned for the new bar — blue
+  underlined link (`#0000ee`, hover `#800080`) in Courier New, so it
+  reads as a proper hyperlink on the white surface.
+- `style.css` `.scrub-badge`: matched to the new treatment (white
+  inset, black mono, 1px `#808080` border).
+- `styles-web1-extensions.css` `.forecast-detail-bar`: switched from
+  `var(--w1-face)` raised bevel to a white inset bevel
+  (border-color `#404040 #ffffff #ffffff #404040`); detail values use
+  `--w1-ink`, the tide accent uses `--w1-navy` (bold).
+
+Visually the bar now reads like a Win95 text-display field rather than
+a dark callout band, matching the address-bar treatment. No
+white-on-dark-gray surfaces remain on the forecast page.
+
 ## [Unreleased] — Forecast page: compress header rows above chart
 
 Collapses the four full-width rows that sat above the swell forecast
