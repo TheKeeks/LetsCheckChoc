@@ -330,27 +330,85 @@ body[data-era="web1"] {
   font-weight: bold;
 }
 
+/* Detail bar: white inset bevel (text-display field), black Courier mono.
+   The navy tide accent uses --w1-navy. */
 [data-era="web1"] .forecast-detail-bar {
-  background: var(--w1-face);
+  background: #ffffff;
   border: 2px solid;
-  border-color: #ffffff #404040 #404040 #ffffff;
-  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
   font-family: var(--w1-mono);
   font-size: 12px;
   color: var(--w1-ink);
   padding: 4px 8px;
+  border-radius: 0;
 }
 
+[data-era="web1"] .forecast-detail-bar .detail-time,
+[data-era="web1"] .forecast-detail-bar .detail-val {
+  color: var(--w1-ink);
+}
+
+[data-era="web1"] .forecast-detail-bar .detail-label {
+  color: var(--w1-shadow);
+}
+
+[data-era="web1"] .forecast-detail-bar .detail-tide {
+  color: var(--w1-navy);
+  font-weight: bold;
+}
+
+/* Inline reset link inside the detail bar. */
 [data-era="web1"] .forecast-reset-btn {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  font-family: var(--w1-mono);
+  font-size: 12px;
+  color: var(--w1-link);
+  text-decoration: underline;
+  cursor: pointer;
+  border-radius: 0;
+}
+[data-era="web1"] .forecast-reset-btn:hover { color: var(--w1-vlink); }
+
+/* Compressed forecast page title (Win95 navy serif). */
+[data-era="web1"] .forecast-panel-title {
+  font-family: var(--w1-serif);
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--w1-navy);
+}
+[data-era="web1"] .forecast-help-popover > summary {
   background: var(--w1-face);
-  border: 2px solid;
+  border: 1px solid;
   border-color: #ffffff #404040 #404040 #ffffff;
   box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
-  padding: 2px 10px;
+  border-radius: 0;
+  color: var(--w1-ink);
+  font-family: var(--w1-sans);
+  font-weight: bold;
+}
+[data-era="web1"] .forecast-help-popover[open] > summary {
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  background: var(--w1-face);
+  color: var(--w1-ink);
+}
+[data-era="web1"] .forecast-help-popover > p {
+  background: #ffffe1;
+  border: 1px solid var(--w1-ink);
+  box-shadow: 1px 1px 0 var(--w1-ink);
+  border-radius: 0;
   font-family: var(--w1-sans);
   font-size: 11px;
-  border-radius: 0;
-  cursor: pointer;
+  color: var(--w1-ink);
+}
+[data-era="web1"] .forecast-coord-toggle,
+[data-era="web1"] .forecast-model-label {
+  font-family: var(--w1-sans);
+  font-size: 11px;
   color: var(--w1-ink);
 }
 

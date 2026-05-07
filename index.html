@@ -127,9 +127,19 @@
       <!-- 2. Swell forecast chart -->
       <section class="panel" id="panel-forecast">
         <div class="forecast-header-row">
-          <h3 class="panel-title">Swell Forecast</h3>
+          <h3 class="panel-title forecast-panel-title">
+            <span class="forecast-title-text">Swell Forecast</span>
+            <details class="forecast-help-popover">
+              <summary aria-label="What is this?" title="What is this?">?</summary>
+              <p>A 7-day projection of three sea-surface parameters — swell height, swell period, and wind speed — rendered on a shared time axis so their interactions are visible at a glance. Drag the cursor to scrub through hours; the lineup map and stat grid update to match.</p>
+            </details>
+          </h3>
           <div class="forecast-toolbar">
             <span id="forecast-cache-indicator" class="forecast-cache-indicator" style="display:none;" aria-live="polite">Cached · refreshing…</span>
+            <label class="forecast-coord-toggle" id="forecast-coord-toggle-wrap" style="display:none;">
+              <input type="checkbox" id="forecast-coord-toggle">
+              <span>Buoy coords</span>
+            </label>
             <label class="forecast-model-label">
               <span class="forecast-model-label-txt">Model:</span>
               <select id="forecast-model-select" aria-label="Forecast model">
@@ -138,18 +148,11 @@
             </label>
           </div>
         </div>
-        <details class="widget-help">
-          <summary>What is this?</summary>
-          <p>A 7-day projection of three sea-surface parameters — swell height, swell period, and wind speed — rendered on a shared time axis so their interactions are visible at a glance. Drag the cursor to scrub through hours; the lineup map and stat grid update to match.</p>
-        </details>
-        <div class="forecast-coord-toggle" id="forecast-coord-toggle-wrap" style="display:none;">
-          <label>
-            <input type="checkbox" id="forecast-coord-toggle">
-            Use buoy coordinates for forecast
-          </label>
-        </div>
         <div class="chart-container chart-container-tall" id="forecast-chart-container">
-          <div class="forecast-detail-bar" id="forecast-detail-bar"></div>
+          <div class="forecast-detail-bar" id="forecast-detail-bar">
+            <div class="detail-row" id="forecast-detail-row"></div>
+            <button type="button" id="forecast-reset-now" class="forecast-reset-btn" style="display:none;">Reset to now</button>
+          </div>
           <div class="forecast-card forecast-card-swell">
             <div class="forecast-section-label" aria-hidden="true">S<br>W<br>E<br>L<br>L</div>
             <canvas id="forecast-canvas-swell"></canvas>
@@ -166,9 +169,6 @@
           <div class="forecast-day-row">
             <canvas id="forecast-canvas-days"></canvas>
           </div>
-        </div>
-        <div class="forecast-reset-row" id="forecast-reset-row" style="display:none;">
-          <button type="button" id="forecast-reset-now" class="forecast-reset-btn">Reset to now</button>
         </div>
         <div class="panel-footer" id="footer-forecast"></div>
       </section>
