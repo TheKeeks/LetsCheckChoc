@@ -1,5 +1,106 @@
 # Changelog
 
+## [Unreleased] — Historical conditions lookup: Open-Meteo archive (reanalysis) for all ages
+
+**Why:** The previous historical-lookup path had two known problems
+documented in `INVESTIGATION_LOOKUP_DISCREPANCY.md` and reflected in the
+bucket distribution in `INVESTIGATION_OUT_VS_IN.md`:
+
+1. For sessions ≤5 days old, the system pulled from Open-Meteo's
+   *forecast* endpoint with `past_days=7`. That returns the FORECAST that
+   was made for those past hours — not what actually happened. Forecasts
+   can be wrong by 50%+ on swell height; using forecast data to ground
+   regression training labels corrupts the model.
+2. For sessions >5 days old at Chocomount, the system routed to NDBC
+   stdmet historical, which is ground-truth measurement but lacks
+   secondary-swell decomposition. Only 6 of 28 sessions ended up with
+   any secondary-swell data, making the SEC IN bucket structurally
+   unreachable for older sessions.
+
+**Fix:** Use Open-Meteo's *archive* endpoint
+(`https://archive-api.open-meteo.com/v1/archive`) as the primary source
+for ALL historical lookups, regardless of age. Archive data is
+reanalysis — model output rerun after the fact incorporating actual
+observations including buoy readings. It includes secondary swell and
+wind-wave decomposition. Coverage starts ~2016 for marine variables.
+
+- `app.js` `lookupHistoricalConditions(lat, lon, dateStr)`: rewritten as
+  a decision tree — try Open-Meteo archive first via the new
+  `lookupOpenMeteoArchive(lat, lon, dateStr)` helper; if archive returns
+  no swell, fall back to NDBC stdmet for Chocomount only via the new
+  `_fetchNDBCHistoricalConditionsCore(dateStr, preFetchedTide)` helper.
+  The days-old branching is gone.
+- `app.js` `lookupOpenMeteoArchive`: new helper. Fetches a 2-day window
+  centered on the session date; pulls primary swell, secondary swell,
+  and wind-wave fields; applies the existing offshore-to-beach travel
+  lag; returns a swell-only object plus lag metadata.
+- `app.js` `fetchHistoricalWind`: collapsed to always use the archive
+  endpoint regardless of age.
+- `app.js` `fetchHistoricalMarine`: deleted (its only caller was the
+  removed branch in `lookupHistoricalConditions`).
+- `app.js` `lookupNDBCHistoricalConditions`: replaced by
+  `_fetchNDBCHistoricalConditionsCore` — same lag math, no DOM writes,
+  optional pre-fetched tide arg so the archive code path doesn't
+  double-fetch CO-OPS.
+- `app.js` `isChocomountSpot(lat, lon)`: new helper. Treats the
+  Chocomount beach point and its offshore forecast pair as the same
+  spot for fallback routing.
+- `app.js` `renderConditionsDisplay` and the regression drilldown's
+  source label: extended to recognise `openmeteo-archive` and
+  `ndbc-stdmet` source values alongside the legacy `openmeteo` /
+  `ndbc` strings.
+- `app.js` `initSurfLogForm` `sl-lookup-btn` click handler: passes
+  `(lat, lon, dt)` (the offshore-Choc forecast pair) to the rewritten
+  `lookupHistoricalConditions`; the form now owns the
+  "Looking up…" / "Lookup failed" status messages instead of the
+  lookup function writing to the DOM.
+
+Tab 1's live forecast continues to use the Open-Meteo *forecast*
+endpoint — this change applies only to the historical-lookup paths used
+when logging or editing sessions.
+
+## [Unreleased] — Surf log: backfill button to re-fetch all sessions from archive
+
+Adds a one-click backfill so existing logged sessions can be moved off
+forecast-derived conditions onto archive (reanalysis) conditions without
+disturbing subjective ratings.
+
+- `index.html` (`#sl-export-row` block): adds a
+  `#sl-backfill-archive-btn` — *"Re-fetch all session conditions from
+  Open-Meteo archive"* — next to the Import/Export buttons. Inline
+  progress structure (`#sl-backfill-progress`) renders a thin
+  progress bar + status line during the run.
+- `app.js` `backfillAllSessionsFromArchive()`: new function bound to
+  the button. Confirms with the user, iterates `STATE.surfLog`, calls
+  `lookupHistoricalConditions(forecastLat, forecastLon, ts)` for each
+  entry, replaces `cond.swell` (including `cond.swell.secondary` and
+  `cond.swell.windWave` where the archive returns them) and
+  `cond.source`, preserves existing `cond.wind` / `cond.tide` blocks
+  (their sources don't change in this migration), and saves to
+  Firestore. Rate-limited at 500 ms between requests. Surfaces a
+  summary modal with archive / NDBC / failure counts.
+- `app.js` `window._llcGeneratePostBackfillReport()`: new diagnostic
+  that walks `STATE.surfLog`, re-buckets every session against
+  `CONFIG.chocomount.swellWindowMin/Max`, and prints the
+  `INVESTIGATION_OUT_VS_IN_POST_BACKFILL.md` table + summary +
+  source breakdown to the console for copy-paste into the file.
+- `INVESTIGATION_OUT_VS_IN_POST_BACKFILL.md`: new file. Methodology +
+  expectations + a placeholder table to be filled in after the user
+  runs backfill and the diagnostic.
+
+## [Unreleased] — Edit panel: update stale "5 day delay" note
+
+The historical-lookup edit panel previously carried the note *"Weather
+archive has a ~5 day delay. Very recent sessions may show partial
+data."*  That note made sense when the system used Open-Meteo's forecast
+endpoint for sessions ≤5 days old; with archive-only lookups it is
+misleading — what matters now is that archive coverage starts ~2016 and
+trails real-time by ~1–2 days.
+
+- `index.html`: replaces the note with *"Conditions are loaded from
+  Open-Meteo's archive (reanalysis). Data is typically available within
+  1–2 days of the session date."*
+
 ## [Unreleased] — Forecast page: scrubber header colors (black on white inset)
 
 The sticky scrubber detail bar previously used white/cream text on a
