@@ -4386,7 +4386,12 @@ async function _fetchNDBCHistoricalConditionsCore(dateStr, preFetchedTide) {
       lagHours: Math.round(ndbcLagHours * 10) / 10
     },
     wind: { speed: Math.round(wSpd), direction: Math.round(wDir) },
-    tide: { height: Math.round(tideInfo.height * 10) / 10, stage: tideInfo.stage, timeToNearest: tideInfo.timeToNearest }
+    tide: {
+      height: Math.round(tideInfo.height * 10) / 10,
+      rate: Math.round(tideInfo.rate * 100) / 100,
+      stage: tideInfo.stage,
+      timeToNearest: tideInfo.timeToNearest
+    }
   };
 
   if (ndbcLagHours > 0) {
@@ -4556,23 +4561,25 @@ function _tideStageFromRate(rate, height, predictions) {
   return rate > 0 ? 'rising' : 'falling';
 }
 
-// Returns { height, stage, timeToNearest } at session time.
+// Returns { height, rate, stage, timeToNearest } at session time.
 //
 // `height` is the linear-interpolated water level at sessionDateTime
 // (NOT the next hi/lo value, as the previous hilo-only implementation
-// returned). `stage` is derived from the central-difference rate sign
-// (`rising` / `falling` / `slack-high` / `slack-low`). `timeToNearest`
-// is hours to the nearest hi/lo extremum, kept for UI display.
+// returned). `rate` is the signed central-difference slope in ft/hr
+// (positive = rising / incoming, negative = falling / outgoing).
+// `stage` is derived from `rate` (`rising` / `falling` / `slack-high` /
+// `slack-low`). `timeToNearest` is hours to the nearest hi/lo extremum,
+// kept for UI display.
 function parseTideAtTime(tideData, dateStr) {
   const preds = _normalizeTidePredictions(tideData);
-  if (!preds.length) return { height: 0, stage: 'rising', timeToNearest: 0 };
+  if (!preds.length) return { height: 0, rate: 0, stage: 'rising', timeToNearest: 0 };
   const sessionTime = new Date(dateStr);
   const heightRaw = tideHeightAt(preds, sessionTime);
   const height = heightRaw == null ? 0 : heightRaw;
   const rate = tideRateAt(preds, sessionTime);
   const stage = _tideStageFromRate(rate, height, preds);
   const timeToNearest = _timeToNearestExtremum(preds, sessionTime);
-  return { height, stage, timeToNearest };
+  return { height, rate, stage, timeToNearest };
 }
 
 // Estimate swell travel lag from buoy to Chocomount.
@@ -4712,7 +4719,12 @@ async function lookupHistoricalConditions(lat, lon, dateStr) {
     const conditions = {
       swell: archiveResult.swell,
       wind: { speed: Math.round(wSpd), direction: Math.round(wDir) },
-      tide: { height: Math.round(tideInfo.height * 10) / 10, stage: tideInfo.stage, timeToNearest: tideInfo.timeToNearest },
+      tide: {
+        height: Math.round(tideInfo.height * 10) / 10,
+        rate: Math.round(tideInfo.rate * 100) / 100,
+        stage: tideInfo.stage,
+        timeToNearest: tideInfo.timeToNearest
+      },
       source: 'openmeteo-archive'
     };
     if (archiveResult._lagHours > 0) {
