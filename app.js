@@ -2691,14 +2691,20 @@ function applyScrubberToHour(idx) {
       }
     }
 
-    detailBar.innerHTML =
-      `<div class="detail-row">` +
+    // Write only into the inner row so the sibling Reset-to-now button
+    // (declared statically in HTML) stays wired up across re-renders.
+    const detailRow = el('forecast-detail-row');
+    const rowHTML =
       `<span class="detail-time">${dayName} ${timeStr}</span>` +
       `<span class="detail-item"><span class="detail-val">${swellStr}</span></span>` +
       `<span class="detail-item"><span class="detail-val">${swellDirStr}</span></span>` +
       `<span class="detail-item"><span class="detail-val">${windStr}</span></span>` +
-      (tideStr ? `<span class="detail-item"><span class="detail-tide">${tideStr}</span></span>` : '') +
-      `</div>`;
+      (tideStr ? `<span class="detail-item"><span class="detail-tide">${tideStr}</span></span>` : '');
+    if (detailRow) {
+      detailRow.innerHTML = rowHTML;
+    } else {
+      detailBar.innerHTML = `<div class="detail-row">${rowHTML}</div>`;
+    }
     detailBar.classList.add('active');
     detailBar.classList.toggle('scrub-active', !isScrubberAtNow());
   }
@@ -2743,9 +2749,9 @@ function applyScrubberToHour(idx) {
   // ── Cross-feature: stat grid (with +Xh / -Xh badge) ──
   applyStatGridForHour(idx);
 
-  // ── "Reset to now" link visibility ──
-  const resetRow = el('forecast-reset-row');
-  if (resetRow) resetRow.style.display = isScrubberAtNow() ? 'none' : '';
+  // ── "Reset to now" link visibility (lives inside the detail bar) ──
+  const resetBtn = el('forecast-reset-now');
+  if (resetBtn) resetBtn.style.display = isScrubberAtNow() ? 'none' : '';
 
   // ── Cross-feature: Tab 2 prediction widget tracks the scrubber too. ──
   if (typeof _regNotifyScrubberMoved === 'function') _regNotifyScrubberMoved();
