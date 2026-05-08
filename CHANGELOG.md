@@ -1,6 +1,68 @@
 # Changelog
 
-## [Unreleased] — Historical conditions lookup: Open-Meteo archive (reanalysis) for all ages
+## [Unreleased] — Historical tide lookup: hourly interpolation + signed rate
+
+**Why:** Tide audit (`INVESTIGATION_TIDE_LOOKUP.md`) confirmed
+`cond.tide.height` was being stored as the next hi/lo extremum (the
+upcoming peak or trough), not the actual water level at session time.
+For a 5:43 PM session with the next high at 8:00 PM at 3.5ft, the stored
+height was 3.5ft — but the real water level under the wave was something
+like 2.6ft, partway between the previous low and the upcoming high. The
+Ride model's negative R² (-0.28) is partly explained by this — the model
+was being trained on a feature that wasn't actually water-level-at-session-time.
+
+**Fix:** Switch CO-OPS predictions to hourly samples and linear-interpolate
+the water level at session time. Add a new signed `cond.tide.rate` field
+(ft/hr, positive = rising, negative = falling) computed from a ±30-min
+central difference. Backfill all logged sessions.
+
+- `app.js` `fetchHistoricalTide(dateStr)`: switched `interval=hilo` →
+  `interval=h`. Same URL, same station (8510719), same date range; the
+  payload now contains 24 hourly samples per day instead of 2-4 extrema.
+- `app.js` `parseTideAtTime(tideData, dateStr)`: rewritten to return
+  `{ height, rate, stage, timeToNearest }`. `height` is the linear-
+  interpolated water level at session time (not the next extremum's
+  value). `rate` is the signed central-difference slope in ft/hr.
+  `stage` is derived from `rate`: `|rate| < 0.1` → slack
+  (`slack-high` / `slack-low` by absolute height percentile across the
+  day), otherwise `rising` / `falling`. `timeToNearest` is hours to the
+  nearest local extremum (kept for the existing UI readout).
+- `app.js` `tideHeightAt(predictions, sessionDateTime)`,
+  `tideRateAt(predictions, sessionDateTime)`,
+  `_normalizeTidePredictions`, `_detectTideExtrema`,
+  `_timeToNearestExtremum`, `_tideStageFromRate`: new helpers.
+- `app.js` `_fetchNDBCHistoricalConditionsCore` and
+  `lookupHistoricalConditions`: now persist `cond.tide.rate` alongside
+  height/stage/timeToNearest.
+- `app.js` `buildForecastConditions(marine, wind, tideHiLo, tidePred, hi)`:
+  signature gained `tidePred` (the 6-min CO-OPS predictions series Tab 1
+  already fetches) so live-forecast tide is interpolated from hourly
+  samples too, with the explicit-typed `tideHiLo` consulted only for
+  `timeToNearest`. All callers (`findBestMatchPerDay`, `openMatchModal`,
+  `renderRegressionPredictionWidget`, `_regBestMatchAtScrub`) updated.
+- `app.js` `backfillAllSessionsFromArchive`: tide block is now ALWAYS
+  overwritten on backfill (previously preserved when present), since
+  the migration changes both the height semantics AND adds the new rate
+  field. Backfill now reports tide-rate distribution at completion:
+  "Tide rate distribution across N sessions: X positive, Y negative,
+  Z near-zero (slack)."
+- `app.js` `_formatTideReadout(tide)`: new helper. Renders
+  `2.4ft rising at +0.62 ft/hr (2.4h to next)` when rate is present,
+  falls back to the legacy `2.4ft rising (2.4h to next)` for sessions
+  not yet backfilled.
+- `app.js` `renderConditionsDisplay`, `toggleEntryDetail`,
+  `openMatchModal`, `_regFmtConditionsBlock`: tide line now includes
+  the signed ft/hr rate when populated.
+- `app.js` `exportCSV`: added `tideRate` column.
+
+NON-GOALS: regression feature math (`extractRideFeatures`,
+`low_incoming`, `_TIDE_MEDIAN`) was not touched in this change — that's
+a separate prompt that uses the new `rate` field as input. Tab 1's tide
+chart pipeline (`fetchTidePredictions` / `fetchTideHiLo`) is unchanged
+— it already used 6-min predictions for the chart and hi/lo for the
+markers; only the historical-lookup path gained the hourly fetch.
+
+## [Previous] — Historical conditions lookup: Open-Meteo archive (reanalysis) for all ages
 
 **Why:** The previous historical-lookup path had two known problems
 documented in `INVESTIGATION_LOOKUP_DISCREPANCY.md` and reflected in the
