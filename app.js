@@ -5404,19 +5404,25 @@ function toggleEntryDetail(entry, tr) {
 // of raw sin/cos so the regression can reveal whether the swell window acts as a hard
 // gate, a gradual ramp, or both.
 
-// Wave features (target: ratings.size). period_x_alignment tests whether long
-// period only matters when direction lets it through.
+// Wave features (target: ratings.size). Effective in-window energy aggregates
+// primary + secondary swell — when primary is out of window and secondary is
+// in window, secondary becomes the de facto swell at the spot. See
+// CHOCOMOUNT_KNOWLEDGE.md "Swell window: the central concept".
 const WAVE_FEATURE_NAMES = [
-  'swell_height','swell_period','swell_dir_alignment','swell_dir_outside_deg',
-  'period_x_alignment',
-  'sec_swell_height','sec_swell_period','sec_dir_in_window'
+  'effective_in_window_height',
+  'effective_in_window_period',
+  'total_swell_height'
 ];
 
-// Ride features (target: ratings.rideQuality). Tide enters here, not in wave —
-// tide affects how the wave peels, not whether swell arrived.
+// Ride features (target: ratings.rideQuality). Direction belongs in the Wave
+// model — perceived size already encodes window-gating. Ride is shape: tide
+// height (reef depth), tide rate (incoming amplifies, outgoing mutes), and
+// effective in-window period (long period drives energy through the
+// eelgrass section).
 const RIDE_FEATURE_NAMES = [
-  'swell_dir_alignment','swell_dir_outside_deg','swell_period',
-  'tide_height','time_to_low','low_incoming'
+  'tide_height',
+  'tide_rate',
+  'effective_in_window_period'
 ];
 
 // Conditions features (target: ratings.windQuality). wind_offshore is cos of
@@ -5445,34 +5451,48 @@ let _COND_WIND_MEDIAN = 0;
 let _TIDE_MEDIAN = 2.0;
 
 // Chocomount swell window: 115°–158°, center 136.5°, half-width 21.5°.
+// Used by extractRideFeatures pending its redesign in the next commit.
 function _windowGeometry() {
   const min = CONFIG.chocomount.swellWindowMin;
   const max = CONFIG.chocomount.swellWindowMax;
   return { min, max, center: (min + max) / 2, half: (max - min) / 2 };
 }
-// 1.0 at window center, 0.0 at edges and outside.
 function _dirAlignment(dir, geo) { return Math.max(0, 1 - Math.abs(dir - geo.center) / geo.half); }
-// Degrees beyond the nearer window edge; 0 if in-window, capped at 45°.
 function _dirOutsideDeg(dir, geo) { return Math.min(45, Math.max(0, geo.min - dir, dir - geo.max)); }
+
+// True iff direction is inside the Chocomount swell window.
+function _inSwellWindow(deg) {
+  return deg != null
+    && isFinite(deg)
+    && deg >= CONFIG.chocomount.swellWindowMin
+    && deg <= CONFIG.chocomount.swellWindowMax;
+}
+
+// Aggregates primary + secondary swell into "what's actually hitting the
+// reef". Both Wave and Ride extractors share this. When primary is out of
+// window and secondary is in, secondary becomes the de facto swell.
+//   effHeight   = sum of in-window heights (ft)
+//   effPeriod   = height-weighted average period of in-window trains (s, 0 if none)
+//   totalHeight = gross swell magnitude regardless of direction (sanity-check baseline)
+function _effectiveInWindowSwell(cond) {
+  const pri = cond?.swell || {};
+  const sec = cond?.swell?.secondary;
+  const priIn = _inSwellWindow(pri.direction);
+  const secIn = !!(sec && _inSwellWindow(sec.direction));
+  const wPri = priIn ? (pri.height || 0) : 0;
+  const pPri = priIn ? (pri.period || 0) : 0;
+  const wSec = secIn ? (sec.height || 0) : 0;
+  const pSec = secIn ? (sec.period || 0) : 0;
+  const effHeight = wPri + wSec;
+  const effPeriod = effHeight > 1e-6 ? (wPri * pPri + wSec * pSec) / (wPri + wSec) : 0;
+  const totalHeight = (pri.height || 0) + (sec?.height || 0);
+  return { effHeight, effPeriod, totalHeight };
+}
 
 function extractWaveFeatures(cond) {
   if (!cond?.swell) return null;
-  const s = cond.swell;
-  const sec = s.secondary || { height: 0, direction: 0, period: 0 };
-  const geo = _windowGeometry();
-  const dir = s.direction || 0;
-  const period = s.period || 0;
-  const dirAlignment = _dirAlignment(dir, geo);
-  const dirOutside = _dirOutsideDeg(dir, geo);
-  const secDir = sec.direction || 0;
-  const secInWindow = (secDir >= geo.min && secDir <= geo.max) ? 1 : 0;
-  return [
-    s.height || 0, period,
-    dirAlignment, dirOutside,
-    period * dirAlignment,
-    sec.height || 0, sec.period || 0,
-    secInWindow
-  ];
+  const { effHeight, effPeriod, totalHeight } = _effectiveInWindowSwell(cond);
+  return [effHeight, effPeriod, totalHeight];
 }
 
 function extractRideFeatures(cond) {
