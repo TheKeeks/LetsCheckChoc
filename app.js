@@ -5445,21 +5445,6 @@ function windOffshoreness(windDir) {
 // the Conditions model. Refreshed at slRetrain start.
 let _COND_WIND_MEDIAN = 0;
 
-// Median tide height (ft, MLLW) used by extractRideFeatures.low_incoming.
-// Refreshed at the start of slRetrain from logged-session tide heights so the
-// "below median" threshold reflects the user's actual surf history.
-let _TIDE_MEDIAN = 2.0;
-
-// Chocomount swell window: 115°–158°, center 136.5°, half-width 21.5°.
-// Used by extractRideFeatures pending its redesign in the next commit.
-function _windowGeometry() {
-  const min = CONFIG.chocomount.swellWindowMin;
-  const max = CONFIG.chocomount.swellWindowMax;
-  return { min, max, center: (min + max) / 2, half: (max - min) / 2 };
-}
-function _dirAlignment(dir, geo) { return Math.max(0, 1 - Math.abs(dir - geo.center) / geo.half); }
-function _dirOutsideDeg(dir, geo) { return Math.min(45, Math.max(0, geo.min - dir, dir - geo.max)); }
-
 // True iff direction is inside the Chocomount swell window.
 function _inSwellWindow(deg) {
   return deg != null
@@ -5495,23 +5480,29 @@ function extractWaveFeatures(cond) {
   return [effHeight, effPeriod, totalHeight];
 }
 
+// Ride model focuses on shape: tide depth on the reef, the signed water-
+// movement rate, and the in-window period that drives energy through the
+// eelgrass section. Direction lives in the Wave model — perceived size
+// already encodes window-gating.
 function extractRideFeatures(cond) {
   if (!cond?.swell) return null;
-  const s = cond.swell;
-  const t = cond.tide || { height: 0, stage: 'rising', timeToNearest: 0 };
-  const geo = _windowGeometry();
-  const dir = s.direction || 0;
-  const dirAlignment = _dirAlignment(dir, geo);
-  const dirOutside = _dirOutsideDeg(dir, geo);
-  // Signed hours to low: rising → low just passed (negative); falling → low upcoming (positive).
-  // Approximation: timeToNearest is to nearest H or L, so this conflates the two when
-  // we're closer to a high than the bracketing lows — acceptable since we mostly surf near low.
-  const timeToLow = t.stage === 'rising' ? -(t.timeToNearest || 0) : (t.timeToNearest || 0);
-  const lowIncoming = ((t.height || 0) < _TIDE_MEDIAN && t.stage === 'rising') ? 1 : 0;
-  return [
-    dirAlignment, dirOutside, s.period || 0,
-    t.height || 0, timeToLow, lowIncoming
-  ];
+  const t = cond.tide;
+  if (!t || typeof t.height !== 'number' || !isFinite(t.height)) {
+    // Backfill should have populated tide.height on every session; bail on
+    // training rows that somehow lack it rather than imputing.
+    return null;
+  }
+  let rate = t.rate;
+  if (typeof rate !== 'number' || !isFinite(rate)) {
+    // Last-resort fallback for sessions missed by the tide backfill.
+    if (t.stage === 'rising') rate = 0.5;
+    else if (t.stage === 'falling') rate = -0.5;
+    else rate = 0;   // 'slack-high' / 'slack-low' / unknown
+    console.warn('[extractRideFeatures] missing cond.tide.rate, inferring from stage',
+      { stage: t.stage, inferredRate: rate, height: t.height });
+  }
+  const { effPeriod } = _effectiveInWindowSwell(cond);
+  return [t.height, rate, effPeriod];
 }
 
 function extractCondFeatures(cond) {
@@ -5616,13 +5607,6 @@ function slRetrain() {
   const uid = window._fbUserId;
   const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
   const entries = userScoped.filter(e => e.conditions?.swell);
-  // Refresh tide median from logged tide heights so low_incoming reflects user's history.
-  const tideHeights = entries.map(e => e.conditions?.tide?.height).filter(h => typeof h === 'number');
-  if (tideHeights.length) {
-    const sorted = [...tideHeights].sort((a,b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    _TIDE_MEDIAN = sorted.length % 2 ? sorted[mid] : (sorted[mid-1] + sorted[mid]) / 2;
-  }
   // Refresh wind-speed median (Conditions model only) for missing-data fill.
   const windSpeeds = entries.map(e => e.conditions?.wind?.speed).filter(s => typeof s === 'number' && isFinite(s));
   if (windSpeeds.length) {
