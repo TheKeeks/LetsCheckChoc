@@ -4724,23 +4724,16 @@ async function lookupHistoricalConditions(lat, lon, dateStr) {
     })
   ]);
 
+  // Null sentinels when the Open-Meteo Weather wind fetch fails or returns
+  // no value at the session hour — downstream extractCondFeatures skips the
+  // session rather than train on a fake 0 mph / 0° datapoint.
+  const openMeteoWind = _windAtHour(wind, dateStr);
+
   if (archiveResult && archiveResult.swell && archiveResult.swell.height != null) {
     const tideInfo = parseTideAtTime(tide, dateStr);
-    // Null sentinels when the wind fetch fails or returns no value at the
-    // session hour — downstream extractCondFeatures skips the session rather
-    // than train on a fake 0 mph / 0° datapoint.
-    let wSpd = null, wDir = null;
-    if (wind?.hourly?.time) {
-      const wIdx = findNearestHour(wind.hourly.time, dateStr);
-      const s = wind.hourly.wind_speed_10m?.[wIdx];
-      const d = wind.hourly.wind_direction_10m?.[wIdx];
-      if (s != null && d != null) { wSpd = s; wDir = d; }
-    }
     const conditions = {
       swell: archiveResult.swell,
-      wind: (wSpd != null && wDir != null)
-        ? { speed: Math.round(wSpd), direction: Math.round(wDir) }
-        : { speed: null, direction: null },
+      wind: openMeteoWind || { speed: null, direction: null },
       tide: {
         height: Math.round(tideInfo.height * 10) / 10,
         rate: Math.round(tideInfo.rate * 100) / 100,
@@ -4761,8 +4754,18 @@ async function lookupHistoricalConditions(lat, lon, dateStr) {
     try {
       const ndbc = await _fetchNDBCHistoricalConditionsCore(dateStr, tide);
       if (ndbc && ndbc.swell && ndbc.swell.height != null) {
-        ndbc.source = 'ndbc-stdmet';
-        ndbc.note = 'Open-Meteo archive unavailable; NDBC measurement used (no secondary swell)';
+        // Buoy 44097 has no historical anemometer column, so the NDBC core
+        // returns wind={null,null}. Prefer the parallel Open-Meteo Weather
+        // value when available — the dual-source label makes the provenance
+        // explicit, and the Conditions model can train on it.
+        if (openMeteoWind) {
+          ndbc.wind = openMeteoWind;
+          ndbc.source = 'ndbc-stdmet+openmeteo-wind';
+          ndbc.note = 'Open-Meteo marine archive unavailable; NDBC swell + Open-Meteo wind';
+        } else {
+          ndbc.source = 'ndbc-stdmet';
+          ndbc.note = 'Open-Meteo archive unavailable; NDBC measurement used (no secondary swell)';
+        }
         return ndbc;
       }
     } catch (err) {
@@ -4771,6 +4774,18 @@ async function lookupHistoricalConditions(lat, lon, dateStr) {
   }
 
   return null;
+}
+
+// Extract { speed, direction } at the session hour from an Open-Meteo Weather
+// hourly response. Returns null when the response is missing or the value at
+// the nearest hour is null — callers decide how to represent the absence.
+function _windAtHour(wind, dateStr) {
+  if (!wind?.hourly?.time) return null;
+  const wIdx = findNearestHour(wind.hourly.time, dateStr);
+  const s = wind.hourly.wind_speed_10m?.[wIdx];
+  const d = wind.hourly.wind_direction_10m?.[wIdx];
+  if (s == null || d == null) return null;
+  return { speed: Math.round(s), direction: Math.round(d) };
 }
 
 // "2.4ft rising at +0.6 ft/hr (2.4h to next)" — falls back gracefully when
@@ -4808,10 +4823,11 @@ function renderConditionsDisplay(cond) {
   }
   if (cond.source) {
     let srcLabel;
-    if (cond.source === 'openmeteo-archive')      srcLabel = 'Open-Meteo archive (reanalysis)';
-    else if (cond.source === 'ndbc-stdmet')       srcLabel = 'NDBC buoy 44097 (measured, stdmet historical)';
-    else if (cond.source === 'ndbc')              srcLabel = 'NDBC buoy 44097 (measured)';
-    else                                          srcLabel = 'Open-Meteo marine API';
+    if (cond.source === 'openmeteo-archive')              srcLabel = 'Open-Meteo archive (reanalysis)';
+    else if (cond.source === 'ndbc-stdmet+openmeteo-wind') srcLabel = 'NDBC buoy 44097 swell + Open-Meteo archive wind';
+    else if (cond.source === 'ndbc-stdmet')               srcLabel = 'NDBC buoy 44097 (measured, stdmet historical)';
+    else if (cond.source === 'ndbc')                      srcLabel = 'NDBC buoy 44097 (measured)';
+    else                                                  srcLabel = 'Open-Meteo marine API';
     h += '<div class="sl-cond-row"><span class="sl-hint">Source: ' + srcLabel + '</span></div>';
     if (cond.note) h += '<div class="sl-cond-row"><span class="sl-hint">' + cond.note + '</span></div>';
   }
@@ -7465,10 +7481,11 @@ function _regFmtConditionsBlock(cond) {
     (typeof t.rate === 'number' ? ' · ' + (t.rate >= 0 ? '+' : '') + t.rate.toFixed(2) + ' ft/hr' : '') +
     (t.timeToNearest != null ? ' · time to nearest: ' + t.timeToNearest + 'h' : '');
   let sourceLabel;
-  if (cond.source === 'openmeteo-archive')      sourceLabel = 'Open-Meteo archive (reanalysis)';
-  else if (cond.source === 'ndbc-stdmet')       sourceLabel = 'NDBC buoy 44097 (measured, stdmet historical)';
-  else if (cond.source === 'ndbc')              sourceLabel = 'NDBC buoy 44097 (measured)';
-  else                                          sourceLabel = 'Open-Meteo marine API';
+  if (cond.source === 'openmeteo-archive')              sourceLabel = 'Open-Meteo archive (reanalysis)';
+  else if (cond.source === 'ndbc-stdmet+openmeteo-wind') sourceLabel = 'NDBC buoy 44097 swell + Open-Meteo archive wind';
+  else if (cond.source === 'ndbc-stdmet')               sourceLabel = 'NDBC buoy 44097 (measured, stdmet historical)';
+  else if (cond.source === 'ndbc')                      sourceLabel = 'NDBC buoy 44097 (measured)';
+  else                                                  sourceLabel = 'Open-Meteo marine API';
   return '<div class="reg-drill-line"><span class="reg-drill-key">Swell:</span> ' + swellH + ' @ ' + swellP + ' · ' + swellD + '</div>' +
     secLine +
     '<div class="reg-drill-line"><span class="reg-drill-key">Wind:</span> ' + windLine + '</div>' +
