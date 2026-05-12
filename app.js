@@ -5464,6 +5464,7 @@ function toggleEntryDetail(entry, tr) {
 const WAVE_FEATURE_NAMES = [
   'effective_in_window_height',
   'effective_in_window_period',
+  'effective_in_window_period_squared',
   'total_swell_height'
 ];
 
@@ -5477,6 +5478,7 @@ const RIDE_FEATURE_NAMES = [
   'tide_height',
   'tide_rate',
   'effective_in_window_period',
+  'effective_in_window_period_squared',
   'effective_in_window_height'
 ];
 
@@ -5538,7 +5540,7 @@ function _effectiveInWindowSwell(cond) {
 function extractWaveFeatures(cond) {
   if (!cond?.swell) return null;
   const { effHeight, effPeriod, totalHeight } = _effectiveInWindowSwell(cond);
-  return [effHeight, effPeriod, totalHeight];
+  return [effHeight, effPeriod, effPeriod * effPeriod, totalHeight];
 }
 
 // Ride model focuses on shape: tide depth on the reef, the signed water-
@@ -5564,7 +5566,7 @@ function extractRideFeatures(cond) {
       { stage: t.stage, inferredRate: rate, height: t.height });
   }
   const { effHeight, effPeriod } = _effectiveInWindowSwell(cond);
-  return [t.height, rate, effPeriod, effHeight];
+  return [t.height, rate, effPeriod, effPeriod * effPeriod, effHeight];
 }
 
 function extractCondFeatures(cond) {
@@ -5905,7 +5907,7 @@ function _llcLeakDegSweep() {
   const waveExtractorAt = (LEAK_DEG) => (cond) => {
     if (!cond?.swell) return null;
     const { effHeight, effPeriod, totalHeight } = effSwellParam(cond, LEAK_DEG);
-    return [effHeight, effPeriod, totalHeight];
+    return [effHeight, effPeriod, effPeriod * effPeriod, totalHeight];
   };
   const rideExtractorAt = (LEAK_DEG) => (cond) => {
     if (!cond?.swell) return null;
@@ -5918,7 +5920,7 @@ function _llcLeakDegSweep() {
       else rate = 0;
     }
     const { effHeight, effPeriod } = effSwellParam(cond, LEAK_DEG);
-    return [t.height, rate, effPeriod, effHeight];
+    return [t.height, rate, effPeriod, effPeriod * effPeriod, effHeight];
   };
 
   const metricsFor = (extractor, targetFn) => {
@@ -7287,6 +7289,7 @@ const REG_SUBMODELS = {
 const REG_FEATURE_LABELS = {
   effective_in_window_height: 'Effective swell height (aligned, with edge softening)',
   effective_in_window_period: 'Effective swell period (aligned, with edge softening)',
+  effective_in_window_period_squared: 'in-window period²',
   total_swell_height: 'Total swell height (any direction)',
   tide_height: 'Tide height',
   tide_rate: 'Tide rate (incoming/outgoing)',
@@ -7296,6 +7299,7 @@ const REG_FEATURE_LABELS = {
 const REG_FEATURE_UNITS = {
   effective_in_window_height: 'ft',
   effective_in_window_period: 's',
+  effective_in_window_period_squared: 's²',
   total_swell_height: 'ft',
   tide_height: 'ft',
   tide_rate: 'ft/hr',
