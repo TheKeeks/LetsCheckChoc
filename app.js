@@ -4375,8 +4375,12 @@ async function _fetchNDBCHistoricalConditionsCore(dateStr, preFetchedTide) {
   if (!swellRow) return null;
 
   const tideInfo = parseTideAtTime(tide, dateStr);
-  const wSpd = windRow ? (windRow.windSpeed || 0) : 0;
-  const wDir = windRow ? (windRow.windDir  || 0) : 0;
+  // If no NDBC row carried wind data near session time, store nulls so the
+  // Conditions extractor skips this session instead of treating a fabricated
+  // 0 mph / 0° entry as a real datapoint.
+  const haveWind = windRow && windRow.windSpeed != null && windRow.windDir != null;
+  const wSpd = haveWind ? windRow.windSpeed : null;
+  const wDir = haveWind ? windRow.windDir  : null;
 
   const conditions = {
     swell: {
@@ -4385,7 +4389,9 @@ async function _fetchNDBCHistoricalConditionsCore(dateStr, preFetchedTide) {
       period: Math.round((swellRow.period || 0) * 10) / 10,
       lagHours: Math.round(ndbcLagHours * 10) / 10
     },
-    wind: { speed: Math.round(wSpd), direction: Math.round(wDir) },
+    wind: haveWind
+      ? { speed: Math.round(wSpd), direction: Math.round(wDir) }
+      : { speed: null, direction: null },
     tide: {
       height: Math.round(tideInfo.height * 10) / 10,
       rate: Math.round(tideInfo.rate * 100) / 100,
@@ -4710,15 +4716,21 @@ async function lookupHistoricalConditions(lat, lon, dateStr) {
 
   if (archiveResult && archiveResult.swell && archiveResult.swell.height != null) {
     const tideInfo = parseTideAtTime(tide, dateStr);
-    let wSpd = 0, wDir = 0;
+    // Null sentinels when the wind fetch fails or returns no value at the
+    // session hour — downstream extractCondFeatures skips the session rather
+    // than train on a fake 0 mph / 0° datapoint.
+    let wSpd = null, wDir = null;
     if (wind?.hourly?.time) {
       const wIdx = findNearestHour(wind.hourly.time, dateStr);
-      wSpd = wind.hourly.wind_speed_10m?.[wIdx] ?? 0;
-      wDir = wind.hourly.wind_direction_10m?.[wIdx] ?? 0;
+      const s = wind.hourly.wind_speed_10m?.[wIdx];
+      const d = wind.hourly.wind_direction_10m?.[wIdx];
+      if (s != null && d != null) { wSpd = s; wDir = d; }
     }
     const conditions = {
       swell: archiveResult.swell,
-      wind: { speed: Math.round(wSpd), direction: Math.round(wDir) },
+      wind: (wSpd != null && wDir != null)
+        ? { speed: Math.round(wSpd), direction: Math.round(wDir) }
+        : { speed: null, direction: null },
       tide: {
         height: Math.round(tideInfo.height * 10) / 10,
         rate: Math.round(tideInfo.rate * 100) / 100,
@@ -4774,7 +4786,11 @@ function renderConditionsDisplay(cond) {
   h += dl('Swell'+lagNote+':', cond.swell.height+'ft '+cond.swell.period+'s '+directionLabel(cond.swell.direction)+' ('+cond.swell.direction+'\u00b0)');
   if (cond.swell.secondary) h += dl('2nd:', cond.swell.secondary.height+'ft '+(cond.swell.secondary.period||'')+'s '+directionLabel(cond.swell.secondary.direction));
   h += '</div><div class="sl-cond-row">';
-  h += dl('Wind:', cond.wind.speed+' mph '+directionLabel(cond.wind.direction)+' ('+cond.wind.direction+'\u00b0)');
+  const _w = cond.wind || {};
+  const _windText = (_w.speed != null && _w.direction != null)
+    ? _w.speed + ' mph ' + directionLabel(_w.direction) + ' (' + _w.direction + '\u00b0)'
+    : '\u2014';
+  h += dl('Wind:', _windText);
   h += dl('Tide:', _formatTideReadout(cond.tide));
   h += '</div>';
   if (cond.swellLagHours > 0) {
@@ -5114,10 +5130,12 @@ async function backfillAllSessionsFromArchive() {
     return;
   }
   const proceed = confirm(
-    'This will re-fetch conditions for all your logged sessions from Open-Meteo archive ' +
-    'AND re-fetch tide data from CO-OPS using hourly predictions (interpolated water ' +
-    'level at session time, with signed ft/hr rate). Your subjective ratings (size, wind ' +
-    'quality, ride quality) will not be touched. Proceed?'
+    'This will re-fetch conditions for all your logged sessions from Open-Meteo archive: ' +
+    'swell + wind from the archive reanalysis, plus tide data from CO-OPS using hourly ' +
+    'predictions (interpolated water level at session time, with signed ft/hr rate). ' +
+    'Sessions where the wind fetch fails will be stored with null wind (skipped by the ' +
+    'Conditions model). Your subjective ratings (size, wind quality, ride quality) will ' +
+    'not be touched. Proceed?'
   );
   if (!proceed) return;
 
@@ -5165,13 +5183,17 @@ async function backfillAllSessionsFromArchive() {
         else delete newCond.originalLoggedTime;
         if (result.note) newCond.note = result.note; else delete newCond.note;
 
-        // Wind: preserve existing (source unchanged in this migration).
+        // Wind: ALWAYS overwrite — earlier backfills stored failed fetches
+        // as { speed: 0, direction: 0 }, biasing the Conditions model with
+        // fake calm-offshore datapoints. Re-running uses the same archive
+        // source the live forecast uses; failed fetches now land as
+        // { speed: null, direction: null } and the extractor skips them.
         // Tide: ALWAYS overwrite with the freshly-computed block — we are
         // migrating from hilo-nearest-extremum to hourly-interpolated
         // height plus a new signed ft/hr `rate` field, so any tide values
         // already on the entry are stale by definition.
-        if (oldCond.wind) newCond.wind = oldCond.wind;
-        else if (result.wind) newCond.wind = result.wind;
+        if (result.wind) newCond.wind = result.wind;
+        else if (oldCond.wind) newCond.wind = oldCond.wind;
         if (result.tide) newCond.tide = result.tide;
         else if (oldCond.tide) newCond.tide = oldCond.tide;
 
@@ -5441,10 +5463,6 @@ function windOffshoreness(windDir) {
   return Math.cos(diff * Math.PI / 180);
 }
 
-// Median wind speed across logged sessions — used to fill missing windSpd in
-// the Conditions model. Refreshed at slRetrain start.
-let _COND_WIND_MEDIAN = 0;
-
 // True iff direction is inside the Chocomount swell window.
 function _inSwellWindow(deg) {
   return deg != null
@@ -5507,14 +5525,13 @@ function extractRideFeatures(cond) {
 
 function extractCondFeatures(cond) {
   const w = cond?.wind || {};
-  // Median-fill missing windSpd so the one session in the dataset with both
-  // wind fields blank still trains; cross-shore (0) for missing windDir.
+  // Sessions with missing wind data (failed fetch stored as null sentinels)
+  // are dropped from training rather than median-filled — fabricating a
+  // datapoint biases the Conditions model toward the median + cross-shore.
   const haveSpd = w.speed != null && isFinite(w.speed);
   const haveDir = w.direction != null && isFinite(w.direction);
-  return [
-    haveSpd ? w.speed : _COND_WIND_MEDIAN,
-    haveDir ? windOffshoreness(w.direction) : 0
-  ];
+  if (!haveSpd || !haveDir) return null;
+  return [w.speed, windOffshoreness(w.direction)];
 }
 
 function matTranspose(A) { const r=A.length,c=A[0].length,T=[]; for(let j=0;j<c;j++){T[j]=[]; for(let i=0;i<r;i++) T[j][i]=A[i][j];} return T; }
@@ -5607,15 +5624,6 @@ function slRetrain() {
   const uid = window._fbUserId;
   const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
   const entries = userScoped.filter(e => e.conditions?.swell);
-  // Refresh wind-speed median (Conditions model only) for missing-data fill.
-  const windSpeeds = entries.map(e => e.conditions?.wind?.speed).filter(s => typeof s === 'number' && isFinite(s));
-  if (windSpeeds.length) {
-    const sortedW = [...windSpeeds].sort((a,b) => a - b);
-    const mid = Math.floor(sortedW.length / 2);
-    _COND_WIND_MEDIAN = sortedW.length % 2 ? sortedW[mid] : (sortedW[mid-1] + sortedW[mid]) / 2;
-  } else {
-    _COND_WIND_MEDIAN = 0;
-  }
   // Wave model: target = size (pure swell arrival, no peel quality mixed in).
   const wave = trainModel(entries, extractWaveFeatures, e => e.ratings.size);
   STATE.surfLogWaveWeights = wave?.weights || null;
