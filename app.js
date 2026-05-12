@@ -5494,31 +5494,41 @@ function windOffshoreness(windDir) {
   return Math.cos(diff * Math.PI / 180);
 }
 
-// True iff direction is inside the Chocomount swell window.
-function _inSwellWindow(deg) {
-  return deg != null
-    && isFinite(deg)
-    && deg >= CONFIG.chocomount.swellWindowMin
-    && deg <= CONFIG.chocomount.swellWindowMax;
+// Graduated swell-window alignment. Returns 1 inside [min, max], linearly
+// decaying to 0 over the next 30° outside either edge, 0 beyond. This gives
+// partial credit to swells just outside the window (refraction / leak)
+// instead of a hard binary gate.
+function _alignmentScore(directionDeg) {
+  if (directionDeg == null || !isFinite(directionDeg)) return 0;
+  const lo = CONFIG.chocomount.swellWindowMin;
+  const hi = CONFIG.chocomount.swellWindowMax;
+  const LEAK_DEG = 30;
+  if (directionDeg >= lo && directionDeg <= hi) return 1;
+  const distOutside = directionDeg < lo
+    ? (lo - directionDeg)
+    : (directionDeg - hi);
+  if (distOutside >= LEAK_DEG) return 0;
+  return 1 - (distOutside / LEAK_DEG);
 }
 
 // Aggregates primary + secondary swell into "what's actually hitting the
-// reef". Both Wave and Ride extractors share this. When primary is out of
-// window and secondary is in, secondary becomes the de facto swell.
-//   effHeight   = sum of in-window heights (ft)
-//   effPeriod   = height-weighted average period of in-window trains (s, 0 if none)
+// reef". Both Wave and Ride extractors share this. Each swell train is
+// weighted by its alignment score so trains just outside the window
+// contribute partial energy rather than dropping to zero.
+//   effHeight   = alignment-weighted height (ft)
+//   effPeriod   = weighted-height average period (s, 0 if none)
 //   totalHeight = gross swell magnitude regardless of direction (sanity-check baseline)
 function _effectiveInWindowSwell(cond) {
   const pri = cond?.swell || {};
   const sec = cond?.swell?.secondary;
-  const priIn = _inSwellWindow(pri.direction);
-  const secIn = !!(sec && _inSwellWindow(sec.direction));
-  const wPri = priIn ? (pri.height || 0) : 0;
-  const pPri = priIn ? (pri.period || 0) : 0;
-  const wSec = secIn ? (sec.height || 0) : 0;
-  const pSec = secIn ? (sec.period || 0) : 0;
+  const priScore = _alignmentScore(pri.direction);
+  const secScore = sec ? _alignmentScore(sec.direction) : 0;
+  const wPri = priScore * (pri.height || 0);
+  const wSec = secScore * (sec?.height || 0);
   const effHeight = wPri + wSec;
-  const effPeriod = effHeight > 1e-6 ? (wPri * pPri + wSec * pSec) / (wPri + wSec) : 0;
+  const effPeriod = effHeight > 1e-6
+    ? (wPri * (pri.period || 0) + wSec * (sec?.period || 0)) / effHeight
+    : 0;
   const totalHeight = (pri.height || 0) + (sec?.height || 0);
   return { effHeight, effPeriod, totalHeight };
 }
@@ -7164,8 +7174,8 @@ const REG_SUBMODELS = {
 
 // Human-readable feature names. Underscore form falls through unchanged.
 const REG_FEATURE_LABELS = {
-  effective_in_window_height: 'Effective swell height (in window)',
-  effective_in_window_period: 'Effective swell period (in window)',
+  effective_in_window_height: 'Effective swell height (aligned, with edge softening)',
+  effective_in_window_period: 'Effective swell period (aligned, with edge softening)',
   total_swell_height: 'Total swell height (any direction)',
   tide_height: 'Tide height',
   tide_rate: 'Tide rate (incoming/outgoing)',
