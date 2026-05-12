@@ -1,5 +1,48 @@
 # Changelog
 
+## [Unreleased] — Backfill regressions: marine archive endpoint + NDBC wind merge
+
+**Why:** Two regressions surfaced after the most recent backfill prevented
+the Conditions sub-model from training (n < 12 usable rows). See
+`INVESTIGATION_BACKFILL_REGRESSIONS.md` for the diagnosis.
+
+  1. `lookupOpenMeteoArchive` hit the atmospheric archive endpoint
+     (`archive-api.open-meteo.com/v1/archive`), which silently returns
+     null arrays for every requested wave/swell variable. Sessions
+     showed primary swell only — `secondary_swell_*` and `wind_wave_*`
+     came back null on every backfilled session.
+  2. The NDBC stdmet fallback discarded the parallel-fetched
+     Open-Meteo Weather wind data. Buoy 44097 has no historical
+     anemometer column, so sessions on that path lost wind entirely.
+
+**Fix:**
+
+- `app.js` `CONFIG.api.openMeteoMarineArchive` (new) →
+  `https://marine-api.open-meteo.com/v1/marine`. `lookupOpenMeteoArchive`
+  uses the marine endpoint, which returns the full marine variable
+  stack. `CONFIG.api.openMeteoArchive` stays pointed at the atmospheric
+  endpoint for `fetchHistoricalWind`.
+- `app.js` new helper `_windAtHour(wind, dateStr)`: extract
+  `{speed, direction}` at the session hour from an Open-Meteo Weather
+  hourly response, returning null when missing. Shared between the
+  archive branch and the NDBC fallback branch in
+  `lookupHistoricalConditions`.
+- `app.js` NDBC fallback branch: overlay `_windAtHour(wind, dateStr)`
+  onto the NDBC core's wind block. When present, mark the dual
+  provenance as `source: 'ndbc-stdmet+openmeteo-wind'` with a note;
+  otherwise stay on `ndbc-stdmet` and leave wind null.
+- `app.js` `backfillAllSessionsFromArchive`: split the source counter
+  into `archive` / `ndbcWithWind` / `ndbcOnly` / `failed`; surface the
+  three success buckets in the summary modal and progress label.
+- `app.js` `renderConditionsDisplay` + `_regFmtConditionsBlock` +
+  surf-log markdown report: new source label "NDBC buoy 44097 swell +
+  Open-Meteo archive wind" for the dual-source rows.
+
+**Operator follow-up:** click "Re-fetch all session conditions" once
+post-deploy. Sessions should land essentially all on
+`openmeteo-archive` with full secondary swell and wind populated; the
+Conditions model should clear n ≥ 12 and retrain.
+
 ## [Unreleased] — Regression redesign: effective in-window energy + tide-rate
 
 **Why:** The data foundation now supports the feature design called for in

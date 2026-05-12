@@ -34,6 +34,10 @@ const CONFIG = {
     openMeteoMarine: 'https://marine-api.open-meteo.com/v1/marine',
     openMeteoWeather: 'https://api.open-meteo.com/v1/forecast',
     openMeteoArchive: 'https://archive-api.open-meteo.com/v1/archive',
+    // Wave/swell reanalysis. The atmospheric `openMeteoArchive` endpoint
+    // returns nulls for marine variables (secondary_swell_wave_*,
+    // wind_wave_*), so historical swell must hit this marine archive.
+    openMeteoMarineArchive: 'https://marine-api.open-meteo.com/v1/marine',
     coops: 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter',
     ndbcProxies: [
       { name: 'corsproxy.io', wrap: function(url) { return 'https://corsproxy.io/?' + encodeURIComponent(url); } },
@@ -4282,7 +4286,7 @@ window._llcGeneratePostBackfillReport = function() {
   const entries = (STATE.surfLog || []).slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   const rows = [];
   let secIn = 0, bothIn = 0, priIn = 0, bothOut = 0, withSecondary = 0;
-  let archiveCount = 0, ndbcCount = 0, otherCount = 0;
+  let archiveCount = 0, ndbcCount = 0, ndbcWindCount = 0, otherCount = 0;
 
   for (const e of entries) {
     const c = e.conditions || {};
@@ -4297,6 +4301,7 @@ window._llcGeneratePostBackfillReport = function() {
     else { bucket = 'BOTH OUT'; bothOut++; }
     if (sec && sec.direction != null) withSecondary++;
     if (c.source === 'openmeteo-archive') archiveCount++;
+    else if (c.source === 'ndbc-stdmet+openmeteo-wind') ndbcWindCount++;
     else if (c.source === 'ndbc-stdmet') ndbcCount++;
     else otherCount++;
 
@@ -4336,9 +4341,10 @@ window._llcGeneratePostBackfillReport = function() {
   md += '- **BOTH OUT:** ' + bothOut + '\n';
   md += '- **Sessions with secondary-swell data:** ' + withSecondary + ' of ' + entries.length + '\n';
   md += '\n### Source breakdown\n\n';
-  md += '- openmeteo-archive: ' + archiveCount + '\n';
-  md += '- ndbc-stdmet:       ' + ndbcCount + '\n';
-  md += '- other / unknown:   ' + otherCount + '\n';
+  md += '- openmeteo-archive:              ' + archiveCount + '\n';
+  md += '- ndbc-stdmet + openmeteo-wind:   ' + ndbcWindCount + '\n';
+  md += '- ndbc-stdmet:                    ' + ndbcCount + '\n';
+  md += '- other / unknown:                ' + otherCount + '\n';
   return md;
 };
 
@@ -4608,12 +4614,18 @@ function estimateSwellLag(marine, sessionDateStr) {
   return arrival ? arrival.minutes : 0;
 }
 
-// Open-Meteo archive (reanalysis) lookup — primary historical-conditions
-// source for ALL session ages. Reanalysis is grid-model output rerun after
-// the fact, incorporating actual observations including buoy readings;
-// it's much closer to ground truth than the forecast endpoint, which
-// returns what the model *predicted* for past hours. Coverage starts ~2016
-// for marine variables.
+// Open-Meteo marine archive (reanalysis) lookup — primary historical-
+// conditions source for ALL session ages. Reanalysis is grid-model output
+// rerun after the fact, incorporating actual observations including buoy
+// readings; it's much closer to ground truth than the forecast endpoint,
+// which returns what the model *predicted* for past hours. Coverage starts
+// ~2016 for marine variables.
+//
+// IMPORTANT: this MUST hit the marine archive endpoint
+// (`marine-api.open-meteo.com/v1/marine`), not the atmospheric archive
+// (`archive-api.open-meteo.com/v1/archive`). The atmospheric endpoint
+// silently returns null arrays for secondary_swell_* / wind_wave_* — see
+// INVESTIGATION_BACKFILL_REGRESSIONS.md.
 //
 // Returns a swell-only object: { swell: {...}, _laggedDateStr, _lagHours }
 // or null if the archive has no data for the requested date. Wind and tide
@@ -4641,7 +4653,7 @@ async function lookupOpenMeteoArchive(lat, lon, dateStr) {
     timezone: 'auto'
   });
 
-  const data = await fetchJSON(CONFIG.api.openMeteoArchive + '?' + p);
+  const data = await fetchJSON(CONFIG.api.openMeteoMarineArchive + '?' + p);
   if (!data || !data.hourly || !Array.isArray(data.hourly.time) || data.hourly.time.length === 0) return null;
 
   // Apply swell-arrival lag (offshore-forecast-point → beach travel time).
@@ -4714,23 +4726,16 @@ async function lookupHistoricalConditions(lat, lon, dateStr) {
     })
   ]);
 
+  // Null sentinels when the Open-Meteo Weather wind fetch fails or returns
+  // no value at the session hour — downstream extractCondFeatures skips the
+  // session rather than train on a fake 0 mph / 0° datapoint.
+  const openMeteoWind = _windAtHour(wind, dateStr);
+
   if (archiveResult && archiveResult.swell && archiveResult.swell.height != null) {
     const tideInfo = parseTideAtTime(tide, dateStr);
-    // Null sentinels when the wind fetch fails or returns no value at the
-    // session hour — downstream extractCondFeatures skips the session rather
-    // than train on a fake 0 mph / 0° datapoint.
-    let wSpd = null, wDir = null;
-    if (wind?.hourly?.time) {
-      const wIdx = findNearestHour(wind.hourly.time, dateStr);
-      const s = wind.hourly.wind_speed_10m?.[wIdx];
-      const d = wind.hourly.wind_direction_10m?.[wIdx];
-      if (s != null && d != null) { wSpd = s; wDir = d; }
-    }
     const conditions = {
       swell: archiveResult.swell,
-      wind: (wSpd != null && wDir != null)
-        ? { speed: Math.round(wSpd), direction: Math.round(wDir) }
-        : { speed: null, direction: null },
+      wind: openMeteoWind || { speed: null, direction: null },
       tide: {
         height: Math.round(tideInfo.height * 10) / 10,
         rate: Math.round(tideInfo.rate * 100) / 100,
@@ -4751,8 +4756,18 @@ async function lookupHistoricalConditions(lat, lon, dateStr) {
     try {
       const ndbc = await _fetchNDBCHistoricalConditionsCore(dateStr, tide);
       if (ndbc && ndbc.swell && ndbc.swell.height != null) {
-        ndbc.source = 'ndbc-stdmet';
-        ndbc.note = 'Open-Meteo archive unavailable; NDBC measurement used (no secondary swell)';
+        // Buoy 44097 has no historical anemometer column, so the NDBC core
+        // returns wind={null,null}. Prefer the parallel Open-Meteo Weather
+        // value when available — the dual-source label makes the provenance
+        // explicit, and the Conditions model can train on it.
+        if (openMeteoWind) {
+          ndbc.wind = openMeteoWind;
+          ndbc.source = 'ndbc-stdmet+openmeteo-wind';
+          ndbc.note = 'Open-Meteo marine archive unavailable; NDBC swell + Open-Meteo wind';
+        } else {
+          ndbc.source = 'ndbc-stdmet';
+          ndbc.note = 'Open-Meteo archive unavailable; NDBC measurement used (no secondary swell)';
+        }
         return ndbc;
       }
     } catch (err) {
@@ -4761,6 +4776,18 @@ async function lookupHistoricalConditions(lat, lon, dateStr) {
   }
 
   return null;
+}
+
+// Extract { speed, direction } at the session hour from an Open-Meteo Weather
+// hourly response. Returns null when the response is missing or the value at
+// the nearest hour is null — callers decide how to represent the absence.
+function _windAtHour(wind, dateStr) {
+  if (!wind?.hourly?.time) return null;
+  const wIdx = findNearestHour(wind.hourly.time, dateStr);
+  const s = wind.hourly.wind_speed_10m?.[wIdx];
+  const d = wind.hourly.wind_direction_10m?.[wIdx];
+  if (s == null || d == null) return null;
+  return { speed: Math.round(s), direction: Math.round(d) };
 }
 
 // "2.4ft rising at +0.6 ft/hr (2.4h to next)" — falls back gracefully when
@@ -4798,10 +4825,11 @@ function renderConditionsDisplay(cond) {
   }
   if (cond.source) {
     let srcLabel;
-    if (cond.source === 'openmeteo-archive')      srcLabel = 'Open-Meteo archive (reanalysis)';
-    else if (cond.source === 'ndbc-stdmet')       srcLabel = 'NDBC buoy 44097 (measured, stdmet historical)';
-    else if (cond.source === 'ndbc')              srcLabel = 'NDBC buoy 44097 (measured)';
-    else                                          srcLabel = 'Open-Meteo marine API';
+    if (cond.source === 'openmeteo-archive')              srcLabel = 'Open-Meteo archive (reanalysis)';
+    else if (cond.source === 'ndbc-stdmet+openmeteo-wind') srcLabel = 'NDBC buoy 44097 swell + Open-Meteo archive wind';
+    else if (cond.source === 'ndbc-stdmet')               srcLabel = 'NDBC buoy 44097 (measured, stdmet historical)';
+    else if (cond.source === 'ndbc')                      srcLabel = 'NDBC buoy 44097 (measured)';
+    else                                                  srcLabel = 'Open-Meteo marine API';
     h += '<div class="sl-cond-row"><span class="sl-hint">Source: ' + srcLabel + '</span></div>';
     if (cond.note) h += '<div class="sl-cond-row"><span class="sl-hint">' + cond.note + '</span></div>';
   }
@@ -5149,7 +5177,7 @@ async function backfillAllSessionsFromArchive() {
 
   const entries = STATE.surfLog.slice();
   const total = entries.length;
-  let processed = 0, archive = 0, ndbc = 0, failed = 0;
+  let processed = 0, archive = 0, ndbcOnly = 0, ndbcWithWind = 0, failed = 0;
   let tideRising = 0, tideFalling = 0, tideSlack = 0;
   const failures = [];
 
@@ -5205,7 +5233,8 @@ async function backfillAllSessionsFromArchive() {
         }
 
         if (result.source === 'openmeteo-archive') archive++;
-        else if (result.source === 'ndbc-stdmet') ndbc++;
+        else if (result.source === 'ndbc-stdmet+openmeteo-wind') ndbcWithWind++;
+        else if (result.source === 'ndbc-stdmet') ndbcOnly++;
 
         const r = result.tide?.rate;
         if (typeof r === 'number') {
@@ -5236,16 +5265,18 @@ async function backfillAllSessionsFromArchive() {
       tideFalling + ' negative (falling), ' +
       tideSlack + ' near-zero (slack).'
     : '';
+  const ndbcTotal = ndbcOnly + ndbcWithWind;
   const summary =
     processed + ' sessions processed.\n\n' +
     archive + ' populated with archive data (openmeteo-archive)\n' +
-    ndbc + ' populated with NDBC fallback (ndbc-stdmet)\n' +
+    ndbcWithWind + ' populated with NDBC swell + Open-Meteo wind (ndbc-stdmet+openmeteo-wind)\n' +
+    ndbcOnly + ' populated with NDBC fallback, no wind (ndbc-stdmet)\n' +
     failed + ' failed' +
     tideSummary +
     (failures.length
       ? '\n\nFailures:\n' + failures.slice(0, 8).map(f => '• ' + new Date(f.ts).toLocaleDateString() + ' — ' + f.reason).join('\n')
       : '');
-  if (status) status.textContent = 'Done. ' + archive + ' archive · ' + ndbc + ' NDBC · ' + failed + ' failed.';
+  if (status) status.textContent = 'Done. ' + archive + ' archive · ' + ndbcTotal + ' NDBC · ' + failed + ' failed.';
   console.log('Tide rate distribution across ' + tideTotal + ' sessions: ' +
     tideRising + ' positive (rising), ' + tideFalling + ' negative (falling), ' +
     tideSlack + ' near-zero (slack).');
@@ -7455,10 +7486,11 @@ function _regFmtConditionsBlock(cond) {
     (typeof t.rate === 'number' ? ' · ' + (t.rate >= 0 ? '+' : '') + t.rate.toFixed(2) + ' ft/hr' : '') +
     (t.timeToNearest != null ? ' · time to nearest: ' + t.timeToNearest + 'h' : '');
   let sourceLabel;
-  if (cond.source === 'openmeteo-archive')      sourceLabel = 'Open-Meteo archive (reanalysis)';
-  else if (cond.source === 'ndbc-stdmet')       sourceLabel = 'NDBC buoy 44097 (measured, stdmet historical)';
-  else if (cond.source === 'ndbc')              sourceLabel = 'NDBC buoy 44097 (measured)';
-  else                                          sourceLabel = 'Open-Meteo marine API';
+  if (cond.source === 'openmeteo-archive')              sourceLabel = 'Open-Meteo archive (reanalysis)';
+  else if (cond.source === 'ndbc-stdmet+openmeteo-wind') sourceLabel = 'NDBC buoy 44097 swell + Open-Meteo archive wind';
+  else if (cond.source === 'ndbc-stdmet')               sourceLabel = 'NDBC buoy 44097 (measured, stdmet historical)';
+  else if (cond.source === 'ndbc')                      sourceLabel = 'NDBC buoy 44097 (measured)';
+  else                                                  sourceLabel = 'Open-Meteo marine API';
   return '<div class="reg-drill-line"><span class="reg-drill-key">Swell:</span> ' + swellH + ' @ ' + swellP + ' · ' + swellD + '</div>' +
     secLine +
     '<div class="reg-drill-line"><span class="reg-drill-key">Wind:</span> ' + windLine + '</div>' +
