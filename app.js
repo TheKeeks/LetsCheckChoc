@@ -5404,19 +5404,25 @@ function toggleEntryDetail(entry, tr) {
 // of raw sin/cos so the regression can reveal whether the swell window acts as a hard
 // gate, a gradual ramp, or both.
 
-// Wave features (target: ratings.size). period_x_alignment tests whether long
-// period only matters when direction lets it through.
+// Wave features (target: ratings.size). Effective in-window energy aggregates
+// primary + secondary swell — when primary is out of window and secondary is
+// in window, secondary becomes the de facto swell at the spot. See
+// CHOCOMOUNT_KNOWLEDGE.md "Swell window: the central concept".
 const WAVE_FEATURE_NAMES = [
-  'swell_height','swell_period','swell_dir_alignment','swell_dir_outside_deg',
-  'period_x_alignment',
-  'sec_swell_height','sec_swell_period','sec_dir_in_window'
+  'effective_in_window_height',
+  'effective_in_window_period',
+  'total_swell_height'
 ];
 
-// Ride features (target: ratings.rideQuality). Tide enters here, not in wave —
-// tide affects how the wave peels, not whether swell arrived.
+// Ride features (target: ratings.rideQuality). Direction belongs in the Wave
+// model — perceived size already encodes window-gating. Ride is shape: tide
+// height (reef depth), tide rate (incoming amplifies, outgoing mutes), and
+// effective in-window period (long period drives energy through the
+// eelgrass section).
 const RIDE_FEATURE_NAMES = [
-  'swell_dir_alignment','swell_dir_outside_deg','swell_period',
-  'tide_height','time_to_low','low_incoming'
+  'tide_height',
+  'tide_rate',
+  'effective_in_window_period'
 ];
 
 // Conditions features (target: ratings.windQuality). wind_offshore is cos of
@@ -5439,59 +5445,64 @@ function windOffshoreness(windDir) {
 // the Conditions model. Refreshed at slRetrain start.
 let _COND_WIND_MEDIAN = 0;
 
-// Median tide height (ft, MLLW) used by extractRideFeatures.low_incoming.
-// Refreshed at the start of slRetrain from logged-session tide heights so the
-// "below median" threshold reflects the user's actual surf history.
-let _TIDE_MEDIAN = 2.0;
-
-// Chocomount swell window: 115°–158°, center 136.5°, half-width 21.5°.
-function _windowGeometry() {
-  const min = CONFIG.chocomount.swellWindowMin;
-  const max = CONFIG.chocomount.swellWindowMax;
-  return { min, max, center: (min + max) / 2, half: (max - min) / 2 };
+// True iff direction is inside the Chocomount swell window.
+function _inSwellWindow(deg) {
+  return deg != null
+    && isFinite(deg)
+    && deg >= CONFIG.chocomount.swellWindowMin
+    && deg <= CONFIG.chocomount.swellWindowMax;
 }
-// 1.0 at window center, 0.0 at edges and outside.
-function _dirAlignment(dir, geo) { return Math.max(0, 1 - Math.abs(dir - geo.center) / geo.half); }
-// Degrees beyond the nearer window edge; 0 if in-window, capped at 45°.
-function _dirOutsideDeg(dir, geo) { return Math.min(45, Math.max(0, geo.min - dir, dir - geo.max)); }
+
+// Aggregates primary + secondary swell into "what's actually hitting the
+// reef". Both Wave and Ride extractors share this. When primary is out of
+// window and secondary is in, secondary becomes the de facto swell.
+//   effHeight   = sum of in-window heights (ft)
+//   effPeriod   = height-weighted average period of in-window trains (s, 0 if none)
+//   totalHeight = gross swell magnitude regardless of direction (sanity-check baseline)
+function _effectiveInWindowSwell(cond) {
+  const pri = cond?.swell || {};
+  const sec = cond?.swell?.secondary;
+  const priIn = _inSwellWindow(pri.direction);
+  const secIn = !!(sec && _inSwellWindow(sec.direction));
+  const wPri = priIn ? (pri.height || 0) : 0;
+  const pPri = priIn ? (pri.period || 0) : 0;
+  const wSec = secIn ? (sec.height || 0) : 0;
+  const pSec = secIn ? (sec.period || 0) : 0;
+  const effHeight = wPri + wSec;
+  const effPeriod = effHeight > 1e-6 ? (wPri * pPri + wSec * pSec) / (wPri + wSec) : 0;
+  const totalHeight = (pri.height || 0) + (sec?.height || 0);
+  return { effHeight, effPeriod, totalHeight };
+}
 
 function extractWaveFeatures(cond) {
   if (!cond?.swell) return null;
-  const s = cond.swell;
-  const sec = s.secondary || { height: 0, direction: 0, period: 0 };
-  const geo = _windowGeometry();
-  const dir = s.direction || 0;
-  const period = s.period || 0;
-  const dirAlignment = _dirAlignment(dir, geo);
-  const dirOutside = _dirOutsideDeg(dir, geo);
-  const secDir = sec.direction || 0;
-  const secInWindow = (secDir >= geo.min && secDir <= geo.max) ? 1 : 0;
-  return [
-    s.height || 0, period,
-    dirAlignment, dirOutside,
-    period * dirAlignment,
-    sec.height || 0, sec.period || 0,
-    secInWindow
-  ];
+  const { effHeight, effPeriod, totalHeight } = _effectiveInWindowSwell(cond);
+  return [effHeight, effPeriod, totalHeight];
 }
 
+// Ride model focuses on shape: tide depth on the reef, the signed water-
+// movement rate, and the in-window period that drives energy through the
+// eelgrass section. Direction lives in the Wave model — perceived size
+// already encodes window-gating.
 function extractRideFeatures(cond) {
   if (!cond?.swell) return null;
-  const s = cond.swell;
-  const t = cond.tide || { height: 0, stage: 'rising', timeToNearest: 0 };
-  const geo = _windowGeometry();
-  const dir = s.direction || 0;
-  const dirAlignment = _dirAlignment(dir, geo);
-  const dirOutside = _dirOutsideDeg(dir, geo);
-  // Signed hours to low: rising → low just passed (negative); falling → low upcoming (positive).
-  // Approximation: timeToNearest is to nearest H or L, so this conflates the two when
-  // we're closer to a high than the bracketing lows — acceptable since we mostly surf near low.
-  const timeToLow = t.stage === 'rising' ? -(t.timeToNearest || 0) : (t.timeToNearest || 0);
-  const lowIncoming = ((t.height || 0) < _TIDE_MEDIAN && t.stage === 'rising') ? 1 : 0;
-  return [
-    dirAlignment, dirOutside, s.period || 0,
-    t.height || 0, timeToLow, lowIncoming
-  ];
+  const t = cond.tide;
+  if (!t || typeof t.height !== 'number' || !isFinite(t.height)) {
+    // Backfill should have populated tide.height on every session; bail on
+    // training rows that somehow lack it rather than imputing.
+    return null;
+  }
+  let rate = t.rate;
+  if (typeof rate !== 'number' || !isFinite(rate)) {
+    // Last-resort fallback for sessions missed by the tide backfill.
+    if (t.stage === 'rising') rate = 0.5;
+    else if (t.stage === 'falling') rate = -0.5;
+    else rate = 0;   // 'slack-high' / 'slack-low' / unknown
+    console.warn('[extractRideFeatures] missing cond.tide.rate, inferring from stage',
+      { stage: t.stage, inferredRate: rate, height: t.height });
+  }
+  const { effPeriod } = _effectiveInWindowSwell(cond);
+  return [t.height, rate, effPeriod];
 }
 
 function extractCondFeatures(cond) {
@@ -5596,13 +5607,6 @@ function slRetrain() {
   const uid = window._fbUserId;
   const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
   const entries = userScoped.filter(e => e.conditions?.swell);
-  // Refresh tide median from logged tide heights so low_incoming reflects user's history.
-  const tideHeights = entries.map(e => e.conditions?.tide?.height).filter(h => typeof h === 'number');
-  if (tideHeights.length) {
-    const sorted = [...tideHeights].sort((a,b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    _TIDE_MEDIAN = sorted.length % 2 ? sorted[mid] : (sorted[mid-1] + sorted[mid]) / 2;
-  }
   // Refresh wind-speed median (Conditions model only) for missing-data fill.
   const windSpeeds = entries.map(e => e.conditions?.wind?.speed).filter(s => typeof s === 'number' && isFinite(s));
   if (windSpeeds.length) {
@@ -5696,10 +5700,20 @@ function _stats1D(arr) {
   let v = 0; for (let i = 0; i < n; i++) v += (arr[i] - mean) * (arr[i] - mean);
   return { n, mean, std: Math.sqrt(v / n), min: Math.min(...arr), max: Math.max(...arr) };
 }
-function _logSanityModel(label, target, featureNames, looOut) {
+function _logSanityModel(label, target, featureNames, looOut, weights) {
   console.groupCollapsed('[regression-sanity] ' + label);
   console.log('target          : ' + target);
   console.log('features        : ' + (featureNames || []).join(', '));
+  if (weights && weights.length) {
+    let topIdx = 0;
+    for (let i = 1; i < weights.length; i++) {
+      if (Math.abs(weights[i]) > Math.abs(weights[topIdx])) topIdx = i;
+    }
+    const topW = weights[topIdx];
+    const sign = topW >= 0 ? '+' : '−';
+    console.log('top feature     : ' + (featureNames[topIdx] || ('f' + topIdx)) +
+      ' (w=' + sign + Math.abs(topW).toFixed(3) + ')');
+  }
   if (!looOut) {
     console.log('n               : 0  (insufficient data for LOO)');
     console.groupEnd();
@@ -5741,11 +5755,66 @@ function _logRegressionSanity() {
   const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
   const entries = userScoped.filter(e => e.conditions?.swell);
   _logSanityModel('WAVE', 'size', WAVE_FEATURE_NAMES,
-    _runLOOForSanity(entries, extractWaveFeatures, e => e.ratings.size));
+    _runLOOForSanity(entries, extractWaveFeatures, e => e.ratings.size),
+    STATE.surfLogWaveWeights);
   _logSanityModel('RIDE', 'rideQuality', RIDE_FEATURE_NAMES,
-    _runLOOForSanity(entries, extractRideFeatures, e => e.ratings.rideQuality));
+    _runLOOForSanity(entries, extractRideFeatures, e => e.ratings.rideQuality),
+    STATE.surfLogRideWeights);
   _logSanityModel('COND', 'windQuality', COND_FEATURE_NAMES,
-    _runLOOForSanity(entries, extractCondFeatures, e => e.ratings.windQuality));
+    _runLOOForSanity(entries, extractCondFeatures, e => e.ratings.windQuality),
+    STATE.surfLogCondWeights);
+}
+
+// Spot-owner-facing metrics report. Run from DevTools after retrain to copy
+// a plain-text summary of n / R² / LOO RMSE / top feature for each sub-model.
+function _llcRegressionMetricsReport() {
+  const uid = window._fbUserId;
+  const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
+  const entries = userScoped.filter(e => e.conditions?.swell);
+  const fmt = (v, d = 2) => (v == null || !isFinite(v)) ? '—' : v.toFixed(d);
+  const block = (label, target, featureNames, extractor, targetFn, weights, rmse) => {
+    const looOut = _runLOOForSanity(entries, extractor, targetFn);
+    let n = 0, r2 = null;
+    if (looOut) {
+      n = looOut.preds.length;
+      let sse = 0; for (let i = 0; i < n; i++) {
+        const e = looOut.preds[i] - looOut.actuals[i]; sse += e * e;
+      }
+      const aMean = looOut.actuals.reduce((a, b) => a + b, 0) / n;
+      let ssTot = 0; for (let i = 0; i < n; i++) {
+        const d = looOut.actuals[i] - aMean; ssTot += d * d;
+      }
+      r2 = ssTot > 1e-10 ? 1 - sse / ssTot : null;
+    }
+    let topLine = '—';
+    if (weights && weights.length) {
+      let topIdx = 0;
+      for (let i = 1; i < weights.length; i++) {
+        if (Math.abs(weights[i]) > Math.abs(weights[topIdx])) topIdx = i;
+      }
+      const sign = weights[topIdx] >= 0 ? '+' : '−';
+      topLine = (featureNames[topIdx] || ('f' + topIdx)) + ' (sign: ' + sign + ')';
+    }
+    return label + ':\n' +
+      '  n trained on: ' + n + '\n' +
+      '  R²: ' + (r2 == null ? '—' : fmt(r2)) + '\n' +
+      '  LOO RMSE: ' + fmt(rmse) + '\n' +
+      '  Top feature by |w_j|: ' + topLine + '\n';
+  };
+  return [
+    block('Wave', 'size', WAVE_FEATURE_NAMES,
+      extractWaveFeatures, e => e.ratings.size,
+      STATE.surfLogWaveWeights, STATE.surfLogWaveValidation),
+    block('Ride', 'rideQuality', RIDE_FEATURE_NAMES,
+      extractRideFeatures, e => e.ratings.rideQuality,
+      STATE.surfLogRideWeights, STATE.surfLogRideValidation),
+    block('Conditions', 'windQuality', COND_FEATURE_NAMES,
+      extractCondFeatures, e => e.ratings.windQuality,
+      STATE.surfLogCondWeights, STATE.surfLogCondValidation)
+  ].join('\n');
+}
+if (typeof window !== 'undefined') {
+  window._llcRegressionMetricsReport = _llcRegressionMetricsReport;
 }
 
 function renderWeightSection(weights, stats, featureNames, rmse) {
@@ -6647,12 +6716,7 @@ function _regUserScopedFeatureSeries(sub) {
 function _regFmtFeatureValue(name, v) {
   const unit = regFeatureUnit(name);
   if (typeof v !== 'number' || !isFinite(v)) return '—';
-  // Booleans / 0–1 indicators
-  if (name === 'sec_dir_in_window' || name === 'low_incoming') {
-    return v >= 0.5 ? 'in window / yes' : 'out / no';
-  }
-  if (unit === 'h') return (v >= 0 ? '+' : '') + v.toFixed(1) + unit;
-  if (unit === '°') return Math.round(v) + unit;
+  if (unit === 'ft/hr') return (v >= 0 ? '+' : '') + v.toFixed(2) + ' ' + unit;
   if (unit === 'mph' || unit === 'ft') return v.toFixed(1) + unit;
   if (unit === 's') return v.toFixed(1) + unit;
   return v.toFixed(2);
@@ -7059,30 +7123,24 @@ const REG_SUBMODELS = {
   }
 };
 
-// Human-readable feature names. Only feature names not already obvious from
-// the underscore form get a custom label.
+// Human-readable feature names. Underscore form falls through unchanged.
 const REG_FEATURE_LABELS = {
-  swell_height: 'Swell height',
-  swell_period: 'Swell period',
-  swell_dir_alignment: 'Swell direction alignment',
-  swell_dir_outside_deg: 'Dir outside window',
-  period_x_alignment: 'Period × alignment',
-  sec_swell_height: 'Secondary swell height',
-  sec_swell_period: 'Secondary swell period',
-  sec_dir_in_window: 'Sec in window',
+  effective_in_window_height: 'Effective swell height (in window)',
+  effective_in_window_period: 'Effective swell period (in window)',
+  total_swell_height: 'Total swell height (any direction)',
   tide_height: 'Tide height',
-  time_to_low: 'Time to low tide',
-  low_incoming: 'Low incoming',
+  tide_rate: 'Tide rate (incoming/outgoing)',
   wind_speed: 'Wind speed',
   wind_offshore: 'Wind offshoreness'
 };
 const REG_FEATURE_UNITS = {
-  swell_height: 'ft', swell_period: 's',
-  swell_dir_alignment: '', swell_dir_outside_deg: '°',
-  period_x_alignment: '',
-  sec_swell_height: 'ft', sec_swell_period: 's', sec_dir_in_window: '',
-  tide_height: 'ft', time_to_low: 'h', low_incoming: '',
-  wind_speed: 'mph', wind_offshore: ''
+  effective_in_window_height: 'ft',
+  effective_in_window_period: 's',
+  total_swell_height: 'ft',
+  tide_height: 'ft',
+  tide_rate: 'ft/hr',
+  wind_speed: 'mph',
+  wind_offshore: ''
 };
 function regFeatureLabel(name) { return REG_FEATURE_LABELS[name] || name; }
 function regFeatureUnit(name) { return REG_FEATURE_UNITS[name] || ''; }

@@ -1,5 +1,86 @@
 # Changelog
 
+## [Unreleased] — Regression redesign: effective in-window energy + tide-rate
+
+**Why:** The data foundation now supports the feature design called for in
+`CHOCOMOUNT_KNOWLEDGE.md` — every session has archive-grounded primary
++ secondary swell (per `INVESTIGATION_OUT_VS_IN_POST_BACKFILL.md`),
+hourly-interpolated tide height, and a signed `cond.tide.rate` from the
+central-difference computation (per `INVESTIGATION_TIDE_LOOKUP.md`). With
+the inputs solid, the regression features should reflect the spot's
+physics rather than work around stale inputs.
+
+The old Wave model carried 8 features for 28 sessions (encoding direction
+as alignment + outside-deg ramps, secondary as three independent inputs,
+plus a period × alignment interaction), risking overfit. The old Ride
+model duplicated direction features the Wave model already covered, and
+discretised tide via `low_incoming` + `time_to_low`.
+
+**Fix:** Drop to 3 features per sub-model on the Wave and Ride paths,
+each physically interpretable, continuous where possible, derived from
+the new clean inputs.
+
+- `app.js` `WAVE_FEATURE_NAMES`: replaced with
+  `[effective_in_window_height, effective_in_window_period, total_swell_height]`.
+  In-window energy aggregates primary + secondary so the regression sees
+  what hit the reef, not which train Open-Meteo labelled primary.
+- `app.js` `RIDE_FEATURE_NAMES`: replaced with
+  `[tide_height, tide_rate, effective_in_window_period]`. Direction
+  drops (already absorbed by the perception-based size rating in the
+  Wave model). `tide_rate` enters as a continuous signed ft/hr instead
+  of the binary `low_incoming` indicator.
+- `app.js` `COND_FEATURE_NAMES`: unchanged. Spot owner has noted wind is
+  "relatively predictable and unimportant" but the Conditions model has
+  the highest R² of the three on existing data — decision deferred per
+  `CHOCOMOUNT_KNOWLEDGE.md`.
+- `app.js` new helpers `_inSwellWindow(deg)` and
+  `_effectiveInWindowSwell(cond)`: shared by both Wave and Ride
+  extractors. Window bounds read from
+  `CONFIG.chocomount.swellWindowMin/Max`, not hardcoded.
+- `app.js` `extractRideFeatures`: defensive fallbacks for the rare
+  un-backfilled session — skip if `cond.tide.height` is missing, infer
+  `tide_rate` from `cond.tide.stage` (±0.5 ft/hr, 0 on slack) with a
+  console warning if `cond.tide.rate` is missing.
+- `app.js` `slRetrain`: dropped `_TIDE_MEDIAN` recompute (no longer
+  needed without `low_incoming`); deleted `_windowGeometry`,
+  `_dirAlignment`, `_dirOutsideDeg` (no longer needed without direction
+  features in Ride).
+- `app.js` `REG_FEATURE_LABELS` / `REG_FEATURE_UNITS`: updated for the
+  new feature names; `tide_rate` gets `ft/hr` with a signed formatter.
+- `app.js` `_logSanityModel`: now surfaces the top feature by `|w_j|`
+  with sign alongside n / R² / LOO RMSE.
+- `app.js` new `window._llcRegressionMetricsReport()`: paste-friendly
+  text summary the spot owner can run from DevTools to get a compact
+  metrics block.
+- `scripts/smoke_regression.js` (new): node harness that loads `app.js`
+  in a stubbed context, trains all three sub-models on a synthetic
+  28-session dataset whose distribution mirrors
+  `INVESTIGATION_OUT_VS_IN_POST_BACKFILL.md`, and prints the metrics
+  report. Used to verify the pipeline produces finite metrics with the
+  new feature set.
+
+Tab 2 visualisations (per-feature scatter grid, importance bars,
+preferred-conditions card, predicted-vs-actual scatters, drill-down
+attribution) read from `*_FEATURE_NAMES` arrays so they auto-adapt to
+the new 3-feature shape. The Tab 1 "If I went at scrubbed time" widget
+reuses the same extractors, so it tracks the new features automatically.
+
+**Smoke-test metrics (synthetic 28-session dataset):**
+
+  Wave: n=28, R²=+0.22, LOO RMSE=1.90, top: effective_in_window_height (+)
+  Ride: n=28, R²=+0.47, LOO RMSE=1.87, top: tide_height (−)
+  Cond: n=28, R²=+0.63, LOO RMSE=1.02, top: wind_speed (−)
+
+Synthetic data only — real numbers come from the spot owner reloading
+the app (slRetrain runs on load) and either reading the
+`[regression-sanity]` console group or running
+`_llcRegressionMetricsReport()` from DevTools.
+
+**Design rationale:** `CHOCOMOUNT_KNOWLEDGE.md`,
+`INVESTIGATION_OUT_VS_IN.md`,
+`INVESTIGATION_OUT_VS_IN_POST_BACKFILL.md`,
+`INVESTIGATION_TIDE_LOOKUP.md`.
+
 ## [Unreleased] — Historical tide lookup: hourly interpolation + signed rate
 
 **Why:** Tide audit (`INVESTIGATION_TIDE_LOOKUP.md`) confirmed
