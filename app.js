@@ -34,6 +34,10 @@ const CONFIG = {
     openMeteoMarine: 'https://marine-api.open-meteo.com/v1/marine',
     openMeteoWeather: 'https://api.open-meteo.com/v1/forecast',
     openMeteoArchive: 'https://archive-api.open-meteo.com/v1/archive',
+    // Wave/swell reanalysis. The atmospheric `openMeteoArchive` endpoint
+    // returns nulls for marine variables (secondary_swell_wave_*,
+    // wind_wave_*), so historical swell must hit this marine archive.
+    openMeteoMarineArchive: 'https://marine-api.open-meteo.com/v1/marine',
     coops: 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter',
     ndbcProxies: [
       { name: 'corsproxy.io', wrap: function(url) { return 'https://corsproxy.io/?' + encodeURIComponent(url); } },
@@ -4608,12 +4612,18 @@ function estimateSwellLag(marine, sessionDateStr) {
   return arrival ? arrival.minutes : 0;
 }
 
-// Open-Meteo archive (reanalysis) lookup — primary historical-conditions
-// source for ALL session ages. Reanalysis is grid-model output rerun after
-// the fact, incorporating actual observations including buoy readings;
-// it's much closer to ground truth than the forecast endpoint, which
-// returns what the model *predicted* for past hours. Coverage starts ~2016
-// for marine variables.
+// Open-Meteo marine archive (reanalysis) lookup — primary historical-
+// conditions source for ALL session ages. Reanalysis is grid-model output
+// rerun after the fact, incorporating actual observations including buoy
+// readings; it's much closer to ground truth than the forecast endpoint,
+// which returns what the model *predicted* for past hours. Coverage starts
+// ~2016 for marine variables.
+//
+// IMPORTANT: this MUST hit the marine archive endpoint
+// (`marine-api.open-meteo.com/v1/marine`), not the atmospheric archive
+// (`archive-api.open-meteo.com/v1/archive`). The atmospheric endpoint
+// silently returns null arrays for secondary_swell_* / wind_wave_* — see
+// INVESTIGATION_BACKFILL_REGRESSIONS.md.
 //
 // Returns a swell-only object: { swell: {...}, _laggedDateStr, _lagHours }
 // or null if the archive has no data for the requested date. Wind and tide
@@ -4641,7 +4651,7 @@ async function lookupOpenMeteoArchive(lat, lon, dateStr) {
     timezone: 'auto'
   });
 
-  const data = await fetchJSON(CONFIG.api.openMeteoArchive + '?' + p);
+  const data = await fetchJSON(CONFIG.api.openMeteoMarineArchive + '?' + p);
   if (!data || !data.hourly || !Array.isArray(data.hourly.time) || data.hourly.time.length === 0) return null;
 
   // Apply swell-arrival lag (offshore-forecast-point → beach travel time).
