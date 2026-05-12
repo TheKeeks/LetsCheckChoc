@@ -4286,7 +4286,7 @@ window._llcGeneratePostBackfillReport = function() {
   const entries = (STATE.surfLog || []).slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   const rows = [];
   let secIn = 0, bothIn = 0, priIn = 0, bothOut = 0, withSecondary = 0;
-  let archiveCount = 0, ndbcCount = 0, otherCount = 0;
+  let archiveCount = 0, ndbcCount = 0, ndbcWindCount = 0, otherCount = 0;
 
   for (const e of entries) {
     const c = e.conditions || {};
@@ -4301,6 +4301,7 @@ window._llcGeneratePostBackfillReport = function() {
     else { bucket = 'BOTH OUT'; bothOut++; }
     if (sec && sec.direction != null) withSecondary++;
     if (c.source === 'openmeteo-archive') archiveCount++;
+    else if (c.source === 'ndbc-stdmet+openmeteo-wind') ndbcWindCount++;
     else if (c.source === 'ndbc-stdmet') ndbcCount++;
     else otherCount++;
 
@@ -4340,9 +4341,10 @@ window._llcGeneratePostBackfillReport = function() {
   md += '- **BOTH OUT:** ' + bothOut + '\n';
   md += '- **Sessions with secondary-swell data:** ' + withSecondary + ' of ' + entries.length + '\n';
   md += '\n### Source breakdown\n\n';
-  md += '- openmeteo-archive: ' + archiveCount + '\n';
-  md += '- ndbc-stdmet:       ' + ndbcCount + '\n';
-  md += '- other / unknown:   ' + otherCount + '\n';
+  md += '- openmeteo-archive:              ' + archiveCount + '\n';
+  md += '- ndbc-stdmet + openmeteo-wind:   ' + ndbcWindCount + '\n';
+  md += '- ndbc-stdmet:                    ' + ndbcCount + '\n';
+  md += '- other / unknown:                ' + otherCount + '\n';
   return md;
 };
 
@@ -5175,7 +5177,7 @@ async function backfillAllSessionsFromArchive() {
 
   const entries = STATE.surfLog.slice();
   const total = entries.length;
-  let processed = 0, archive = 0, ndbc = 0, failed = 0;
+  let processed = 0, archive = 0, ndbcOnly = 0, ndbcWithWind = 0, failed = 0;
   let tideRising = 0, tideFalling = 0, tideSlack = 0;
   const failures = [];
 
@@ -5231,7 +5233,8 @@ async function backfillAllSessionsFromArchive() {
         }
 
         if (result.source === 'openmeteo-archive') archive++;
-        else if (result.source === 'ndbc-stdmet') ndbc++;
+        else if (result.source === 'ndbc-stdmet+openmeteo-wind') ndbcWithWind++;
+        else if (result.source === 'ndbc-stdmet') ndbcOnly++;
 
         const r = result.tide?.rate;
         if (typeof r === 'number') {
@@ -5262,16 +5265,18 @@ async function backfillAllSessionsFromArchive() {
       tideFalling + ' negative (falling), ' +
       tideSlack + ' near-zero (slack).'
     : '';
+  const ndbcTotal = ndbcOnly + ndbcWithWind;
   const summary =
     processed + ' sessions processed.\n\n' +
     archive + ' populated with archive data (openmeteo-archive)\n' +
-    ndbc + ' populated with NDBC fallback (ndbc-stdmet)\n' +
+    ndbcWithWind + ' populated with NDBC swell + Open-Meteo wind (ndbc-stdmet+openmeteo-wind)\n' +
+    ndbcOnly + ' populated with NDBC fallback, no wind (ndbc-stdmet)\n' +
     failed + ' failed' +
     tideSummary +
     (failures.length
       ? '\n\nFailures:\n' + failures.slice(0, 8).map(f => '• ' + new Date(f.ts).toLocaleDateString() + ' — ' + f.reason).join('\n')
       : '');
-  if (status) status.textContent = 'Done. ' + archive + ' archive · ' + ndbc + ' NDBC · ' + failed + ' failed.';
+  if (status) status.textContent = 'Done. ' + archive + ' archive · ' + ndbcTotal + ' NDBC · ' + failed + ' failed.';
   console.log('Tide rate distribution across ' + tideTotal + ' sessions: ' +
     tideRising + ' positive (rising), ' + tideFalling + ' negative (falling), ' +
     tideSlack + ' near-zero (slack).');
