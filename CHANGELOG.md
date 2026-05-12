@@ -1,5 +1,65 @@
 # Changelog
 
+## [Unreleased] — Wave/Ride: add `effective_in_window_period_squared` to test period bimodality
+
+**Why:** Logged 10/10 sessions cluster at two distinct period regimes —
+~15s (hurricane recurvature) and ~8s (post-tropical / nor'easter) — with
+the same in-window direction. A purely linear period coefficient averages
+those two regimes into noise. A quadratic term lets the model express
+"both extremes good, middle weaker" if the signal is really there.
+
+**Change:**
+
+- `app.js` `WAVE_FEATURE_NAMES`: now 4 features
+  (added `effective_in_window_period_squared` between period and
+  `total_swell_height`).
+- `app.js` `RIDE_FEATURE_NAMES`: now 5 features
+  (added `effective_in_window_period_squared` between period and height).
+- `app.js` `extractWaveFeatures`, `extractRideFeatures`: emit
+  `effPeriod * effPeriod` alongside `effPeriod`. When no in-window swell
+  exists, both terms are 0 — same as the linear period.
+- `app.js` `REG_FEATURE_LABELS` / `REG_FEATURE_UNITS`: UI label
+  `"in-window period²"`, unit `"s²"`. Regression diagnostic tab's
+  per-feature scatter grid and importance bars pick up the new feature
+  automatically (both iterate `cfg.featureNames`).
+- `app.js` `_llcLeakDegSweep` diagnostic helper: matching update so the
+  LEAK_DEG sweep tool's parameterised extractors stay in sync with
+  production.
+- Conditions model unchanged. Swell window (`swellWindowMin=115°`,
+  `swellWindowMax=158°`) unchanged. `LEAK_DEG=30` unchanged. Ridge λ /
+  min-sample gate unchanged (`max(2 × nF, 12)` = 12 for both 4- and
+  5-feature models).
+
+**Smoke-test metrics (`node scripts/smoke_regression.js`, synthetic
+28-session dataset — see `scripts/smoke_regression.js` header):**
+
+| Model | n | Old R² (LOO) | New R² (LOO) | Old LOO RMSE | New LOO RMSE |
+|-------|---|--------------|--------------|--------------|--------------|
+| Wave  | 28 | +0.44 (3F) | +0.42 (4F) | 1.61 | 1.63 |
+| Ride  | 28 | +0.66 (4F) | +0.56 (5F) | 1.51 | 1.70 |
+
+Coefficient signs on the new term (standardised weights, smoke dataset):
+
+- Wave: `effective_in_window_period = −0.327`,
+  `effective_in_window_period_squared = +0.578`
+  → linear negative + squared positive ⇒ **U-shape** (bimodal:
+  contribution lowest near mean period, rises at both extremes).
+- Ride: `effective_in_window_period = −1.625`,
+  `effective_in_window_period_squared = +1.418`
+  → linear negative + squared positive ⇒ **U-shape** (same pattern,
+  stronger magnitude).
+
+On this synthetic dataset, LOO R² drops slightly when adding the squared
+term: the noise floor for a 28-row fit and 5 features is high enough that
+the extra degree of freedom can hurt out-of-sample. The signs are what
+the bimodal hypothesis predicts, but the synthetic data isn't calibrated
+to the spot owner's real ratings (`scripts/smoke_regression.js` says as
+much in its header) — the production verdict is whatever R² comes back
+when this trains against the real Firestore-backed 28 logged sessions
+in-app.
+
+---
+
 ## [Unreleased] — Backfill regressions: marine archive endpoint + NDBC wind merge
 
 **Why:** Two regressions surfaced after the most recent backfill prevented
