@@ -5979,6 +5979,75 @@ if (typeof window !== 'undefined') {
   window._llcLeakDegSweep = _llcLeakDegSweep;
 }
 
+// Run from DevTools: window._llcCompareModels()
+// Side-by-side LOO R² for the current branch (Wave 4F with period², Ride 5F
+// with period²) vs the pre-PR baselines (Wave 3F, Ride 4F) on the same
+// STATE.surfLog. Diagnostic only — revert before merge.
+function _llcCompareModels() {
+  const uid = window._fbUserId;
+  const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
+  const entries = userScoped.filter(e => e.conditions?.swell);
+
+  // Baselines: drop the period² column (index 2 for Wave, index 3 for Ride)
+  // from the new extractors. Same code path otherwise.
+  const dropIdx = (arr, i) => arr ? arr.filter((_, k) => k !== i) : null;
+  const waveBaselineExtractor = (cond) => dropIdx(extractWaveFeatures(cond), 2);
+  const rideBaselineExtractor = (cond) => dropIdx(extractRideFeatures(cond), 3);
+
+  const r2Of = (extractor, targetFn) => {
+    const looOut = _runLOOForSanity(entries, extractor, targetFn);
+    if (!looOut) return { n: 0, r2: null };
+    const n = looOut.preds.length;
+    let sse = 0; for (let i = 0; i < n; i++) {
+      const e = looOut.preds[i] - looOut.actuals[i]; sse += e * e;
+    }
+    const aMean = looOut.actuals.reduce((a, b) => a + b, 0) / n;
+    let ssTot = 0; for (let i = 0; i < n; i++) {
+      const d = looOut.actuals[i] - aMean; ssTot += d * d;
+    }
+    const r2 = ssTot > 1e-10 ? 1 - sse / ssTot : null;
+    return { n, r2 };
+  };
+
+  const wave3 = r2Of(waveBaselineExtractor, e => e.ratings.size);
+  const wave4 = r2Of(extractWaveFeatures, e => e.ratings.size);
+  const ride4 = r2Of(rideBaselineExtractor, e => e.ratings.rideQuality);
+  const ride5 = r2Of(extractRideFeatures, e => e.ratings.rideQuality);
+
+  // Fit once on the full sample to surface period / period² coefficients
+  // (z-space weights, same convention as _logRetrainSummary).
+  const waveFull = trainModel(entries, extractWaveFeatures, e => e.ratings.size);
+  const rideFull = trainModel(entries, extractRideFeatures, e => e.ratings.rideQuality);
+  const wavePeriod = waveFull?.weights?.[1];
+  const wavePeriodSq = waveFull?.weights?.[2];
+  const ridePeriod = rideFull?.weights?.[2];
+  const ridePeriodSq = rideFull?.weights?.[3];
+
+  const sgn = (v, d = 3) => (v == null || !isFinite(v)) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(d);
+  const fmtR2 = (v) => (v == null || !isFinite(v)) ? '—' : v.toFixed(3);
+  const delta = (a, b) => (a == null || b == null) ? null : b - a;
+
+  const lines = [
+    'Wave  3F (baseline)        R² = ' + fmtR2(wave3.r2) + '   n = ' + wave3.n,
+    'Wave  4F (with period²)    R² = ' + fmtR2(wave4.r2) + '   ΔR² = ' + sgn(delta(wave3.r2, wave4.r2)),
+    'Wave  4F linear period coef = ' + sgn(wavePeriod),
+    'Wave  4F period² coef       = ' + sgn(wavePeriodSq),
+    '',
+    'Ride  4F (baseline)        R² = ' + fmtR2(ride4.r2) + '   n = ' + ride4.n,
+    'Ride  5F (with period²)    R² = ' + fmtR2(ride5.r2) + '   ΔR² = ' + sgn(delta(ride4.r2, ride5.r2)),
+    'Ride  5F linear period coef = ' + sgn(ridePeriod),
+    'Ride  5F period² coef       = ' + sgn(ridePeriodSq),
+  ];
+  console.log(lines.join('\n'));
+  return {
+    wave: { baseline: wave3, withPeriodSq: wave4, periodCoef: wavePeriod, periodSqCoef: wavePeriodSq },
+    ride: { baseline: ride4, withPeriodSq: ride5, periodCoef: ridePeriod, periodSqCoef: ridePeriodSq },
+  };
+}
+if (typeof window !== 'undefined') {
+  window._llcCompareModels = _llcCompareModels;
+}
+
 function renderWeightSection(weights, stats, featureNames, rmse) {
   const minSamples = Math.max(2 * featureNames.length, 12);
   if (!weights) return '<span class="sl-hint">Need '+minSamples+'+ sessions to train.</span>';
