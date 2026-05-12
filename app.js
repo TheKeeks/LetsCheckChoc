@@ -5869,6 +5869,97 @@ if (typeof window !== 'undefined') {
   window._llcRegressionMetricsReport = _llcRegressionMetricsReport;
 }
 
+// Run from DevTools: window._llcLeakDegSweep()
+// Sweeps the swell-window leak tolerance across a range of degrees, retrains
+// Wave and Ride on the active user's surfLog at each value, and prints LOO
+// R² + RMSE per leak. Diagnostic only — production LEAK_DEG (30) is untouched.
+function _llcLeakDegSweep() {
+  const uid = window._fbUserId;
+  const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
+  const entries = userScoped.filter(e => e.conditions?.swell);
+
+  const alignParam = (directionDeg, LEAK_DEG) => {
+    if (directionDeg == null || !isFinite(directionDeg)) return 0;
+    const lo = CONFIG.chocomount.swellWindowMin;
+    const hi = CONFIG.chocomount.swellWindowMax;
+    if (directionDeg >= lo && directionDeg <= hi) return 1;
+    if (LEAK_DEG <= 0) return 0;
+    const distOutside = directionDeg < lo ? (lo - directionDeg) : (directionDeg - hi);
+    if (distOutside >= LEAK_DEG) return 0;
+    return 1 - (distOutside / LEAK_DEG);
+  };
+  const effSwellParam = (cond, LEAK_DEG) => {
+    const pri = cond?.swell || {};
+    const sec = cond?.swell?.secondary;
+    const priScore = alignParam(pri.direction, LEAK_DEG);
+    const secScore = sec ? alignParam(sec.direction, LEAK_DEG) : 0;
+    const wPri = priScore * (pri.height || 0);
+    const wSec = secScore * (sec?.height || 0);
+    const effHeight = wPri + wSec;
+    const effPeriod = effHeight > 1e-6
+      ? (wPri * (pri.period || 0) + wSec * (sec?.period || 0)) / effHeight
+      : 0;
+    const totalHeight = (pri.height || 0) + (sec?.height || 0);
+    return { effHeight, effPeriod, totalHeight };
+  };
+  const waveExtractorAt = (LEAK_DEG) => (cond) => {
+    if (!cond?.swell) return null;
+    const { effHeight, effPeriod, totalHeight } = effSwellParam(cond, LEAK_DEG);
+    return [effHeight, effPeriod, totalHeight];
+  };
+  const rideExtractorAt = (LEAK_DEG) => (cond) => {
+    if (!cond?.swell) return null;
+    const t = cond.tide;
+    if (!t || typeof t.height !== 'number' || !isFinite(t.height)) return null;
+    let rate = t.rate;
+    if (typeof rate !== 'number' || !isFinite(rate)) {
+      if (t.stage === 'rising') rate = 0.5;
+      else if (t.stage === 'falling') rate = -0.5;
+      else rate = 0;
+    }
+    const { effHeight, effPeriod } = effSwellParam(cond, LEAK_DEG);
+    return [t.height, rate, effPeriod, effHeight];
+  };
+
+  const metricsFor = (extractor, targetFn) => {
+    const trained = trainModel(entries, extractor, targetFn);
+    const looOut = _runLOOForSanity(entries, extractor, targetFn);
+    if (!looOut) return { n: trained ? null : 0, r2: null, rmse: null };
+    const n = looOut.preds.length;
+    let sse = 0; for (let i = 0; i < n; i++) {
+      const e = looOut.preds[i] - looOut.actuals[i]; sse += e * e;
+    }
+    const aMean = looOut.actuals.reduce((a, b) => a + b, 0) / n;
+    let ssTot = 0; for (let i = 0; i < n; i++) {
+      const d = looOut.actuals[i] - aMean; ssTot += d * d;
+    }
+    const rmse = Math.sqrt(sse / n);
+    const r2 = ssTot > 1e-10 ? 1 - sse / ssTot : null;
+    return { n, r2, rmse };
+  };
+
+  const fmt = (v, d = 3) => (v == null || !isFinite(v)) ? '—' : v.toFixed(d);
+  const LEAKS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45];
+  const rows = LEAKS.map(L => {
+    const w = metricsFor(waveExtractorAt(L), e => e.ratings.size);
+    const r = metricsFor(rideExtractorAt(L), e => e.ratings.rideQuality);
+    return {
+      LEAK_DEG: L,
+      wave_n: w.n ?? 0,
+      wave_R2: fmt(w.r2),
+      wave_LOO_RMSE: fmt(w.rmse),
+      ride_n: r.n ?? 0,
+      ride_R2: fmt(r.r2),
+      ride_LOO_RMSE: fmt(r.rmse),
+    };
+  });
+  console.table(rows);
+  return rows;
+}
+if (typeof window !== 'undefined') {
+  window._llcLeakDegSweep = _llcLeakDegSweep;
+}
+
 function renderWeightSection(weights, stats, featureNames, rmse) {
   const minSamples = Math.max(2 * featureNames.length, 12);
   if (!weights) return '<span class="sl-hint">Need '+minSamples+'+ sessions to train.</span>';
