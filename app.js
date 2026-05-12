@@ -5469,13 +5469,15 @@ const WAVE_FEATURE_NAMES = [
 
 // Ride features (target: ratings.rideQuality). Direction belongs in the Wave
 // model — perceived size already encodes window-gating. Ride is shape: tide
-// height (reef depth), tide rate (incoming amplifies, outgoing mutes), and
+// height (reef depth), tide rate (incoming amplifies, outgoing mutes),
 // effective in-window period (long period drives energy through the
-// eelgrass section).
+// eelgrass section), and effective in-window height (bigger waves carry
+// energy through all 4-5 segments; small waves die early).
 const RIDE_FEATURE_NAMES = [
   'tide_height',
   'tide_rate',
-  'effective_in_window_period'
+  'effective_in_window_period',
+  'effective_in_window_height'
 ];
 
 // Conditions features (target: ratings.windQuality). wind_offshore is cos of
@@ -5540,9 +5542,10 @@ function extractWaveFeatures(cond) {
 }
 
 // Ride model focuses on shape: tide depth on the reef, the signed water-
-// movement rate, and the in-window period that drives energy through the
-// eelgrass section. Direction lives in the Wave model — perceived size
-// already encodes window-gating.
+// movement rate, the in-window period that drives energy through the
+// eelgrass section, and the in-window height (bigger waves push through
+// all segments; small waves die early). Direction lives in the Wave model
+// — perceived size already encodes window-gating.
 function extractRideFeatures(cond) {
   if (!cond?.swell) return null;
   const t = cond.tide;
@@ -5560,8 +5563,8 @@ function extractRideFeatures(cond) {
     console.warn('[extractRideFeatures] missing cond.tide.rate, inferring from stage',
       { stage: t.stage, inferredRate: rate, height: t.height });
   }
-  const { effPeriod } = _effectiveInWindowSwell(cond);
-  return [t.height, rate, effPeriod];
+  const { effHeight, effPeriod } = _effectiveInWindowSwell(cond);
+  return [t.height, rate, effPeriod, effHeight];
 }
 
 function extractCondFeatures(cond) {
