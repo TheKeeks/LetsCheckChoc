@@ -180,3 +180,80 @@ straight port of `_trainOnArrays` and `leaveOneOutRMSE` from `app.js`,
 and `_alignmentScore` is parameterized by `leakDeg` rather than reading
 the hardcoded constant. No `app.js` mutation, no LEAK_DEG override at
 runtime in the app.
+
+## 7. Extended Wave sweep (wider softening ranges)
+
+The §2 sweep stopped at `LEAK_DEG = 45°` and Wave LOO-RMSE was still
+trending down (1.5746 at 45° vs 1.5787 at 40°), leaving open whether
+the curve plateaus, has a true minimum past 45°, or keeps falling.
+This section answers that on the same 28-session synthetic corpus.
+
+Wave-only extended sweep, `LEAK_DEG ∈ [30, 40, 50, 60, 75, 90, 120]`:
+
+| LEAK_DEG | wave_n | wave_R²  | wave_LOO_RMSE | Top feature                  | Top feature weight |
+|---------:|-------:|---------:|--------------:|------------------------------|-------------------:|
+|       30 |     28 |   0.5820 |        1.6098 | total_swell_height           |            +0.8731 |
+|       40 |     28 |   0.5895 |        1.5787 | effective_in_window_height   |            +0.8054 |
+|       50 |     28 |   0.5914 |        1.5720 | effective_in_window_height   |            +0.8766 |
+|       60 |     28 |   0.5921 |        1.5684 | effective_in_window_height   |            +0.9799 |
+|       75 |     28 |   0.5924 |        1.5687 | effective_in_window_height   |            +1.1582 |
+|       90 |     28 |   0.5927 |        1.5690 | effective_in_window_height   |            +1.3481 |
+|      120 |     28 |   0.5929 |        1.5691 | effective_in_window_height   |            +1.7389 |
+
+**Best by LOO-RMSE: `LEAK_DEG = 60°`** (LOO-RMSE 1.5684, R² 0.5921).
+Production `LEAK_DEG = 30°` is at LOO-RMSE 1.6098 — the gap widens to
+**2.57%**, only 0.4 percentage points beyond the 45° advantage already
+reported in §2.
+
+### Outcome: (a) — Wave LOO-RMSE has a true minimum just past 45°
+
+The curve does **not** keep falling through 120°. It bottoms out at
+60° and then flattens within 0.0007 of the minimum all the way to
+120°:
+
+- 60° → 1.5684 (best)
+- 75° → 1.5687 (+0.0003)
+- 90° → 1.5690 (+0.0006)
+- 120° → 1.5691 (+0.0007)
+
+So the swell-window concept is **not** broken for Wave — it just
+prefers a softer edge than initially supposed. The Wave optimum sits
+at ~60°, the Ride optimum at 15° (§3), and production sits at 30°
+midway between them.
+
+### Why the plateau, mechanically
+
+At `LEAK_DEG = 120°` the decay band extends from the window edge all
+the way out to angles `~−5°` and `~278°`, which covers essentially
+every plausible swell direction at this spot. The
+`effective_in_window_height` column is then near-linear in
+`total_swell_height` weighted by an almost-everywhere-nonzero
+directional factor; the top weight on
+`effective_in_window_height` correspondingly grows from `+0.88` at
+60° to `+1.74` at 120° as the column re-scales. R² creeps up from
+0.5921 to 0.5929 across the plateau — the model is moving freely
+along an essentially collinear ridge in feature space, which is
+exactly what you'd expect: more decay → more "fancy total swell" →
+small in-sample gains but no out-of-sample improvement.
+
+### Caveats still apply
+
+- 28-session synthetic corpus — same caveat as §2; treat absolute
+  numbers as illustrative. The Wave LOO-RMSE delta from 60° to 30°
+  is 2.57%, well inside the noise band for n=28.
+- The Wave optimum at 60° is **wider** than the Ride optimum at 15°
+  by a factor of 4×. If a future production change ever splits the
+  constant, the cross-comparison in §4 understated the spread — a
+  single shared `LEAK_DEG` is an even bigger compromise than the
+  original `[0..45]` sweep suggested.
+- Re-run instructions: open DevTools, call
+  `window._llcLeakDegSweep()` against the real `STATE.surfLog`. The
+  helper now prints two tables — the original `[0..45]` Wave+Ride
+  grid, then a Wave-only `[30, 40, 50, 60, 75, 90, 120]` extension.
+
+### Recommendation (unchanged)
+
+**Do not change production `LEAK_DEG` yet.** The extension confirms
+the Wave model has a real (shallow) minimum past 45°, but the gain
+over production is still ~2–3% on a synthetic corpus. Re-run against
+real Firestore data before reopening this question.

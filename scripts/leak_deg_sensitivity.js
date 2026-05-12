@@ -192,8 +192,8 @@ function looRMSE(X, y) {
   return count ? Math.sqrt(sse / count) : null;
 }
 
-function sweep(label, extractor, targetFn, featureNames) {
-  const leakValues = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45];
+function sweep(label, extractor, targetFn, featureNames, leakValuesOverride) {
+  const leakValues = leakValuesOverride || [0, 5, 10, 15, 20, 25, 30, 35, 40, 45];
   const rows = [];
   for (const leakDeg of leakValues) {
     const { X, y } = buildXY(extractor, targetFn, leakDeg);
@@ -249,3 +249,11 @@ console.log(`Ridge λ = 0.001 (matches app.js normalEquation)`);
 
 sweep('WAVE  (target=ratings.size)',         extractWaveFeatures, s => s.ratings.size,        WAVE_FEATURE_NAMES);
 sweep('RIDE  (target=ratings.rideQuality)',  extractRideFeatures, s => s.ratings.rideQuality, RIDE_FEATURE_NAMES);
+
+// Extended Wave-only sweep across wider softening ranges. The base sweep
+// showed Wave LOO-RMSE was still falling at the right edge of the original
+// [0..45] grid; this block tests whether the curve plateaus, bottoms out, or
+// keeps falling beyond 45°. Ride is intentionally omitted — its optimum sits
+// at 15° and behavior beyond 45° is not in question.
+sweep('WAVE-EXTENDED  (target=ratings.size)', extractWaveFeatures, s => s.ratings.size, WAVE_FEATURE_NAMES,
+      [30, 40, 50, 60, 75, 90, 120]);

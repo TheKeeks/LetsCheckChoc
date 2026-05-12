@@ -5954,7 +5954,24 @@ function _llcLeakDegSweep() {
     };
   });
   console.table(rows);
-  return rows;
+
+  // Wave-only extended sweep across wider softening ranges. The base sweep
+  // showed Wave LOO-RMSE still falling at the right edge of [0..45]; this
+  // grid checks whether the curve plateaus, bottoms out, or keeps falling.
+  const WAVE_EXT_LEAKS = [30, 40, 50, 60, 75, 90, 120];
+  const waveExtRows = WAVE_EXT_LEAKS.map(L => {
+    const w = metricsFor(waveExtractorAt(L), e => e.ratings.size);
+    return {
+      LEAK_DEG: L,
+      wave_n: w.n ?? 0,
+      wave_R2: fmt(w.r2),
+      wave_LOO_RMSE: fmt(w.rmse),
+    };
+  });
+  console.log('Wave-only extended sweep:');
+  console.table(waveExtRows);
+
+  return { rows, waveExtRows };
 }
 if (typeof window !== 'undefined') {
   window._llcLeakDegSweep = _llcLeakDegSweep;
