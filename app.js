@@ -5464,7 +5464,6 @@ function toggleEntryDetail(entry, tr) {
 const WAVE_FEATURE_NAMES = [
   'effective_in_window_height',
   'effective_in_window_period',
-  'effective_in_window_period_squared',
   'total_swell_height'
 ];
 
@@ -5478,7 +5477,6 @@ const RIDE_FEATURE_NAMES = [
   'tide_height',
   'tide_rate',
   'effective_in_window_period',
-  'effective_in_window_period_squared',
   'effective_in_window_height'
 ];
 
@@ -5540,7 +5538,7 @@ function _effectiveInWindowSwell(cond) {
 function extractWaveFeatures(cond) {
   if (!cond?.swell) return null;
   const { effHeight, effPeriod, totalHeight } = _effectiveInWindowSwell(cond);
-  return [effHeight, effPeriod, effPeriod * effPeriod, totalHeight];
+  return [effHeight, effPeriod, totalHeight];
 }
 
 // Ride model focuses on shape: tide depth on the reef, the signed water-
@@ -5566,7 +5564,7 @@ function extractRideFeatures(cond) {
       { stage: t.stage, inferredRate: rate, height: t.height });
   }
   const { effHeight, effPeriod } = _effectiveInWindowSwell(cond);
-  return [t.height, rate, effPeriod, effPeriod * effPeriod, effHeight];
+  return [t.height, rate, effPeriod, effHeight];
 }
 
 function extractCondFeatures(cond) {
@@ -5907,7 +5905,7 @@ function _llcLeakDegSweep() {
   const waveExtractorAt = (LEAK_DEG) => (cond) => {
     if (!cond?.swell) return null;
     const { effHeight, effPeriod, totalHeight } = effSwellParam(cond, LEAK_DEG);
-    return [effHeight, effPeriod, effPeriod * effPeriod, totalHeight];
+    return [effHeight, effPeriod, totalHeight];
   };
   const rideExtractorAt = (LEAK_DEG) => (cond) => {
     if (!cond?.swell) return null;
@@ -5920,7 +5918,7 @@ function _llcLeakDegSweep() {
       else rate = 0;
     }
     const { effHeight, effPeriod } = effSwellParam(cond, LEAK_DEG);
-    return [t.height, rate, effPeriod, effPeriod * effPeriod, effHeight];
+    return [t.height, rate, effPeriod, effHeight];
   };
 
   const metricsFor = (extractor, targetFn) => {
@@ -5977,75 +5975,6 @@ function _llcLeakDegSweep() {
 }
 if (typeof window !== 'undefined') {
   window._llcLeakDegSweep = _llcLeakDegSweep;
-}
-
-// Run from DevTools: window._llcCompareModels()
-// Side-by-side LOO R² for the current branch (Wave 4F with period², Ride 5F
-// with period²) vs the pre-PR baselines (Wave 3F, Ride 4F) on the same
-// STATE.surfLog. Diagnostic only — revert before merge.
-function _llcCompareModels() {
-  const uid = window._fbUserId;
-  const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
-  const entries = userScoped.filter(e => e.conditions?.swell);
-
-  // Baselines: drop the period² column (index 2 for Wave, index 3 for Ride)
-  // from the new extractors. Same code path otherwise.
-  const dropIdx = (arr, i) => arr ? arr.filter((_, k) => k !== i) : null;
-  const waveBaselineExtractor = (cond) => dropIdx(extractWaveFeatures(cond), 2);
-  const rideBaselineExtractor = (cond) => dropIdx(extractRideFeatures(cond), 3);
-
-  const r2Of = (extractor, targetFn) => {
-    const looOut = _runLOOForSanity(entries, extractor, targetFn);
-    if (!looOut) return { n: 0, r2: null };
-    const n = looOut.preds.length;
-    let sse = 0; for (let i = 0; i < n; i++) {
-      const e = looOut.preds[i] - looOut.actuals[i]; sse += e * e;
-    }
-    const aMean = looOut.actuals.reduce((a, b) => a + b, 0) / n;
-    let ssTot = 0; for (let i = 0; i < n; i++) {
-      const d = looOut.actuals[i] - aMean; ssTot += d * d;
-    }
-    const r2 = ssTot > 1e-10 ? 1 - sse / ssTot : null;
-    return { n, r2 };
-  };
-
-  const wave3 = r2Of(waveBaselineExtractor, e => e.ratings.size);
-  const wave4 = r2Of(extractWaveFeatures, e => e.ratings.size);
-  const ride4 = r2Of(rideBaselineExtractor, e => e.ratings.rideQuality);
-  const ride5 = r2Of(extractRideFeatures, e => e.ratings.rideQuality);
-
-  // Fit once on the full sample to surface period / period² coefficients
-  // (z-space weights, same convention as _logRetrainSummary).
-  const waveFull = trainModel(entries, extractWaveFeatures, e => e.ratings.size);
-  const rideFull = trainModel(entries, extractRideFeatures, e => e.ratings.rideQuality);
-  const wavePeriod = waveFull?.weights?.[1];
-  const wavePeriodSq = waveFull?.weights?.[2];
-  const ridePeriod = rideFull?.weights?.[2];
-  const ridePeriodSq = rideFull?.weights?.[3];
-
-  const sgn = (v, d = 3) => (v == null || !isFinite(v)) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(d);
-  const fmtR2 = (v) => (v == null || !isFinite(v)) ? '—' : v.toFixed(3);
-  const delta = (a, b) => (a == null || b == null) ? null : b - a;
-
-  const lines = [
-    'Wave  3F (baseline)        R² = ' + fmtR2(wave3.r2) + '   n = ' + wave3.n,
-    'Wave  4F (with period²)    R² = ' + fmtR2(wave4.r2) + '   ΔR² = ' + sgn(delta(wave3.r2, wave4.r2)),
-    'Wave  4F linear period coef = ' + sgn(wavePeriod),
-    'Wave  4F period² coef       = ' + sgn(wavePeriodSq),
-    '',
-    'Ride  4F (baseline)        R² = ' + fmtR2(ride4.r2) + '   n = ' + ride4.n,
-    'Ride  5F (with period²)    R² = ' + fmtR2(ride5.r2) + '   ΔR² = ' + sgn(delta(ride4.r2, ride5.r2)),
-    'Ride  5F linear period coef = ' + sgn(ridePeriod),
-    'Ride  5F period² coef       = ' + sgn(ridePeriodSq),
-  ];
-  console.log(lines.join('\n'));
-  return {
-    wave: { baseline: wave3, withPeriodSq: wave4, periodCoef: wavePeriod, periodSqCoef: wavePeriodSq },
-    ride: { baseline: ride4, withPeriodSq: ride5, periodCoef: ridePeriod, periodSqCoef: ridePeriodSq },
-  };
-}
-if (typeof window !== 'undefined') {
-  window._llcCompareModels = _llcCompareModels;
 }
 
 function renderWeightSection(weights, stats, featureNames, rmse) {
@@ -7358,7 +7287,6 @@ const REG_SUBMODELS = {
 const REG_FEATURE_LABELS = {
   effective_in_window_height: 'Effective swell height (aligned, with edge softening)',
   effective_in_window_period: 'Effective swell period (aligned, with edge softening)',
-  effective_in_window_period_squared: 'in-window period²',
   total_swell_height: 'Total swell height (any direction)',
   tide_height: 'Tide height',
   tide_rate: 'Tide rate (incoming/outgoing)',
@@ -7368,7 +7296,6 @@ const REG_FEATURE_LABELS = {
 const REG_FEATURE_UNITS = {
   effective_in_window_height: 'ft',
   effective_in_window_period: 's',
-  effective_in_window_period_squared: 's²',
   total_swell_height: 'ft',
   tide_height: 'ft',
   tide_rate: 'ft/hr',
