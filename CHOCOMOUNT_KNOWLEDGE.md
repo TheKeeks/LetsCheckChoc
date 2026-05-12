@@ -152,3 +152,59 @@ Wind speed + offshoreness. 2 features. No changes pending more data.
 ## Document maintenance
 
 This knowledge document evolves as the spot owner logs more sessions and validates or refutes hypotheses. When the regression's per-feature attributions disagree with the spot owner's intuition, this document gets updated and the next regression iteration tests the updated hypothesis.
+
+## Physical character of the spot
+
+Choc faces SSE into Block Island Sound. The configured swell window 115°-158°
+is not arbitrary — it matches the geographic gap between Block Island's south
+tip (bearing 114° from Choc) and Montauk Point (bearing 157°):
+- East of the window: Block Island shadows incoming swell.
+- West of the window: the eastern end of Long Island (Montauk) blocks it.
+- The 43° gap between these two land masses is the only opening into Block
+  Island Sound from the SE quadrant.
+
+Reef perpendicular is 155° (the reef heads 335° NNW). Swells from 145°-155°
+hit the reef closest to head-on, which is one reason the best logged days
+cluster in this part of the window.
+
+## Historic 10/10 sessions
+
+Both perfect-rating sessions in the log are tropical-system swells:
+
+- 2021-09-10: Hurricane Larry. Cat 3 recurving east of Bermuda with strongest
+  fetch directed NNW at the Northeast U.S. Buoy peak ~15ft @ 15s at South
+  Bermuda. Choc session: 6.4ft @ 15.4s @ 145°.
+- 2022-10-14: Hurricane Ian remnants combined with a frontal boundary stalled
+  off the Mid-Atlantic with blocking high to the east. Multi-day swell event.
+  Choc session: 8.8ft @ 8.1s @ 150°.
+
+The two events are different period regimes (15s vs 8s) but the same
+direction (~145°-150°) and the same general source category (tropical or
+post-tropical system in the SE quadrant of Choc).
+
+## Period bimodality
+
+Both period regimes work, possibly via different physical mechanisms:
+- 13-15s (hurricane recurvature): long-period swell refracts strongly over
+  the bathymetric highs south of Fishers Island, focusing energy onto the
+  reef.
+- 8-10s (nor'easter / post-tropical): shorter period doesn't refract as
+  dramatically but also loses less energy to shoaling over the Block Island
+  Sound shelf.
+- 11-12s (the "middle"): may be the weakest regime — not enough refraction
+  to focus, not enough efficient transmission to power through.
+
+A quadratic term on in-window period has been added to the Wave and Ride
+models to test this hypothesis. If the coefficient on period² comes out
+positive (with negative coefficient on linear period), that's empirical
+support for the bimodal behavior.
+
+## Spot character summary
+
+Choc is a tropical-cyclone-specialist break. The geographic window is too
+narrow to consistently catch dominant winter NE/NNE groundswell from the
+North Atlantic. It is optimized for storms that recurve in the western
+Atlantic — exactly the dominant tropical pattern in August-October. Winter
+and summer sessions are possible but rarer, and they require an unusual
+storm geometry that puts a low-pressure system south or southeast of Long
+Island with fetch directed at the gap between Block Island and Montauk.
