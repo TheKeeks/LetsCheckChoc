@@ -194,10 +194,17 @@ Both period regimes work, possibly via different physical mechanisms:
 - 11-12s (the "middle"): may be the weakest regime — not enough refraction
   to focus, not enough efficient transmission to power through.
 
-A quadratic term on in-window period has been added to the Wave and Ride
-models to test this hypothesis. If the coefficient on period² comes out
-positive (with negative coefficient on linear period), that's empirical
-support for the bimodal behavior.
+The bimodal hypothesis was tested empirically by adding a quadratic
+period term to both Wave and Ride models (2026-05-12, see git history).
+On the 28-session dataset, LOO-CV R² regressed: Wave −0.026, Ride −0.018,
+despite coefficient signs that matched the U-shape pattern (linear
+negative, squared positive). The conclusion is not that bimodality is
+physically wrong — the coefficient signs are tantalizing — but that
+28 sessions is too small to extract the signal from noise.
+
+Revisit when n ≥ 50. If the U-shape pattern is real, ΔR² should turn
+positive with more data. If it remains negative or flat at n=50+, the
+hypothesis is rejected.
 
 ## Spot character summary
 
