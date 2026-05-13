@@ -3262,24 +3262,26 @@ function drawCompassRose(spectral, buoyParsed) {
   const cy = size / 2;
   const r = size / 2 - (compact ? 22 : 30);
 
-  // Background
-  ctx.fillStyle = '#ffffff';
+  // Cream Win95 background.
+  ctx.fillStyle = '#F8F4E8';
   ctx.fillRect(0, 0, size, size);
 
   // Concentric reference rings (geometric scaffolding only; radial axis now
   // encodes wave energy density, so no period labels).
   const guideRings = [0.25, 0.5, 0.75, 1.0];
   guideRings.forEach(frac => {
-    ctx.strokeStyle = '#eae6e0';
+    ctx.strokeStyle = '#808080';
     ctx.lineWidth = 0.5;
+    ctx.setLineDash([2, 2]);
     ctx.beginPath();
     ctx.arc(cx, cy, frac * r, 0, Math.PI * 2);
     ctx.stroke();
   });
+  ctx.setLineDash([]);
 
-  // Cardinal labels
-  ctx.fillStyle = '#8a827a';
-  ctx.font = `bold ${compact ? '10px' : '11px'} ${FC_CHART_FONT}`;
+  // Cardinal labels — bold black MS Sans Serif.
+  ctx.fillStyle = '#000000';
+  ctx.font = `bold 11px ${FC_CHART_FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('N', cx, cy - r - padLabel);

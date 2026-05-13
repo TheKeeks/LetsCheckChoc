@@ -575,6 +575,117 @@ body[data-era="web1"] .forecast-controls-bar input[type="checkbox"]:checked::aft
                     linear-gradient(-45deg, transparent 45%, #000 45% 55%, transparent 55%);
 }
 
+/* ── Wave Spectra + Spectral Compass Rose (promoted) ────────────── */
+
+body[data-era="web1"] #panel-spectral-row {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+body[data-era="web1"] #panel-spectral-row .panel-half {
+  flex: 1 1 320px;
+  min-width: 0;
+  background: #C0C0C0;
+  border: 2px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  padding: 0 0 6px 0;
+  margin: 0;
+}
+
+/* Wave Spectra table — deep-sunken cream-tinted display, 11px bold
+   header / 11px regular rows, 1px #808080 row separators, alternating
+   #F8F4E8 / #FFFFFF row backgrounds. */
+body[data-era="web1"] #spectral-summary-table {
+  margin: 6px 8px;
+  background: #FFFFFF;
+  border: 2px solid;
+  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  box-shadow:
+    inset 1px 1px 0 0 #808080,
+    inset -1px -1px 0 0 #C0C0C0;
+  padding: 4px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: #000000;
+}
+body[data-era="web1"] #spectral-summary-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+body[data-era="web1"] #spectral-summary-table th {
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  text-align: left;
+  padding: 3px 6px;
+  background: #C0C0C0;
+  color: #000000;
+  border-bottom: 1px solid #808080;
+}
+body[data-era="web1"] #spectral-summary-table td {
+  padding: 3px 6px;
+  font-size: 11px;
+  border-bottom: 1px solid #808080;
+}
+body[data-era="web1"] #spectral-summary-table tr:nth-child(even) td {
+  background: #F8F4E8;
+}
+body[data-era="web1"] #spectral-summary-table tr:nth-child(odd) td {
+  background: #FFFFFF;
+}
+
+/* Compass rose canvas wrap — deep-sunken cream framed display. */
+body[data-era="web1"] #panel-compass .chart-container {
+  background: #F8F4E8;
+  border: 2px solid;
+  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  box-shadow:
+    inset 1px 1px 0 0 #808080,
+    inset -1px -1px 0 0 #C0C0C0;
+  padding: 4px;
+  margin: 6px 8px;
+  box-sizing: border-box;
+}
+body[data-era="web1"] #panel-compass canvas {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+/* Rose scale toggle — Win95 raised-bevel paired buttons. */
+body[data-era="web1"] .rose-scale-toggle {
+  display: inline-flex;
+  gap: 0;
+  margin: 4px 8px;
+}
+body[data-era="web1"] .rose-scale-chip {
+  background: #C0C0C0;
+  color: #000000;
+  border: 2px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  padding: 2px 10px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 0;
+  margin-right: -1px;
+  min-height: 22px;
+}
+body[data-era="web1"] .rose-scale-chip.active,
+body[data-era="web1"] .rose-scale-chip:active {
+  border-color: #404040 #FFFFFF #FFFFFF #404040;
+}
+
+body[data-era="web1"] #panel-compass .rose-legend,
+body[data-era="web1"] #panel-spectral-row .widget-help {
+  margin: 4px 8px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: #000000;
+}
+
 /* No drop shadows anywhere on the Forecast tab content. */
 body[data-era="web1"] #view-forecast .panel,
 body[data-era="web1"] #view-forecast .panel-half,

@@ -167,6 +167,54 @@
         <div class="panel-footer" id="footer-forecast"></div>
       </section>
 
+      <!-- Wave Spectra + Spectral Compass Rose (promoted to sit directly
+           under the unified forecast card). The original placement
+           below the conditions-row is gone. -->
+      <section class="panel-row" id="panel-spectral-row" style="display:none;">
+        <div class="panel panel-half" id="panel-spectral-summary">
+          <div class="retro-card-title-strip">Wave Spectra</div>
+          <h3 class="panel-title" style="display:none;">Wave Spectra</h3>
+          <details class="widget-help">
+            <summary>What is this?</summary>
+            <p>A decomposition of the buoy's raw wave spectrum into three interpretable rows:</p>
+            <ul>
+              <li><strong>Primary Swell</strong> — the dominant long-period wave train the spectrum can isolate, typically a distant-storm groundswell.</li>
+              <li><strong>Wind Waves</strong> — the shorter-period train driven by the local wind at the buoy.</li>
+              <li><strong>Significant Hs</strong> — the total significant wave height of the sea state (mean of the highest one-third of waves); the combined energy of every ripple, chop, and groundswell currently present.</li>
+            </ul>
+          </details>
+          <div id="spectral-summary-table"></div>
+          <div class="panel-footer" id="footer-spectral-summary"></div>
+        </div>
+        <div class="panel panel-half" id="panel-compass">
+          <div class="retro-card-title-strip">Spectral Compass Rose</div>
+          <div class="rose-header" style="display:none;">
+            <h3 class="panel-title">Spectral Compass Rose</h3>
+          </div>
+          <div class="rose-scale-toggle" role="group" aria-label="Radial scale">
+            <button type="button" class="rose-scale-chip" data-scale="linear">Linear</button>
+            <button type="button" class="rose-scale-chip" data-scale="sqrt">&radic;</button>
+          </div>
+          <details class="widget-help">
+            <summary>What is this?</summary>
+            <p>Polar plot of wave energy by arrival direction. Radial distance from the center encodes energy magnitude; hue encodes the period of that energy band, so directionality and period can be read together.</p>
+          </details>
+          <div class="chart-container chart-container-sq">
+            <canvas id="compass-canvas"></canvas>
+          </div>
+          <div class="rose-legend" aria-hidden="true">
+            <div class="rose-legend-bar"></div>
+            <div class="rose-legend-ticks">
+              <span>2s</span>
+              <span>11s</span>
+              <span>22s+</span>
+            </div>
+            <div class="rose-legend-caption">Swell period</div>
+          </div>
+          <div class="panel-footer" id="footer-compass"></div>
+        </div>
+      </section>
+
       <!-- 3. Current conditions row -->
       <section class="conditions-row" id="conditions-row">
         <div class="condition-card" id="card-swell">
@@ -208,50 +256,6 @@
           <div class="condition-value" id="val-daylight">—</div>
           <div class="condition-detail" id="val-daylight-detail">—</div>
           <div class="panel-footer" id="footer-daylight"></div>
-        </div>
-      </section>
-
-      <!-- 4. Wave-spectra summary (left) + Spectral Compass Rose (right) -->
-      <section class="panel-row" id="panel-spectral-row" style="display:none;">
-        <div class="panel panel-half" id="panel-spectral-summary">
-          <h3 class="panel-title">Wave Spectra</h3>
-          <details class="widget-help">
-            <summary>What is this?</summary>
-            <p>A decomposition of the buoy's raw wave spectrum into three interpretable rows:</p>
-            <ul>
-              <li><strong>Primary Swell</strong> — the dominant long-period wave train the spectrum can isolate, typically a distant-storm groundswell.</li>
-              <li><strong>Wind Waves</strong> — the shorter-period train driven by the local wind at the buoy.</li>
-              <li><strong>Significant Hs</strong> — the total significant wave height of the sea state (mean of the highest one-third of waves); the combined energy of every ripple, chop, and groundswell currently present.</li>
-            </ul>
-          </details>
-          <div id="spectral-summary-table"></div>
-          <div class="panel-footer" id="footer-spectral-summary"></div>
-        </div>
-        <div class="panel panel-half" id="panel-compass">
-          <div class="rose-header">
-            <h3 class="panel-title">Spectral Compass Rose</h3>
-            <div class="rose-scale-toggle" role="group" aria-label="Radial scale">
-              <button type="button" class="rose-scale-chip" data-scale="linear">Linear</button>
-              <button type="button" class="rose-scale-chip" data-scale="sqrt">&radic;</button>
-            </div>
-          </div>
-          <details class="widget-help">
-            <summary>What is this?</summary>
-            <p>Polar plot of wave energy by arrival direction. Radial distance from the center encodes energy magnitude; hue encodes the period of that energy band, so directionality and period can be read together.</p>
-          </details>
-          <div class="chart-container chart-container-sq">
-            <canvas id="compass-canvas"></canvas>
-          </div>
-          <div class="rose-legend" aria-hidden="true">
-            <div class="rose-legend-bar"></div>
-            <div class="rose-legend-ticks">
-              <span>2s</span>
-              <span>11s</span>
-              <span>22s+</span>
-            </div>
-            <div class="rose-legend-caption">Swell period</div>
-          </div>
-          <div class="panel-footer" id="footer-compass"></div>
         </div>
       </section>
 
