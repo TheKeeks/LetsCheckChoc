@@ -1844,29 +1844,24 @@ function drawSwellPanel(common, data) {
   }
   ctx.restore();
 
-  // Y-axis numeric labels
-  const axisFont = isMobile ? '10px' : '11px';
+  // Y-axis: keep only the top value on each side; unit suffix lives in
+  // the top corner. Intermediate gridlines stay drawn but unlabeled to
+  // reduce visual noise and match the surrounding HTML chrome weight.
+  const axisFont = isMobile ? '9px' : '10px';
   ctx.font = `${axisFont} ${FC_CHART_FONT}`;
-  ctx.fillStyle = '#3a5570';
+  ctx.fillStyle = '#888';
   ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  for (let v = 0; v <= swellMaxY; v += swellStep) {
-    ctx.fillText(`${v}`, plotLeft - 4, ySwell(v));
-  }
-  ctx.fillStyle = '#c46a32';
-  ctx.textAlign = 'left';
-  for (let v = 0; v <= periodMax; v += 5) {
-    ctx.fillText(`${v}`, plotLeft + plotW + 4, yPeriod(v));
-  }
-  // Unit labels in top corners (extra 4px padding off the y-axis numbers).
-  ctx.font = `bold ${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
   ctx.textBaseline = 'top';
+  ctx.fillText(`${swellMaxY}`, plotLeft - 4, top + 2);
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#3a5570';
-  ctx.fillText('ft', plotLeft + 6, top + 2);
+  ctx.fillText(`${periodMax}`, plotLeft + plotW + 4, top + 2);
+  // Unit labels in top corners.
+  ctx.font = `bold ${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
+  ctx.fillStyle = '#888';
+  ctx.textAlign = 'left';
+  ctx.fillText('ft', plotLeft + 4, top + 2);
   ctx.textAlign = 'right';
-  ctx.fillStyle = '#c46a32';
-  ctx.fillText('s', plotLeft + plotW - 6, top + 2);
+  ctx.fillText('s', plotLeft + plotW - 4, top + 2);
 
   // ── Divider between upper region and direction sub-panel ──
   ctx.fillStyle = '#e8e8e8';
@@ -2103,18 +2098,18 @@ function drawWindPanel(common, data) {
   }
   ctx.restore();
 
-  const axisFont = isMobile ? '10px' : '11px';
+  // Y-axis: keep only the top value; unit suffix lives in the top
+  // corner. Intermediate gridlines stay drawn but unlabeled.
+  const axisFont = isMobile ? '9px' : '10px';
   ctx.font = `${axisFont} ${FC_CHART_FONT}`;
-  ctx.fillStyle = '#5a5550';
+  ctx.fillStyle = '#888';
   ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  for (let v = 0; v <= windMaxY; v += 5) {
-    ctx.fillText(`${v}`, plotLeft - 4, yWind(v));
-  }
-  ctx.font = `bold ${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
   ctx.textBaseline = 'top';
+  ctx.fillText(`${windMaxY}`, plotLeft - 4, top + 2);
+  ctx.font = `bold ${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
   ctx.textAlign = 'left';
-  ctx.fillText('mph', plotLeft + 2, top + 2);
+  ctx.fillStyle = '#888';
+  ctx.fillText('mph', plotLeft + 4, top + 2);
 
   // Scrubber dot on the wind speed line. Color matches the dark-gray line
   // stroke so the dot stays legible against any quality-shade fill color.
@@ -2338,6 +2333,17 @@ function drawTidePanel(common, data) {
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
+  }
+
+  // Tidal range corner label: "+max / -min ft" in the top-left so the
+  // chart has a numeric reference without per-gridline labels.
+  if (tideY && Number.isFinite(tideMin) && Number.isFinite(tideMax)) {
+    const fmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(1);
+    ctx.font = `${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
+    ctx.fillStyle = '#888';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`${fmt(tideMax)} / ${fmt(tideMin)} ft`, plotLeft + 4, top + 2);
   }
 
   return { canvas, cssW, cssH, plotLeft, plotW, top, h, tideMin, tideMax };
