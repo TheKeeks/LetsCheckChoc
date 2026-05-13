@@ -686,6 +686,79 @@ body[data-era="web1"] #panel-spectral-row .widget-help {
   color: #000000;
 }
 
+/* ── Current Conditions row (5 small cards) ──────────────────────── */
+
+body[data-era="web1"] .conditions-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  padding: 0;
+  margin: 8px 0;
+}
+
+body[data-era="web1"] .condition-card {
+  background: #C0C0C0;
+  border: 2px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  box-shadow: none;
+  padding: 0;
+  border-left-width: 2px !important;
+  border-left-color: #FFFFFF !important;
+  border-radius: 0;
+  position: relative;
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+}
+
+body[data-era="web1"] .condition-card .condition-label {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  background: #B0B0B0;
+  color: #000000;
+  border: 1px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  margin: 2px 2px 6px 2px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-variant: normal;
+}
+
+body[data-era="web1"] .condition-card .condition-value {
+  padding: 0 10px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 16px;
+  font-weight: bold;
+  color: #000000;
+  margin: 0;
+}
+
+body[data-era="web1"] .condition-card .condition-detail {
+  padding: 2px 10px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: #000000;
+}
+
+body[data-era="web1"] .condition-card .condition-extra {
+  padding: 2px 10px 6px 10px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: #404040;
+}
+
+/* Mobile: stack to single column. */
+@media (max-width: 640px) {
+  body[data-era="web1"] .conditions-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* No drop shadows anywhere on the Forecast tab content. */
 body[data-era="web1"] #view-forecast .panel,
 body[data-era="web1"] #view-forecast .panel-half,
