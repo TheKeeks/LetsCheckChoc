@@ -2961,18 +2961,41 @@ function setupForecastInteraction(container) {
       setScrubberToIdx(idx, true);
     }, { signal });
 
+    // Touch handling uses a direction lock so a vertical scroll gesture
+    // that happens to start on the canvas does not get misinterpreted as
+    // a scrub (which would persist a non-current hour to sessionStorage
+    // and resurface as a stale "-11H" badge on the next page load).
+    let touchStartX = null;
+    let touchStartY = null;
+    let touchScrubbing = false;
+
     cv.addEventListener('touchstart', (e) => {
-      if (e.touches.length !== 1) return;
-      const idx = indexFromClientXOnCanvas(e.touches[0].clientX, cv);
-      setScrubberToIdx(idx, true);
+      if (e.touches.length !== 1) { touchStartX = null; return; }
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchScrubbing = false;
     }, { passive: true, signal });
 
     cv.addEventListener('touchmove', (e) => {
-      if (e.touches.length !== 1) return;
+      if (e.touches.length !== 1 || touchStartX == null) return;
+      const dx = e.touches[0].clientX - touchStartX;
+      const dy = e.touches[0].clientY - touchStartY;
+      if (!touchScrubbing) {
+        // Wait for a clear gesture (8px) before claiming the touch.
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        // Vertical drag → let the page scroll naturally.
+        if (Math.abs(dx) <= Math.abs(dy)) { touchStartX = null; return; }
+        touchScrubbing = true;
+      }
       e.preventDefault();
       const idx = indexFromClientXOnCanvas(e.touches[0].clientX, cv);
       setScrubberToIdx(idx, true);
     }, { passive: false, signal });
+
+    cv.addEventListener('touchend', () => {
+      touchStartX = touchStartY = null;
+      touchScrubbing = false;
+    }, { signal });
   }
 
   // Even when the cursor strays off a canvas, dragging should still follow
@@ -7965,6 +7988,12 @@ function closeRegressionDrilldown() {
 // ════════════════════════════════════════════════
 
 async function initApp() {
+  // Discard any persisted scrubber hour from a previous tab session so a
+  // fresh page load always starts on the nearest current forecast hour.
+  // Mid-session data refreshes still recover the user's scrubbed
+  // position because setScrubberToIdx re-writes the key on every drag.
+  try { sessionStorage.removeItem('lcc-scrubber-hour'); } catch (_) {}
+
   // Load static data files
   const [buoys, tideStations] = await Promise.all([
     fetchJSON('data/buoys-east-coast.json'),
