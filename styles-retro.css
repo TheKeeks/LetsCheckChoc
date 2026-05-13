@@ -1,0 +1,112 @@
+/* ════════════════════════════════════════════════════════════════════
+   styles-retro.css — Win95 visual overhaul (Forecast tab)
+   ─────────────────────────────────────────────────────────────────────
+   This stylesheet ships the "committed to the era" pass: hardcoded
+   Win95 palette, bevel primitives, fixed sans-serif body font, and
+   the page-level chrome (title bar, outer window, tab fold). It loads
+   AFTER styles-web1-extensions.css so it wins the cascade.
+
+   Hardcoded palette — NO css variables here on purpose. Each token
+   below appears as a literal hex value at every use site.
+
+     #C0C0C0  neutral system gray (page bg, card surface)
+     #B0B0B0  darker strip (sub-title strips on cards)
+     #000080  title-bar blue
+     #FFFFFF  bevel light edge / body white
+     #808080  bevel dark edge
+     #404040  bevel deepest edge
+     #F8F4E8  plot cream
+     #0000EE  link blue        #551A8B  visited link
+     #4A6B9A  primary swell fill
+     #1A3B6A  primary swell stroke + direction line
+     #B85A12  period line (rust orange)
+     #C84A4A  wind onshore     #D9A636  wind cross   #5A9C5A  wind offshore
+     #D8E8D0  in-window direction band (light green tint)
+     #2A5D8C  tide line
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── Typography reset ────────────────────────────────────────────── */
+/* MS Sans Serif everywhere; canvas font stack matches via app.js. */
+body[data-era="web1"],
+body[data-era="web1"] button,
+body[data-era="web1"] input,
+body[data-era="web1"] select,
+body[data-era="web1"] textarea,
+body[data-era="web1"] table,
+body[data-era="web1"] h1,
+body[data-era="web1"] h2,
+body[data-era="web1"] h3,
+body[data-era="web1"] h4,
+body[data-era="web1"] p,
+body[data-era="web1"] label,
+body[data-era="web1"] a {
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+}
+
+body[data-era="web1"] {
+  background: #C0C0C0;
+  color: #000000;
+  font-size: 11px;
+  margin: 0;
+  padding: 0;
+}
+
+/* Monospace status line and address-bar style fields keep Courier. */
+body[data-era="web1"] .w1-mono,
+body[data-era="web1"] .forecast-detail-bar,
+body[data-era="web1"] .buoy-map-summary,
+body[data-era="web1"] .sl-conditions-display {
+  font-family: "Courier New", Courier, monospace;
+}
+
+/* Links — Win95 unvisited blue / visited purple. */
+body[data-era="web1"] a              { color: #0000EE; text-decoration: underline; }
+body[data-era="web1"] a:visited      { color: #551A8B; }
+
+/* ── Bevel primitives ────────────────────────────────────────────── */
+.retro-raised {
+  background: #C0C0C0;
+  border: 2px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  box-shadow: none;
+}
+.retro-sunken {
+  background: #FFFFFF;
+  border: 2px solid;
+  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  box-shadow: none;
+}
+.retro-deep-sunken {
+  /* Two-ring "framed display" — outer 2px deep, inner 1px lighter. */
+  background: #F8F4E8;
+  border: 2px solid;
+  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  box-shadow:
+    inset 1px 1px 0 0 #808080,
+    inset -1px -1px 0 0 #C0C0C0;
+}
+
+/* Kill rounded corners, drop-shadows, gradients, transitions on every
+   surface touched by the Forecast tab overhaul. */
+body[data-era="web1"] .panel,
+body[data-era="web1"] .panel-half,
+body[data-era="web1"] .condition-card,
+body[data-era="web1"] .forecast-card,
+body[data-era="web1"] .forecast-detail-bar,
+body[data-era="web1"] .buoy-map-summary,
+body[data-era="web1"] .sl-conditions-display,
+body[data-era="web1"] #app-window,
+body[data-era="web1"] #app,
+body[data-era="web1"] .tab-bar .tab-btn {
+  border-radius: 0 !important;
+  transition: none !important;
+}
+
+/* No drop shadows anywhere on the Forecast tab content. */
+body[data-era="web1"] #view-forecast .panel,
+body[data-era="web1"] #view-forecast .panel-half,
+body[data-era="web1"] #view-forecast .condition-card,
+body[data-era="web1"] #view-forecast .forecast-card,
+body[data-era="web1"] #view-forecast .lineup-frame {
+  filter: none;
+}
