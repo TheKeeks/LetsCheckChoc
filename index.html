@@ -100,7 +100,8 @@
 
       <!-- 1. Lineup map (Choc only) -->
       <section class="panel" id="panel-lineup" style="display:none;">
-        <h3 class="panel-title">Satellite Map · Lineup</h3>
+        <div class="retro-card-title-strip">Satellite Map &mdash; Lineup</div>
+        <h3 class="panel-title" style="display:none;">Satellite Map · Lineup</h3>
         <details class="widget-help">
           <summary>What is this?</summary>
           <p>Stylised lineup view of Chocomount Beach with the swell window cone, reef heading, primary &amp; secondary swell arrows, and wind arrow drawn from the current observation. The arrows always converge on the lineup at image centre; arrow length is energy-scaled.</p>
@@ -116,9 +117,10 @@
         </div>
       </section>
 
-      <!-- 2. Swell forecast chart -->
+      <!-- 2. Unified forecast card (Swell + Wind + Tide stacked) -->
       <section class="panel" id="panel-forecast">
-        <div class="forecast-header-row">
+        <div class="retro-card-title-strip">Forecast &mdash; 7 Day Outlook</div>
+        <div class="forecast-header-row" style="display:none;">
           <h3 class="panel-title forecast-panel-title">
             <span class="forecast-title-text">Swell Forecast</span>
             <details class="forecast-help-popover">
@@ -126,19 +128,6 @@
               <p>A 7-day projection of three sea-surface parameters — swell height, swell period, and wind speed — rendered on a shared time axis so their interactions are visible at a glance. Drag the cursor to scrub through hours; the lineup map and stat grid update to match.</p>
             </details>
           </h3>
-          <div class="forecast-toolbar">
-            <span id="forecast-cache-indicator" class="forecast-cache-indicator" style="display:none;" aria-live="polite">Cached · refreshing…</span>
-            <label class="forecast-coord-toggle" id="forecast-coord-toggle-wrap" style="display:none;">
-              <input type="checkbox" id="forecast-coord-toggle">
-              <span>Buoy coords</span>
-            </label>
-            <label class="forecast-model-label">
-              <span class="forecast-model-label-txt">Model:</span>
-              <select id="forecast-model-select" aria-label="Forecast model">
-                <option value="">Auto</option>
-              </select>
-            </label>
-          </div>
         </div>
         <div class="chart-container chart-container-tall" id="forecast-chart-container">
           <div class="forecast-detail-bar" id="forecast-detail-bar">
@@ -149,7 +138,7 @@
           <div class="forecast-card forecast-card-swell">
             <div class="forecast-section-label">Swell</div>
             <canvas id="forecast-canvas-swell"></canvas>
-            <canvas id="forecast-compass" aria-hidden="true"></canvas>
+            <canvas id="forecast-compass" aria-hidden="true" style="display:none;"></canvas>
           </div>
           <div class="forecast-card forecast-card-wind">
             <div class="forecast-section-label">Wind</div>
@@ -159,6 +148,21 @@
             <div class="forecast-section-label">Tide</div>
             <canvas id="forecast-canvas-tide"></canvas>
           </div>
+        </div>
+        <!-- Bottom controls bar -->
+        <div class="forecast-controls-bar" id="forecast-controls-bar">
+          <span id="forecast-cache-indicator" class="forecast-cache-indicator" style="display:none;" aria-live="polite">Cached · refreshing…</span>
+          <label class="forecast-model-label">
+            <span class="forecast-model-label-txt">Model:</span>
+            <select id="forecast-model-select" aria-label="Forecast model">
+              <option value="">Auto</option>
+            </select>
+          </label>
+          <label class="forecast-coord-toggle" id="forecast-coord-toggle-wrap" style="display:none;">
+            <input type="checkbox" id="forecast-coord-toggle">
+            <span>Buoy coords</span>
+          </label>
+          <span class="forecast-controls-spacer"></span>
         </div>
         <div class="panel-footer" id="footer-forecast"></div>
       </section>

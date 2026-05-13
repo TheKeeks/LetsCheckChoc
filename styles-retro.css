@@ -293,6 +293,151 @@ body[data-era="web1"] #page-footer {
   padding: 4px 8px;
 }
 
+/* ── Cards (every panel in #view-forecast) ───────────────────────── */
+body[data-era="web1"] #view-forecast .panel,
+body[data-era="web1"] #view-forecast .panel-half {
+  background: #C0C0C0;
+  border: 2px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  box-shadow: none;
+  padding: 0;
+  margin: 8px 0;
+}
+
+/* Top "Title" strip of each card — raised bevel, gray-darker #B0B0B0,
+   11px bold black, Title Case. */
+body[data-era="web1"] .retro-card-title-strip {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  background: #B0B0B0;
+  color: #000000;
+  border: 1px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  margin: 2px 2px 6px 2px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  user-select: none;
+}
+
+/* Sub-title strip ("Swell" / "Wind" / "Tide" inside the unified card). */
+body[data-era="web1"] .retro-substrip {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  background: #B0B0B0;
+  color: #000000;
+  border: 1px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  margin: 4px 0 0 0;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+/* Panel body padding now lives below the title strip. */
+body[data-era="web1"] #view-forecast .panel > * {
+  /* Default: keep panel interior at 6px horizontal padding. */
+}
+body[data-era="web1"] #view-forecast .panel > .panel-title:not([style*="display:none"]) {
+  margin: 4px 8px 6px 8px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  color: #000000;
+}
+
+/* The unified forecast card body sits inside #panel-forecast. The chart
+   container and the inner forecast-card sub-panels lose their separate
+   raised bevels — they become flat strips inside the card. The plot
+   areas (canvases) gain a deep-sunken bevel + cream background. */
+body[data-era="web1"] #forecast-chart-container {
+  background: #C0C0C0;
+  padding: 0 8px 6px 8px;
+  position: relative;
+}
+
+/* Replace each forecast-card's old raised bevel — it becomes a flat
+   sub-section inside the unified card. The "Swell"/"Wind"/"Tide" sub-
+   title strip is the visible header; the canvas is the framed plot. */
+body[data-era="web1"] #forecast-chart-container .forecast-card {
+  background: #C0C0C0;
+  border: none;
+  box-shadow: none;
+  padding: 22px 0 0 0;
+  margin: 4px 0 0 0;
+  border-radius: 0;
+  position: relative;
+}
+
+/* Sub-strip rendered via the .forecast-section-label DOM element that
+   already exists; restyle it to look like our .retro-substrip. */
+body[data-era="web1"] #forecast-chart-container .forecast-section-label {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  right: 0;
+  height: 18px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  background: #B0B0B0;
+  color: #000000;
+  border: 1px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  box-shadow: none;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 16px;
+  text-transform: none;
+  letter-spacing: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Plot area: DEEP-SUNKEN bevel + cream background. */
+body[data-era="web1"] #forecast-chart-container .forecast-card > canvas {
+  display: block;
+  width: 100%;
+  background: #F8F4E8;
+  border: 2px solid;
+  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  box-shadow:
+    inset 1px 1px 0 0 #808080,
+    inset -1px -1px 0 0 #C0C0C0;
+  box-sizing: border-box;
+  border-radius: 0;
+}
+
+/* Day-label row: native HTML day headers, indented to plot x-axis. */
+body[data-era="web1"] #forecast-chart-container .forecast-day-row {
+  position: relative;
+  height: 18px;
+  margin: 4px 8px 2px 8px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+body[data-era="web1"] #forecast-chart-container .forecast-day-label {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  color: #000000;
+  line-height: 18px;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 /* No drop shadows anywhere on the Forecast tab content. */
 body[data-era="web1"] #view-forecast .panel,
 body[data-era="web1"] #view-forecast .panel-half,
