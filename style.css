@@ -523,10 +523,12 @@ a:hover { text-decoration: underline; }
 }
 
 /* Forecast chart needs more vertical space for the stacked-panel layout
-   (three card-wrapped canvases + callout + arrow row + day labels). */
+   (three card-wrapped canvases + callout + arrow row + day labels).
+   Explicit min-height ensures none of the three panels collapse out of
+   the container on narrow mobile viewports. */
 .chart-container-tall {
   height: auto;
-  min-height: 480px;
+  min-height: 600px;
   position: relative;
 }
 
@@ -547,7 +549,7 @@ a:hover { text-decoration: underline; }
   box-sizing: border-box;
   position: relative;
 }
-#forecast-chart-container .forecast-card-swell { height: 279px; }
+#forecast-chart-container .forecast-card-swell { height: 280px; min-height: 280px; }
 /* Persistent compass dial in the top-right of the swell card. Reads
    the current scrubber hour and shows primary + secondary swell
    FROM-directions as arrows. */
@@ -559,8 +561,8 @@ a:hover { text-decoration: underline; }
   height: 72px;
   pointer-events: none;
 }
-#forecast-chart-container .forecast-card-wind  { height: 132px; }
-#forecast-chart-container .forecast-card-tide  { height: 132px; }
+#forecast-chart-container .forecast-card-wind  { height: 140px; min-height: 140px; }
+#forecast-chart-container .forecast-card-tide  { height: 140px; min-height: 140px; }
 #forecast-chart-container .forecast-card canvas {
   display: block;
   width: 100%;
@@ -1377,10 +1379,14 @@ a:hover { text-decoration: underline; }
     font-size: 0.95rem;
   }
 
-  /* Forecast chart: taller on mobile for less cramped feel */
+  /* Forecast chart: the stacked Swell/Wind/Tide cards set their own
+     explicit heights — let the container auto-size so all three panels
+     render fully on mobile. (Previously this rule clamped the container
+     to 260px and clipped wind + tide.) */
   #panel-forecast .chart-container {
-    overflow: hidden;
-    height: 260px;
+    overflow: visible;
+    height: auto;
+    min-height: 560px;
   }
 
   .forecast-nav-btn {
