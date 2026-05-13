@@ -129,11 +129,27 @@ a:hover { text-decoration: underline; }
 /* ── Header ───────────────────────────────────── */
 #app-header {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 16px var(--gap) 8px;
+  gap: 12px;
+  padding: 12px var(--gap) 8px;
   max-width: 900px;
   margin: 0 auto;
+}
+
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .site-title {
@@ -142,13 +158,13 @@ a:hover { text-decoration: underline; }
   font-weight: 500;
   letter-spacing: -0.02em;
   color: var(--ink);
+  margin: 0;
 }
 
 .header-location {
   font-family: var(--mono);
   font-size: 0.75rem;
   color: var(--ink3);
-  margin-left: 12px;
 }
 
 .header-meta {

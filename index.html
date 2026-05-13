@@ -39,33 +39,8 @@
     </div>
   </div>
 
-  <!-- Main app — wrapped in a Win95 IE-style window -->
-  <div id="app-window" class="w1-window hidden">
-    <!-- Decorative title bar -->
-    <div class="w1-titlebar" aria-hidden="true">
-      <span class="title">🌊 LetsCheckChoc — Microsoft Internet Explorer</span>
-      <span class="ctrls">
-        <button type="button" tabindex="-1" aria-label="minimize">_</button>
-        <button type="button" tabindex="-1" aria-label="maximize">□</button>
-        <button type="button" tabindex="-1" aria-label="close">×</button>
-      </span>
-    </div>
-    <!-- Decorative menu bar -->
-    <div class="w1-menubar" aria-hidden="true">
-      <span class="item"><u>F</u>ile</span>
-      <span class="item"><u>E</u>dit</span>
-      <span class="item"><u>V</u>iew</span>
-      <span class="item">F<u>a</u>vorites</span>
-      <span class="item"><u>T</u>ools</span>
-      <span class="item"><u>H</u>elp</span>
-    </div>
-    <!-- Address bar -->
-    <div class="w1-addrbar">
-      <span class="lbl">Address:</span>
-      <span class="url" id="w1-addr-url">http://www.letscheckchoc.com/index.html</span>
-      <button type="button" class="w1-btn go" tabindex="-1" aria-hidden="true">Go</button>
-    </div>
-
+  <!-- Main app -->
+  <div id="app-window" class="hidden">
     <div id="app">
     <header id="app-header">
       <div class="header-left">
@@ -564,13 +539,6 @@
       <span>LetsCheckChoc — data from <a href="https://www.ndbc.noaa.gov/" target="_blank" rel="noopener">ndbc</a>, <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, <a href="https://tidesandcurrents.noaa.gov/" target="_blank" rel="noopener">CO-OPS</a></span>
     </footer>
     </div><!-- end #app -->
-
-    <!-- Status bar -->
-    <div class="w1-statusbar" id="w1-statusbar" aria-hidden="true">
-      <span class="seg" id="w1-status-1">Done</span>
-      <span class="seg" id="w1-status-2">No buoy selected</span>
-      <span class="seg" id="w1-status-3">🔒 Internet</span>
-    </div>
   </div><!-- end #app-window -->
 
   <!-- Firebase SDK (compat) -->

@@ -955,7 +955,6 @@ function selectBuoy(buoy) {
 
   // Load all data
   loadAllData(buoy);
-  if (typeof updateW1StatusBar === 'function') updateW1StatusBar();
 }
 
 function selectPin(lat, lon) {
@@ -970,7 +969,6 @@ function selectPin(lat, lon) {
   syncBuoySelectDropdown();
   collapseBuoyMapForSelection(null, lat, lon);
   loadPinData(lat, lon);
-  if (typeof updateW1StatusBar === 'function') updateW1StatusBar();
 }
 
 async function selectTideStation(station) {
@@ -3786,7 +3784,6 @@ async function loadSurfLog() {
       STATE.surfLog = raw ? JSON.parse(raw) : [];
     } catch (e2) { STATE.surfLog = []; }
   }
-  if (typeof updateW1StatusBar === 'function') updateW1StatusBar();
 }
 
 function saveSurfLog() {
@@ -3794,7 +3791,6 @@ function saveSurfLog() {
     localStorage.setItem('lcc_surfLog', JSON.stringify(STATE.surfLog));
     updateStorageNote();
   } catch (e) { alert('Storage full — try removing photos or exporting.'); }
-  if (typeof updateW1StatusBar === 'function') updateW1StatusBar();
 }
 
 async function addLogEntry(entry) {
@@ -4040,12 +4036,6 @@ function switchTab(tab) {
   if (vF) vF.style.display = tab === 'forecast' ? '' : 'none';
   if (vR) vR.style.display = tab === 'regression' ? '' : 'none';
   if (vS) vS.style.display = tab === 'surflog' ? '' : 'none';
-  // Win95 chrome: update the decorative address bar to mirror the active tab.
-  const addr = el('w1-addr-url');
-  if (addr) {
-    const file = tab === 'regression' ? 'regression.html' : tab === 'surflog' ? 'log.html' : 'index.html';
-    addr.textContent = 'http://www.letscheckchoc.com/' + file;
-  }
   if (tab === 'regression') {
     renderRegressionTab();
   }
@@ -4054,26 +4044,6 @@ function switchTab(tab) {
     const authPrompt = el('sl-auth-prompt');
     if (authPrompt && window._fbUserIsAnon !== false) {
       authPrompt.style.display = '';
-    }
-  }
-  if (typeof updateW1StatusBar === 'function') updateW1StatusBar();
-}
-
-// Win95 status bar: mirrors session count + active buoy. Decorative.
-function updateW1StatusBar() {
-  const seg1 = document.getElementById('w1-status-1');
-  const seg2 = document.getElementById('w1-status-2');
-  if (seg1) {
-    const n = (STATE.surfLog && STATE.surfLog.length) || 0;
-    seg1.textContent = 'Done · ' + n + ' session' + (n === 1 ? '' : 's') + ' loaded';
-  }
-  if (seg2) {
-    if (STATE.selectedBuoy) {
-      seg2.textContent = 'Buoy ' + STATE.selectedBuoy.id;
-    } else if (STATE.pinLat != null && STATE.pinLon != null) {
-      seg2.textContent = 'Pin ' + STATE.pinLat.toFixed(2) + '°N, ' + STATE.pinLon.toFixed(2) + '°W';
-    } else {
-      seg2.textContent = 'No buoy selected';
     }
   }
 }
