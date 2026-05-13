@@ -233,6 +233,40 @@ function setFooter(id, text, url, urlLabel) {
   }
 }
 
+// ── Per-panel attribution disclosure ─────────────
+//
+// Source / coordinate / station-id strings are useful for debugging but
+// visually heavy in normal use. Each `.panel-footer` is hidden by
+// default; a small ⓘ button in the panel's top-right corner toggles
+// visibility for every footer inside that panel/card.
+function initPanelAttributionToggles() {
+  const footers = document.querySelectorAll('.panel-footer');
+  const parents = new Set();
+  footers.forEach(f => {
+    f.classList.add('is-attr-collapsed');
+    const parent = f.closest('.panel, .condition-card');
+    if (parent) parents.add(parent);
+  });
+  parents.forEach(parent => {
+    if (parent.querySelector(':scope > .panel-attr-toggle')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'panel-attr-toggle';
+    btn.setAttribute('aria-label', 'Show data source');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.title = 'Sources';
+    btn.textContent = 'ⓘ';
+    btn.addEventListener('click', () => {
+      const expanded = parent.classList.toggle('attr-open');
+      btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      parent.querySelectorAll(':scope > .panel-footer').forEach(f => {
+        f.classList.toggle('is-attr-collapsed', !expanded);
+      });
+    });
+    parent.appendChild(btn);
+  });
+}
+
 // ── Daylight calculator (solar position) ─────────
 function calcDaylight(lat, lon, date) {
   const d = new Date(date);
@@ -7938,6 +7972,9 @@ async function initApp() {
   // non-Choc selections via applyChocOnlyVisibility).
   initForecastCoordsToggle();
   initForecastModelDropdown();
+
+  // Collapse attribution footers behind a ⓘ toggle on each panel/card.
+  initPanelAttributionToggles();
 
   // Populate the buoy <select> dropdown that mirrors the map for keyboard /
   // accessibility users.

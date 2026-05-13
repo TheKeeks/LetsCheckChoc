@@ -185,12 +185,44 @@ a:hover { text-decoration: underline; }
   background: var(--bg-alt);
 }
 
+.panel-footer.is-attr-collapsed { display: none; }
+
 .panel-footer a {
   color: var(--ink3);
 }
 
 .panel-footer a:hover {
   color: var(--ink2);
+}
+
+/* Small ⓘ toggle injected into every panel / condition-card that has a
+   panel-footer. Click to reveal/hide attribution + coord strings. */
+.panel, .condition-card { position: relative; }
+.panel-attr-toggle {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 4;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border, #c8c2b8);
+  border-radius: 50%;
+  background: var(--bg-alt, #f5f2ee);
+  color: var(--ink3, #5a5450);
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+.panel-attr-toggle:hover { color: var(--ink2, #2a2825); }
+.panel.attr-open > .panel-attr-toggle,
+.condition-card.attr-open > .panel-attr-toggle {
+  background: var(--ink2, #5a5550);
+  color: #fff;
+  border-color: var(--ink2, #5a5550);
 }
 
 /* ── Widget help (collapsible glossary) ───────── */
