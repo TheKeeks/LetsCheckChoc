@@ -2778,8 +2778,11 @@ function applyScrubberToHour(idx) {
     drawLineupMap(fd.marine, fd.wind, null, idx);
   }
 
-  // ── Cross-feature: stat grid (with +Xh / -Xh badge) ──
-  applyStatGridForHour(idx);
+  // Stat grid cards (Swell/Wind/Tide/Temp/Daylight) intentionally do
+  // NOT follow the scrubber — they are a real-time "what's it doing
+  // right now" snapshot. The chart is the time-travel surface. Strip
+  // any leftover scrub badge so old state can't leak in.
+  document.querySelectorAll('.scrub-badge').forEach(b => b.remove());
 
   // ── "Reset to now" link visibility (lives inside the detail bar) ──
   const resetBtn = el('forecast-reset-now');
@@ -2787,96 +2790,6 @@ function applyScrubberToHour(idx) {
 
   // ── Cross-feature: Tab 2 prediction widget tracks the scrubber too. ──
   if (typeof _regNotifyScrubberMoved === 'function') _regNotifyScrubberMoved();
-}
-
-function applyStatGridForHour(idx) {
-  const cs = STATE.forecastChart;
-  if (!cs) return;
-  const fd = STATE.forecastData;
-  if (!fd || !fd.marine || !fd.marine.hourly) return;
-  const t = cs.times[idx];
-  const offsetH = Math.round((t.getTime() - Date.now()) / 3600000);
-  const isNow = offsetH === 0;
-  const badgeText = isNow ? '' : (offsetH > 0 ? `+${offsetH}h` : `${offsetH}h`);
-
-  const setBadge = (cardId, text) => {
-    const card = el(cardId);
-    if (!card) return;
-    let b = card.querySelector('.scrub-badge');
-    if (!text) {
-      if (b) b.remove();
-      return;
-    }
-    if (!b) {
-      b = document.createElement('span');
-      b.className = 'scrub-badge';
-      const labelEl = card.querySelector('.condition-label');
-      if (labelEl) labelEl.appendChild(b);
-    }
-    b.textContent = text;
-  };
-
-  if (isNow) {
-    // Restore the cards to their "live" rendering. Re-call the regular
-    // updaters from cached data so any scrub overrides clear cleanly.
-    const buoy = STATE.selectedBuoy;
-    const isChoc = STATE.isChocomount;
-    if (fd.marine && fd.wind) {
-      // Note: we don't have buoyParsed cached so we pass null for it; this
-      // momentarily blanks the swell/wind cards' buoy-derived secondary
-      // lines, but the next data refresh restores them. Acceptable trade-off.
-      updateSwellCard(STATE._cachedBuoyParsed || null, fd.marine, buoy, null);
-      updateWindCard(fd.wind, STATE._cachedBuoyParsed || null, isChoc, STATE.pinLat, STATE.pinLon);
-    }
-    setBadge('card-swell', '');
-    setBadge('card-secondary-swell', '');
-    setBadge('card-wind', '');
-    setBadge('card-tide', '');
-    setBadge('card-temp', '');
-    setBadge('card-daylight', '');
-    return;
-  }
-
-  // Override card values from forecast hourly data at idx.
-  const mh = fd.marine.hourly;
-  const wh = fd.wind && fd.wind.hourly ? fd.wind.hourly : null;
-
-  // Swell
-  const swellHt = mh.swell_wave_height ? mh.swell_wave_height[idx] : null;
-  const swellPer = mh.swell_wave_period ? mh.swell_wave_period[idx] : null;
-  const swellDir = mh.swell_wave_direction ? mh.swell_wave_direction[idx] : null;
-  if (swellHt != null) {
-    el('val-swell-height').textContent = `${swellHt.toFixed(1)} ft`;
-    el('val-swell-detail').textContent = `${swellPer != null ? swellPer.toFixed(0) + 's' : '—'} ${swellDir != null ? directionLabel(swellDir) : ''}`.trim();
-  }
-  setBadge('card-swell', badgeText);
-
-  // Secondary swell
-  const secHt = mh.secondary_swell_wave_height ? mh.secondary_swell_wave_height[idx] : null;
-  const secPer = mh.secondary_swell_wave_period ? mh.secondary_swell_wave_period[idx] : null;
-  const secDir = mh.secondary_swell_wave_direction ? mh.secondary_swell_wave_direction[idx] : null;
-  if (secHt != null) {
-    el('val-sec-swell-height').textContent = `${secHt.toFixed(1)} ft`;
-    el('val-sec-swell-detail').textContent = `${secPer != null ? secPer.toFixed(0) + 's' : '—'} ${secDir != null ? directionLabel(secDir) : ''}`.trim();
-    setBadge('card-secondary-swell', badgeText);
-  }
-
-  // Wind
-  if (wh) {
-    const ws = wh.wind_speed_10m ? wh.wind_speed_10m[idx] : null;
-    const wd = wh.wind_direction_10m ? wh.wind_direction_10m[idx] : null;
-    const wg = wh.wind_gusts_10m ? wh.wind_gusts_10m[idx] : null;
-    if (ws != null) {
-      el('val-wind-speed').textContent = `${Math.round(ws)} mph`;
-      const detail = `${wd != null ? directionLabel(wd) : ''}${wg != null ? ' · g ' + Math.round(wg) : ''}`;
-      el('val-wind-detail').textContent = detail.trim() || '—';
-    }
-    setBadge('card-wind', badgeText);
-  }
-
-  // Tide / temp / daylight: leave as "now" — the scrubber doesn't change
-  // these intuitively (tide is its own panel, temp varies slowly, daylight
-  // is per-day). No badge, no override.
 }
 
 function setupForecastInteraction(container) {
