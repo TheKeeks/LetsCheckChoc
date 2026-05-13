@@ -248,7 +248,7 @@ function initPanelAttributionToggles() {
     if (parent) parents.add(parent);
   });
   parents.forEach(parent => {
-    if (parent.querySelector(':scope > .panel-attr-toggle')) return;
+    if (parent.querySelector('.panel-attr-toggle')) return;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'panel-attr-toggle';
@@ -263,7 +263,17 @@ function initPanelAttributionToggles() {
         f.classList.toggle('is-attr-collapsed', !expanded);
       });
     });
-    parent.appendChild(btn);
+    // Panels with a custom header toolbar (e.g. forecast model dropdown)
+    // get the toggle injected inline so it doesn't overlay the existing
+    // right-aligned controls. Everything else uses the default
+    // absolute-positioned top-right slot.
+    const toolbar = parent.querySelector('.forecast-toolbar');
+    if (toolbar) {
+      btn.classList.add('panel-attr-toggle-inline');
+      toolbar.appendChild(btn);
+    } else {
+      parent.appendChild(btn);
+    }
   });
 }
 

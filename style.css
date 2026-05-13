@@ -218,6 +218,9 @@ a:hover { text-decoration: underline; }
   user-select: none;
 }
 .panel-attr-toggle:hover { color: var(--ink2, #2a2825); }
+.panel-attr-toggle.panel-attr-toggle-inline {
+  position: static;
+}
 .panel.attr-open > .panel-attr-toggle,
 .condition-card.attr-open > .panel-attr-toggle {
   background: var(--ink2, #5a5550);
@@ -226,42 +229,69 @@ a:hover { text-decoration: underline; }
 }
 
 /* ── Widget help (collapsible glossary) ───────── */
+/* Lifted out of normal flow into a top-right "?" popover icon so the
+   prose only appears when explicitly requested. Sits next to the
+   .panel-attr-toggle (which lives at right: 8px); this icon sits at
+   right: 32px so the two are side-by-side. */
 .widget-help {
+  position: absolute;
+  top: 6px;
+  right: 32px;
+  z-index: 4;
   margin: 0;
-  padding: 2px 14px 8px;
+  padding: 0;
   font-family: var(--mono);
   font-size: 0.68rem;
 }
 
 .widget-help > summary {
-  color: var(--ink4);
-  cursor: pointer;
-  list-style: none;
-  padding: 4px 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border, #c8c2b8);
+  border-radius: 50%;
+  background: var(--bg-alt, #f5f2ee);
+  color: var(--ink3, #5a5450);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
   user-select: none;
-  letter-spacing: 0.01em;
+  list-style: none;
+  letter-spacing: 0;
 }
 
 .widget-help > summary::-webkit-details-marker { display: none; }
+.widget-help > summary::before { content: "?"; }
 
-.widget-help > summary::before {
-  content: "▶";
-  display: inline-block;
-  font-size: 0.55rem;
-  margin-right: 6px;
-  transition: transform 0.15s ease;
+.widget-help[open] > summary {
+  background: var(--ink2, #5a5550);
+  color: #fff;
+  border-color: var(--ink2, #5a5550);
 }
-
-.widget-help[open] > summary::before { transform: rotate(90deg); }
 
 .widget-help > p,
 .widget-help > ul {
-  margin: 4px 0 2px;
-  color: var(--ink3);
-  line-height: 1.5;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: min(280px, calc(100vw - 32px));
+  margin: 0;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid var(--border, #c8c2b8);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  color: var(--ink3, #5a5450);
+  font-size: 0.7rem;
+  line-height: 1.45;
 }
 
-.widget-help ul { padding-left: 14px; }
+.widget-help > ul { padding-left: 24px; }
 .widget-help li { margin-bottom: 2px; }
 
 /* ── Map containers ───────────────────────────── */
