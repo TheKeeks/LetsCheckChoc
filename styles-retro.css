@@ -438,6 +438,68 @@ body[data-era="web1"] #forecast-chart-container .forecast-day-label {
   text-transform: none;
 }
 
+/* ── Status line (forecast detail bar) — sunken white inset ──────── */
+body[data-era="web1"] .forecast-detail-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #FFFFFF;
+  color: #000000;
+  border: 2px solid;
+  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  box-shadow: none;
+  padding: 3px 8px;
+  margin: 4px 8px 4px 8px;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 12px;
+  border-radius: 0;
+  min-height: 22px;
+}
+body[data-era="web1"] .forecast-detail-bar .detail-row {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+body[data-era="web1"] .forecast-detail-bar .detail-time {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 12px;
+  font-weight: bold;
+  color: #000000;
+}
+body[data-era="web1"] .forecast-detail-bar .detail-item {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 12px;
+  color: #000000;
+}
+body[data-era="web1"] .forecast-detail-bar .detail-val {
+  color: #000000;
+  font-weight: normal;
+}
+body[data-era="web1"] .forecast-detail-bar .detail-tide {
+  color: #000000;
+  font-weight: bold;
+}
+
+/* "Reset to now" — 11px sans, blue link, underlined. */
+body[data-era="web1"] .forecast-reset-btn {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: #0000EE;
+  text-decoration: underline;
+  cursor: pointer;
+  border-radius: 0;
+  flex-shrink: 0;
+}
+body[data-era="web1"] .forecast-reset-btn:hover { color: #551A8B; }
+
 /* No drop shadows anywhere on the Forecast tab content. */
 body[data-era="web1"] #view-forecast .panel,
 body[data-era="web1"] #view-forecast .panel-half,
