@@ -1270,4 +1270,17 @@ body[data-era="web1"] {
   [data-era="web1"] .site-title {
     font-size: 18px;
   }
+
+  /* Buoy selector: full available row width so the long "Choc · 44097 —
+     Block Island, RI" labels are not truncated mid-word. */
+  [data-era="web1"] .header-buoy-selector {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  [data-era="web1"] #buoy-select {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+  }
 }
