@@ -1604,17 +1604,18 @@ function highlightNearestTideStation(lat, lon) {
 // Three independent <canvas> elements, each inside its own card:
 //
 //   ┌─ #forecast-chart-container ─────────────────────────┐
+//   │  ┌─ day row ── HTML #forecast-day-header ────────┐  │
 //   │  ┌─ swell card ─ canvas#forecast-canvas-swell  ──┐  │
 //   │  ┌─ wind  card ─ canvas#forecast-canvas-wind  ──┐  │
 //   │  ┌─ tide  card ─ canvas#forecast-canvas-tide  ──┐  │
-//   │  ┌─ day  row ── canvas#forecast-canvas-days  ──┐  │
 //   └──────────────────────────────────────────────────────┘
 //
 // Coordination: a single `_drawForecastChartFull` cycle calls into
-// drawSwellPanel → drawWindPanel → drawTidePanel → drawDayLabels in
-// sequence. Every canvas uses the same horizontal
-// padding (FC_PAD.left/right) so the per-canvas xPos is identical;
-// day separators / nighttime shading land at the same x on every card.
+// drawSwellPanel → drawWindPanel → drawTidePanel → renderDayLabels in
+// sequence. Every canvas (and the HTML day row) uses the same
+// horizontal padding (FC_PAD.left/right) so the per-canvas xPos
+// matches the HTML label positions; day separators / nighttime shading
+// land at the same x on every card and below each day header label.
 // Visual reference: project/Swell Forecast.html (React prototype).
 
 const FORECAST_HOURS = 168; // 7 × 24
@@ -1622,6 +1623,15 @@ const FORECAST_HOURS = 168; // 7 × 24
 // Canvas-internal padding (CSS px). Identical on every panel canvas so
 // the time-axis (xPos) matches across all three cards.
 const FC_PAD = { left: 36, right: 40 };
+
+// Web1-era font stacks for all chart-rendered text on the forecast tab.
+// Primary chart labels (numbers, axes, compass cardinals, inline tide
+// markers) use the same Tahoma-family sans-serif as the surrounding IE
+// chrome so canvas text reads as text rather than a rasterized image.
+// Monospace numeric readouts use Courier New, matching the address-bar
+// and detail-bar field fonts.
+const FC_CHART_FONT = 'Tahoma, "MS Sans Serif", Arial, sans-serif';
+const FC_CHART_FONT_MONO = '"Courier New", Courier, monospace';
 
 function drawForecastChart(marine, wind, daylight, tideHiLo, tidePred) {
   // Cache so the scrubber and external reflows can re-render without re-fetching.
@@ -1837,8 +1847,8 @@ function drawSwellPanel(common, data) {
   ctx.restore();
 
   // Y-axis numeric labels
-  const axisFont = isMobile ? '9px' : '10px';
-  ctx.font = `${axisFont} "DM Mono", monospace`;
+  const axisFont = isMobile ? '10px' : '11px';
+  ctx.font = `${axisFont} ${FC_CHART_FONT}`;
   ctx.fillStyle = '#3a5570';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
@@ -1851,7 +1861,7 @@ function drawSwellPanel(common, data) {
     ctx.fillText(`${v}`, plotLeft + plotW + 4, yPeriod(v));
   }
   // Unit labels in top corners (extra 4px padding off the y-axis numbers).
-  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+  ctx.font = `bold ${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   ctx.fillStyle = '#3a5570';
@@ -1947,7 +1957,7 @@ function drawSwellPanel(common, data) {
     { deg: 180, label: 'S'   }, { deg: 225, label: 'SW'  },
     { deg: 270, label: 'W'   }, { deg: 315, label: 'NW'  }
   ];
-  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+  ctx.font = `${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
   ctx.fillStyle = '#888';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
@@ -1958,7 +1968,7 @@ function drawSwellPanel(common, data) {
 
   // "FROM" label clarifies the y-axis represents the direction the
   // swell is COMING FROM (oceanographic convention).
-  ctx.font = `${isMobile ? '7px' : '8px'} "DM Mono", monospace`;
+  ctx.font = `bold ${isMobile ? '8px' : '9px'} ${FC_CHART_FONT}`;
   ctx.fillStyle = '#888';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
@@ -2095,15 +2105,15 @@ function drawWindPanel(common, data) {
   }
   ctx.restore();
 
-  const axisFont = isMobile ? '9px' : '10px';
-  ctx.font = `${axisFont} "DM Mono", monospace`;
+  const axisFont = isMobile ? '10px' : '11px';
+  ctx.font = `${axisFont} ${FC_CHART_FONT}`;
   ctx.fillStyle = '#5a5550';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   for (let v = 0; v <= windMaxY; v += 5) {
     ctx.fillText(`${v}`, plotLeft - 4, yWind(v));
   }
-  ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+  ctx.font = `bold ${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   ctx.fillText('mph', plotLeft + 2, top + 2);
@@ -2215,7 +2225,7 @@ function drawTidePanel(common, data) {
 
     // Second pass: labeled lows (the next two after nowMs).
     // Estimate label width once so we can collision-check.
-    ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+    ctx.font = `${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
     const labelWidth = ctx.measureText('12:00pm').width + 8;
     const labeled = lowsAfterNow.slice(0, 2).map(lo => ({
       ...lo,
@@ -2252,7 +2262,7 @@ function drawTidePanel(common, data) {
         if (Math.abs(xx - prev.xx) < labelWidth) pushDown = true;
       }
 
-      ctx.font = `${isMobile ? '8px' : '9px'} "DM Mono", monospace`;
+      ctx.font = `${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
       ctx.fillStyle = '#3a7d7d';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
@@ -2335,24 +2345,22 @@ function drawTidePanel(common, data) {
   return { canvas, cssW, cssH, plotLeft, plotW, top, h, tideMin, tideMax };
 }
 
-function drawDayLabels(common) {
-  const canvas = el('forecast-canvas-days');
-  if (!canvas) return null;
-  const cssW = canvas.clientWidth || canvas.parentElement.clientWidth;
-  const cssH = canvas.clientHeight || canvas.parentElement.clientHeight;
-  const ctx = canvas.getContext('2d');
-  setCanvasDPR(canvas, ctx, cssW, cssH);
-
-  const isMobile = common.isMobile;
+// Day labels are native HTML — positioned above the chart cards as a
+// header strip, x-aligned to the canvas plot area via the same FC_PAD
+// padding the chart canvases use. Rendered as bold text in the web1
+// sans family so they read as crisp window-bar labels rather than
+// rasterized canvas text.
+function renderDayLabels(common) {
+  const host = el('forecast-day-header');
+  if (!host) return;
+  host.replaceChildren();
+  const W = host.clientWidth;
+  if (W <= 0) return;
   const plotLeft = FC_PAD.left;
-  const plotW    = cssW - FC_PAD.left - FC_PAD.right;
-  ctx.clearRect(0, 0, cssW, cssH);
+  const plotW    = W - FC_PAD.left - FC_PAD.right;
+  if (plotW <= 0) return;
 
   const todayLocal = new Date(); todayLocal.setHours(0, 0, 0, 0);
-  ctx.fillStyle = '#3a352f';
-  ctx.font = `600 ${isMobile ? '11px' : '13px'} "DM Mono", monospace`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
   for (let dayOff = 0; dayOff < common.dayCount; dayOff++) {
     const dayStart = new Date(common.firstDay);
     dayStart.setDate(dayStart.getDate() + dayOff);
@@ -2367,7 +2375,11 @@ function drawDayLabels(common) {
     if (dayDelta === 0)      label = 'Today';
     else if (dayDelta === 1) label = 'Tomorrow';
     else label = `${dayStart.toLocaleDateString('en-US',{weekday:'short'})} ${dayStart.getMonth()+1}/${dayStart.getDate()}`;
-    ctx.fillText(label, xx, cssH / 2);
+    const span = document.createElement('span');
+    span.className = 'forecast-day-label';
+    span.textContent = label;
+    span.style.left = xx + 'px';
+    host.appendChild(span);
   }
 }
 
@@ -2398,7 +2410,7 @@ function drawCompassDial(scrubberIdx) {
 
   // Cardinal letters.
   ctx.fillStyle = '#666';
-  ctx.font = '600 10px "DM Mono", monospace';
+  ctx.font = `bold 10px ${FC_CHART_FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('N', cx,         cy - r + 7);
@@ -2524,7 +2536,7 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   const swellInfo = drawSwellPanel(common, swellPayload);
   drawWindPanel(common, windPayload);
   const tideInfo = drawTidePanel(common, tidePayload);
-  drawDayLabels(common);
+  renderDayLabels(common);
 
   // Cache so the scrubber can re-render dots without recomputing axes.
   STATE._forecastPanelPayloads = { common, swellPayload, windPayload, tidePayload };
@@ -3076,7 +3088,7 @@ function drawTideChart(predictions) {
     ctx.lineTo(pad.left + plotW, yy);
     ctx.stroke();
     ctx.fillStyle = '#8a827a';
-    ctx.font = '9px "DM Mono", monospace';
+    ctx.font = `10px ${FC_CHART_FONT}`;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     ctx.fillText(`${v}`, pad.left - 4, yy);
@@ -3116,7 +3128,7 @@ function drawTideChart(predictions) {
 
   // X-axis day labels
   ctx.fillStyle = '#8a827a';
-  ctx.font = '9px "DM Mono", monospace';
+  ctx.font = `bold 10px ${FC_CHART_FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   for (let dayOff = 0; dayOff < 4; dayOff++) {
@@ -3356,7 +3368,7 @@ function drawCompassRose(spectral, buoyParsed) {
 
   // Cardinal labels
   ctx.fillStyle = '#8a827a';
-  ctx.font = (compact ? '9px' : '10px') + ' "DM Mono", monospace';
+  ctx.font = `bold ${compact ? '10px' : '11px'} ${FC_CHART_FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('N', cx, cy - r - padLabel);
@@ -3388,7 +3400,7 @@ function drawCompassRose(spectral, buoyParsed) {
     ctx.fill();
     ctx.globalAlpha = 1;
     // Swell window degree labels
-    ctx.font = '8px "DM Mono", monospace';
+    ctx.font = `9px ${FC_CHART_FONT}`;
     ctx.fillStyle = '#3a7d56';
     ctx.globalAlpha = 0.6;
     [min, max].forEach(deg => {
@@ -3403,7 +3415,7 @@ function drawCompassRose(spectral, buoyParsed) {
     const midDeg = (min + max) / 2;
     const midRad = degToRad(midDeg - 90);
     const labelR = r * 0.55;
-    ctx.font = '7px "DM Mono", monospace';
+    ctx.font = `italic 9px ${FC_CHART_FONT}`;
     ctx.fillStyle = '#3a7d56';
     ctx.globalAlpha = 0.5;
     ctx.fillText('swell window', cx + Math.cos(midRad) * labelR, cy + Math.sin(midRad) * labelR);
@@ -3479,12 +3491,12 @@ function drawCompassRose(spectral, buoyParsed) {
     if (m0 > 0) hsVal = (4 * Math.sqrt(m0) * 3.28084).toFixed(1);
   }
   if (hsVal) {
-    ctx.font = 'bold 14px "DM Mono", monospace';
+    ctx.font = `bold 14px ${FC_CHART_FONT_MONO}`;
     ctx.fillStyle = '#2c2825';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(`${hsVal} ft`, cx, cy);
-    ctx.font = '8px "DM Mono", monospace';
+    ctx.font = `9px ${FC_CHART_FONT}`;
     ctx.fillStyle = '#8a827a';
     ctx.fillText('Hs', cx, cy + 14);
   }
@@ -3520,7 +3532,7 @@ function drawSpectrum(spectral) {
 
   // Y-axis grid lines first (behind the fill)
   ctx.fillStyle = '#8a827a';
-  ctx.font = '9px "DM Mono", monospace';
+  ctx.font = `10px ${FC_CHART_FONT}`;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   const eStep = maxE > 10 ? Math.ceil(maxE / 5) : maxE > 1 ? 1 : 0.5;
@@ -3578,7 +3590,7 @@ function drawSpectrum(spectral) {
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
     // Peak label
-    ctx.font = '8px "DM Mono", monospace';
+    ctx.font = `bold 9px ${FC_CHART_FONT}`;
     ctx.fillStyle = '#2c2825';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
@@ -3588,7 +3600,7 @@ function drawSpectrum(spectral) {
 
   // X-axis: period labels (thin out on narrow screens to avoid overlap)
   ctx.fillStyle = '#8a827a';
-  ctx.font = '9px "DM Mono", monospace';
+  ctx.font = `10px ${FC_CHART_FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   const labelPeriods = W < 360
@@ -3610,7 +3622,7 @@ function drawSpectrum(spectral) {
   ctx.save();
   ctx.translate(10, pad.top + plotH / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.font = '8px "DM Mono", monospace';
+  ctx.font = `9px ${FC_CHART_FONT}`;
   ctx.fillStyle = '#8a827a';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -3638,7 +3650,6 @@ function drawSpectrum(spectral) {
         invalidateCanvasDPR(el('forecast-canvas-swell'));
         invalidateCanvasDPR(el('forecast-canvas-wind'));
         invalidateCanvasDPR(el('forecast-canvas-tide'));
-        invalidateCanvasDPR(el('forecast-canvas-days'));
         const d = STATE.forecastData;
         drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo, d.tidePred);
       }

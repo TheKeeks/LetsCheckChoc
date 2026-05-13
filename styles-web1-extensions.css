@@ -995,7 +995,6 @@ body[data-era="web1"] {
 [data-era="web1"] #forecast-canvas-swell,
 [data-era="web1"] #forecast-canvas-wind,
 [data-era="web1"] #forecast-canvas-tide,
-[data-era="web1"] #forecast-canvas-days,
 [data-era="web1"] #compass-canvas,
 [data-era="web1"] #spectrum-canvas,
 [data-era="web1"] #tide-canvas {
@@ -1108,12 +1107,21 @@ body[data-era="web1"] {
   box-shadow: none;
 }
 
-/* Day-label band canvas — keep it on the gray panel surface (not
-   inset white) so the day text reads as a label strip, not a chart. */
-[data-era="web1"] #forecast-chart-container #forecast-canvas-days {
-  background: var(--w1-face);
+/* Day-label header strip — native HTML positioned above the cards.
+   Sits flat on the gray surface (no bevel) so the bolded day text
+   reads as a window-bar label, not a chart. */
+[data-era="web1"] #forecast-chart-container .forecast-day-row {
+  background: transparent;
   border: none;
   box-shadow: none;
+}
+[data-era="web1"] #forecast-chart-container .forecast-day-label {
+  font-family: var(--w1-sans);
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--w1-ink);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 /* Lineup map image wrapper — already a sunken bevel via .lineup-frame
@@ -1160,19 +1168,43 @@ body[data-era="web1"] {
   box-sizing: border-box;
 }
 
-/* ── FIX 3 — horizontal section labels styled like panel-title ──── */
+/* ── FIX 3 — horizontal section labels styled like Win95 title bars ── */
 
-/* Swell / Wind / Tide labels: top-left of each card, serif navy bold
-   to match the existing panel-title hierarchy. */
+/* Swell / Wind / Tide labels: a thin title-bar strip across the top of
+   each card. Same raised-bevel treatment as the main IE window's title
+   bar, but smaller and gray (not blue) so it reads as a sub-window
+   header rather than the active foreground window. Sits inside the
+   card's 20px top padding so the canvas geometry below stays
+   unchanged. */
 [data-era="web1"] #forecast-chart-container .forecast-section-label {
-  background: transparent;
-  color: var(--w1-navy);
-  font-family: var(--w1-serif);
-  font-size: 13px;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  right: 2px;
+  height: 16px;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  background: var(--w1-face);
+  border: 1px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  color: var(--w1-ink);
+  font-family: var(--w1-sans);
+  font-size: 11px;
   font-weight: bold;
   font-variant: normal;
   letter-spacing: 0;
   text-transform: none;
+  line-height: 14px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* The swell card's compass dial sits in the card's top-right; nudge it
+   down so the title-bar strip clears it. */
+[data-era="web1"] #forecast-chart-container .forecast-card-swell #forecast-compass {
+  top: 24px;
 }
 
 /* ════════════════════════════════════════════════════════════════════
