@@ -234,44 +234,101 @@ a:hover { text-decoration: underline; }
   color: var(--ink, #1a1a2e);
 }
 
-/* ── Widget help (collapsible glossary) ───────── */
+/* ── Widget help (collapsible glossary) ─────────
+   The summary becomes a small "?" badge in the panel header (top-right,
+   to the left of the .panel-info-toggle ⓘ badge). The descriptive
+   <p>/<ul> content drops down as a popover when the disclosure opens. */
 .widget-help {
   margin: 0;
-  padding: 2px 14px 8px;
-  font-family: var(--mono);
-  font-size: 0.68rem;
+  padding: 0;
+  background: transparent;
+  border: none;
 }
 
 .widget-help > summary {
-  color: var(--ink4);
-  cursor: pointer;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border, #c8c2b8);
+  border-radius: 50%;
+  background: var(--bg-alt, #f5f2ee);
+  color: var(--ink2, #5a5550);
+  font: 700 11px/1 var(--mono, monospace);
+  cursor: help;
   list-style: none;
-  padding: 4px 0;
   user-select: none;
-  letter-spacing: 0.01em;
+  /* Hide the "What is this?" text; the ::before content replaces it. */
+  text-indent: -9999px;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .widget-help > summary::-webkit-details-marker { display: none; }
 
 .widget-help > summary::before {
-  content: "▶";
-  display: inline-block;
-  font-size: 0.55rem;
-  margin-right: 6px;
-  transition: transform 0.15s ease;
+  content: "?";
+  position: absolute;
+  inset: 0;
+  text-indent: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  transform: none;
+  transition: none;
+  font: 700 11px/1 var(--mono, monospace);
 }
 
-.widget-help[open] > summary::before { transform: rotate(90deg); }
+.widget-help[open] > summary {
+  background: var(--ink2, #5a5550);
+  color: #fff;
+  border-color: var(--ink2, #5a5550);
+}
+.widget-help[open] > summary::before {
+  color: #fff;
+}
 
 .widget-help > p,
 .widget-help > ul {
-  margin: 4px 0 2px;
-  color: var(--ink3);
-  line-height: 1.5;
+  position: absolute;
+  top: 32px;
+  right: 6px;
+  z-index: 10;
+  margin: 0;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid var(--border, #c8c2b8);
+  border-radius: 4px;
+  width: min(300px, calc(100vw - 32px));
+  font-family: var(--mono, monospace);
+  font-size: 0.72rem;
+  color: var(--ink3, #5a5450);
+  line-height: 1.45;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
 }
 
-.widget-help ul { padding-left: 14px; }
+.widget-help ul { padding-left: 28px; }
 .widget-help li { margin-bottom: 2px; }
+
+/* When a panel hosts both the ⓘ source toggle and the ? help disclosure,
+   shift the help "?" left so the two badges sit side-by-side. */
+.panel:has(> .panel-info-toggle) > .widget-help > summary,
+.panel-half:has(> .panel-info-toggle) > .widget-help > summary {
+  right: 28px;
+}
+
+/* Allow the help popover to escape the panel's overflow:hidden clip. */
+.panel:has(> .widget-help[open]),
+.panel-half:has(> .widget-help[open]) {
+  overflow: visible;
+}
 
 /* ── Map containers ───────────────────────────── */
 .map-container {

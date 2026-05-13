@@ -168,45 +168,62 @@ body[data-era="web1"] {
   padding-top: 4px;
 }
 
-/* Help <details> styled like a Win95 tooltip / fieldset note */
+/* Help <details>: in the polish pass the summary is repositioned to a
+   "?" badge in the top-right of the panel header (alongside the ⓘ
+   source toggle). The open-state body floats as a popover. */
 [data-era="web1"] .widget-help {
-  background: #ffffe1;
-  border: 1px solid #808080;
-  padding: 4px 8px;
-  margin: 6px 0;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
   font-family: var(--w1-sans);
-  font-size: 11px;
   color: var(--w1-ink);
   border-radius: 0;
 }
 [data-era="web1"] .widget-help > summary {
-  cursor: pointer;
-  color: var(--w1-link);
-  text-decoration: underline;
+  background: var(--w1-face);
+  color: var(--w1-navy);
+  border: 1px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #dfdfdf;
+  border-radius: 0;
+  text-decoration: none;
   font-family: var(--w1-sans);
-  font-size: 11px;
-  padding: 0;
+  font-weight: bold;
 }
-/* Disclosure caret: ▶ when collapsed, ▼ when open (no rotate). */
+[data-era="web1"] .widget-help[open] > summary {
+  border-color: #404040 #ffffff #ffffff #404040;
+  box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
+  background: var(--w1-face);
+  color: var(--w1-navy);
+}
 [data-era="web1"] .widget-help > summary::before {
-  content: "▶";
-  display: inline-block;
-  font-size: 9px;
-  margin-right: 6px;
+  content: "?";
+  color: var(--w1-navy);
+  font-family: var(--w1-sans);
+  font-weight: bold;
+  text-indent: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transform: none;
   transition: none;
-  color: var(--w1-ink);
 }
 [data-era="web1"] .widget-help[open] > summary::before {
-  content: "▼";
+  content: "?";
+  color: var(--w1-navy);
   transform: none;
 }
 [data-era="web1"] .widget-help > p,
 [data-era="web1"] .widget-help > ul {
+  background: #ffffe1;
+  border: 1px solid #808080;
   font-family: var(--w1-sans);
   font-size: 11px;
   color: var(--w1-ink);
   line-height: 1.4;
+  border-radius: 0;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.25);
 }
 
 /* ── FIX 6 — final scrub of remaining 2020s card styling ────────── */
