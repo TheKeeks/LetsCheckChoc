@@ -759,6 +759,82 @@ body[data-era="web1"] .condition-card .condition-extra {
   }
 }
 
+/* ── Lineup card chrome ──────────────────────────────────────────── */
+
+body[data-era="web1"] #panel-lineup .lineup-frame {
+  border: 2px solid;
+  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  box-shadow:
+    inset 1px 1px 0 0 #808080,
+    inset -1px -1px 0 0 #C0C0C0;
+  margin: 6px 8px;
+  background: #000000;
+  border-radius: 0;
+  position: relative;
+}
+
+body[data-era="web1"] #panel-lineup .lineup-caption {
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  color: #FFFFFF;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 4px 8px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ── Mobile audit (≤640px) ───────────────────────────────────────── */
+@media (max-width: 640px) {
+  /* Title bar stays full-size on mobile per spec. */
+  body[data-era="web1"] #win95-titlebar {
+    height: 22px;
+  }
+  body[data-era="web1"] .win95-tb-btn {
+    width: 22px;
+    height: 20px;
+  }
+  body[data-era="web1"] .win95-titlebar-text {
+    font-size: 11px;
+  }
+
+  /* Body padding stays at 0 — cards reach edge. */
+  body[data-era="web1"] {
+    padding: 0;
+  }
+
+  /* Outer window: no margin/padding so cards fill viewport. */
+  body[data-era="web1"] #app-window {
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+  body[data-era="web1"] #app {
+    padding: 4px;
+  }
+  body[data-era="web1"] #view-forecast,
+  body[data-era="web1"] #view-regression,
+  body[data-era="web1"] #view-surflog {
+    padding: 4px;
+  }
+
+  /* Cards & spectral row stack. */
+  body[data-era="web1"] #panel-spectral-row {
+    flex-direction: column;
+  }
+
+  body[data-era="web1"] #panel-spectral-row .panel-half {
+    flex: 1 1 100%;
+  }
+
+  /* Header reflow — stack title + buoy selector + auth. */
+  body[data-era="web1"] #app-header {
+    flex-wrap: wrap;
+  }
+
+  /* Day labels and tide labels stay at desktop sizes (no shrink). */
+}
+
 /* No drop shadows anywhere on the Forecast tab content. */
 body[data-era="web1"] #view-forecast .panel,
 body[data-era="web1"] #view-forecast .panel-half,
