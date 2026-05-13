@@ -399,6 +399,23 @@ body[data-era="web1"] #forecast-chart-container .forecast-section-label {
   z-index: 2;
 }
 
+/* Compass dial canvas removed from the swell card. */
+body[data-era="web1"] #forecast-chart-container #forecast-compass {
+  display: none !important;
+}
+
+/* Swell card needs more vertical room now that the direction sub-panel
+   takes ~45% of the plot height. */
+body[data-era="web1"] #forecast-chart-container .forecast-card-swell {
+  height: 320px;
+  min-height: 320px;
+}
+body[data-era="web1"] #forecast-chart-container .forecast-card-wind,
+body[data-era="web1"] #forecast-chart-container .forecast-card-tide {
+  height: 140px;
+  min-height: 140px;
+}
+
 /* Plot area: DEEP-SUNKEN bevel + cream background. */
 body[data-era="web1"] #forecast-chart-container .forecast-card > canvas {
   display: block;
