@@ -382,57 +382,55 @@ a:hover { text-decoration: underline; }
   height: 100%;
 }
 
-/* Forecast cards: each canvas wrapped in its own white card. The 64px
-   left padding is the section-label column ("S/W/E/L/L" etc.) so all
-   three canvases right-align with the same horizontal extent. */
+/* Forecast cards: each canvas wrapped in its own white card. A 20px
+   top padding hosts the horizontal section label ("Swell"/"Wind"/"Tide");
+   the chart canvas fills the remaining padded box. */
 #forecast-chart-container .forecast-card {
   background: #fff;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
-  padding: 8px 8px 8px 64px;
+  padding: 20px 8px 8px 8px;
   margin-bottom: 8px;
   box-sizing: border-box;
   position: relative;
 }
-#forecast-chart-container .forecast-card-swell { height: 267px; }
+#forecast-chart-container .forecast-card-swell { height: 279px; }
 /* Persistent compass dial in the top-right of the swell card. Reads
    the current scrubber hour and shows primary + secondary swell
    FROM-directions as arrows. */
 #forecast-chart-container #forecast-compass {
   position: absolute;
-  top: 8px;
+  top: 22px;
   right: 8px;
   width: 72px;
   height: 72px;
   pointer-events: none;
 }
-#forecast-chart-container .forecast-card-wind  { height: 120px; }
-#forecast-chart-container .forecast-card-tide  { height: 120px; }
+#forecast-chart-container .forecast-card-wind  { height: 132px; }
+#forecast-chart-container .forecast-card-tide  { height: 132px; }
 #forecast-chart-container .forecast-card canvas {
   display: block;
   width: 100%;
   height: 100%;
 }
-/* Stacked-letter section label: vertically centered in the 64px column. */
+/* Horizontal section label: top-left of card, styled to match the
+   navy serif panel titles. Sits inside the card's top padding strip. */
 #forecast-chart-container .forecast-section-label {
   position: absolute;
-  top: 50%;
-  left: 0;
-  width: 56px;
-  transform: translateY(-50%);
-  text-align: center;
-  font-family: var(--mono, monospace);
-  font-size: 0.66rem;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  line-height: 1.35;
-  color: #888;
+  top: 4px;
+  left: 8px;
+  font-family: var(--serif, "Libre Baskerville", Georgia, serif);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink, #1a1a2e);
+  letter-spacing: 0.01em;
+  line-height: 1.2;
   user-select: none;
   pointer-events: none;
 }
 #forecast-chart-container .forecast-day-row {
   height: 28px;
-  padding: 0 8px 0 64px;
+  padding: 0 8px 0 8px;
   box-sizing: border-box;
 }
 #forecast-chart-container .forecast-day-row canvas {

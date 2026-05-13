@@ -323,9 +323,9 @@ body[data-era="web1"] {
 }
 
 [data-era="web1"] .forecast-section-label {
-  font-family: var(--w1-sans);
-  font-variant: small-caps;
-  letter-spacing: 1px;
+  font-family: var(--w1-serif);
+  font-variant: normal;
+  letter-spacing: 0;
   color: var(--w1-navy);
   font-weight: bold;
 }
@@ -1124,19 +1124,19 @@ body[data-era="web1"] {
   box-sizing: border-box;
 }
 
-/* ── FIX 3 — section labels onto the gray bevel margin ──────────── */
+/* ── FIX 3 — horizontal section labels styled like panel-title ──── */
 
-/* SWELL / WIND / TIDE labels sit in the .forecast-card's left padding
-   column (gray, 64px wide), readable as navy MS Sans Serif. */
+/* Swell / Wind / Tide labels: top-left of each card, serif navy bold
+   to match the existing panel-title hierarchy. */
 [data-era="web1"] #forecast-chart-container .forecast-section-label {
-  background: var(--w1-face);
+  background: transparent;
   color: var(--w1-navy);
-  font-family: var(--w1-sans);
-  font-size: 11px;
+  font-family: var(--w1-serif);
+  font-size: 13px;
   font-weight: bold;
   font-variant: normal;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 /* ════════════════════════════════════════════════════════════════════
