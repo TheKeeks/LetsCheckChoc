@@ -2617,16 +2617,28 @@ function getScrubberIndex() {
   if (typeof STATE.scrubberIdx === 'number' && STATE.scrubberIdx >= 0 && STATE.scrubberIdx < cs.times.length) {
     return STATE.scrubberIdx;
   }
-  // Restore from sessionStorage if present
+  // Restore from sessionStorage if present — but only honor it if the
+  // stored hour is still close enough to "now" to be meaningful. Without
+  // this guard, a mobile tab kept alive overnight will resurrect an
+  // 11-hour-stale scrubber position on next view (the "-11H" bug).
   let stored = null;
   try { stored = sessionStorage.getItem('lcc-scrubber-hour'); } catch (_) {}
   if (stored) {
     const targetMs = new Date(stored).getTime();
     if (Number.isFinite(targetMs)) {
-      const idx = findHourIndexForTime(targetMs, cs);
-      if (idx >= 0) {
-        STATE.scrubberIdx = idx;
-        return idx;
+      // Honor stored value only if it points to the current hour or a
+      // future hour; if it's >1 hour in the past treat it as stale and
+      // default to "now" instead.
+      const stalenessMs = Date.now() - targetMs;
+      if (stalenessMs <= 60 * 60 * 1000) {
+        const idx = findHourIndexForTime(targetMs, cs);
+        if (idx >= 0) {
+          STATE.scrubberIdx = idx;
+          return idx;
+        }
+      } else {
+        // Drop the stale value so we don't keep re-evaluating it.
+        try { sessionStorage.removeItem('lcc-scrubber-hour'); } catch (_) {}
       }
     }
   }
@@ -6509,6 +6521,44 @@ function initForecastModelDropdown() {
 }
 
 // ════════════════════════════════════════════════
+// PANEL INFO/SOURCE TOGGLE
+// ════════════════════════════════════════════════
+//
+// Each forecast-tab panel (.panel / .panel-half / .condition-card) hides
+// its attribution footer by default. A ⓘ button injected into the top-
+// right toggles the footer visible. Default state: collapsed.
+
+function initPanelInfoToggles() {
+  const containers = document.querySelectorAll(
+    '#view-forecast .panel, #view-forecast .panel-half, #view-forecast .condition-card'
+  );
+  containers.forEach(panel => {
+    // Only inject if the panel actually contains an attribution footer.
+    const footers = Array.from(panel.children).filter(c =>
+      c.classList && c.classList.contains('panel-footer'));
+    if (!footers.length) return;
+    // Avoid double-init across re-renders.
+    if (panel.querySelector(':scope > .panel-info-toggle')) return;
+    // Establish positioning context for the absolute button.
+    const cs = getComputedStyle(panel);
+    if (cs.position === 'static') panel.style.position = 'relative';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'panel-info-toggle';
+    btn.setAttribute('aria-label', 'Show sources');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.title = 'Sources';
+    btn.textContent = 'ⓘ'; // ⓘ
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = panel.classList.toggle('show-info');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    panel.appendChild(btn);
+  });
+}
+
+// ════════════════════════════════════════════════
 // BUOY SELECT DROPDOWN (global header)
 // ════════════════════════════════════════════════
 
@@ -7948,6 +7998,7 @@ async function initApp() {
   initTabBar();
   initSurfLogForm();
   initMatchModal();
+  initPanelInfoToggles();
   slRetrain();
   // Re-attempt any photo uploads that failed on a prior session.
   retryFailedPhotoUploads().catch(function(e) { console.warn('Retry pass failed:', e); });

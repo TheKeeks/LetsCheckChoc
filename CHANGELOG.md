@@ -1,5 +1,53 @@
 # Changelog
 
+## [Unreleased] — Forecast tab polish pass
+
+Six-commit visual cleanup of the Forecast tab. No new features, no
+regression model / feature-set changes, no chart math touched beyond
+adjusting the cards' left margin after the rotated label is removed.
+
+1. **Stacked single-letter labels → horizontal headers.** The
+   `S`/`W`/`E`/`L`/`L` (and W·I·N·D, T·I·D·E) vertical letter columns
+   along the left edge of each forecast card were replaced with a single
+   serif-navy horizontal "Swell" / "Wind" / "Tide" label in the top-left
+   of the card, matching the existing `panel-title` hierarchy. Each
+   card's left padding drops 64 → 8px (reclaiming ~56px of chart width);
+   top padding grows 8 → 20px and card heights grow by 12px so the inner
+   canvas height — and the hardcoded swell-card divider Y — stays
+   exactly where it was. `FC_PAD` is untouched.
+2. **Mobile chrome compression (≤640px).** The Win95/IE `File/Edit/View`
+   menu bar and the Address bar consumed ~35% of mobile first-paint
+   before any content was visible. Both are hidden at the existing
+   640px breakpoint; the title bar shrinks to 24px tall; the buoy /
+   sign-in cluster reflows so it doesn't overflow narrow viewports.
+   Desktop (>640px) is unchanged.
+3. **Buoy selector truncation.** `#buoy-select` max-width was 220px,
+   which cut "Choc · 44097 — Block Island, RI" mid-word at "Block
+   Islar". Bumped to 320px on desktop; on mobile the select flexes to
+   the row width so labels are never truncated.
+4. **Attribution footers collapsed behind ⓘ.** Every forecast-tab
+   panel's `.panel-footer` (sources / coords / station IDs) is hidden
+   by default; a `panel-info-toggle` ⓘ button injected into each
+   panel's top-right toggles it open. All footer text is preserved
+   verbatim — the surface is the only thing that changed. Applies to
+   `.panel`, `.panel-half`, and `.condition-card` containers inside
+   `#view-forecast`.
+5. **"What is this?" disclosures consolidated.** The full-width yellow
+   `widget-help` strips throughout the forecast tab are restyled as a
+   "?" badge in each panel's top-right (alongside the ⓘ from item 4);
+   the explanation body drops as a floating popover when the disclosure
+   opens. Default state: collapsed. No content was duplicated across
+   panels, so nothing was removed.
+6. **Scrubber default position on mobile.** `getScrubberIndex()` was
+   reading the stored ISO hour from `sessionStorage` without checking
+   freshness — a mobile tab kept alive overnight resurrected a stale
+   position and painted the SWELL: CURRENT card with a "-11H" relative-
+   hour badge on first paint. Stored hours older than 1 hour are now
+   treated as stale and dropped; the scrubber defaults to the nearest
+   current forecast hour on first paint on both desktop and mobile.
+   Future-hour scrubs still persist as before (the common case for
+   scrub-and-reload navigation).
+
 ## [Unreleased] — Revert `effective_in_window_period_squared` from Wave and Ride models
 
 **Why:** The quadratic period term was merged on the strength of a
