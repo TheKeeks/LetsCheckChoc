@@ -193,6 +193,47 @@ a:hover { text-decoration: underline; }
   color: var(--ink2);
 }
 
+/* Attribution footers default to collapsed; a ⓘ button in the panel
+   top-right toggles them open. Applied to all forecast-tab panels and
+   condition cards (each panel.show-info > .panel-footer becomes visible). */
+#view-forecast .panel > .panel-footer,
+#view-forecast .panel-half > .panel-footer,
+#view-forecast .condition-card > .panel-footer {
+  display: none;
+}
+#view-forecast .panel.show-info > .panel-footer,
+#view-forecast .panel-half.show-info > .panel-footer,
+#view-forecast .condition-card.show-info > .panel-footer {
+  display: block;
+}
+
+.panel-info-toggle {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border, #c8c2b8);
+  border-radius: 50%;
+  background: var(--bg-alt, #f5f2ee);
+  color: var(--ink2, #5a5550);
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+.panel-info-toggle:hover {
+  background: var(--bg-card, #fff);
+  color: var(--ink, #1a1a2e);
+}
+
 /* ── Widget help (collapsible glossary) ───────── */
 .widget-help {
   margin: 0;
