@@ -6469,7 +6469,7 @@ function setForecastModel(v) {
 }
 
 function describeForecastModel(v) {
-  if (!v) return 'best_match (default)';
+  if (!v) return 'Auto (Open-Meteo best_match — typically resolves to GFS Wave for this region)';
   const m = FORECAST_MODELS.find(x => x.value === v);
   return m ? `${v} · ${m.label}` : v;
 }
