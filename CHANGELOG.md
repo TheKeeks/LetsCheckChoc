@@ -1,5 +1,43 @@
 # Changelog
 
+## [Unreleased] — Forecast tab visual polish pass
+
+A small batch of cosmetic fixes for the Forecast tab. No new features
+and no behavioural changes to the forecast model, regression model,
+swell window or any data fetchers — purely chrome and disclosure.
+
+- **Horizontal card headers.** The SWELL / WIND / TIDE panels previously
+  rendered their names as single-letter vertical stacks (`S/W/E/L/L`,
+  etc.) in a 64px-wide left column on each card. Replaced with a single
+  horizontal heading at the top-left of each card, matching the navy
+  Win95 serif treatment of the other section titles. The cards reclaim
+  ~56px of horizontal space; chart canvases keep their internal
+  `FC_PAD.left` so the chart math and DPR handling are unchanged.
+- **Mobile chrome compression.** On viewports ≤640px the IE-themed
+  title bar, File/Edit/View menu and Address bar were eating ~35% of
+  first paint. Hide the menu and address bars on mobile, shrink the
+  title bar to ~22px, and reflow the BUOY + auth cluster so it fits
+  in a narrow row. Desktop chrome is unchanged.
+- **Buoy selector width.** The header buoy dropdown was capped at
+  220px and truncated "Choc · 44097 — Block Islar" mid-word. Bumped
+  to 280px so the full label fits.
+- **Attribution footers behind a ⓘ toggle.** Every panel and condition
+  card carried a visible attribution row (source URL, lat/lon, station
+  id). Hidden by default; a small ⓘ button in the top-right corner of
+  each panel/card toggles the corresponding footer open. Text content
+  is unchanged.
+- **"What is this?" disclosures consolidated.** The yellow full-width
+  strips are gone. Each `<details class="widget-help">` now renders as
+  a small "?" chip in the top-right (next to the source ⓘ); clicking
+  reveals the prose as a popover. Default collapsed.
+- **Scrubber lands on now for fresh page loads.** Two combined bugs
+  left the scrubber stuck on a stale hour on mobile (showing a "-11H"
+  badge on first paint): the touchstart handler treated any
+  single-finger touch on the chart as a tap-to-scrub and persisted
+  that x-position, and `getScrubberIndex` then restored it on every
+  reload. Clear the persisted hour at app boot and add a direction
+  lock on touch so vertical scrolls no longer commit a scrub.
+
 ## [Unreleased] — Revert `effective_in_window_period_squared` from Wave and Ride models
 
 **Why:** The quadratic period term was merged on the strength of a
