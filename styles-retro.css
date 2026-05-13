@@ -1,0 +1,845 @@
+/* ════════════════════════════════════════════════════════════════════
+   styles-retro.css — Win95 visual overhaul (Forecast tab)
+   ─────────────────────────────────────────────────────────────────────
+   This stylesheet ships the "committed to the era" pass: hardcoded
+   Win95 palette, bevel primitives, fixed sans-serif body font, and
+   the page-level chrome (title bar, outer window, tab fold). It loads
+   AFTER styles-web1-extensions.css so it wins the cascade.
+
+   Hardcoded palette — NO css variables here on purpose. Each token
+   below appears as a literal hex value at every use site.
+
+     #C0C0C0  neutral system gray (page bg, card surface)
+     #B0B0B0  darker strip (sub-title strips on cards)
+     #000080  title-bar blue
+     #FFFFFF  bevel light edge / body white
+     #808080  bevel dark edge
+     #404040  bevel deepest edge
+     #F8F4E8  plot cream
+     #0000EE  link blue        #551A8B  visited link
+     #4A6B9A  primary swell fill
+     #1A3B6A  primary swell stroke + direction line
+     #B85A12  period line (rust orange)
+     #C84A4A  wind onshore     #D9A636  wind cross   #5A9C5A  wind offshore
+     #D8E8D0  in-window direction band (light green tint)
+     #2A5D8C  tide line
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── Typography reset ────────────────────────────────────────────── */
+/* MS Sans Serif everywhere; canvas font stack matches via app.js. */
+body[data-era="web1"],
+body[data-era="web1"] button,
+body[data-era="web1"] input,
+body[data-era="web1"] select,
+body[data-era="web1"] textarea,
+body[data-era="web1"] table,
+body[data-era="web1"] h1,
+body[data-era="web1"] h2,
+body[data-era="web1"] h3,
+body[data-era="web1"] h4,
+body[data-era="web1"] p,
+body[data-era="web1"] label,
+body[data-era="web1"] a {
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+}
+
+body[data-era="web1"] {
+  background: #C0C0C0;
+  color: #000000;
+  font-size: 11px;
+  margin: 0;
+  padding: 0;
+}
+
+/* Monospace status line and address-bar style fields keep Courier. */
+body[data-era="web1"] .w1-mono,
+body[data-era="web1"] .forecast-detail-bar,
+body[data-era="web1"] .buoy-map-summary,
+body[data-era="web1"] .sl-conditions-display {
+  font-family: "Courier New", Courier, monospace;
+}
+
+/* Links — Win95 unvisited blue / visited purple. */
+body[data-era="web1"] a              { color: #0000EE; text-decoration: underline; }
+body[data-era="web1"] a:visited      { color: #551A8B; }
+
+/* ── Bevel primitives ────────────────────────────────────────────── */
+.retro-raised {
+  background: #C0C0C0;
+  border: 2px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  box-shadow: none;
+}
+.retro-sunken {
+  background: #FFFFFF;
+  border: 2px solid;
+  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  box-shadow: none;
+}
+.retro-deep-sunken {
+  /* Two-ring "framed display" — outer 2px deep, inner 1px lighter. */
+  background: #F8F4E8;
+  border: 2px solid;
+  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  box-shadow:
+    inset 1px 1px 0 0 #808080,
+    inset -1px -1px 0 0 #C0C0C0;
+}
+
+/* Kill rounded corners, drop-shadows, gradients, transitions on every
+   surface touched by the Forecast tab overhaul. */
+body[data-era="web1"] .panel,
+body[data-era="web1"] .panel-half,
+body[data-era="web1"] .condition-card,
+body[data-era="web1"] .forecast-card,
+body[data-era="web1"] .forecast-detail-bar,
+body[data-era="web1"] .buoy-map-summary,
+body[data-era="web1"] .sl-conditions-display,
+body[data-era="web1"] #app-window,
+body[data-era="web1"] #app,
+body[data-era="web1"] .tab-bar .tab-btn {
+  border-radius: 0 !important;
+  transition: none !important;
+}
+
+/* ── Page-level Win95 window structure ───────────────────────────── */
+
+/* Title bar: full viewport width, 22px tall, solid #000080. */
+body[data-era="web1"] #win95-titlebar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  background: #000080;
+  color: #FFFFFF;
+  padding: 0 2px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  user-select: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+body[data-era="web1"] .win95-titlebar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 0 4px 0 2px;
+  flex-shrink: 0;
+}
+body[data-era="web1"] .win95-titlebar-text {
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: bold;
+  flex: 1;
+  white-space: nowrap;
+}
+body[data-era="web1"] .win95-titlebar-ctrls {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+  padding-right: 2px;
+}
+body[data-era="web1"] .win95-tb-btn {
+  width: 22px;
+  height: 20px;
+  background: #C0C0C0;
+  color: #000000;
+  border: 2px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 1;
+  padding: 0;
+  cursor: default;
+  border-radius: 0;
+}
+
+/* Outer window body: raised bevel wrapping all the content below the
+   blue title bar. */
+body[data-era="web1"] #app-window {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  background: #C0C0C0;
+  border-left: 2px solid #FFFFFF;
+  border-right: 2px solid #404040;
+  border-bottom: 2px solid #404040;
+}
+body[data-era="web1"] #app {
+  background: #C0C0C0;
+  padding: 6px 8px 8px 8px;
+}
+
+/* App header inside the outer window: flat gray strip; no panel chrome. */
+body[data-era="web1"] #app-header {
+  background: #C0C0C0;
+  border: none;
+  box-shadow: none;
+  padding: 4px 4px 6px 4px;
+}
+body[data-era="web1"] .site-title {
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 14px;
+  font-weight: bold;
+  color: #000000;
+  margin: 0;
+}
+body[data-era="web1"] .header-location,
+body[data-era="web1"] .header-meta,
+body[data-era="web1"] .auth-user-name {
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: #000000;
+}
+
+/* Buoy summary line (the "[change]" address-bar) — sunken inset. */
+body[data-era="web1"] .buoy-map-summary {
+  background: #FFFFFF;
+  border: 2px solid;
+  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  box-shadow: none;
+  padding: 3px 8px;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 12px;
+  color: #000000;
+}
+
+/* ── Tab strip — Win95 raised-bevel tab buttons with active fold ───── */
+body[data-era="web1"] .tab-bar {
+  display: flex;
+  gap: 0;
+  padding: 0 6px;
+  margin: 6px 0 0 0;
+  background: transparent;
+  border-bottom: 2px solid #FFFFFF;
+  position: relative;
+  z-index: 2;
+}
+body[data-era="web1"] .tab-bar .tab-btn {
+  background: #C0C0C0;
+  color: #000000;
+  border: 2px solid;
+  border-color: #FFFFFF #404040 transparent #FFFFFF;
+  box-shadow: none;
+  padding: 4px 14px 6px 14px;
+  margin: 0 -1px -2px 0;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+  position: relative;
+  top: 2px;
+  border-radius: 0;
+}
+body[data-era="web1"] .tab-bar .tab-btn.active {
+  z-index: 3;
+  top: 0;
+  padding-top: 6px;
+  padding-bottom: 8px;
+  /* Active tab: white left/top, dark right, NO bottom — merges into the
+     content area below ("Win95 tab fold"). */
+  border-color: #FFFFFF #404040 transparent #FFFFFF;
+  background: #C0C0C0;
+}
+
+/* Tab content area — flat (no inner bevel) so the fold is seamless. */
+body[data-era="web1"] #view-forecast,
+body[data-era="web1"] #view-regression,
+body[data-era="web1"] #view-surflog {
+  background: #C0C0C0;
+  border: 2px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  box-shadow: none;
+  padding: 8px;
+  margin-top: 0;
+  position: relative;
+  z-index: 1;
+}
+
+/* Auth bar buttons — raised bevel, no rounded corners. */
+body[data-era="web1"] .auth-btn,
+body[data-era="web1"] .buoy-map-expand-btn {
+  background: #C0C0C0;
+  color: #000000;
+  border: 2px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  box-shadow: none;
+  padding: 1px 8px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  border-radius: 0;
+  cursor: pointer;
+  min-height: 20px;
+}
+body[data-era="web1"] .auth-btn:active,
+body[data-era="web1"] .buoy-map-expand-btn:active {
+  border-color: #404040 #FFFFFF #FFFFFF #404040;
+}
+
+/* Page footer — flat strip, no border bevel. */
+body[data-era="web1"] #page-footer {
+  background: #C0C0C0;
+  border-top: 1px solid #FFFFFF;
+  box-shadow: inset 0 1px 0 0 #808080;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 10px;
+  color: #404040;
+  padding: 4px 8px;
+}
+
+/* ── Cards (every panel in #view-forecast) ───────────────────────── */
+body[data-era="web1"] #view-forecast .panel,
+body[data-era="web1"] #view-forecast .panel-half {
+  background: #C0C0C0;
+  border: 2px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  box-shadow: none;
+  padding: 0;
+  margin: 8px 0;
+}
+
+/* Top "Title" strip of each card — raised bevel, gray-darker #B0B0B0,
+   11px bold black, Title Case. */
+body[data-era="web1"] .retro-card-title-strip {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  background: #B0B0B0;
+  color: #000000;
+  border: 1px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  margin: 2px 2px 6px 2px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  user-select: none;
+}
+
+/* Sub-title strip ("Swell" / "Wind" / "Tide" inside the unified card). */
+body[data-era="web1"] .retro-substrip {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  background: #B0B0B0;
+  color: #000000;
+  border: 1px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  margin: 4px 0 0 0;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+/* Panel body padding now lives below the title strip. */
+body[data-era="web1"] #view-forecast .panel > * {
+  /* Default: keep panel interior at 6px horizontal padding. */
+}
+body[data-era="web1"] #view-forecast .panel > .panel-title:not([style*="display:none"]) {
+  margin: 4px 8px 6px 8px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  color: #000000;
+}
+
+/* The unified forecast card body sits inside #panel-forecast. The chart
+   container and the inner forecast-card sub-panels lose their separate
+   raised bevels — they become flat strips inside the card. The plot
+   areas (canvases) gain a deep-sunken bevel + cream background. */
+body[data-era="web1"] #forecast-chart-container {
+  background: #C0C0C0;
+  padding: 0 8px 6px 8px;
+  position: relative;
+}
+
+/* Replace each forecast-card's old raised bevel — it becomes a flat
+   sub-section inside the unified card. The "Swell"/"Wind"/"Tide" sub-
+   title strip is the visible header; the canvas is the framed plot. */
+body[data-era="web1"] #forecast-chart-container .forecast-card {
+  background: #C0C0C0;
+  border: none;
+  box-shadow: none;
+  padding: 22px 0 0 0;
+  margin: 4px 0 0 0;
+  border-radius: 0;
+  position: relative;
+}
+
+/* Sub-strip rendered via the .forecast-section-label DOM element that
+   already exists; restyle it to look like our .retro-substrip. */
+body[data-era="web1"] #forecast-chart-container .forecast-section-label {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  right: 0;
+  height: 18px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  background: #B0B0B0;
+  color: #000000;
+  border: 1px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  box-shadow: none;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 16px;
+  text-transform: none;
+  letter-spacing: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Compass dial canvas removed from the swell card. */
+body[data-era="web1"] #forecast-chart-container #forecast-compass {
+  display: none !important;
+}
+
+/* Swell card needs more vertical room now that the direction sub-panel
+   takes ~45% of the plot height. */
+body[data-era="web1"] #forecast-chart-container .forecast-card-swell {
+  height: 320px;
+  min-height: 320px;
+}
+body[data-era="web1"] #forecast-chart-container .forecast-card-wind,
+body[data-era="web1"] #forecast-chart-container .forecast-card-tide {
+  height: 140px;
+  min-height: 140px;
+}
+
+/* Plot area: DEEP-SUNKEN bevel + cream background. */
+body[data-era="web1"] #forecast-chart-container .forecast-card > canvas {
+  display: block;
+  width: 100%;
+  background: #F8F4E8;
+  border: 2px solid;
+  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  box-shadow:
+    inset 1px 1px 0 0 #808080,
+    inset -1px -1px 0 0 #C0C0C0;
+  box-sizing: border-box;
+  border-radius: 0;
+}
+
+/* Day-label row: native HTML day headers, indented to plot x-axis. */
+body[data-era="web1"] #forecast-chart-container .forecast-day-row {
+  position: relative;
+  height: 18px;
+  margin: 4px 8px 2px 8px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+body[data-era="web1"] #forecast-chart-container .forecast-day-label {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  color: #000000;
+  line-height: 18px;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ── Status line (forecast detail bar) — sunken white inset ──────── */
+body[data-era="web1"] .forecast-detail-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #FFFFFF;
+  color: #000000;
+  border: 2px solid;
+  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  box-shadow: none;
+  padding: 3px 8px;
+  margin: 4px 8px 4px 8px;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 12px;
+  border-radius: 0;
+  min-height: 22px;
+}
+body[data-era="web1"] .forecast-detail-bar .detail-row {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+body[data-era="web1"] .forecast-detail-bar .detail-time {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 12px;
+  font-weight: bold;
+  color: #000000;
+}
+body[data-era="web1"] .forecast-detail-bar .detail-item {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 12px;
+  color: #000000;
+}
+body[data-era="web1"] .forecast-detail-bar .detail-val {
+  color: #000000;
+  font-weight: normal;
+}
+body[data-era="web1"] .forecast-detail-bar .detail-tide {
+  color: #000000;
+  font-weight: bold;
+}
+
+/* "Reset to now" — 11px sans, blue link, underlined. */
+body[data-era="web1"] .forecast-reset-btn {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: #0000EE;
+  text-decoration: underline;
+  cursor: pointer;
+  border-radius: 0;
+  flex-shrink: 0;
+}
+body[data-era="web1"] .forecast-reset-btn:hover { color: #551A8B; }
+
+/* ── Bottom controls bar — sunken inset strip ────────────────────── */
+body[data-era="web1"] .forecast-controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #C0C0C0;
+  border: 2px solid;
+  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  padding: 4px 8px;
+  margin: 6px 8px 4px 8px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: #000000;
+  flex-wrap: wrap;
+}
+body[data-era="web1"] .forecast-controls-spacer {
+  flex: 1;
+}
+body[data-era="web1"] .forecast-controls-bar .forecast-model-label,
+body[data-era="web1"] .forecast-controls-bar .forecast-coord-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+body[data-era="web1"] .forecast-controls-bar select {
+  background: #FFFFFF;
+  border: 2px solid;
+  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 0;
+  min-height: 20px;
+}
+body[data-era="web1"] .forecast-controls-bar input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  margin: 0 4px 0 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: #FFFFFF;
+  border: 2px solid;
+  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  border-radius: 0;
+  position: relative;
+  cursor: pointer;
+  vertical-align: middle;
+}
+body[data-era="web1"] .forecast-controls-bar input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 1px; top: -2px;
+  width: 8px; height: 8px;
+  background-image: linear-gradient(45deg, transparent 45%, #000 45% 55%, transparent 55%),
+                    linear-gradient(-45deg, transparent 45%, #000 45% 55%, transparent 55%);
+}
+
+/* ── Wave Spectra + Spectral Compass Rose (promoted) ────────────── */
+
+body[data-era="web1"] #panel-spectral-row {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+body[data-era="web1"] #panel-spectral-row .panel-half {
+  flex: 1 1 320px;
+  min-width: 0;
+  background: #C0C0C0;
+  border: 2px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  padding: 0 0 6px 0;
+  margin: 0;
+}
+
+/* Wave Spectra table — deep-sunken cream-tinted display, 11px bold
+   header / 11px regular rows, 1px #808080 row separators, alternating
+   #F8F4E8 / #FFFFFF row backgrounds. */
+body[data-era="web1"] #spectral-summary-table {
+  margin: 6px 8px;
+  background: #FFFFFF;
+  border: 2px solid;
+  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  box-shadow:
+    inset 1px 1px 0 0 #808080,
+    inset -1px -1px 0 0 #C0C0C0;
+  padding: 4px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: #000000;
+}
+body[data-era="web1"] #spectral-summary-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+body[data-era="web1"] #spectral-summary-table th {
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  text-align: left;
+  padding: 3px 6px;
+  background: #C0C0C0;
+  color: #000000;
+  border-bottom: 1px solid #808080;
+}
+body[data-era="web1"] #spectral-summary-table td {
+  padding: 3px 6px;
+  font-size: 11px;
+  border-bottom: 1px solid #808080;
+}
+body[data-era="web1"] #spectral-summary-table tr:nth-child(even) td {
+  background: #F8F4E8;
+}
+body[data-era="web1"] #spectral-summary-table tr:nth-child(odd) td {
+  background: #FFFFFF;
+}
+
+/* Compass rose canvas wrap — deep-sunken cream framed display. */
+body[data-era="web1"] #panel-compass .chart-container {
+  background: #F8F4E8;
+  border: 2px solid;
+  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  box-shadow:
+    inset 1px 1px 0 0 #808080,
+    inset -1px -1px 0 0 #C0C0C0;
+  padding: 4px;
+  margin: 6px 8px;
+  box-sizing: border-box;
+}
+body[data-era="web1"] #panel-compass canvas {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+/* Rose scale toggle — Win95 raised-bevel paired buttons. */
+body[data-era="web1"] .rose-scale-toggle {
+  display: inline-flex;
+  gap: 0;
+  margin: 4px 8px;
+}
+body[data-era="web1"] .rose-scale-chip {
+  background: #C0C0C0;
+  color: #000000;
+  border: 2px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  padding: 2px 10px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 0;
+  margin-right: -1px;
+  min-height: 22px;
+}
+body[data-era="web1"] .rose-scale-chip.active,
+body[data-era="web1"] .rose-scale-chip:active {
+  border-color: #404040 #FFFFFF #FFFFFF #404040;
+}
+
+body[data-era="web1"] #panel-compass .rose-legend,
+body[data-era="web1"] #panel-spectral-row .widget-help {
+  margin: 4px 8px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: #000000;
+}
+
+/* ── Current Conditions row (5 small cards) ──────────────────────── */
+
+body[data-era="web1"] .conditions-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  padding: 0;
+  margin: 8px 0;
+}
+
+body[data-era="web1"] .condition-card {
+  background: #C0C0C0;
+  border: 2px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  box-shadow: none;
+  padding: 0;
+  border-left-width: 2px !important;
+  border-left-color: #FFFFFF !important;
+  border-radius: 0;
+  position: relative;
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+}
+
+body[data-era="web1"] .condition-card .condition-label {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  background: #B0B0B0;
+  color: #000000;
+  border: 1px solid;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  margin: 2px 2px 6px 2px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-variant: normal;
+}
+
+body[data-era="web1"] .condition-card .condition-value {
+  padding: 0 10px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 16px;
+  font-weight: bold;
+  color: #000000;
+  margin: 0;
+}
+
+body[data-era="web1"] .condition-card .condition-detail {
+  padding: 2px 10px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: #000000;
+}
+
+body[data-era="web1"] .condition-card .condition-extra {
+  padding: 2px 10px 6px 10px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: #404040;
+}
+
+/* Mobile: stack to single column. */
+@media (max-width: 640px) {
+  body[data-era="web1"] .conditions-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Lineup card chrome ──────────────────────────────────────────── */
+
+body[data-era="web1"] #panel-lineup .lineup-frame {
+  border: 2px solid;
+  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  box-shadow:
+    inset 1px 1px 0 0 #808080,
+    inset -1px -1px 0 0 #C0C0C0;
+  margin: 6px 8px;
+  background: #000000;
+  border-radius: 0;
+  position: relative;
+}
+
+body[data-era="web1"] #panel-lineup .lineup-caption {
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  color: #FFFFFF;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 4px 8px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ── Mobile audit (≤640px) ───────────────────────────────────────── */
+@media (max-width: 640px) {
+  /* Title bar stays full-size on mobile per spec. */
+  body[data-era="web1"] #win95-titlebar {
+    height: 22px;
+  }
+  body[data-era="web1"] .win95-tb-btn {
+    width: 22px;
+    height: 20px;
+  }
+  body[data-era="web1"] .win95-titlebar-text {
+    font-size: 11px;
+  }
+
+  /* Body padding stays at 0 — cards reach edge. */
+  body[data-era="web1"] {
+    padding: 0;
+  }
+
+  /* Outer window: no margin/padding so cards fill viewport. */
+  body[data-era="web1"] #app-window {
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+  body[data-era="web1"] #app {
+    padding: 4px;
+  }
+  body[data-era="web1"] #view-forecast,
+  body[data-era="web1"] #view-regression,
+  body[data-era="web1"] #view-surflog {
+    padding: 4px;
+  }
+
+  /* Cards & spectral row stack. */
+  body[data-era="web1"] #panel-spectral-row {
+    flex-direction: column;
+  }
+
+  body[data-era="web1"] #panel-spectral-row .panel-half {
+    flex: 1 1 100%;
+  }
+
+  /* Header reflow — stack title + buoy selector + auth. */
+  body[data-era="web1"] #app-header {
+    flex-wrap: wrap;
+  }
+
+  /* Day labels and tide labels stay at desktop sizes (no shrink). */
+}
+
+/* No drop shadows anywhere on the Forecast tab content. */
+body[data-era="web1"] #view-forecast .panel,
+body[data-era="web1"] #view-forecast .panel-half,
+body[data-era="web1"] #view-forecast .condition-card,
+body[data-era="web1"] #view-forecast .forecast-card,
+body[data-era="web1"] #view-forecast .lineup-frame {
+  filter: none;
+}

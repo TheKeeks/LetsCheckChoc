@@ -1628,8 +1628,44 @@ const FC_PAD = { left: 36, right: 40 };
 // chrome so canvas text reads as text rather than a rasterized image.
 // Monospace numeric readouts use Courier New, matching the address-bar
 // and detail-bar field fonts.
-const FC_CHART_FONT = 'Tahoma, "MS Sans Serif", Arial, sans-serif';
+const FC_CHART_FONT = '"MS Sans Serif", Tahoma, sans-serif';
 const FC_CHART_FONT_MONO = '"Courier New", Courier, monospace';
+
+// Retro Win95 chart palette — hardcoded hex literals to match the
+// Forecast-tab visual overhaul. NO css variable indirection.
+const FC_RETRO = {
+  plotBg:        '#F8F4E8',
+  grid:          '#808080',
+  ink:           '#000000',
+  swellFill:     '#4A6B9A',
+  swellStroke:   '#1A3B6A',
+  secSwellFill:  'rgba(74, 107, 154, 0.35)', // primary at 35%
+  period:        '#B85A12',
+  dirPrimary:    '#1A3B6A',
+  dirSecondary:  '#1A3B6A',
+  windOn:        '#C84A4A',
+  windCross:     '#D9A636',
+  windOff:       '#5A9C5A',
+  windStroke:    '#404040',
+  windBand:      'rgba(216, 232, 208, 0.6)',
+  tide:          '#2A5D8C',
+  scrubLine:     '#000000',
+  scrubDot:      '#000000'
+};
+
+// Dashed gridline helper — 0.5px stroke, 2-2 dash, color #808080.
+function _fcDrawDashedHGrid(ctx, x0, x1, y) {
+  ctx.save();
+  ctx.strokeStyle = FC_RETRO.grid;
+  ctx.lineWidth = 0.5;
+  ctx.setLineDash([2, 2]);
+  ctx.beginPath();
+  ctx.moveTo(x0, y);
+  ctx.lineTo(x1, y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
 
 function drawForecastChart(marine, wind, daylight, tideHiLo, tidePred) {
   // Cache so the scrubber and external reflows can re-render without re-fetching.
@@ -1681,7 +1717,7 @@ function _fcDrawNightShading(ctx, common, plotLeft, plotW, top, height) {
 function _fcDrawDaySeparators(ctx, common, plotLeft, plotW, top, height) {
   // Solid grey midnight verticals — appear as continuous columns when
   // drawn on every panel canvas.
-  ctx.strokeStyle = '#c0c0c0';
+  ctx.strokeStyle = '#B0B0B0';
   ctx.lineWidth = 1;
   for (let dayOff = 0; dayOff <= common.dayCount; dayOff++) {
     const midDate = new Date(common.firstDay);
@@ -1715,18 +1751,26 @@ function _fcDrawTodayAccent(ctx, common, plotLeft, plotW, top, height) {
   ctx.restore();
 }
 
-// Filled dot in line color with a 1.5px white halo for separation.
-// Drawn last in each panel so it sits above all data lines.
-function drawScrubberDot(ctx, x, y, color) {
+// Filled black 3px circle. Color arg is accepted for backwards-compat
+// with prior call sites but the retro spec mandates black dots.
+function drawScrubberDot(ctx, x, y, _color) {
   ctx.save();
   ctx.beginPath();
-  ctx.arc(x, y, 4, 0, Math.PI * 2);
-  ctx.fillStyle = '#ffffff';
+  ctx.arc(x, y, 3, 0, Math.PI * 2);
+  ctx.fillStyle = FC_RETRO.scrubDot;
   ctx.fill();
+  ctx.restore();
+}
+
+// 1px solid black vertical scrubber line spanning the full plot height.
+function drawScrubberLine(ctx, x, top, bottom) {
+  ctx.save();
+  ctx.strokeStyle = FC_RETRO.scrubLine;
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.arc(x, y, 2.5, 0, Math.PI * 2);
-  ctx.fillStyle = color;
-  ctx.fill();
+  ctx.moveTo(x, top);
+  ctx.lineTo(x, bottom);
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -1741,17 +1785,24 @@ function drawSwellPanel(common, data) {
   const isMobile = common.isMobile;
   const plotLeft = FC_PAD.left;
   const plotW    = cssW - FC_PAD.left - FC_PAD.right;
-  // Upper region (height + period) is fixed-height; the divider sits at
-  // y=180 and the direction sub-panel occupies the remaining space below.
+  // Upper region (~55%) hosts swell-height area + period line; the
+  // remaining ~45% is the direction sub-panel below the divider.
   const top      = 4;
-  const h        = 176;
-  const dividerY = 180;
+  const usableH  = cssH - 8;
+  const h        = Math.round(usableH * 0.55);
+  const dividerY = top + h + 4;
   const subTop   = dividerY + 1;
-  const subBot   = cssH;
+  const subBot   = cssH - 2;
 
-  // Background
-  ctx.fillStyle = '#ffffff';
+  // Cream plot background.
+  ctx.fillStyle = FC_RETRO.plotBg;
   ctx.fillRect(0, 0, cssW, cssH);
+
+  // Dashed horizontal gridlines on upper region (every quartile).
+  for (let q = 1; q < 4; q++) {
+    const yy = top + (h * q / 4);
+    _fcDrawDashedHGrid(ctx, plotLeft, plotLeft + plotW, yy);
+  }
 
   // Night shading + day separators (full canvas height — they extend
   // through the direction sub-panel using the same x-coords).
@@ -1783,7 +1834,7 @@ function drawSwellPanel(common, data) {
     }
     ctx.lineTo(xPos(common.allTimes[common.lastIdx]), ySwell(0));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(140, 175, 205, 0.6)';
+    ctx.fillStyle = FC_RETRO.secSwellFill;
     ctx.fill();
   }
 
@@ -1796,13 +1847,13 @@ function drawSwellPanel(common, data) {
   }
   ctx.lineTo(xPos(common.allTimes[common.lastIdx]), ySwell(0));
   ctx.closePath();
-  ctx.fillStyle = 'rgba(74, 110, 145, 0.85)';
+  ctx.fillStyle = FC_RETRO.swellFill;
   ctx.fill();
 
-  // Primary stroke
+  // Primary stroke (1px outline on filled area).
   ctx.beginPath();
-  ctx.strokeStyle = '#3a5570';
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = FC_RETRO.swellStroke;
+  ctx.lineWidth = 1;
   let started = false;
   for (let i = 0; i <= common.lastIdx; i++) {
     const v = heights[i];
@@ -1827,45 +1878,51 @@ function drawSwellPanel(common, data) {
   if (periodPts.length >= 2) {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    // Halo
+    // Cream halo for legibility against the dark swell fill.
     ctx.beginPath();
     ctx.moveTo(periodPts[0][0], periodPts[0][1]);
     for (let i = 1; i < periodPts.length; i++) ctx.lineTo(periodPts[i][0], periodPts[i][1]);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.strokeStyle = 'rgba(248, 244, 232, 0.85)';
     ctx.lineWidth = 4;
     ctx.stroke();
-    // Orange line
+    // Period line — rust orange, 2px.
     ctx.beginPath();
     ctx.moveTo(periodPts[0][0], periodPts[0][1]);
     for (let i = 1; i < periodPts.length; i++) ctx.lineTo(periodPts[i][0], periodPts[i][1]);
-    ctx.strokeStyle = '#c46a32';
+    ctx.strokeStyle = FC_RETRO.period;
     ctx.lineWidth = 2;
     ctx.stroke();
   }
   ctx.restore();
 
-  // Y-axis: keep only the top value on each side; unit suffix lives in
-  // the top corner. Intermediate gridlines stay drawn but unlabeled to
-  // reduce visual noise and match the surrounding HTML chrome weight.
-  const axisFont = isMobile ? '9px' : '10px';
-  ctx.font = `${axisFont} ${FC_CHART_FONT}`;
-  ctx.fillStyle = '#888';
+  // Y-axis labels: full quartile labels in 11px bold MS Sans Serif black.
+  ctx.font = `bold 11px ${FC_CHART_FONT}`;
+  ctx.fillStyle = FC_RETRO.ink;
   ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let q = 0; q <= 4; q++) {
+    const v = swellMaxY * (1 - q / 4);
+    const yy = top + (h * q / 4);
+    ctx.fillText(String(Math.round(v)), plotLeft - 4, yy);
+  }
+  ctx.textAlign = 'left';
+  for (let q = 0; q <= 4; q++) {
+    const v = periodMax * (1 - q / 4);
+    const yy = top + (h * q / 4);
+    ctx.fillText(String(Math.round(v)), plotLeft + plotW + 4, yy);
+  }
+  // Unit labels — 10px sans, dimmer, top corners of plot.
+  ctx.font = `10px ${FC_CHART_FONT}`;
+  ctx.fillStyle = '#404040';
+  ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillText(`${swellMaxY}`, plotLeft - 4, top + 2);
-  ctx.textAlign = 'left';
-  ctx.fillText(`${periodMax}`, plotLeft + plotW + 4, top + 2);
-  // Unit labels in top corners.
-  ctx.font = `bold ${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
-  ctx.fillStyle = '#888';
-  ctx.textAlign = 'left';
   ctx.fillText('ft', plotLeft + 4, top + 2);
   ctx.textAlign = 'right';
   ctx.fillText('s', plotLeft + plotW - 4, top + 2);
 
   // ── Divider between upper region and direction sub-panel ──
-  ctx.fillStyle = '#e8e8e8';
-  ctx.fillRect(0, dividerY, cssW, 1);
+  ctx.fillStyle = '#808080';
+  ctx.fillRect(plotLeft, dividerY, plotW, 1);
 
   // ── Direction sub-panel ──
   // Y-axis is compass degrees the swell is COMING FROM. The visible band
@@ -1884,7 +1941,7 @@ function drawSwellPanel(common, data) {
   const yDir = (deg) => subInsetT + ((deg - dirRangeMin) / dirRange) * subInsetH;
 
   // Window band: shaded rectangle covering the swellWindow degrees.
-  ctx.fillStyle = 'rgba(110, 169, 107, 0.18)';
+  ctx.fillStyle = FC_RETRO.windBand;
   const yWinTop = yDir(winMin);
   const yWinBot = yDir(winMax);
   ctx.fillRect(plotLeft, Math.min(yWinTop, yWinBot), plotW, Math.abs(yWinBot - yWinTop));
@@ -1928,11 +1985,11 @@ function drawSwellPanel(common, data) {
   };
 
   if (swellDirs && swellDirs.length) {
-    drawDirPolyline(ctx, swellDirs, { color: '#3a5570', lineWidth: 1.5 });
+    drawDirPolyline(ctx, swellDirs, { color: FC_RETRO.dirPrimary, lineWidth: 1.5 });
   }
   if (secDirs && secDirs.length) {
     drawDirPolyline(ctx, secDirs, {
-      color: '#8cafcd',
+      color: FC_RETRO.dirSecondary,
       lineWidth: 1.5,
       dash: [4, 3],
       // Only draw secondary direction where the secondary height is
@@ -1950,8 +2007,8 @@ function drawSwellPanel(common, data) {
     { deg: 180, label: 'S'   }, { deg: 225, label: 'SW'  },
     { deg: 270, label: 'W'   }, { deg: 315, label: 'NW'  }
   ];
-  ctx.font = `${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
-  ctx.fillStyle = '#888';
+  ctx.font = `bold 11px ${FC_CHART_FONT}`;
+  ctx.fillStyle = FC_RETRO.ink;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   for (const cp of compassPoints) {
@@ -1961,28 +2018,29 @@ function drawSwellPanel(common, data) {
 
   // "FROM" label clarifies the y-axis represents the direction the
   // swell is COMING FROM (oceanographic convention).
-  ctx.font = `bold ${isMobile ? '8px' : '9px'} ${FC_CHART_FONT}`;
-  ctx.fillStyle = '#888';
+  ctx.font = `bold 10px ${FC_CHART_FONT}`;
+  ctx.fillStyle = '#404040';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText('FROM', plotLeft + 6, subTop + 3);
 
-  // Scrubber dots — one per data line at the scrubbed hour.
+  // Scrubber vertical line + dots.
   const sIdx = STATE.scrubberIdx;
   if (typeof sIdx === 'number' && sIdx >= 0 && sIdx <= common.lastIdx) {
     const tx = xPos(common.allTimes[sIdx]);
+    drawScrubberLine(ctx, tx, top, cssH - 2);
     // Upper region: secondary height, primary height, period.
     const secH = secHeights[sIdx];
     if (secH != null && secH >= 1.0) {
-      drawScrubberDot(ctx, tx, ySwell(secH), '#8cafcd');
+      drawScrubberDot(ctx, tx, ySwell(secH));
     }
     const priH = heights[sIdx];
     if (priH != null) {
-      drawScrubberDot(ctx, tx, ySwell(priH), '#3a5570');
+      drawScrubberDot(ctx, tx, ySwell(priH));
     }
     const per = wavePeriods[sIdx];
     if (per != null && Number.isFinite(per)) {
-      drawScrubberDot(ctx, tx, yPeriod(per), '#c46a32');
+      drawScrubberDot(ctx, tx, yPeriod(per));
     }
     // Direction sub-panel: primary direction, secondary direction
     // (gated by secondary height ≥ 1ft, matching the line's gating).
@@ -1994,11 +2052,11 @@ function drawSwellPanel(common, data) {
     ctx.clip();
     const priDir = swellDirs ? swellDirs[sIdx] : null;
     if (priDir != null) {
-      drawScrubberDot(ctx, tx, yDir(priDir), '#3a5570');
+      drawScrubberDot(ctx, tx, yDir(priDir));
     }
     const secDir = secDirs ? secDirs[sIdx] : null;
     if (secDir != null && secH != null && secH >= 1.0) {
-      drawScrubberDot(ctx, tx, yDir(secDir), '#8cafcd');
+      drawScrubberDot(ctx, tx, yDir(secDir));
     }
     ctx.restore();
   }
@@ -2021,7 +2079,7 @@ function drawWindPanel(common, data) {
   const top      = 4;
   const h        = cssH - 8;
 
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = FC_RETRO.plotBg;
   ctx.fillRect(0, 0, cssW, cssH);
   _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
@@ -2035,7 +2093,7 @@ function drawWindPanel(common, data) {
   // Light winds (<5 mph) upgrade one tier so colors don't mislead at calm hours.
   const OFFSHORE_CENTER = 335;
   const colorFor = (dir, speed) => {
-    if (dir == null) return 'rgba(150, 145, 138, 0.5)';
+    if (dir == null) return 'rgba(128, 128, 128, 0.5)';
     const gap = Math.min(((dir - OFFSHORE_CENTER) % 360 + 360) % 360,
                         ((OFFSHORE_CENTER - dir) % 360 + 360) % 360);
     let bucket;
@@ -2046,9 +2104,9 @@ function drawWindPanel(common, data) {
       if (bucket === 'cross') bucket = 'off';
       else if (bucket === 'on') bucket = 'cross';
     }
-    if (bucket === 'off')   return 'rgba(110, 169, 107, 0.6)';
-    if (bucket === 'cross') return 'rgba(212, 179, 74, 0.6)';
-    return 'rgba(194, 94, 94, 0.6)';
+    if (bucket === 'off')   return FC_RETRO.windOff;
+    if (bucket === 'cross') return FC_RETRO.windCross;
+    return FC_RETRO.windOn;
   };
 
   ctx.save();
@@ -2070,7 +2128,7 @@ function drawWindPanel(common, data) {
     ctx.fill();
   }
   ctx.beginPath();
-  ctx.strokeStyle = '#4a443e';
+  ctx.strokeStyle = FC_RETRO.windStroke;
   ctx.lineWidth = 1.25;
   let wStarted = false;
   for (let i = 0; i <= common.lastIdx; i++) {
@@ -2084,40 +2142,34 @@ function drawWindPanel(common, data) {
   ctx.stroke();
   ctx.restore();
 
-  // Horizontal gridlines at 5 mph intervals. Drawn after the area fill
-  // so they read as faint reference lines rather than data.
-  ctx.save();
-  ctx.strokeStyle = 'rgba(90, 85, 80, 0.12)';
-  ctx.lineWidth = 1;
+  // Horizontal dashed gridlines at 5 mph intervals — #808080, 0.5px, 2-2.
   for (let v = 5; v < windMaxY; v += 5) {
-    const yy = yWind(v);
-    ctx.beginPath();
-    ctx.moveTo(plotLeft, yy);
-    ctx.lineTo(plotLeft + plotW, yy);
-    ctx.stroke();
+    _fcDrawDashedHGrid(ctx, plotLeft, plotLeft + plotW, yWind(v));
   }
-  ctx.restore();
 
-  // Y-axis: keep only the top value; unit suffix lives in the top
-  // corner. Intermediate gridlines stay drawn but unlabeled.
-  const axisFont = isMobile ? '9px' : '10px';
-  ctx.font = `${axisFont} ${FC_CHART_FONT}`;
-  ctx.fillStyle = '#888';
+  // Y-axis labels: every 5 mph in bold 11px sans, black.
+  ctx.font = `bold 11px ${FC_CHART_FONT}`;
+  ctx.fillStyle = FC_RETRO.ink;
   ctx.textAlign = 'right';
-  ctx.textBaseline = 'top';
-  ctx.fillText(`${windMaxY}`, plotLeft - 4, top + 2);
-  ctx.font = `bold ${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
+  ctx.textBaseline = 'middle';
+  for (let v = 0; v <= windMaxY; v += 5) {
+    ctx.fillText(String(v), plotLeft - 4, yWind(v));
+  }
+  // Unit label.
+  ctx.font = `10px ${FC_CHART_FONT}`;
+  ctx.fillStyle = '#404040';
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#888';
+  ctx.textBaseline = 'top';
   ctx.fillText('mph', plotLeft + 4, top + 2);
 
-  // Scrubber dot on the wind speed line. Color matches the dark-gray line
-  // stroke so the dot stays legible against any quality-shade fill color.
+  // Scrubber vertical line + dot.
   const sIdx = STATE.scrubberIdx;
   if (typeof sIdx === 'number' && sIdx >= 0 && sIdx <= common.lastIdx) {
+    const tx = xPos(common.allTimes[sIdx]);
+    drawScrubberLine(ctx, tx, top, top + h);
     const ws = windSpeeds[sIdx];
     if (ws != null) {
-      drawScrubberDot(ctx, xPos(common.allTimes[sIdx]), yWind(ws), '#4a443e');
+      drawScrubberDot(ctx, tx, yWind(ws));
     }
   }
 
@@ -2136,7 +2188,7 @@ function drawTidePanel(common, data) {
   const top      = 4;
   const h        = cssH - 8;
 
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = FC_RETRO.plotBg;
   ctx.fillRect(0, 0, cssW, cssH);
   _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
@@ -2162,16 +2214,16 @@ function drawTidePanel(common, data) {
     ctx.rect(plotLeft, top, plotW, h);
     ctx.clip();
 
-    const tealStroke = '#3a9aa3';
+    const tideStroke = FC_RETRO.tide;
     const drawSegment = (alpha, xClipMin, xClipMax) => {
       ctx.save();
       ctx.beginPath();
       ctx.rect(xClipMin, top, Math.max(0, xClipMax - xClipMin), h);
       ctx.clip();
       ctx.beginPath();
-      ctx.strokeStyle = tealStroke;
+      ctx.strokeStyle = tideStroke;
       ctx.globalAlpha = alpha;
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 2.5;
       let tStarted = false;
       for (const p of tidePred) {
         const tt = new Date(p.t).getTime();
@@ -2191,6 +2243,26 @@ function drawTidePanel(common, data) {
     ctx.restore();
   }
 
+  // Y-axis labels for tide range: max / 0 / min in 11px bold sans.
+  if (tideY && Number.isFinite(tideMin) && Number.isFinite(tideMax)) {
+    ctx.font = `bold 11px ${FC_CHART_FONT}`;
+    ctx.fillStyle = FC_RETRO.ink;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    const fmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(1);
+    ctx.fillText(fmt(tideMax), plotLeft - 4, tideY(tideMax));
+    ctx.fillText(fmt(tideMin), plotLeft - 4, tideY(tideMin));
+    if (tideMin < 0 && tideMax > 0) {
+      ctx.fillText('0', plotLeft - 4, tideY(0));
+      _fcDrawDashedHGrid(ctx, plotLeft, plotLeft + plotW, tideY(0));
+    }
+    ctx.font = `10px ${FC_CHART_FONT}`;
+    ctx.fillStyle = '#404040';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('ft', plotLeft + 4, top + 2);
+  }
+
   // Low-tide markers + sparse labels (with collision avoidance)
   const nowMs = Date.now();
   if (tideHiLo && tideY) {
@@ -2207,7 +2279,7 @@ function drawTidePanel(common, data) {
       const xx = _fcXFor(new Date(lo.t), common, plotLeft, plotW);
       if (xx < plotLeft || xx > plotLeft + plotW) continue;
       const yy = tideY(lo.v);
-      ctx.fillStyle = 'rgba(58, 125, 125, 0.55)';
+      ctx.fillStyle = 'rgba(42, 93, 140, 0.55)';
       ctx.beginPath();
       ctx.moveTo(xx, yy + 1);
       ctx.lineTo(xx - 3, yy - 4);
@@ -2239,7 +2311,7 @@ function drawTidePanel(common, data) {
       const heightStr = `${lo.v.toFixed(1)}ft`;
 
       // Triangle marker at the trough
-      ctx.fillStyle = 'rgba(58, 125, 125, 0.95)';
+      ctx.fillStyle = 'rgba(42, 93, 140, 0.95)';
       ctx.beginPath();
       ctx.moveTo(xx, yy + 2);
       ctx.lineTo(xx - 3, yy - 3);
@@ -2255,8 +2327,8 @@ function drawTidePanel(common, data) {
         if (Math.abs(xx - prev.xx) < labelWidth) pushDown = true;
       }
 
-      ctx.font = `${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
-      ctx.fillStyle = '#3a7d7d';
+      ctx.font = `bold 10px ${FC_CHART_FONT}`;
+      ctx.fillStyle = FC_RETRO.tide;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       const baseTop = yy + 4;
@@ -2266,7 +2338,7 @@ function drawTidePanel(common, data) {
         if (pushDown) {
           // Connector: thin teal line from trough up to label baseline.
           ctx.save();
-          ctx.strokeStyle = 'rgba(58, 125, 125, 0.7)';
+          ctx.strokeStyle = 'rgba(42, 93, 140, 0.7)';
           ctx.lineWidth = 0.5;
           ctx.beginPath();
           ctx.moveTo(xx, yy + 2);
@@ -2281,7 +2353,7 @@ function drawTidePanel(common, data) {
         const baseBot = yy - 4 - lowOff;
         if (pushDown) {
           ctx.save();
-          ctx.strokeStyle = 'rgba(58, 125, 125, 0.7)';
+          ctx.strokeStyle = 'rgba(42, 93, 140, 0.7)';
           ctx.lineWidth = 0.5;
           ctx.beginPath();
           ctx.moveTo(xx, yy - 2);
@@ -2315,7 +2387,8 @@ function drawTidePanel(common, data) {
       if (Number.isFinite(va) && Number.isFinite(vb) && b > a) {
         const v = va + (vb - va) * ((tMs - a) / (b - a));
         const tx = _fcXFor(ts, common, plotLeft, plotW);
-        drawScrubberDot(ctx, tx, tideY(v), '#3a9aa3');
+        drawScrubberLine(ctx, tx, top, top + h);
+        drawScrubberDot(ctx, tx, tideY(v));
       }
     }
   }
@@ -2333,17 +2406,6 @@ function drawTidePanel(common, data) {
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
-  }
-
-  // Tidal range corner label: "+max / -min ft" in the top-left so the
-  // chart has a numeric reference without per-gridline labels.
-  if (tideY && Number.isFinite(tideMin) && Number.isFinite(tideMax)) {
-    const fmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(1);
-    ctx.font = `${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
-    ctx.fillStyle = '#888';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(`${fmt(tideMax)} / ${fmt(tideMin)} ft`, plotLeft + 4, top + 2);
   }
 
   return { canvas, cssW, cssH, plotLeft, plotW, top, h, tideMin, tideMax };
@@ -2393,78 +2455,10 @@ function renderDayLabels(common) {
 // secondary swell FROM directions for the currently-scrubbed hour.
 // Arrow points TOWARD the FROM direction (oceanographic convention),
 // not where the swell is heading.
-function drawCompassDial(scrubberIdx) {
-  const canvas = el('forecast-compass');
-  if (!canvas) return;
-  const cssW = canvas.clientWidth || 72;
-  const cssH = canvas.clientHeight || 72;
-  const ctx = canvas.getContext('2d');
-  setCanvasDPR(canvas, ctx, cssW, cssH);
-  ctx.clearRect(0, 0, cssW, cssH);
-
-  const cx = cssW / 2, cy = cssH / 2;
-  const r = Math.min(cx, cy) - 4;
-
-  // Outline circle.
-  ctx.strokeStyle = '#d0d0d0';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.stroke();
-
-  // Cardinal letters.
-  ctx.fillStyle = '#666';
-  ctx.font = `bold 10px ${FC_CHART_FONT}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('N', cx,         cy - r + 7);
-  ctx.fillText('S', cx,         cy + r - 7);
-  ctx.fillText('W', cx - r + 7, cy);
-  ctx.fillText('E', cx + r - 7, cy);
-
-  const marine = STATE.forecastData && STATE.forecastData.marine;
-  if (!marine || !marine.hourly) return;
-  const mh = marine.hourly;
-  const idx = (typeof scrubberIdx === 'number' && scrubberIdx >= 0)
-    ? scrubberIdx
-    : null;
-  if (idx == null) return;
-
-  // Arrow points TOWARD the FROM direction. Compass 0° = N (up); canvas
-  // 0° = E (right) so subtract 90° to align frames.
-  const drawArrow = (deg, fillColor, lengthFactor) => {
-    if (deg == null) return;
-    const length = r * lengthFactor;
-    const angle = (deg - 90) * Math.PI / 180;
-    const tipX = cx + length * Math.cos(angle);
-    const tipY = cy + length * Math.sin(angle);
-    // Base perpendicular to the arrow axis, centered on the dial.
-    const baseHalf = 4;
-    const perp = angle + Math.PI / 2;
-    const baseLX = cx + baseHalf * Math.cos(perp);
-    const baseLY = cy + baseHalf * Math.sin(perp);
-    const baseRX = cx - baseHalf * Math.cos(perp);
-    const baseRY = cy - baseHalf * Math.sin(perp);
-    ctx.beginPath();
-    ctx.moveTo(tipX, tipY);
-    ctx.lineTo(baseLX, baseLY);
-    ctx.lineTo(baseRX, baseRY);
-    ctx.closePath();
-    ctx.fillStyle = fillColor;
-    ctx.fill();
-  };
-
-  // Secondary first so primary draws on top.
-  const secHt  = mh.secondary_swell_wave_height    ? mh.secondary_swell_wave_height[idx]    : null;
-  const secDir = mh.secondary_swell_wave_direction ? mh.secondary_swell_wave_direction[idx] : null;
-  if (secDir != null && secHt != null && secHt >= 1.0) {
-    drawArrow(secDir, '#8cafcd', 0.6);
-  }
-
-  const priDir = mh.swell_wave_direction ? mh.swell_wave_direction[idx] : null;
-  if (priDir != null) {
-    drawArrow(priDir, '#3a5570', 0.7);
-  }
+function drawCompassDial(_scrubberIdx) {
+  // Compass dial removed in the Win95 visual overhaul. Direction reads
+  // off the swell card's expanded direction sub-panel (~45% of plot
+  // height); the corner is freed for the sub-title strip.
 }
 
 function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
@@ -3268,24 +3262,26 @@ function drawCompassRose(spectral, buoyParsed) {
   const cy = size / 2;
   const r = size / 2 - (compact ? 22 : 30);
 
-  // Background
-  ctx.fillStyle = '#ffffff';
+  // Cream Win95 background.
+  ctx.fillStyle = '#F8F4E8';
   ctx.fillRect(0, 0, size, size);
 
   // Concentric reference rings (geometric scaffolding only; radial axis now
   // encodes wave energy density, so no period labels).
   const guideRings = [0.25, 0.5, 0.75, 1.0];
   guideRings.forEach(frac => {
-    ctx.strokeStyle = '#eae6e0';
+    ctx.strokeStyle = '#808080';
     ctx.lineWidth = 0.5;
+    ctx.setLineDash([2, 2]);
     ctx.beginPath();
     ctx.arc(cx, cy, frac * r, 0, Math.PI * 2);
     ctx.stroke();
   });
+  ctx.setLineDash([]);
 
-  // Cardinal labels
-  ctx.fillStyle = '#8a827a';
-  ctx.font = `bold ${compact ? '10px' : '11px'} ${FC_CHART_FONT}`;
+  // Cardinal labels — bold black MS Sans Serif.
+  ctx.fillStyle = '#000000';
+  ctx.font = `bold 11px ${FC_CHART_FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('N', cx, cy - r - padLabel);

@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="styles-web1.css">
   <link rel="stylesheet" href="styles-web1-extensions.css">
+  <link rel="stylesheet" href="styles-retro.css">
 </head>
 <body data-era="web1">
   <!-- Boat question gate (Win95 modal) -->
@@ -41,6 +42,22 @@
 
   <!-- Main app -->
   <div id="app-window" class="hidden">
+    <!-- Win95 page-level title bar (full viewport width). Pure decoration. -->
+    <div id="win95-titlebar" aria-hidden="true">
+      <span class="win95-titlebar-icon">
+        <!-- Tiny 2-color wave glyph in 16x16 -->
+        <svg width="16" height="16" viewBox="0 0 16 16">
+          <rect width="16" height="16" fill="#000080"/>
+          <path d="M1 10 Q3 6 5 10 T9 10 T13 10 L15 10 L15 13 L1 13 Z" fill="#FFFFFF"/>
+        </svg>
+      </span>
+      <span class="win95-titlebar-text">LetsCheckChoc</span>
+      <span class="win95-titlebar-ctrls">
+        <button type="button" tabindex="-1" aria-hidden="true" class="win95-tb-btn">_</button>
+        <button type="button" tabindex="-1" aria-hidden="true" class="win95-tb-btn">&#9633;</button>
+        <button type="button" tabindex="-1" aria-hidden="true" class="win95-tb-btn">&times;</button>
+      </span>
+    </div>
     <div id="app">
     <header id="app-header">
       <div class="header-left">
@@ -83,7 +100,8 @@
 
       <!-- 1. Lineup map (Choc only) -->
       <section class="panel" id="panel-lineup" style="display:none;">
-        <h3 class="panel-title">Satellite Map · Lineup</h3>
+        <div class="retro-card-title-strip">Satellite Map &mdash; Lineup</div>
+        <h3 class="panel-title" style="display:none;">Satellite Map · Lineup</h3>
         <details class="widget-help">
           <summary>What is this?</summary>
           <p>Stylised lineup view of Chocomount Beach with the swell window cone, reef heading, primary &amp; secondary swell arrows, and wind arrow drawn from the current observation. The arrows always converge on the lineup at image centre; arrow length is energy-scaled.</p>
@@ -99,9 +117,10 @@
         </div>
       </section>
 
-      <!-- 2. Swell forecast chart -->
+      <!-- 2. Unified forecast card (Swell + Wind + Tide stacked) -->
       <section class="panel" id="panel-forecast">
-        <div class="forecast-header-row">
+        <div class="retro-card-title-strip">Forecast &mdash; 7 Day Outlook</div>
+        <div class="forecast-header-row" style="display:none;">
           <h3 class="panel-title forecast-panel-title">
             <span class="forecast-title-text">Swell Forecast</span>
             <details class="forecast-help-popover">
@@ -109,19 +128,6 @@
               <p>A 7-day projection of three sea-surface parameters — swell height, swell period, and wind speed — rendered on a shared time axis so their interactions are visible at a glance. Drag the cursor to scrub through hours; the lineup map and stat grid update to match.</p>
             </details>
           </h3>
-          <div class="forecast-toolbar">
-            <span id="forecast-cache-indicator" class="forecast-cache-indicator" style="display:none;" aria-live="polite">Cached · refreshing…</span>
-            <label class="forecast-coord-toggle" id="forecast-coord-toggle-wrap" style="display:none;">
-              <input type="checkbox" id="forecast-coord-toggle">
-              <span>Buoy coords</span>
-            </label>
-            <label class="forecast-model-label">
-              <span class="forecast-model-label-txt">Model:</span>
-              <select id="forecast-model-select" aria-label="Forecast model">
-                <option value="">Auto</option>
-              </select>
-            </label>
-          </div>
         </div>
         <div class="chart-container chart-container-tall" id="forecast-chart-container">
           <div class="forecast-detail-bar" id="forecast-detail-bar">
@@ -132,7 +138,7 @@
           <div class="forecast-card forecast-card-swell">
             <div class="forecast-section-label">Swell</div>
             <canvas id="forecast-canvas-swell"></canvas>
-            <canvas id="forecast-compass" aria-hidden="true"></canvas>
+            <canvas id="forecast-compass" aria-hidden="true" style="display:none;"></canvas>
           </div>
           <div class="forecast-card forecast-card-wind">
             <div class="forecast-section-label">Wind</div>
@@ -143,7 +149,70 @@
             <canvas id="forecast-canvas-tide"></canvas>
           </div>
         </div>
+        <!-- Bottom controls bar -->
+        <div class="forecast-controls-bar" id="forecast-controls-bar">
+          <span id="forecast-cache-indicator" class="forecast-cache-indicator" style="display:none;" aria-live="polite">Cached · refreshing…</span>
+          <label class="forecast-model-label">
+            <span class="forecast-model-label-txt">Model:</span>
+            <select id="forecast-model-select" aria-label="Forecast model">
+              <option value="">Auto</option>
+            </select>
+          </label>
+          <label class="forecast-coord-toggle" id="forecast-coord-toggle-wrap" style="display:none;">
+            <input type="checkbox" id="forecast-coord-toggle">
+            <span>Buoy coords</span>
+          </label>
+          <span class="forecast-controls-spacer"></span>
+        </div>
         <div class="panel-footer" id="footer-forecast"></div>
+      </section>
+
+      <!-- Wave Spectra + Spectral Compass Rose (promoted to sit directly
+           under the unified forecast card). The original placement
+           below the conditions-row is gone. -->
+      <section class="panel-row" id="panel-spectral-row" style="display:none;">
+        <div class="panel panel-half" id="panel-spectral-summary">
+          <div class="retro-card-title-strip">Wave Spectra</div>
+          <h3 class="panel-title" style="display:none;">Wave Spectra</h3>
+          <details class="widget-help">
+            <summary>What is this?</summary>
+            <p>A decomposition of the buoy's raw wave spectrum into three interpretable rows:</p>
+            <ul>
+              <li><strong>Primary Swell</strong> — the dominant long-period wave train the spectrum can isolate, typically a distant-storm groundswell.</li>
+              <li><strong>Wind Waves</strong> — the shorter-period train driven by the local wind at the buoy.</li>
+              <li><strong>Significant Hs</strong> — the total significant wave height of the sea state (mean of the highest one-third of waves); the combined energy of every ripple, chop, and groundswell currently present.</li>
+            </ul>
+          </details>
+          <div id="spectral-summary-table"></div>
+          <div class="panel-footer" id="footer-spectral-summary"></div>
+        </div>
+        <div class="panel panel-half" id="panel-compass">
+          <div class="retro-card-title-strip">Spectral Compass Rose</div>
+          <div class="rose-header" style="display:none;">
+            <h3 class="panel-title">Spectral Compass Rose</h3>
+          </div>
+          <div class="rose-scale-toggle" role="group" aria-label="Radial scale">
+            <button type="button" class="rose-scale-chip" data-scale="linear">Linear</button>
+            <button type="button" class="rose-scale-chip" data-scale="sqrt">&radic;</button>
+          </div>
+          <details class="widget-help">
+            <summary>What is this?</summary>
+            <p>Polar plot of wave energy by arrival direction. Radial distance from the center encodes energy magnitude; hue encodes the period of that energy band, so directionality and period can be read together.</p>
+          </details>
+          <div class="chart-container chart-container-sq">
+            <canvas id="compass-canvas"></canvas>
+          </div>
+          <div class="rose-legend" aria-hidden="true">
+            <div class="rose-legend-bar"></div>
+            <div class="rose-legend-ticks">
+              <span>2s</span>
+              <span>11s</span>
+              <span>22s+</span>
+            </div>
+            <div class="rose-legend-caption">Swell period</div>
+          </div>
+          <div class="panel-footer" id="footer-compass"></div>
+        </div>
       </section>
 
       <!-- 3. Current conditions row -->
@@ -187,50 +256,6 @@
           <div class="condition-value" id="val-daylight">—</div>
           <div class="condition-detail" id="val-daylight-detail">—</div>
           <div class="panel-footer" id="footer-daylight"></div>
-        </div>
-      </section>
-
-      <!-- 4. Wave-spectra summary (left) + Spectral Compass Rose (right) -->
-      <section class="panel-row" id="panel-spectral-row" style="display:none;">
-        <div class="panel panel-half" id="panel-spectral-summary">
-          <h3 class="panel-title">Wave Spectra</h3>
-          <details class="widget-help">
-            <summary>What is this?</summary>
-            <p>A decomposition of the buoy's raw wave spectrum into three interpretable rows:</p>
-            <ul>
-              <li><strong>Primary Swell</strong> — the dominant long-period wave train the spectrum can isolate, typically a distant-storm groundswell.</li>
-              <li><strong>Wind Waves</strong> — the shorter-period train driven by the local wind at the buoy.</li>
-              <li><strong>Significant Hs</strong> — the total significant wave height of the sea state (mean of the highest one-third of waves); the combined energy of every ripple, chop, and groundswell currently present.</li>
-            </ul>
-          </details>
-          <div id="spectral-summary-table"></div>
-          <div class="panel-footer" id="footer-spectral-summary"></div>
-        </div>
-        <div class="panel panel-half" id="panel-compass">
-          <div class="rose-header">
-            <h3 class="panel-title">Spectral Compass Rose</h3>
-            <div class="rose-scale-toggle" role="group" aria-label="Radial scale">
-              <button type="button" class="rose-scale-chip" data-scale="linear">Linear</button>
-              <button type="button" class="rose-scale-chip" data-scale="sqrt">&radic;</button>
-            </div>
-          </div>
-          <details class="widget-help">
-            <summary>What is this?</summary>
-            <p>Polar plot of wave energy by arrival direction. Radial distance from the center encodes energy magnitude; hue encodes the period of that energy band, so directionality and period can be read together.</p>
-          </details>
-          <div class="chart-container chart-container-sq">
-            <canvas id="compass-canvas"></canvas>
-          </div>
-          <div class="rose-legend" aria-hidden="true">
-            <div class="rose-legend-bar"></div>
-            <div class="rose-legend-ticks">
-              <span>2s</span>
-              <span>11s</span>
-              <span>22s+</span>
-            </div>
-            <div class="rose-legend-caption">Swell period</div>
-          </div>
-          <div class="panel-footer" id="footer-compass"></div>
         </div>
       </section>
 
