@@ -955,7 +955,6 @@ function selectBuoy(buoy) {
 
   // Load all data
   loadAllData(buoy);
-  if (typeof updateW1StatusBar === 'function') updateW1StatusBar();
 }
 
 function selectPin(lat, lon) {
@@ -970,7 +969,6 @@ function selectPin(lat, lon) {
   syncBuoySelectDropdown();
   collapseBuoyMapForSelection(null, lat, lon);
   loadPinData(lat, lon);
-  if (typeof updateW1StatusBar === 'function') updateW1StatusBar();
 }
 
 async function selectTideStation(station) {
@@ -1846,29 +1844,24 @@ function drawSwellPanel(common, data) {
   }
   ctx.restore();
 
-  // Y-axis numeric labels
-  const axisFont = isMobile ? '10px' : '11px';
+  // Y-axis: keep only the top value on each side; unit suffix lives in
+  // the top corner. Intermediate gridlines stay drawn but unlabeled to
+  // reduce visual noise and match the surrounding HTML chrome weight.
+  const axisFont = isMobile ? '9px' : '10px';
   ctx.font = `${axisFont} ${FC_CHART_FONT}`;
-  ctx.fillStyle = '#3a5570';
+  ctx.fillStyle = '#888';
   ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  for (let v = 0; v <= swellMaxY; v += swellStep) {
-    ctx.fillText(`${v}`, plotLeft - 4, ySwell(v));
-  }
-  ctx.fillStyle = '#c46a32';
-  ctx.textAlign = 'left';
-  for (let v = 0; v <= periodMax; v += 5) {
-    ctx.fillText(`${v}`, plotLeft + plotW + 4, yPeriod(v));
-  }
-  // Unit labels in top corners (extra 4px padding off the y-axis numbers).
-  ctx.font = `bold ${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
   ctx.textBaseline = 'top';
+  ctx.fillText(`${swellMaxY}`, plotLeft - 4, top + 2);
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#3a5570';
-  ctx.fillText('ft', plotLeft + 6, top + 2);
+  ctx.fillText(`${periodMax}`, plotLeft + plotW + 4, top + 2);
+  // Unit labels in top corners.
+  ctx.font = `bold ${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
+  ctx.fillStyle = '#888';
+  ctx.textAlign = 'left';
+  ctx.fillText('ft', plotLeft + 4, top + 2);
   ctx.textAlign = 'right';
-  ctx.fillStyle = '#c46a32';
-  ctx.fillText('s', plotLeft + plotW - 6, top + 2);
+  ctx.fillText('s', plotLeft + plotW - 4, top + 2);
 
   // ── Divider between upper region and direction sub-panel ──
   ctx.fillStyle = '#e8e8e8';
@@ -2105,18 +2098,18 @@ function drawWindPanel(common, data) {
   }
   ctx.restore();
 
-  const axisFont = isMobile ? '10px' : '11px';
+  // Y-axis: keep only the top value; unit suffix lives in the top
+  // corner. Intermediate gridlines stay drawn but unlabeled.
+  const axisFont = isMobile ? '9px' : '10px';
   ctx.font = `${axisFont} ${FC_CHART_FONT}`;
-  ctx.fillStyle = '#5a5550';
+  ctx.fillStyle = '#888';
   ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  for (let v = 0; v <= windMaxY; v += 5) {
-    ctx.fillText(`${v}`, plotLeft - 4, yWind(v));
-  }
-  ctx.font = `bold ${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
   ctx.textBaseline = 'top';
+  ctx.fillText(`${windMaxY}`, plotLeft - 4, top + 2);
+  ctx.font = `bold ${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
   ctx.textAlign = 'left';
-  ctx.fillText('mph', plotLeft + 2, top + 2);
+  ctx.fillStyle = '#888';
+  ctx.fillText('mph', plotLeft + 4, top + 2);
 
   // Scrubber dot on the wind speed line. Color matches the dark-gray line
   // stroke so the dot stays legible against any quality-shade fill color.
@@ -2340,6 +2333,17 @@ function drawTidePanel(common, data) {
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
+  }
+
+  // Tidal range corner label: "+max / -min ft" in the top-left so the
+  // chart has a numeric reference without per-gridline labels.
+  if (tideY && Number.isFinite(tideMin) && Number.isFinite(tideMax)) {
+    const fmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(1);
+    ctx.font = `${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
+    ctx.fillStyle = '#888';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`${fmt(tideMax)} / ${fmt(tideMin)} ft`, plotLeft + 4, top + 2);
   }
 
   return { canvas, cssW, cssH, plotLeft, plotW, top, h, tideMin, tideMax };
@@ -2774,8 +2778,11 @@ function applyScrubberToHour(idx) {
     drawLineupMap(fd.marine, fd.wind, null, idx);
   }
 
-  // ── Cross-feature: stat grid (with +Xh / -Xh badge) ──
-  applyStatGridForHour(idx);
+  // Stat grid cards (Swell/Wind/Tide/Temp/Daylight) intentionally do
+  // NOT follow the scrubber — they are a real-time "what's it doing
+  // right now" snapshot. The chart is the time-travel surface. Strip
+  // any leftover scrub badge so old state can't leak in.
+  document.querySelectorAll('.scrub-badge').forEach(b => b.remove());
 
   // ── "Reset to now" link visibility (lives inside the detail bar) ──
   const resetBtn = el('forecast-reset-now');
@@ -2783,96 +2790,6 @@ function applyScrubberToHour(idx) {
 
   // ── Cross-feature: Tab 2 prediction widget tracks the scrubber too. ──
   if (typeof _regNotifyScrubberMoved === 'function') _regNotifyScrubberMoved();
-}
-
-function applyStatGridForHour(idx) {
-  const cs = STATE.forecastChart;
-  if (!cs) return;
-  const fd = STATE.forecastData;
-  if (!fd || !fd.marine || !fd.marine.hourly) return;
-  const t = cs.times[idx];
-  const offsetH = Math.round((t.getTime() - Date.now()) / 3600000);
-  const isNow = offsetH === 0;
-  const badgeText = isNow ? '' : (offsetH > 0 ? `+${offsetH}h` : `${offsetH}h`);
-
-  const setBadge = (cardId, text) => {
-    const card = el(cardId);
-    if (!card) return;
-    let b = card.querySelector('.scrub-badge');
-    if (!text) {
-      if (b) b.remove();
-      return;
-    }
-    if (!b) {
-      b = document.createElement('span');
-      b.className = 'scrub-badge';
-      const labelEl = card.querySelector('.condition-label');
-      if (labelEl) labelEl.appendChild(b);
-    }
-    b.textContent = text;
-  };
-
-  if (isNow) {
-    // Restore the cards to their "live" rendering. Re-call the regular
-    // updaters from cached data so any scrub overrides clear cleanly.
-    const buoy = STATE.selectedBuoy;
-    const isChoc = STATE.isChocomount;
-    if (fd.marine && fd.wind) {
-      // Note: we don't have buoyParsed cached so we pass null for it; this
-      // momentarily blanks the swell/wind cards' buoy-derived secondary
-      // lines, but the next data refresh restores them. Acceptable trade-off.
-      updateSwellCard(STATE._cachedBuoyParsed || null, fd.marine, buoy, null);
-      updateWindCard(fd.wind, STATE._cachedBuoyParsed || null, isChoc, STATE.pinLat, STATE.pinLon);
-    }
-    setBadge('card-swell', '');
-    setBadge('card-secondary-swell', '');
-    setBadge('card-wind', '');
-    setBadge('card-tide', '');
-    setBadge('card-temp', '');
-    setBadge('card-daylight', '');
-    return;
-  }
-
-  // Override card values from forecast hourly data at idx.
-  const mh = fd.marine.hourly;
-  const wh = fd.wind && fd.wind.hourly ? fd.wind.hourly : null;
-
-  // Swell
-  const swellHt = mh.swell_wave_height ? mh.swell_wave_height[idx] : null;
-  const swellPer = mh.swell_wave_period ? mh.swell_wave_period[idx] : null;
-  const swellDir = mh.swell_wave_direction ? mh.swell_wave_direction[idx] : null;
-  if (swellHt != null) {
-    el('val-swell-height').textContent = `${swellHt.toFixed(1)} ft`;
-    el('val-swell-detail').textContent = `${swellPer != null ? swellPer.toFixed(0) + 's' : '—'} ${swellDir != null ? directionLabel(swellDir) : ''}`.trim();
-  }
-  setBadge('card-swell', badgeText);
-
-  // Secondary swell
-  const secHt = mh.secondary_swell_wave_height ? mh.secondary_swell_wave_height[idx] : null;
-  const secPer = mh.secondary_swell_wave_period ? mh.secondary_swell_wave_period[idx] : null;
-  const secDir = mh.secondary_swell_wave_direction ? mh.secondary_swell_wave_direction[idx] : null;
-  if (secHt != null) {
-    el('val-sec-swell-height').textContent = `${secHt.toFixed(1)} ft`;
-    el('val-sec-swell-detail').textContent = `${secPer != null ? secPer.toFixed(0) + 's' : '—'} ${secDir != null ? directionLabel(secDir) : ''}`.trim();
-    setBadge('card-secondary-swell', badgeText);
-  }
-
-  // Wind
-  if (wh) {
-    const ws = wh.wind_speed_10m ? wh.wind_speed_10m[idx] : null;
-    const wd = wh.wind_direction_10m ? wh.wind_direction_10m[idx] : null;
-    const wg = wh.wind_gusts_10m ? wh.wind_gusts_10m[idx] : null;
-    if (ws != null) {
-      el('val-wind-speed').textContent = `${Math.round(ws)} mph`;
-      const detail = `${wd != null ? directionLabel(wd) : ''}${wg != null ? ' · g ' + Math.round(wg) : ''}`;
-      el('val-wind-detail').textContent = detail.trim() || '—';
-    }
-    setBadge('card-wind', badgeText);
-  }
-
-  // Tide / temp / daylight: leave as "now" — the scrubber doesn't change
-  // these intuitively (tide is its own panel, temp varies slowly, daylight
-  // is per-day). No badge, no override.
 }
 
 function setupForecastInteraction(container) {
@@ -3786,7 +3703,6 @@ async function loadSurfLog() {
       STATE.surfLog = raw ? JSON.parse(raw) : [];
     } catch (e2) { STATE.surfLog = []; }
   }
-  if (typeof updateW1StatusBar === 'function') updateW1StatusBar();
 }
 
 function saveSurfLog() {
@@ -3794,7 +3710,6 @@ function saveSurfLog() {
     localStorage.setItem('lcc_surfLog', JSON.stringify(STATE.surfLog));
     updateStorageNote();
   } catch (e) { alert('Storage full — try removing photos or exporting.'); }
-  if (typeof updateW1StatusBar === 'function') updateW1StatusBar();
 }
 
 async function addLogEntry(entry) {
@@ -4040,12 +3955,6 @@ function switchTab(tab) {
   if (vF) vF.style.display = tab === 'forecast' ? '' : 'none';
   if (vR) vR.style.display = tab === 'regression' ? '' : 'none';
   if (vS) vS.style.display = tab === 'surflog' ? '' : 'none';
-  // Win95 chrome: update the decorative address bar to mirror the active tab.
-  const addr = el('w1-addr-url');
-  if (addr) {
-    const file = tab === 'regression' ? 'regression.html' : tab === 'surflog' ? 'log.html' : 'index.html';
-    addr.textContent = 'http://www.letscheckchoc.com/' + file;
-  }
   if (tab === 'regression') {
     renderRegressionTab();
   }
@@ -4054,26 +3963,6 @@ function switchTab(tab) {
     const authPrompt = el('sl-auth-prompt');
     if (authPrompt && window._fbUserIsAnon !== false) {
       authPrompt.style.display = '';
-    }
-  }
-  if (typeof updateW1StatusBar === 'function') updateW1StatusBar();
-}
-
-// Win95 status bar: mirrors session count + active buoy. Decorative.
-function updateW1StatusBar() {
-  const seg1 = document.getElementById('w1-status-1');
-  const seg2 = document.getElementById('w1-status-2');
-  if (seg1) {
-    const n = (STATE.surfLog && STATE.surfLog.length) || 0;
-    seg1.textContent = 'Done · ' + n + ' session' + (n === 1 ? '' : 's') + ' loaded';
-  }
-  if (seg2) {
-    if (STATE.selectedBuoy) {
-      seg2.textContent = 'Buoy ' + STATE.selectedBuoy.id;
-    } else if (STATE.pinLat != null && STATE.pinLon != null) {
-      seg2.textContent = 'Pin ' + STATE.pinLat.toFixed(2) + '°N, ' + STATE.pinLon.toFixed(2) + '°W';
-    } else {
-      seg2.textContent = 'No buoy selected';
     }
   }
 }
@@ -6499,7 +6388,7 @@ function setForecastModel(v) {
 }
 
 function describeForecastModel(v) {
-  if (!v) return 'best_match (default)';
+  if (!v) return 'Auto (Open-Meteo best_match — typically resolves to GFS Wave for this region)';
   const m = FORECAST_MODELS.find(x => x.value === v);
   return m ? `${v} · ${m.label}` : v;
 }
@@ -6553,13 +6442,20 @@ function initPanelInfoToggles() {
     // Establish positioning context for the absolute button.
     const cs = getComputedStyle(panel);
     if (cs.position === 'static') panel.style.position = 'relative';
+    // Wrap the panel-footer(s) in a single popover container so the
+    // ⓘ click reveals one anchored yellow callout, not an inline block.
+    const popover = document.createElement('div');
+    popover.className = 'panel-info-popover';
+    popover.setAttribute('role', 'tooltip');
+    footers.forEach(f => popover.appendChild(f));
+    panel.appendChild(popover);
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'panel-info-toggle';
     btn.setAttribute('aria-label', 'Show sources');
     btn.setAttribute('aria-expanded', 'false');
     btn.title = 'Sources';
-    btn.textContent = 'ⓘ'; // ⓘ
+    btn.textContent = 'ⓘ';
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const open = panel.classList.toggle('show-info');
@@ -6567,6 +6463,19 @@ function initPanelInfoToggles() {
     });
     panel.appendChild(btn);
   });
+  // Click anywhere outside an open popover to close it.
+  if (!window._panelInfoOutsideHandlerInstalled) {
+    document.addEventListener('click', (e) => {
+      document.querySelectorAll('#view-forecast .show-info').forEach(p => {
+        if (!p.contains(e.target)) {
+          p.classList.remove('show-info');
+          const b = p.querySelector(':scope > .panel-info-toggle');
+          if (b) b.setAttribute('aria-expanded', 'false');
+        }
+      });
+    });
+    window._panelInfoOutsideHandlerInstalled = true;
+  }
 }
 
 // ════════════════════════════════════════════════

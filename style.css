@@ -129,11 +129,27 @@ a:hover { text-decoration: underline; }
 /* ── Header ───────────────────────────────────── */
 #app-header {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 16px var(--gap) 8px;
+  gap: 12px;
+  padding: 12px var(--gap) 8px;
   max-width: 900px;
   margin: 0 auto;
+}
+
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .site-title {
@@ -142,13 +158,13 @@ a:hover { text-decoration: underline; }
   font-weight: 500;
   letter-spacing: -0.02em;
   color: var(--ink);
+  margin: 0;
 }
 
 .header-location {
   font-family: var(--mono);
   font-size: 0.75rem;
   color: var(--ink3);
-  margin-left: 12px;
 }
 
 .header-meta {
@@ -193,18 +209,57 @@ a:hover { text-decoration: underline; }
   color: var(--ink2);
 }
 
-/* Attribution footers default to collapsed; a ⓘ button in the panel
-   top-right toggles them open. Applied to all forecast-tab panels and
-   condition cards (each panel.show-info > .panel-footer becomes visible). */
+/* Attribution footers are wrapped at init in a .panel-info-popover
+   container and hidden by default. Clicking the ⓘ button toggles the
+   .show-info class on the parent, which reveals the popover as a
+   yellow callout anchored below the button. */
 #view-forecast .panel > .panel-footer,
 #view-forecast .panel-half > .panel-footer,
 #view-forecast .condition-card > .panel-footer {
   display: none;
 }
-#view-forecast .panel.show-info > .panel-footer,
-#view-forecast .panel-half.show-info > .panel-footer,
-#view-forecast .condition-card.show-info > .panel-footer {
+.panel-info-popover {
+  display: none;
+}
+.show-info > .panel-info-popover {
   display: block;
+  position: absolute;
+  top: 30px;
+  right: 6px;
+  z-index: 10;
+  margin: 0;
+  padding: 8px 10px;
+  background: #ffffe1;
+  border: 1px solid var(--ink2, #5a5550);
+  border-radius: 3px;
+  width: min(280px, calc(100vw - 32px));
+  font-family: var(--mono, monospace);
+  font-size: 0.72rem;
+  color: var(--ink, #1a1a2e);
+  line-height: 1.45;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.25);
+  white-space: normal;
+}
+.show-info > .panel-info-popover > .panel-footer {
+  display: block;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+.show-info > .panel-info-popover > .panel-footer + .panel-footer {
+  margin-top: 4px;
+  border-top: 1px dashed rgba(0,0,0,0.2);
+  padding-top: 4px;
+}
+.show-info > .panel-info-popover .panel-footer.footer-coord {
+  font-style: italic;
+  opacity: 0.8;
+}
+#view-forecast .panel.show-info,
+#view-forecast .panel-half.show-info,
+#view-forecast .condition-card.show-info {
+  overflow: visible;
 }
 
 .panel-info-toggle {
@@ -468,10 +523,12 @@ a:hover { text-decoration: underline; }
 }
 
 /* Forecast chart needs more vertical space for the stacked-panel layout
-   (three card-wrapped canvases + callout + arrow row + day labels). */
+   (three card-wrapped canvases + callout + arrow row + day labels).
+   Explicit min-height ensures none of the three panels collapse out of
+   the container on narrow mobile viewports. */
 .chart-container-tall {
   height: auto;
-  min-height: 480px;
+  min-height: 600px;
   position: relative;
 }
 
@@ -492,7 +549,7 @@ a:hover { text-decoration: underline; }
   box-sizing: border-box;
   position: relative;
 }
-#forecast-chart-container .forecast-card-swell { height: 279px; }
+#forecast-chart-container .forecast-card-swell { height: 280px; min-height: 280px; }
 /* Persistent compass dial in the top-right of the swell card. Reads
    the current scrubber hour and shows primary + secondary swell
    FROM-directions as arrows. */
@@ -504,8 +561,8 @@ a:hover { text-decoration: underline; }
   height: 72px;
   pointer-events: none;
 }
-#forecast-chart-container .forecast-card-wind  { height: 132px; }
-#forecast-chart-container .forecast-card-tide  { height: 132px; }
+#forecast-chart-container .forecast-card-wind  { height: 140px; min-height: 140px; }
+#forecast-chart-container .forecast-card-tide  { height: 140px; min-height: 140px; }
 #forecast-chart-container .forecast-card canvas {
   display: block;
   width: 100%;
@@ -1322,10 +1379,14 @@ a:hover { text-decoration: underline; }
     font-size: 0.95rem;
   }
 
-  /* Forecast chart: taller on mobile for less cramped feel */
+  /* Forecast chart: the stacked Swell/Wind/Tide cards set their own
+     explicit heights — let the container auto-size so all three panels
+     render fully on mobile. (Previously this rule clamped the container
+     to 260px and clipped wind + tide.) */
   #panel-forecast .chart-container {
-    overflow: hidden;
-    height: 260px;
+    overflow: visible;
+    height: auto;
+    min-height: 560px;
   }
 
   .forecast-nav-btn {

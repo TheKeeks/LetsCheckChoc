@@ -15,7 +15,7 @@ body[data-era="web1"] {
   min-height: 100vh;
 }
 
-[data-era="web1"] #app-window.w1-window {
+[data-era="web1"] #app-window {
   max-width: 1200px;
   margin: 0 auto;
   padding: 2px;
@@ -1220,7 +1220,7 @@ body[data-era="web1"] {
   body[data-era="web1"] {
     padding: 0;
   }
-  [data-era="web1"] #app-window.w1-window {
+  [data-era="web1"] #app-window {
     padding: 0;
     margin: 0;
     max-width: 100%;
@@ -1288,51 +1288,24 @@ body[data-era="web1"] {
     padding-right: 4px;
   }
 
-  /* ── FIX 9 — IE chrome compression on mobile ────────────────────────
-     The Win95/IE menu bar (File/Edit/View…) and Address bar are pure
-     decoration. On a narrow viewport they consume ~35% of first paint
-     before any actual content shows. Hide them and shrink the title bar
-     so the satellite map / lineup panel is at least partially visible
-     before the user scrolls. Desktop layout unchanged.
-     ─────────────────────────────────────────────────────────────────── */
-  [data-era="web1"] #app-window > .w1-menubar,
-  [data-era="web1"] #app-window > .w1-addrbar {
-    display: none;
-  }
-
-  [data-era="web1"] #app-window > .w1-titlebar {
-    height: 24px;
-    padding: 2px 4px;
-    font-size: 11px;
-  }
-  [data-era="web1"] #app-window > .w1-titlebar .title {
-    font-size: 11px;
-  }
-  [data-era="web1"] #app-window > .w1-titlebar .ctrls button {
-    width: 18px;
-    height: 18px;
-    font-size: 11px;
-  }
-
-  /* Header reflow: stack the buoy selector + auth cluster so neither
-     column overflows the narrow viewport. The header-right cluster is
-     normally a single inline row; on mobile let it wrap. */
+  /* Header reflow: stack the buoy selector + auth cluster below the
+     title block so neither column overflows the narrow viewport. */
   [data-era="web1"] #app-header {
     flex-wrap: wrap;
-    gap: 4px 8px;
-    padding-top: 4px;
-    padding-bottom: 4px;
+    gap: 6px 8px;
+    padding-top: 6px;
+    padding-bottom: 6px;
   }
-  [data-era="web1"] #app-header .header-left,
-  [data-era="web1"] #app-header .header-right {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px 8px;
+  [data-era="web1"] #app-header .header-left {
+    flex: 1 1 100%;
     min-width: 0;
   }
   [data-era="web1"] #app-header .header-right {
-    width: 100%;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    min-width: 0;
     justify-content: flex-start;
   }
   [data-era="web1"] .site-title {
