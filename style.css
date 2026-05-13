@@ -382,19 +382,21 @@ a:hover { text-decoration: underline; }
   height: 100%;
 }
 
-/* Forecast cards: each canvas wrapped in its own white card. The 64px
-   left padding is the section-label column ("S/W/E/L/L" etc.) so all
-   three canvases right-align with the same horizontal extent. */
+/* Forecast cards: each canvas wrapped in its own white card. A small
+   horizontal header sits at the top-left; the canvas fills the
+   remaining flex space below. */
 #forecast-chart-container .forecast-card {
   background: #fff;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
-  padding: 8px 8px 8px 64px;
+  padding: 4px 8px 8px 8px;
   margin-bottom: 8px;
   box-sizing: border-box;
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
-#forecast-chart-container .forecast-card-swell { height: 267px; }
+#forecast-chart-container .forecast-card-swell { height: 285px; }
 /* Persistent compass dial in the top-right of the swell card. Reads
    the current scrubber hour and shows primary + secondary swell
    FROM-directions as arrows. */
@@ -406,33 +408,32 @@ a:hover { text-decoration: underline; }
   height: 72px;
   pointer-events: none;
 }
-#forecast-chart-container .forecast-card-wind  { height: 120px; }
-#forecast-chart-container .forecast-card-tide  { height: 120px; }
+#forecast-chart-container .forecast-card-wind  { height: 138px; }
+#forecast-chart-container .forecast-card-tide  { height: 138px; }
 #forecast-chart-container .forecast-card canvas {
   display: block;
   width: 100%;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
 }
-/* Stacked-letter section label: vertically centered in the 64px column. */
-#forecast-chart-container .forecast-section-label {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  width: 56px;
-  transform: translateY(-50%);
-  text-align: center;
+#forecast-chart-container .forecast-card #forecast-compass {
+  flex: none;
+}
+/* Horizontal card header (replaces the old stacked-letter column). */
+#forecast-chart-container .forecast-card-header {
   font-family: var(--mono, monospace);
-  font-size: 0.66rem;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  line-height: 1.35;
-  color: #888;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink, #1a1a2e);
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  padding: 0 2px 2px;
+  flex: none;
   user-select: none;
-  pointer-events: none;
 }
 #forecast-chart-container .forecast-day-row {
   height: 28px;
-  padding: 0 8px 0 64px;
+  padding: 0 8px;
   box-sizing: border-box;
 }
 #forecast-chart-container .forecast-day-row canvas {

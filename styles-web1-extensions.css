@@ -322,12 +322,16 @@ body[data-era="web1"] {
   margin: 6px 0;
 }
 
-[data-era="web1"] .forecast-section-label {
-  font-family: var(--w1-sans);
-  font-variant: small-caps;
-  letter-spacing: 1px;
-  color: var(--w1-navy);
+/* Horizontal card header on each forecast panel — matches the navy
+   serif treatment of the other section titles ("Swell Forecast",
+   "Tide Stations", etc.). */
+[data-era="web1"] #forecast-chart-container .forecast-card-header {
+  font-family: var(--w1-serif);
+  font-size: 13px;
   font-weight: bold;
+  color: var(--w1-navy);
+  letter-spacing: 0;
+  padding: 1px 2px 3px;
 }
 
 /* Detail bar: white inset bevel (text-display field), black Courier mono.
@@ -1122,21 +1126,6 @@ body[data-era="web1"] {
   border-color: #404040 #ffffff #ffffff #404040;
   box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #808080;
   box-sizing: border-box;
-}
-
-/* ── FIX 3 — section labels onto the gray bevel margin ──────────── */
-
-/* SWELL / WIND / TIDE labels sit in the .forecast-card's left padding
-   column (gray, 64px wide), readable as navy MS Sans Serif. */
-[data-era="web1"] #forecast-chart-container .forecast-section-label {
-  background: var(--w1-face);
-  color: var(--w1-navy);
-  font-family: var(--w1-sans);
-  font-size: 11px;
-  font-weight: bold;
-  font-variant: normal;
-  letter-spacing: 1px;
-  text-transform: uppercase;
 }
 
 /* ════════════════════════════════════════════════════════════════════
