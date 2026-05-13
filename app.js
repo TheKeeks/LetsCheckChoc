@@ -2617,16 +2617,28 @@ function getScrubberIndex() {
   if (typeof STATE.scrubberIdx === 'number' && STATE.scrubberIdx >= 0 && STATE.scrubberIdx < cs.times.length) {
     return STATE.scrubberIdx;
   }
-  // Restore from sessionStorage if present
+  // Restore from sessionStorage if present — but only honor it if the
+  // stored hour is still close enough to "now" to be meaningful. Without
+  // this guard, a mobile tab kept alive overnight will resurrect an
+  // 11-hour-stale scrubber position on next view (the "-11H" bug).
   let stored = null;
   try { stored = sessionStorage.getItem('lcc-scrubber-hour'); } catch (_) {}
   if (stored) {
     const targetMs = new Date(stored).getTime();
     if (Number.isFinite(targetMs)) {
-      const idx = findHourIndexForTime(targetMs, cs);
-      if (idx >= 0) {
-        STATE.scrubberIdx = idx;
-        return idx;
+      // Honor stored value only if it points to the current hour or a
+      // future hour; if it's >1 hour in the past treat it as stale and
+      // default to "now" instead.
+      const stalenessMs = Date.now() - targetMs;
+      if (stalenessMs <= 60 * 60 * 1000) {
+        const idx = findHourIndexForTime(targetMs, cs);
+        if (idx >= 0) {
+          STATE.scrubberIdx = idx;
+          return idx;
+        }
+      } else {
+        // Drop the stale value so we don't keep re-evaluating it.
+        try { sessionStorage.removeItem('lcc-scrubber-hour'); } catch (_) {}
       }
     }
   }
