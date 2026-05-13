@@ -517,6 +517,64 @@ body[data-era="web1"] .forecast-reset-btn {
 }
 body[data-era="web1"] .forecast-reset-btn:hover { color: #551A8B; }
 
+/* ── Bottom controls bar — sunken inset strip ────────────────────── */
+body[data-era="web1"] .forecast-controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #C0C0C0;
+  border: 2px solid;
+  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  padding: 4px 8px;
+  margin: 6px 8px 4px 8px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: #000000;
+  flex-wrap: wrap;
+}
+body[data-era="web1"] .forecast-controls-spacer {
+  flex: 1;
+}
+body[data-era="web1"] .forecast-controls-bar .forecast-model-label,
+body[data-era="web1"] .forecast-controls-bar .forecast-coord-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+body[data-era="web1"] .forecast-controls-bar select {
+  background: #FFFFFF;
+  border: 2px solid;
+  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 0;
+  min-height: 20px;
+}
+body[data-era="web1"] .forecast-controls-bar input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  margin: 0 4px 0 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: #FFFFFF;
+  border: 2px solid;
+  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  border-radius: 0;
+  position: relative;
+  cursor: pointer;
+  vertical-align: middle;
+}
+body[data-era="web1"] .forecast-controls-bar input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 1px; top: -2px;
+  width: 8px; height: 8px;
+  background-image: linear-gradient(45deg, transparent 45%, #000 45% 55%, transparent 55%),
+                    linear-gradient(-45deg, transparent 45%, #000 45% 55%, transparent 55%);
+}
+
 /* No drop shadows anywhere on the Forecast tab content. */
 body[data-era="web1"] #view-forecast .panel,
 body[data-era="web1"] #view-forecast .panel-half,
