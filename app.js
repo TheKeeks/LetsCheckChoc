@@ -6523,13 +6523,20 @@ function initPanelInfoToggles() {
     // Establish positioning context for the absolute button.
     const cs = getComputedStyle(panel);
     if (cs.position === 'static') panel.style.position = 'relative';
+    // Wrap the panel-footer(s) in a single popover container so the
+    // ⓘ click reveals one anchored yellow callout, not an inline block.
+    const popover = document.createElement('div');
+    popover.className = 'panel-info-popover';
+    popover.setAttribute('role', 'tooltip');
+    footers.forEach(f => popover.appendChild(f));
+    panel.appendChild(popover);
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'panel-info-toggle';
     btn.setAttribute('aria-label', 'Show sources');
     btn.setAttribute('aria-expanded', 'false');
     btn.title = 'Sources';
-    btn.textContent = 'ⓘ'; // ⓘ
+    btn.textContent = 'ⓘ';
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const open = panel.classList.toggle('show-info');
@@ -6537,6 +6544,19 @@ function initPanelInfoToggles() {
     });
     panel.appendChild(btn);
   });
+  // Click anywhere outside an open popover to close it.
+  if (!window._panelInfoOutsideHandlerInstalled) {
+    document.addEventListener('click', (e) => {
+      document.querySelectorAll('#view-forecast .show-info').forEach(p => {
+        if (!p.contains(e.target)) {
+          p.classList.remove('show-info');
+          const b = p.querySelector(':scope > .panel-info-toggle');
+          if (b) b.setAttribute('aria-expanded', 'false');
+        }
+      });
+    });
+    window._panelInfoOutsideHandlerInstalled = true;
+  }
 }
 
 // ════════════════════════════════════════════════
