@@ -526,15 +526,29 @@ a:hover { text-decoration: underline; }
   user-select: none;
   pointer-events: none;
 }
+/* Day-label header strip — HTML, positioned ABOVE the chart cards.
+   Day labels are absolutely positioned inside via JS at x-coordinates
+   matching the canvas time axis (FC_PAD.left/right applied to the
+   strip's own clientWidth). */
 #forecast-chart-container .forecast-day-row {
-  height: 28px;
-  padding: 0 8px 0 8px;
+  height: 22px;
+  padding: 0;
   box-sizing: border-box;
+  position: relative;
+  margin: 4px 0 2px 0;
 }
-#forecast-chart-container .forecast-day-row canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
+#forecast-chart-container .forecast-day-label {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-family: Tahoma, "MS Sans Serif", Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  color: #2c2825;
+  line-height: 22px;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
 }
 /* When the callout row is inside the tide card, it inherits the card's
    60px left-padding (section-label column), so no extra padding needed. */
