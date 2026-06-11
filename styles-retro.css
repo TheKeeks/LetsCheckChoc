@@ -635,6 +635,60 @@ body[data-era="web1"] #spectral-summary-table tr:nth-child(odd) td {
   background: #FFFFFF;
 }
 
+/* Freshness strip — Win95 status-bar sunken field with an LED dot.
+   Green = live realtime obs, amber = stale obs / pipeline archive. */
+body[data-era="web1"] .spectral-status-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  padding: 2px 6px;
+  background: #C0C0C0;
+  border: 1px solid;
+  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: #000000;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body[data-era="web1"] .spectral-status-strip::before {
+  content: '●';
+  font-size: 10px;
+  line-height: 1;
+}
+body[data-era="web1"] .spectral-status-strip.is-live::before { color: #008000; }
+body[data-era="web1"] .spectral-status-strip.is-stale::before,
+body[data-era="web1"] .spectral-status-strip.is-archive::before { color: #B8860B; }
+
+/* Instrument-readout numerals + liveliness cell decorations. */
+body[data-era="web1"] #spectral-summary-table td.num-cell {
+  font-family: "Courier New", Courier, monospace;
+  font-variant-numeric: tabular-nums;
+}
+body[data-era="web1"] #spectral-summary-table .trend {
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 10px;
+}
+body[data-era="web1"] #spectral-summary-table .trend-up { color: #008000; }
+body[data-era="web1"] #spectral-summary-table .trend-down { color: #800000; }
+body[data-era="web1"] #spectral-summary-table .dir-arrow {
+  display: inline-block;
+  width: 11px;
+  font-weight: bold;
+  transform-origin: 50% 50%;
+  margin-right: 2px;
+}
+body[data-era="web1"] #spectral-summary-table .period-chip {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border: 1px solid #404040;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
 /* Compass rose canvas wrap — deep-sunken cream framed display. */
 body[data-era="web1"] #panel-compass .chart-container {
   background: #F8F4E8;

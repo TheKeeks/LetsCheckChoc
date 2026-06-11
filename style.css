@@ -1296,6 +1296,40 @@ a:hover { text-decoration: underline; }
   color: var(--ink);
 }
 
+/* Liveliness additions — plain fallbacks; Win95 styling lives in
+   styles-retro.css under body[data-era="web1"]. */
+.spectral-status-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--ink2);
+}
+.spectral-status-strip::before { content: '●'; }
+.spectral-status-strip.is-live::before { color: #2e7d32; }
+.spectral-status-strip.is-stale::before,
+.spectral-status-strip.is-archive::before { color: #b8860b; }
+.spectral-summary-tbl .trend { font-size: 0.65rem; }
+.spectral-summary-tbl .trend-up { color: #2e7d32; }
+.spectral-summary-tbl .trend-down { color: #8a3a2e; }
+.spectral-summary-tbl .dir-arrow {
+  display: inline-block;
+  width: 11px;
+  font-weight: 700;
+  transform-origin: 50% 50%;
+  margin-right: 2px;
+}
+.spectral-summary-tbl .period-chip {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
 .stale-indicator {
   font-style: italic;
   color: var(--orange);
