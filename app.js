@@ -1689,9 +1689,12 @@ const FC_RETRO = {
   period:        '#B85A12',
   dirPrimary:    '#1A3B6A',
   dirSecondary:  '#1A3B6A',
-  windOn:        '#C84A4A',
-  windCross:     '#D9A636',
-  windOff:       '#5A9C5A',
+  // Wind quality colors keyed to the app's earth-tone palette (same stops
+  // as the compass-rose period ramp) so the wind bars sit with the rest of
+  // the retro chrome instead of shouting traffic-light primaries.
+  windOn:        '#8a3a2e',
+  windCross:     '#b87a2e',
+  windOff:       '#3a7d56',
   windStroke:    '#404040',
   windBand:      'rgba(216, 232, 208, 0.6)',
   tide:          '#2A5D8C',
@@ -1811,25 +1814,6 @@ function _fcDrawDaySeparators(ctx, common, plotLeft, plotW, top, height) {
   }
 }
 
-// "You are here" cue — 2px blue stripe at the LEFT EDGE of today's
-// column. Drawn on every panel canvas using identical x-coords so the
-// accent reads as one continuous vertical mark across the cards.
-function _fcDrawTodayAccent(ctx, common, plotLeft, plotW, top, height) {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  // Skip if today is outside the chart window.
-  if (today.getTime() < common.t0 - 1 || today.getTime() > common.tEnd) return;
-  const xx = _fcXFor(today, common, plotLeft, plotW);
-  if (xx < plotLeft - 1 || xx > plotLeft + plotW) return;
-  ctx.save();
-  ctx.strokeStyle = '#3a5570'; // primary-swell blue
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(xx, top);
-  ctx.lineTo(xx, top + height);
-  ctx.stroke();
-  ctx.restore();
-}
-
 // Filled black 3px circle. Color arg is accepted for backwards-compat
 // with prior call sites but the retro spec mandates black dots.
 function drawScrubberDot(ctx, x, y, _color) {
@@ -1887,7 +1871,6 @@ function drawSwellPanel(common, data) {
   // through the direction sub-panel using the same x-coords).
   _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
-  _fcDrawTodayAccent(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawPastDim(ctx, common, plotLeft, plotW, 0, cssH);
 
   const { heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellStep, periodMax, obsHsFt } = data;
@@ -1975,8 +1958,9 @@ function drawSwellPanel(common, data) {
   }
   ctx.restore();
 
-  // Y-axis labels: full quartile labels in 11px bold MS Sans Serif black.
-  ctx.font = `bold 11px ${FC_CHART_FONT}`;
+  // Y-axis labels: quartile labels in regular 11px MS Sans Serif black
+  // (classic dialog text; bold is reserved for the HTML day labels).
+  ctx.font = `11px ${FC_CHART_FONT}`;
   ctx.fillStyle = FC_RETRO.ink;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
@@ -2087,7 +2071,7 @@ function drawSwellPanel(common, data) {
     { deg: 180, label: 'S'   }, { deg: 225, label: 'SW'  },
     { deg: 270, label: 'W'   }, { deg: 315, label: 'NW'  }
   ];
-  ctx.font = `bold 11px ${FC_CHART_FONT}`;
+  ctx.font = `11px ${FC_CHART_FONT}`;
   ctx.fillStyle = FC_RETRO.ink;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
@@ -2196,7 +2180,6 @@ function drawWindPanel(common, data) {
   ctx.fillRect(0, 0, cssW, cssH);
   _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
-  _fcDrawTodayAccent(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawPastDim(ctx, common, plotLeft, plotW, 0, cssH);
 
   const { windSpeeds, windDirs, windMaxY } = data;
@@ -2261,8 +2244,8 @@ function drawWindPanel(common, data) {
     _fcDrawDashedHGrid(ctx, plotLeft, plotLeft + plotW, yWind(v));
   }
 
-  // Y-axis labels: every 5 mph in bold 11px sans, black.
-  ctx.font = `bold 11px ${FC_CHART_FONT}`;
+  // Y-axis labels: every 5 mph in regular 11px sans, black.
+  ctx.font = `11px ${FC_CHART_FONT}`;
   ctx.fillStyle = FC_RETRO.ink;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
@@ -2309,7 +2292,6 @@ function drawTidePanel(common, data) {
   ctx.fillRect(0, 0, cssW, cssH);
   _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
-  _fcDrawTodayAccent(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawPastDim(ctx, common, plotLeft, plotW, 0, cssH);
 
   const { tidePred, tideHiLo } = data;
@@ -2361,9 +2343,9 @@ function drawTidePanel(common, data) {
     ctx.restore();
   }
 
-  // Y-axis labels for tide range: max / 0 / min in 11px bold sans.
+  // Y-axis labels for tide range: max / 0 / min in regular 11px sans.
   if (tideY && Number.isFinite(tideMin) && Number.isFinite(tideMax)) {
-    ctx.font = `bold 11px ${FC_CHART_FONT}`;
+    ctx.font = `11px ${FC_CHART_FONT}`;
     ctx.fillStyle = FC_RETRO.ink;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
@@ -3970,6 +3952,23 @@ function drawSpectrum(spectral) {
     attach();
   }
 })();
+
+// Canvas text is rasterized at draw time, so charts painted before the
+// self-hosted pixel font (style.css @font-face "MS Sans Serif") finished
+// loading would keep fallback glyphs forever. Repaint once fonts settle;
+// the guards make this a no-op when nothing has been drawn yet.
+if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => {
+    if (STATE.forecastData && STATE.forecastData.marine) {
+      const d = STATE.forecastData;
+      drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo, d.tidePred, d.buoyParsed);
+    }
+    if (STATE.lastSpectral) {
+      drawCompassRose(STATE.lastSpectral, STATE.lastBuoyParsed);
+      drawSpectrum(STATE.lastSpectral);
+    }
+  }).catch(() => { /* font load failure → fallback stack already on screen */ });
+}
 
 function initRoseScaleToggle() {
   try {

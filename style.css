@@ -1,3 +1,24 @@
+/* ── Web-1.0 pixel font ────────────────────────────
+   Self-hosted "Pixelated MS Sans Serif" (from the MIT-licensed 98.css
+   project, github.com/jdan/98.css). Declared under the exact family name
+   the Win95 stacks already request, so every CSS rule and canvas label
+   asking for "MS Sans Serif" gets the genuine bitmap look on ALL
+   platforms instead of silently falling back to a modern sans. */
+@font-face {
+  font-family: "MS Sans Serif";
+  src: url("fonts/ms_sans_serif.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "MS Sans Serif";
+  src: url("fonts/ms_sans_serif_bold.woff2") format("woff2");
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ── Design tokens ─────────────────────────────── */
 :root {
   --bg: #f4f1ec;
