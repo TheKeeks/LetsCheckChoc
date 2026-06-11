@@ -1,3 +1,24 @@
+/* ── Web-1.0 pixel font ────────────────────────────
+   Self-hosted "Pixelated MS Sans Serif" (from the MIT-licensed 98.css
+   project, github.com/jdan/98.css). Declared under the exact family name
+   the Win95 stacks already request, so every CSS rule and canvas label
+   asking for "MS Sans Serif" gets the genuine bitmap look on ALL
+   platforms instead of silently falling back to a modern sans. */
+@font-face {
+  font-family: "MS Sans Serif";
+  src: url("fonts/ms_sans_serif.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "MS Sans Serif";
+  src: url("fonts/ms_sans_serif_bold.woff2") format("woff2");
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ── Design tokens ─────────────────────────────── */
 :root {
   --bg: #f4f1ec;
@@ -1294,6 +1315,40 @@ a:hover { text-decoration: underline; }
 .spectral-summary-tbl tr:last-child td {
   font-weight: 500;
   color: var(--ink);
+}
+
+/* Liveliness additions — plain fallbacks; Win95 styling lives in
+   styles-retro.css under body[data-era="web1"]. */
+.spectral-status-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--ink2);
+}
+.spectral-status-strip::before { content: '●'; }
+.spectral-status-strip.is-live::before { color: #2e7d32; }
+.spectral-status-strip.is-stale::before,
+.spectral-status-strip.is-archive::before { color: #b8860b; }
+.spectral-summary-tbl .trend { font-size: 0.65rem; }
+.spectral-summary-tbl .trend-up { color: #2e7d32; }
+.spectral-summary-tbl .trend-down { color: #8a3a2e; }
+.spectral-summary-tbl .dir-arrow {
+  display: inline-block;
+  width: 11px;
+  font-weight: 700;
+  transform-origin: 50% 50%;
+  margin-right: 2px;
+}
+.spectral-summary-tbl .period-chip {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  margin-right: 4px;
+  vertical-align: -1px;
 }
 
 .stale-indicator {

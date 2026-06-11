@@ -120,9 +120,13 @@ function loadSpectralFns() {
     }) + ';',
     grab('parseSpectralFile'),
     grab('parseNDBCSpectral'),
+    grab('parseSpecRowTime'),
+    grab('parseSpecRows'),
     grab('parseSpecSummaryFromText'),
+    grab('pickTrendBaseline'),
+    grab('computeSpecTrends'),
     grab('computePrimarySwellDir'),
-    'module.exports = { parseSpectralFile, parseNDBCSpectral, parseSpecSummaryFromText, computePrimarySwellDir };'
+    'module.exports = { parseSpectralFile, parseNDBCSpectral, parseSpecRows, parseSpecSummaryFromText, pickTrendBaseline, computeSpecTrends, computePrimarySwellDir };'
   ].join('\n');
   const sandbox = { module: { exports: {} } };
   vm.createContext(sandbox);
@@ -172,6 +176,31 @@ test('parseSpecSummaryFromText converts SwD/WWD text to degrees', function() {
   assert(s.swellDir === 135, 'SwD "SE" should map to 135°, got ' + s.swellDir);
   assert(s.windDir === 67.5, 'WWD "ENE" should map to 67.5°, got ' + s.windDir);
   assert(s.meanDir === 149, 'MWD should be 149° numeric');
+});
+
+// ── Test 7c2: parseSpecRows parses history + rejects proxy HTML ──
+test('parseSpecRows parses history rows, trends compute, HTML rejected', function() {
+  const { parseSpecRows, pickTrendBaseline, computeSpecTrends } = loadSpectralFns();
+  const sample =
+    '#YY  MM DD hh mm WVHT  SwH  SwP  WWH  WWP SwD WWD  STEEPNESS  APD MWD\n' +
+    '#yr  mo dy hr mn    m    m  sec    m  sec  -  degT     -      sec degT\n' +
+    '2026 04 21 17 56  1.0  0.4 10.5  0.9  4.2  SE ENE    AVERAGE  7.3 149\n' +
+    '2026 04 21 16 56  0.8  0.3 10.0  0.7  4.0  SE ENE    AVERAGE  7.1 151\n' +
+    '2026 04 21 15 56  0.7  0.3  9.8  0.6  3.9  SE ENE    AVERAGE  7.0 150\n';
+  const rows = parseSpecRows(sample);
+  assert(rows.length === 3, 'expected 3 rows, got ' + rows.length);
+  // Note: instanceof Date fails across VM realms, so check behaviorally.
+  assert(rows[0].time && rows[0].time.getUTCHours() === 17,
+    'row timestamp should parse as UTC');
+  const baseline = pickTrendBaseline(rows);
+  assert(baseline === rows[1], 'baseline should be the ~1h-old row');
+  const trends = computeSpecTrends(rows[0], baseline);
+  assert(trends.hs && trends.hs.dir === 'up', 'hs trend should be up (+0.2m ≈ +0.66ft)');
+  assert(trends.swellPeriod && trends.swellPeriod.dir === 'up', 'swell period +0.5s should be up');
+  assert(trends.swellHt && trends.swellHt.dir === 'up', 'swell height +0.1m ≈ +0.33ft should be up');
+  // A proxy HTML error page handed back as "success" must yield no rows.
+  assert(parseSpecRows('<html><body>error</body></html>\nline2\nline3\n').length === 0,
+    'HTML input should yield no rows');
 });
 
 // ── Test 7d: computePrimarySwellDir is energy-weighted and swell-banded ──

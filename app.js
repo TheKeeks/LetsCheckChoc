@@ -92,6 +92,7 @@ const STATE = {
   matchModalPhotoIdx: 0,
   lastSpectral: null,
   lastBuoyParsed: null,
+  lastSpecSummary: null,    // latest .spec/pipeline summary row (shared Hs source)
   roseScaleMode: 'linear'   // 'linear' | 'sqrt'; persisted to localStorage
 };
 
@@ -153,6 +154,21 @@ function swellDirColor(deg) {
 
 function formatTime(date) {
   return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+// Human-readable age for freshness labels: "just now", "14 min ago",
+// "3h 10m ago", "2d ago".
+function formatAgo(date) {
+  const ms = Date.now() - date.getTime();
+  if (!Number.isFinite(ms) || ms < 60 * 1000) return 'just now';
+  const min = Math.round(ms / 60000);
+  if (min < 60) return `${min} min ago`;
+  const h = Math.floor(min / 60);
+  if (h < 48) {
+    const m = min % 60;
+    return m ? `${h}h ${m}m ago` : `${h}h ago`;
+  }
+  return `${Math.round(h / 24)}d ago`;
 }
 
 function formatDay(date) {
@@ -384,6 +400,17 @@ function readCache(key, ttlMs) {
     const { ts, data } = JSON.parse(raw);
     if (Date.now() - ts < ttlMs) return data;
   } catch (_) { /* fall through */ }
+  return null;
+}
+
+// Timestamp of the last cache write for `key`, ignoring TTL. The cache ts
+// is the true fetch time even when a fetch function later serves from
+// cache, so it backs the "updated X min ago" freshness labels.
+function readCacheTs(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) return JSON.parse(raw).ts || null;
+  } catch (_) { /* non-fatal */ }
   return null;
 }
 
@@ -1030,15 +1057,21 @@ function renderForecastSet(ctx) {
     STATE._cachedTidePred = tidePred;
 
     updateTideCard(tideHiLo, tideStn);
-    drawForecastChart(marine, wind, daylight, tideHiLo, tidePred);
+    drawForecastChart(marine, wind, daylight, tideHiLo, tidePred, buoyParsed);
 
     if (isChoc) drawLineupMap(marine, wind, buoyParsed);
 
     const coordLabel = isChoc
       ? `${forecastLat}°N, ${Math.abs(forecastLon)}°W (open water)`
       : `${forecastLat.toFixed(3)}°N, ${Math.abs(forecastLon).toFixed(3)}°W`;
+    // The marine cache ts is the true fetch time on both the SWR pre-paint
+    // and the post-fetch refresh (fetchMarineForecast writes it per fetch).
+    const marineTs = readCacheTs(marineCacheKey(forecastLat, forecastLon, selectedModel));
+    const updatedStr = marineTs
+      ? ` · updated ${formatTime(new Date(marineTs))} (${formatAgo(new Date(marineTs))})`
+      : '';
     setFooter('footer-forecast',
-      `Open-Meteo Marine · ${describeForecastModel(selectedModel)} · ${coordLabel}`,
+      `Open-Meteo Marine · ${describeForecastModel(selectedModel)} · ${coordLabel}${updatedStr}`,
       'https://open-meteo.com/en/docs/marine-weather-api',
       'open-meteo.com'
     );
@@ -1064,8 +1097,12 @@ function renderPinForecastSet(ctx) {
     STATE._cachedTidePred = tidePred;
     updateTideCard(tideHiLo, tideStn);
     drawForecastChart(marine, wind, daylight, tideHiLo, tidePred);
+    const marineTs = readCacheTs(marineCacheKey(lat, lon, selectedModel));
+    const updatedStr = marineTs
+      ? ` · updated ${formatTime(new Date(marineTs))} (${formatAgo(new Date(marineTs))})`
+      : '';
     setFooter('footer-forecast',
-      `Open-Meteo Marine · ${describeForecastModel(selectedModel)} · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`,
+      `Open-Meteo Marine · ${describeForecastModel(selectedModel)} · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W${updatedStr}`,
       'https://open-meteo.com/en/docs/marine-weather-api',
       'open-meteo.com'
     );
@@ -1192,6 +1229,9 @@ async function loadAllData(buoy) {
   if (buoy.spectral) {
     el('panel-spectral-row').style.display = '';
     el('panel-spectral-summary').style.display = '';
+    // Drop the previous buoy's summary so a failed load can't leak a stale
+    // Hs into the compass-rose center (resolveHsFt prefers it).
+    STATE.lastSpecSummary = null;
     let parsed = null;
     let spectralRaw = null;
     let isStale = false;
@@ -1216,6 +1256,9 @@ async function loadAllData(buoy) {
             spectralRaw = spectralRaw || {};
             spectralRaw._pipelineSummary = pData.spectral_summary;
             spectralRaw._fetchTime = pData.fetch_time;
+            // Buoy observation time ("YYYY-MM-DD HH:mm UTC") for the
+            // ARCHIVE freshness badge.
+            spectralRaw._obsTimeStr = pData.buoy && pData.buoy.time ? pData.buoy.time : null;
           }
         }
       } catch (err) {
@@ -1243,11 +1286,13 @@ async function loadAllData(buoy) {
         `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}`,
         'ndbc station page'
       );
-      if (isStale && spectralRaw && spectralRaw._fetchTime) {
-        setFooter('footer-spectral-summary',
-          `pipeline fallback · fetched ${new Date(spectralRaw._fetchTime).toLocaleString()}`
-        );
-      }
+      // Freshness (live/stale/archive + timestamps) lives in the table's
+      // status strip; the footer keeps only the station identity.
+      setFooter('footer-spectral-summary',
+        `ndbc ${buoy.id} spectral summary`,
+        `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}`,
+        'ndbc station page'
+      );
     } else {
       console.warn('Spectral parse returned no bins for buoy', buoy.id);
       showSpectralEmpty(buoy.id);
@@ -1256,6 +1301,7 @@ async function loadAllData(buoy) {
   } else {
     el('panel-spectral-row').style.display = '';
     el('panel-spectral-summary').style.display = 'none';
+    STATE.lastSpecSummary = null;
     showSpectralEmpty();
   }
 
@@ -1620,7 +1666,10 @@ const FORECAST_HOURS = 168; // 7 × 24
 
 // Canvas-internal padding (CSS px). Identical on every panel canvas so
 // the time-axis (xPos) matches across all three cards.
-const FC_PAD = { left: 36, right: 40 };
+// Left gutter is sized for the longest tick label ("+3.5ft" — the top
+// tick of each axis carries the unit suffix so no unit text floats
+// inside the plot).
+const FC_PAD = { left: 44, right: 40 };
 
 // Web1-era font stacks for all chart-rendered text on the forecast tab.
 // Primary chart labels (numbers, axes, compass cardinals, inline tide
@@ -1643,9 +1692,12 @@ const FC_RETRO = {
   period:        '#B85A12',
   dirPrimary:    '#1A3B6A',
   dirSecondary:  '#1A3B6A',
-  windOn:        '#C84A4A',
-  windCross:     '#D9A636',
-  windOff:       '#5A9C5A',
+  // Wind quality colors keyed to the app's earth-tone palette (same stops
+  // as the compass-rose period ramp) so the wind bars sit with the rest of
+  // the retro chrome instead of shouting traffic-light primaries.
+  windOn:        '#8a3a2e',
+  windCross:     '#b87a2e',
+  windOff:       '#3a7d56',
   windStroke:    '#404040',
   windBand:      'rgba(216, 232, 208, 0.6)',
   tide:          '#2A5D8C',
@@ -1667,12 +1719,12 @@ function _fcDrawDashedHGrid(ctx, x0, x1, y) {
   ctx.restore();
 }
 
-function drawForecastChart(marine, wind, daylight, tideHiLo, tidePred) {
+function drawForecastChart(marine, wind, daylight, tideHiLo, tidePred, buoyParsed) {
   // Cache so the scrubber and external reflows can re-render without re-fetching.
-  STATE.forecastData = { marine, wind, daylight, tideHiLo, tidePred };
+  STATE.forecastData = { marine, wind, daylight, tideHiLo, tidePred, buoyParsed };
   // New data → re-resolve scrubber position (may reload from sessionStorage).
   STATE.scrubberIdx = -1;
-  _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred);
+  _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred, buoyParsed);
 }
 
 // ── Shared per-canvas helpers ──────────────────────
@@ -1684,6 +1736,39 @@ function drawForecastChart(marine, wind, daylight, tideHiLo, tidePred) {
 
 function _fcXFor(time, common, plotLeft, plotW) {
   return plotLeft + ((time.getTime() - common.t0) / common.tRange) * plotW;
+}
+
+// Dashed vertical "now" marker — drawn on every panel so the current
+// moment reads as one continuous line across the stacked cards. Returns
+// the x position (CSS px) or null when "now" is outside the chart window.
+function _fcDrawNowLine(ctx, common, plotLeft, plotW, top, bottom) {
+  const nowMs = Date.now();
+  if (nowMs < common.t0 || nowMs > common.tEnd) return null;
+  const nowX = _fcXFor(new Date(nowMs), common, plotLeft, plotW);
+  ctx.save();
+  ctx.strokeStyle = 'rgba(44, 40, 37, 0.5)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(nowX, top);
+  ctx.lineTo(nowX, bottom);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+  return nowX;
+}
+
+// Subtle wash over hours already in the past, so elapsed vs upcoming
+// reads at a glance without fighting the night shading.
+function _fcDrawPastDim(ctx, common, plotLeft, plotW, top, h) {
+  const nowMs = Date.now();
+  if (nowMs <= common.t0) return;
+  const nowX = Math.min(
+    _fcXFor(new Date(nowMs), common, plotLeft, plotW),
+    plotLeft + plotW
+  );
+  ctx.fillStyle = 'rgba(44, 40, 37, 0.045)';
+  ctx.fillRect(plotLeft, top, nowX - plotLeft, h);
 }
 
 function _fcDrawNightShading(ctx, common, plotLeft, plotW, top, height) {
@@ -1730,25 +1815,6 @@ function _fcDrawDaySeparators(ctx, common, plotLeft, plotW, top, height) {
       ctx.stroke();
     }
   }
-}
-
-// "You are here" cue — 2px blue stripe at the LEFT EDGE of today's
-// column. Drawn on every panel canvas using identical x-coords so the
-// accent reads as one continuous vertical mark across the cards.
-function _fcDrawTodayAccent(ctx, common, plotLeft, plotW, top, height) {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  // Skip if today is outside the chart window.
-  if (today.getTime() < common.t0 - 1 || today.getTime() > common.tEnd) return;
-  const xx = _fcXFor(today, common, plotLeft, plotW);
-  if (xx < plotLeft - 1 || xx > plotLeft + plotW) return;
-  ctx.save();
-  ctx.strokeStyle = '#3a5570'; // primary-swell blue
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(xx, top);
-  ctx.lineTo(xx, top + height);
-  ctx.stroke();
-  ctx.restore();
 }
 
 // Filled black 3px circle. Color arg is accepted for backwards-compat
@@ -1808,9 +1874,9 @@ function drawSwellPanel(common, data) {
   // through the direction sub-panel using the same x-coords).
   _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
-  _fcDrawTodayAccent(ctx, common, plotLeft, plotW, 0, cssH);
+  _fcDrawPastDim(ctx, common, plotLeft, plotW, 0, cssH);
 
-  const { heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellStep, periodMax } = data;
+  const { heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellStep, periodMax, obsHsFt } = data;
   const ySwell  = (val) => top + h - (Math.min(val, swellMaxY) / swellMaxY) * h;
   const yPeriod = (val) => {
     const v = Math.max(0, Math.min(periodMax, val));
@@ -1895,30 +1961,26 @@ function drawSwellPanel(common, data) {
   }
   ctx.restore();
 
-  // Y-axis labels: full quartile labels in 11px bold MS Sans Serif black.
-  ctx.font = `bold 11px ${FC_CHART_FONT}`;
+  // Y-axis labels: quartile ticks in regular 11px MS Sans Serif black
+  // (classic dialog text). The top tick carries the unit ("6ft", "24s")
+  // so no unit text floats inside the plot, and label y is clamped so
+  // the end glyphs never clip against the panel edges.
+  const clampLabelY = (yy) => Math.min(Math.max(yy, 7), cssH - 7);
+  ctx.font = `11px ${FC_CHART_FONT}`;
   ctx.fillStyle = FC_RETRO.ink;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   for (let q = 0; q <= 4; q++) {
     const v = swellMaxY * (1 - q / 4);
-    const yy = top + (h * q / 4);
-    ctx.fillText(String(Math.round(v)), plotLeft - 4, yy);
+    const label = q === 0 ? `${v}ft` : String(v);
+    ctx.fillText(label, plotLeft - 4, clampLabelY(top + (h * q / 4)));
   }
   ctx.textAlign = 'left';
   for (let q = 0; q <= 4; q++) {
     const v = periodMax * (1 - q / 4);
-    const yy = top + (h * q / 4);
-    ctx.fillText(String(Math.round(v)), plotLeft + plotW + 4, yy);
+    const label = q === 0 ? `${v}s` : String(v);
+    ctx.fillText(label, plotLeft + plotW + 4, clampLabelY(top + (h * q / 4)));
   }
-  // Unit labels — 10px sans, dimmer, top corners of plot.
-  ctx.font = `10px ${FC_CHART_FONT}`;
-  ctx.fillStyle = '#404040';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText('ft', plotLeft + 4, top + 2);
-  ctx.textAlign = 'right';
-  ctx.fillText('s', plotLeft + plotW - 4, top + 2);
 
   // ── Divider between upper region and direction sub-panel ──
   ctx.fillStyle = '#808080';
@@ -2007,7 +2069,7 @@ function drawSwellPanel(common, data) {
     { deg: 180, label: 'S'   }, { deg: 225, label: 'SW'  },
     { deg: 270, label: 'W'   }, { deg: 315, label: 'NW'  }
   ];
-  ctx.font = `bold 11px ${FC_CHART_FONT}`;
+  ctx.font = `11px ${FC_CHART_FONT}`;
   ctx.fillStyle = FC_RETRO.ink;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
@@ -2017,12 +2079,46 @@ function drawSwellPanel(common, data) {
   }
 
   // "FROM" label clarifies the y-axis represents the direction the
-  // swell is COMING FROM (oceanographic convention).
+  // swell is COMING FROM (oceanographic convention). Top-right of the
+  // sub-panel, away from the compass tick labels in the left gutter.
   ctx.font = `bold 10px ${FC_CHART_FONT}`;
   ctx.fillStyle = '#404040';
-  ctx.textAlign = 'left';
+  ctx.textAlign = 'right';
   ctx.textBaseline = 'top';
-  ctx.fillText('FROM', plotLeft + 6, subTop + 3);
+  ctx.fillText('FROM', plotLeft + plotW - 6, subTop + 3);
+
+  // Dashed "now" line spanning the height region and the direction
+  // sub-panel (same span as the scrubber line), drawn before the scrubber
+  // so the solid black scrubber line layers on top.
+  const nowX = _fcDrawNowLine(ctx, common, plotLeft, plotW, top, cssH - 2);
+
+  // Live buoy observation at "now" — white diamond on the swell panel.
+  // The buoy reports TOTAL significant height while the line plots the
+  // swell component, so this reads as "measured sea vs forecast swell"
+  // (approximate by design). Clamped to the axis ceiling.
+  if (nowX != null && obsHsFt != null) {
+    const oy = ySwell(Math.min(obsHsFt, swellMaxY));
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(nowX, oy - 4);
+    ctx.lineTo(nowX + 4, oy);
+    ctx.lineTo(nowX, oy + 4);
+    ctx.lineTo(nowX - 4, oy);
+    ctx.closePath();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    if (!isMobile) {
+      ctx.font = `9px ${FC_CHART_FONT}`;
+      ctx.fillStyle = '#404040';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('obs', nowX + 7, oy);
+    }
+    ctx.restore();
+  }
 
   // Scrubber vertical line + dots.
   const sIdx = STATE.scrubberIdx;
@@ -2083,7 +2179,7 @@ function drawWindPanel(common, data) {
   ctx.fillRect(0, 0, cssW, cssH);
   _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
-  _fcDrawTodayAccent(ctx, common, plotLeft, plotW, 0, cssH);
+  _fcDrawPastDim(ctx, common, plotLeft, plotW, 0, cssH);
 
   const { windSpeeds, windDirs, windMaxY } = data;
   const yWind = (val) => top + h - (Math.min(val, windMaxY) / windMaxY) * h;
@@ -2147,20 +2243,20 @@ function drawWindPanel(common, data) {
     _fcDrawDashedHGrid(ctx, plotLeft, plotLeft + plotW, yWind(v));
   }
 
-  // Y-axis labels: every 5 mph in bold 11px sans, black.
-  ctx.font = `bold 11px ${FC_CHART_FONT}`;
+  // Y-axis labels: every 5 mph in regular 11px sans, black. Top tick
+  // carries the unit ("25mph"); label y clamped so end glyphs don't clip.
+  ctx.font = `11px ${FC_CHART_FONT}`;
   ctx.fillStyle = FC_RETRO.ink;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   for (let v = 0; v <= windMaxY; v += 5) {
-    ctx.fillText(String(v), plotLeft - 4, yWind(v));
+    const label = v === windMaxY ? `${v}mph` : String(v);
+    const yy = Math.min(Math.max(yWind(v), 7), cssH - 7);
+    ctx.fillText(label, plotLeft - 4, yy);
   }
-  // Unit label.
-  ctx.font = `10px ${FC_CHART_FONT}`;
-  ctx.fillStyle = '#404040';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText('mph', plotLeft + 4, top + 2);
+
+  // Dashed "now" line (drawn before the scrubber so it layers beneath).
+  _fcDrawNowLine(ctx, common, plotLeft, plotW, top, top + h);
 
   // Scrubber vertical line + dot.
   const sIdx = STATE.scrubberIdx;
@@ -2192,7 +2288,7 @@ function drawTidePanel(common, data) {
   ctx.fillRect(0, 0, cssW, cssH);
   _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
   _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
-  _fcDrawTodayAccent(ctx, common, plotLeft, plotW, 0, cssH);
+  _fcDrawPastDim(ctx, common, plotLeft, plotW, 0, cssH);
 
   const { tidePred, tideHiLo } = data;
   let tideMin = 0, tideMax = 1, tideY = null;
@@ -2243,24 +2339,20 @@ function drawTidePanel(common, data) {
     ctx.restore();
   }
 
-  // Y-axis labels for tide range: max / 0 / min in 11px bold sans.
+  // Y-axis labels for tide range: max / 0 / min in regular 11px sans.
+  // Top tick carries the unit ("+3.5ft"); ends clamped against clipping.
   if (tideY && Number.isFinite(tideMin) && Number.isFinite(tideMax)) {
-    ctx.font = `bold 11px ${FC_CHART_FONT}`;
+    ctx.font = `11px ${FC_CHART_FONT}`;
     ctx.fillStyle = FC_RETRO.ink;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     const fmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(1);
-    ctx.fillText(fmt(tideMax), plotLeft - 4, tideY(tideMax));
-    ctx.fillText(fmt(tideMin), plotLeft - 4, tideY(tideMin));
+    ctx.fillText(fmt(tideMax) + 'ft', plotLeft - 4, Math.max(tideY(tideMax), 7));
+    ctx.fillText(fmt(tideMin), plotLeft - 4, Math.min(tideY(tideMin), cssH - 7));
     if (tideMin < 0 && tideMax > 0) {
       ctx.fillText('0', plotLeft - 4, tideY(0));
       _fcDrawDashedHGrid(ctx, plotLeft, plotLeft + plotW, tideY(0));
     }
-    ctx.font = `10px ${FC_CHART_FONT}`;
-    ctx.fillStyle = '#404040';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText('ft', plotLeft + 4, top + 2);
   }
 
   // Low-tide markers + sparse labels (with collision avoidance)
@@ -2367,6 +2459,9 @@ function drawTidePanel(common, data) {
     }
   }
 
+  // Dashed "now" line (drawn before the scrubber so it layers beneath).
+  _fcDrawNowLine(ctx, common, plotLeft, plotW, top, top + h);
+
   // Scrubber dot on the tide curve. Tide values come from tidePred
   // (non-hourly samples), so interpolate to the scrubbed hour timestamp.
   const sIdx = STATE.scrubberIdx;
@@ -2391,21 +2486,6 @@ function drawTidePanel(common, data) {
         drawScrubberDot(ctx, tx, tideY(v));
       }
     }
-  }
-
-  // Dashed "now" vertical, tide canvas only
-  if (nowMs >= common.t0 && nowMs <= common.tEnd) {
-    const nowX = _fcXFor(new Date(nowMs), common, plotLeft, plotW);
-    ctx.save();
-    ctx.strokeStyle = 'rgba(44, 40, 37, 0.5)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    ctx.beginPath();
-    ctx.moveTo(nowX, top);
-    ctx.lineTo(nowX, top + h);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
   }
 
   return { canvas, cssW, cssH, plotLeft, plotW, top, h, tideMin, tideMax };
@@ -2461,7 +2541,7 @@ function drawCompassDial(_scrubberIdx) {
   // height); the corner is freed for the sub-title strip.
 }
 
-function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
+function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred, buoyParsed) {
   const container = el('forecast-chart-container');
   if (!container) return;
   const W = container.clientWidth;
@@ -2502,10 +2582,12 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
     if (heights[i]    != null && heights[i]    > swellPeak) swellPeak = heights[i];
     if (secHeights[i] != null && secHeights[i] > swellPeak) swellPeak = secHeights[i];
   }
-  let swellMaxY = Math.max(2, Math.ceil(swellPeak * 1.2 / 2) * 2);
+  // Round up to a multiple of 4 so the quartile tick labels land on whole
+  // numbers (a max of 6 used to label as 6/5/3/2/0 — ragged and wrong-looking).
+  let swellMaxY = Math.max(4, Math.ceil(swellPeak * 1.2 / 4) * 4);
   const swellStep = swellMaxY <= 4 ? 1 : (swellMaxY <= 10 ? 2 : 4);
-  // Period right axis: fixed 0–25s.
-  const periodMax = 25;
+  // Period right axis: fixed 0–24s (divisible by 4 → clean quartile ticks).
+  const periodMax = 24;
   // Wind axis: 0 → max(speed) × 1.2, rounded to nearest 5, floor 10.
   let windPeak = 0;
   for (let i = extStart; i <= extEnd; i++) {
@@ -2528,7 +2610,11 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
   };
 
   // Draw each panel canvas.
-  const swellPayload = { heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellStep, periodMax };
+  const swellPayload = {
+    heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellStep, periodMax,
+    // Current observed total Hs (feet) from the buoy, for the "obs" marker.
+    obsHsFt: buoyParsed && buoyParsed.waveHeight != null ? buoyParsed.waveHeight : null
+  };
   const windPayload  = { windSpeeds, windDirs, windMaxY };
   const tidePayload  = { tidePred, tideHiLo };
   const swellInfo = drawSwellPanel(common, swellPayload);
@@ -2594,6 +2680,14 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred) {
     }
   };
   setupForecastInteraction(container);
+
+  // "Now" pulse overlay — re-sized to the container on every full draw
+  // (covers resizes), then the rAF loop keeps the marker drifting in
+  // real time without touching the panel canvases.
+  const overlay = _ensureNowOverlay(container);
+  setCanvasDPR(overlay, overlay.getContext('2d'), W, container.clientHeight);
+  _nowPulsePrev = null;
+  startNowPulse();
 }
 
 
@@ -2906,6 +3000,120 @@ function resetScrubberToNow() {
   }
 })();
 
+// ── "Now" pulse overlay ─────────────────────────
+//
+// A lazily-created canvas layered over the whole forecast-chart container
+// and animated with rAF. It lives OUTSIDE the three panel canvases, so
+// scrubber repaints and the pulse never invalidate each other; it is
+// pointer-events:none so the canvases' scrubber hit-testing is unaffected.
+
+let _nowPulseRAF = null;
+let _nowPulsePrev = null; // last drawn {x, y} for dirty-rect clearing
+
+function _ensureNowOverlay(container) {
+  let overlay = el('forecast-now-overlay');
+  if (!overlay) {
+    overlay = document.createElement('canvas');
+    overlay.id = 'forecast-now-overlay';
+    overlay.style.position = 'absolute';
+    overlay.style.left = '0';
+    overlay.style.top = '0';
+    overlay.style.pointerEvents = 'none';
+    // Below the crosshair (z 5) and the sticky detail bar (z 10).
+    overlay.style.zIndex = '3';
+    container.appendChild(overlay);
+  }
+  return overlay;
+}
+
+// Container-relative marker position: x tracks Date.now() continuously,
+// y is the primary swell height interpolated between the bounding hourly
+// samples. Returns null when "now" is outside the chart window.
+function _nowMarkerGeom() {
+  const cs = STATE.forecastChart;
+  if (!cs || !cs.layout) return null;
+  const nowMs = Date.now();
+  if (nowMs < cs.t0 || nowMs > cs.tEnd) return null;
+  const L = cs.layout;
+  const x = L.plotLeft + ((nowMs - cs.t0) / cs.tRange) * L.plotW;
+  let y = null;
+  for (let i = 0; i < cs.times.length - 1; i++) {
+    const a = cs.times[i].getTime(), b = cs.times[i + 1].getTime();
+    if (nowMs >= a && nowMs <= b) {
+      const va = cs.heights[i], vb = cs.heights[i + 1];
+      if (va != null && vb != null && b > a) {
+        const v = va + (vb - va) * ((nowMs - a) / (b - a));
+        y = L.swellTop + L.swellH - (Math.min(v, L.swellMaxY) / L.swellMaxY) * L.swellH;
+      }
+      break;
+    }
+  }
+  if (y == null) return null;
+  return { x, y };
+}
+
+function _drawNowPulseFrame(staticFrame) {
+  const container = el('forecast-chart-container');
+  const overlay = el('forecast-now-overlay');
+  // Skip while the tab/panel is hidden (zero-width container).
+  if (!container || !overlay || container.offsetWidth === 0) return;
+  const ctx = overlay.getContext('2d');
+  // Clear only a dirty square around the previously drawn marker.
+  if (_nowPulsePrev) {
+    ctx.clearRect(_nowPulsePrev.x - 14, _nowPulsePrev.y - 14, 28, 28);
+    _nowPulsePrev = null;
+  }
+  const g = _nowMarkerGeom();
+  if (!g) return;
+  // Core dot.
+  ctx.beginPath();
+  ctx.arc(g.x, g.y, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = FC_RETRO.swellStroke;
+  ctx.fill();
+  // Expanding, fading ring (~1.6s cycle).
+  if (!staticFrame) {
+    const phase = (performance.now() % 1600) / 1600;
+    ctx.beginPath();
+    ctx.arc(g.x, g.y, 3 + phase * 3, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(26, 59, 106, ${(0.6 * (1 - phase)).toFixed(3)})`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  _nowPulsePrev = g;
+}
+
+function startNowPulse() {
+  if (_nowPulseRAF != null) return; // idempotent — full draws can't stack loops
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    _drawNowPulseFrame(true); // single static marker, no animation loop
+    return;
+  }
+  const tick = () => {
+    _drawNowPulseFrame(false);
+    _nowPulseRAF = requestAnimationFrame(tick);
+  };
+  _nowPulseRAF = requestAnimationFrame(tick);
+}
+
+function stopNowPulse() {
+  if (_nowPulseRAF != null) {
+    cancelAnimationFrame(_nowPulseRAF);
+    _nowPulseRAF = null;
+  }
+  const overlay = el('forecast-now-overlay');
+  if (overlay) {
+    const octx = overlay.getContext('2d');
+    octx.clearRect(0, 0, overlay.width, overlay.height);
+  }
+  _nowPulsePrev = null;
+}
+
+// No rAF burn while the browser tab is hidden.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopNowPulse();
+  else if (STATE.forecastChart) startNowPulse();
+});
+
 function drawArrow(ctx, x, y, dirDeg, size, color, lineW) {
   // dirDeg is "from" direction (meteorological). Arrow points in the "to" direction.
   const rad = degToRad((dirDeg + 180) % 360 - 90);
@@ -3064,34 +3272,98 @@ const COMPASS_TO_DEG = {
   'W': 270, 'WNW': 292.5, 'NW': 315, 'NNW': 337.5
 };
 
-// Parse NDBC .spec summary row.
+// Parse the UTC observation timestamp from a .spec data row's first five
+// columns (YY MM DD hh mm). Old-format files use 2-digit years.
+function parseSpecRowTime(cols) {
+  let y = parseInt(cols[0], 10);
+  const mo = parseInt(cols[1], 10), d = parseInt(cols[2], 10);
+  const h = parseInt(cols[3], 10), mi = parseInt(cols[4], 10);
+  if (![y, mo, d, h, mi].every(Number.isFinite)) return null;
+  if (y < 100) y += 2000;
+  return new Date(Date.UTC(y, mo - 1, d, h, mi));
+}
+
+// Parse NDBC .spec summary rows, newest first (lines[0]/[1] are header/units).
 // Columns: YY MM DD hh mm WVHT SwH SwP WWH WWP SwD WWD STEEPNESS APD MWD
 // Indices: 0  1  2  3  4  5    6   7   8   9   10  11  12        13  14
 // SwD and WWD are text compass (e.g. "SE", "SSE"); MWD is numeric degrees.
-function parseSpecSummaryFromText(specText) {
-  if (!specText) return null;
+// Returns [] for garbage input — e.g. an HTML error page handed back by a
+// CORS proxy as a "successful" response (real files start with "#YY ...").
+function parseSpecRows(specText, maxRows) {
+  if (!specText) return [];
+  const limit = maxRows || 12;
   const lines = specText.trim().split('\n');
-  if (lines.length < 3) return null;
-  const data = lines[2].trim().split(/\s+/);
-  if (data.length < 15) return null;
-  const sf = (idx, invalid) => {
-    const v = parseFloat(data[idx]);
-    if (!Number.isFinite(v)) return null;
-    return v < (invalid || 99) ? v : null;
-  };
-  const compass = idx => {
-    const t = data[idx];
-    return t ? (COMPASS_TO_DEG[t.toUpperCase()] ?? null) : null;
+  if (lines.length < 3 || !lines[0].trim().startsWith('#')) return [];
+  const out = [];
+  for (let li = 2; li < lines.length && out.length < limit; li++) {
+    const data = lines[li].trim().split(/\s+/);
+    if (data.length < 15) continue;
+    const time = parseSpecRowTime(data);
+    if (!time) continue;
+    const sf = (idx, invalid) => {
+      const v = parseFloat(data[idx]);
+      if (!Number.isFinite(v)) return null;
+      return v < (invalid || 99) ? v : null;
+    };
+    const compass = idx => {
+      const t = data[idx];
+      return t ? (COMPASS_TO_DEG[t.toUpperCase()] ?? null) : null;
+    };
+    out.push({
+      time,
+      hs: sf(5),
+      swellHt: sf(6),
+      swellPeriod: sf(7),
+      windHt: sf(8),
+      windPeriod: sf(9),
+      swellDir: compass(10),
+      windDir: compass(11),
+      meanDir: sf(14, 999)
+    });
+  }
+  return out;
+}
+
+function parseSpecSummaryFromText(specText) {
+  return parseSpecRows(specText, 1)[0] || null;
+}
+
+// Pick the historical row to diff against: the one closest to one hour
+// before the latest observation, accepted only when its age relative to
+// the latest is between 45 min and 3.5 h. Time-based (not row-index) so
+// 30-min-cadence stations and files with gaps both behave.
+function pickTrendBaseline(rows) {
+  if (!rows || rows.length < 2) return null;
+  const latestMs = rows[0].time.getTime();
+  const targetMs = latestMs - 60 * 60 * 1000;
+  let best = null, bestDiff = Infinity;
+  for (let i = 1; i < rows.length; i++) {
+    const age = latestMs - rows[i].time.getTime();
+    if (age < 45 * 60 * 1000 || age > 3.5 * 60 * 60 * 1000) continue;
+    const diff = Math.abs(rows[i].time.getTime() - targetMs);
+    if (diff < bestDiff) { bestDiff = diff; best = rows[i]; }
+  }
+  return best;
+}
+
+// Per-cell deltas vs the baseline row, in DISPLAY units (ft / s) so the
+// arrow numbers match the rendered cells. dir: 'up' | 'down' | 'flat';
+// null when either side is missing. Thresholds: ±0.2 ft, ±0.5 s.
+function computeSpecTrends(latest, baseline) {
+  if (!latest || !baseline) return null;
+  const mft = v => v == null ? null : v * 3.28084;
+  const trend = (a, b, threshold) => {
+    if (a == null || b == null) return null;
+    const delta = a - b;
+    if (Math.abs(delta) < threshold) return { delta, dir: 'flat' };
+    return { delta, dir: delta > 0 ? 'up' : 'down' };
   };
   return {
-    hs: sf(5),
-    swellHt: sf(6),
-    swellPeriod: sf(7),
-    windHt: sf(8),
-    windPeriod: sf(9),
-    swellDir: compass(10),
-    windDir: compass(11),
-    meanDir: sf(14, 999)
+    hs:          trend(mft(latest.hs),      mft(baseline.hs),      0.2),
+    swellHt:     trend(mft(latest.swellHt), mft(baseline.swellHt), 0.2),
+    swellPeriod: trend(latest.swellPeriod,  baseline.swellPeriod,  0.5),
+    windHt:      trend(mft(latest.windHt),  mft(baseline.windHt),  0.2),
+    windPeriod:  trend(latest.windPeriod,   baseline.windPeriod,   0.5)
   };
 }
 
@@ -3119,11 +3391,19 @@ function renderSpectralSummary(spectralRaw, buoyParsed) {
   container.innerHTML = '';
 
   let summary = null;
+  let trends = null;
+  let source = null; // 'live' (realtime NDBC .spec) | 'pipeline' (2h archive)
   if (spectralRaw && spectralRaw.spec) {
-    summary = parseSpecSummaryFromText(spectralRaw.spec);
+    const specRows = parseSpecRows(spectralRaw.spec);
+    summary = specRows[0] || null;
+    if (summary) {
+      source = 'live';
+      trends = computeSpecTrends(summary, pickTrendBaseline(specRows));
+    }
   }
   if (!summary && spectralRaw && spectralRaw._pipelineSummary) {
     const ps = spectralRaw._pipelineSummary;
+    source = 'pipeline';
     summary = {
       hs: ps.significant_wave_height_m,
       swellHt: ps.swell_height_m,
@@ -3135,6 +3415,7 @@ function renderSpectralSummary(spectralRaw, buoyParsed) {
     };
   }
   if (!summary) {
+    STATE.lastSpecSummary = null;
     container.innerHTML = '<div class="spectral-empty-msg">Spectral summary unavailable</div>';
     return;
   }
@@ -3145,26 +3426,88 @@ function renderSpectralSummary(spectralRaw, buoyParsed) {
   const derivedDir = computePrimarySwellDir(bins);
   if (derivedDir != null) summary.swellDir = derivedDir;
 
+  // Share with the compass rose so both surfaces resolve the same Hs.
+  STATE.lastSpecSummary = summary;
+
   const mToFt = v => v != null ? (v * 3.28084).toFixed(1) : '—';
   const fmtP = v => v != null ? v.toFixed(1) : '—';
-  const fmtDir = v => v != null ? `${directionLabel(v)} (${Math.round(v)}°)` : '—';
 
-  // Calculate total Hs from buoy data or summary
-  let hsFt = '—';
-  if (summary.hs != null) hsFt = mToFt(summary.hs);
-  else if (buoyParsed && buoyParsed.waveHeight != null) hsFt = buoyParsed.waveHeight.toFixed(1);
+  // Trend marker (▲ / ▼ + delta in display units) next to a numeric cell.
+  // Flat / unavailable trends render nothing.
+  const trendHTML = (t, unit) => {
+    if (!t || t.dir === 'flat') return '';
+    const cls = t.dir === 'up' ? 'trend-up' : 'trend-down';
+    const sym = t.dir === 'up' ? '▲' : '▼';
+    const sign = t.delta > 0 ? '+' : '−';
+    const mag = Math.abs(t.delta).toFixed(1);
+    return ` <span class="trend ${cls}" title="${sign}${mag} ${unit} vs ~1h ago">${sym}${mag}</span>`;
+  };
 
+  // NDBC directions are FROM (meteorological). The glyph points in the
+  // TRAVEL (to) direction — same convention as drawArrow() and the
+  // lineup-map arrows — while the text keeps the FROM label.
+  const fmtDir = v => {
+    if (v == null) return '—';
+    const toDeg = (v + 180) % 360;
+    return `<span class="dir-arrow" style="transform:rotate(${Math.round(toDeg)}deg)" ` +
+      `title="from ${directionLabel(v)} (${Math.round(v)}°), traveling ${directionLabel(toDeg)}">↑</span>` +
+      `${directionLabel(v)} (${Math.round(v)}°)`;
+  };
+
+  // Period cell: color chip keyed to the compass-rose legend ramp (2s→22s+).
+  const fmtPeriodCell = (p, t) => {
+    if (p == null) return '—';
+    return `<span class="period-chip" style="background:${periodColorRGBA(p, 1)}"></span>` +
+      fmtP(p) + trendHTML(t, 's');
+  };
+  const fmtHtCell = (m, t) => m == null ? '—' : mToFt(m) + trendHTML(t, 'ft');
+
+  const hsFt = resolveHsFt(summary.hs, buoyParsed && buoyParsed.waveHeight, bins);
+  const hsCell = hsFt != null
+    ? hsFt.toFixed(1) + trendHTML(trends && trends.hs, 'ft')
+    : '—';
+
+  const t = trends || {};
   const rows = [
-    { label: 'Primary Swell', ht: mToFt(summary.swellHt), period: fmtP(summary.swellPeriod), dir: fmtDir(summary.swellDir) },
-    { label: 'Wind Waves', ht: mToFt(summary.windHt), period: fmtP(summary.windPeriod), dir: fmtDir(summary.windDir) },
-    { label: 'Significant Hs', ht: hsFt, period: '—', dir: '—' }
+    { label: 'Primary Swell', ht: fmtHtCell(summary.swellHt, t.swellHt), period: fmtPeriodCell(summary.swellPeriod, t.swellPeriod), dir: fmtDir(summary.swellDir) },
+    { label: 'Wind Waves', ht: fmtHtCell(summary.windHt, t.windHt), period: fmtPeriodCell(summary.windPeriod, t.windPeriod), dir: fmtDir(summary.windDir) },
+    { label: 'Significant Hs', ht: hsCell, period: '—', dir: '—' }
   ];
+
+  // Freshness strip — green LIVE for a recent realtime observation, amber
+  // STALE for an old one, amber ARCHIVE on the pipeline fallback.
+  const strip = document.createElement('div');
+  strip.className = 'spectral-status-strip';
+  if (source === 'live' && summary.time) {
+    const ageMs = Date.now() - summary.time.getTime();
+    const state = ageMs <= 2 * 60 * 60 * 1000 ? 'live' : 'stale';
+    strip.classList.add(`is-${state}`);
+    strip.textContent =
+      `${state.toUpperCase()} · obs ${formatTime(summary.time)} (${formatAgo(summary.time)})`;
+  } else if (source === 'pipeline') {
+    strip.classList.add('is-archive');
+    let txt = 'ARCHIVE · pipeline';
+    // Pipeline timestamps arrive as "YYYY-MM-DD HH:mm UTC" strings.
+    const obs = spectralRaw._obsTimeStr
+      ? new Date(spectralRaw._obsTimeStr.replace(' UTC', 'Z').replace(' ', 'T'))
+      : null;
+    if (obs && !isNaN(obs)) txt += ` · obs ${formatTime(obs)} (${formatAgo(obs)})`;
+    if (spectralRaw._fetchTime) {
+      const ft = new Date(spectralRaw._fetchTime);
+      if (!isNaN(ft)) txt += ` · fetched ${formatTime(ft)}`;
+    }
+    strip.textContent = txt;
+  } else {
+    strip.classList.add('is-stale');
+    strip.textContent = 'obs time unavailable';
+  }
+  container.appendChild(strip);
 
   const table = document.createElement('table');
   table.className = 'spectral-summary-tbl';
   const thead = '<thead><tr><th>Component</th><th>Height (ft)</th><th>Period (s)</th><th>Direction</th></tr></thead>';
   const tbody = rows.map(r =>
-    `<tr><td>${r.label}</td><td>${r.ht}</td><td>${r.period}</td><td>${r.dir}</td></tr>`
+    `<tr><td>${r.label}</td><td class="num-cell">${r.ht}</td><td class="num-cell">${r.period}</td><td class="num-cell">${r.dir}</td></tr>`
   ).join('');
   table.innerHTML = thead + '<tbody>' + tbody + '</tbody>';
   container.appendChild(table);
@@ -3243,6 +3586,29 @@ function periodColorRGBA(period, alpha) {
     }
   }
   return `rgba(128,128,128,${alpha})`;
+}
+
+// Hs = 4 * sqrt(m0) from spectral bins, in FEET (m0 = Σ energy·df).
+function hsFromBinsFt(bins) {
+  if (!bins || !bins.length) return null;
+  let m0 = 0;
+  for (let i = 0; i < bins.length; i++) {
+    const df = i < bins.length - 1
+      ? Math.abs(bins[i + 1].freq - bins[i].freq)
+      : (i > 0 ? Math.abs(bins[i].freq - bins[i - 1].freq) : 0.005);
+    m0 += bins[i].energy * df;
+  }
+  return m0 > 0 ? 4 * Math.sqrt(m0) * 3.28084 : null;
+}
+
+// Single source of truth for the significant wave height shown in the
+// Wave Spectra table and the compass-rose center, so the two adjacent
+// widgets can never disagree. Preference: .spec/pipeline-reported Hs
+// (meters) → buoy stdmet Hs (already feet) → 4√m0 from the bins.
+function resolveHsFt(specHsM, buoyHsFt, bins) {
+  if (specHsM != null) return specHsM * 3.28084;
+  if (buoyHsFt != null) return buoyHsFt;
+  return hsFromBinsFt(bins);
 }
 
 function drawCompassRose(spectral, buoyParsed) {
@@ -3387,22 +3753,14 @@ function drawCompassRose(spectral, buoyParsed) {
     }
   }
 
-  // Hs value at center
-  let hsVal = null;
-  if (buoyParsed && buoyParsed.waveHeight != null) {
-    hsVal = buoyParsed.waveHeight.toFixed(1);
-  } else if (spectral && spectral.bins) {
-    // Calculate Hs from spectral bins: Hs = 4 * sqrt(m0), m0 = sum(energy * df)
-    let m0 = 0;
-    const bins = spectral.bins;
-    for (let i = 0; i < bins.length; i++) {
-      const df = i < bins.length - 1
-        ? Math.abs(bins[i + 1].freq - bins[i].freq)
-        : (i > 0 ? Math.abs(bins[i].freq - bins[i - 1].freq) : 0.005);
-      m0 += bins[i].energy * df;
-    }
-    if (m0 > 0) hsVal = (4 * Math.sqrt(m0) * 3.28084).toFixed(1);
-  }
+  // Hs value at center — shared resolver (resolveHsFt) so the rose and
+  // the Wave Spectra table always display the same number.
+  const hsFt = resolveHsFt(
+    STATE.lastSpecSummary && STATE.lastSpecSummary.hs,
+    buoyParsed && buoyParsed.waveHeight,
+    spectral && spectral.bins
+  );
+  const hsVal = hsFt != null ? hsFt.toFixed(1) : null;
   if (hsVal) {
     ctx.font = `bold 14px ${FC_CHART_FONT_MONO}`;
     ctx.fillStyle = '#2c2825';
@@ -3564,7 +3922,7 @@ function drawSpectrum(spectral) {
         invalidateCanvasDPR(el('forecast-canvas-wind'));
         invalidateCanvasDPR(el('forecast-canvas-tide'));
         const d = STATE.forecastData;
-        drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo, d.tidePred);
+        drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo, d.tidePred, d.buoyParsed);
       }
       if (STATE._cachedTidePred) {
         drawTideChart(STATE._cachedTidePred);
@@ -3588,6 +3946,23 @@ function drawSpectrum(spectral) {
     attach();
   }
 })();
+
+// Canvas text is rasterized at draw time, so charts painted before the
+// self-hosted pixel font (style.css @font-face "MS Sans Serif") finished
+// loading would keep fallback glyphs forever. Repaint once fonts settle;
+// the guards make this a no-op when nothing has been drawn yet.
+if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => {
+    if (STATE.forecastData && STATE.forecastData.marine) {
+      const d = STATE.forecastData;
+      drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo, d.tidePred, d.buoyParsed);
+    }
+    if (STATE.lastSpectral) {
+      drawCompassRose(STATE.lastSpectral, STATE.lastBuoyParsed);
+      drawSpectrum(STATE.lastSpectral);
+    }
+  }).catch(() => { /* font load failure → fallback stack already on screen */ });
+}
 
 function initRoseScaleToggle() {
   try {
