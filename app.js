@@ -1666,7 +1666,10 @@ const FORECAST_HOURS = 168; // 7 × 24
 
 // Canvas-internal padding (CSS px). Identical on every panel canvas so
 // the time-axis (xPos) matches across all three cards.
-const FC_PAD = { left: 36, right: 40 };
+// Left gutter is sized for the longest tick label ("+3.5ft" — the top
+// tick of each axis carries the unit suffix so no unit text floats
+// inside the plot).
+const FC_PAD = { left: 44, right: 40 };
 
 // Web1-era font stacks for all chart-rendered text on the forecast tab.
 // Primary chart labels (numbers, axes, compass cardinals, inline tide
@@ -1958,31 +1961,26 @@ function drawSwellPanel(common, data) {
   }
   ctx.restore();
 
-  // Y-axis labels: quartile labels in regular 11px MS Sans Serif black
-  // (classic dialog text; bold is reserved for the HTML day labels).
+  // Y-axis labels: quartile ticks in regular 11px MS Sans Serif black
+  // (classic dialog text). The top tick carries the unit ("6ft", "24s")
+  // so no unit text floats inside the plot, and label y is clamped so
+  // the end glyphs never clip against the panel edges.
+  const clampLabelY = (yy) => Math.min(Math.max(yy, 7), cssH - 7);
   ctx.font = `11px ${FC_CHART_FONT}`;
   ctx.fillStyle = FC_RETRO.ink;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   for (let q = 0; q <= 4; q++) {
     const v = swellMaxY * (1 - q / 4);
-    const yy = top + (h * q / 4);
-    ctx.fillText(String(Math.round(v)), plotLeft - 4, yy);
+    const label = q === 0 ? `${v}ft` : String(v);
+    ctx.fillText(label, plotLeft - 4, clampLabelY(top + (h * q / 4)));
   }
   ctx.textAlign = 'left';
   for (let q = 0; q <= 4; q++) {
     const v = periodMax * (1 - q / 4);
-    const yy = top + (h * q / 4);
-    ctx.fillText(String(Math.round(v)), plotLeft + plotW + 4, yy);
+    const label = q === 0 ? `${v}s` : String(v);
+    ctx.fillText(label, plotLeft + plotW + 4, clampLabelY(top + (h * q / 4)));
   }
-  // Unit labels — 10px sans, dimmer, top corners of plot.
-  ctx.font = `10px ${FC_CHART_FONT}`;
-  ctx.fillStyle = '#404040';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText('ft', plotLeft + 4, top + 2);
-  ctx.textAlign = 'right';
-  ctx.fillText('s', plotLeft + plotW - 4, top + 2);
 
   // ── Divider between upper region and direction sub-panel ──
   ctx.fillStyle = '#808080';
@@ -2081,12 +2079,13 @@ function drawSwellPanel(common, data) {
   }
 
   // "FROM" label clarifies the y-axis represents the direction the
-  // swell is COMING FROM (oceanographic convention).
+  // swell is COMING FROM (oceanographic convention). Top-right of the
+  // sub-panel, away from the compass tick labels in the left gutter.
   ctx.font = `bold 10px ${FC_CHART_FONT}`;
   ctx.fillStyle = '#404040';
-  ctx.textAlign = 'left';
+  ctx.textAlign = 'right';
   ctx.textBaseline = 'top';
-  ctx.fillText('FROM', plotLeft + 6, subTop + 3);
+  ctx.fillText('FROM', plotLeft + plotW - 6, subTop + 3);
 
   // Dashed "now" line spanning the height region and the direction
   // sub-panel (same span as the scrubber line), drawn before the scrubber
@@ -2244,20 +2243,17 @@ function drawWindPanel(common, data) {
     _fcDrawDashedHGrid(ctx, plotLeft, plotLeft + plotW, yWind(v));
   }
 
-  // Y-axis labels: every 5 mph in regular 11px sans, black.
+  // Y-axis labels: every 5 mph in regular 11px sans, black. Top tick
+  // carries the unit ("25mph"); label y clamped so end glyphs don't clip.
   ctx.font = `11px ${FC_CHART_FONT}`;
   ctx.fillStyle = FC_RETRO.ink;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   for (let v = 0; v <= windMaxY; v += 5) {
-    ctx.fillText(String(v), plotLeft - 4, yWind(v));
+    const label = v === windMaxY ? `${v}mph` : String(v);
+    const yy = Math.min(Math.max(yWind(v), 7), cssH - 7);
+    ctx.fillText(label, plotLeft - 4, yy);
   }
-  // Unit label.
-  ctx.font = `10px ${FC_CHART_FONT}`;
-  ctx.fillStyle = '#404040';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText('mph', plotLeft + 4, top + 2);
 
   // Dashed "now" line (drawn before the scrubber so it layers beneath).
   _fcDrawNowLine(ctx, common, plotLeft, plotW, top, top + h);
@@ -2344,23 +2340,19 @@ function drawTidePanel(common, data) {
   }
 
   // Y-axis labels for tide range: max / 0 / min in regular 11px sans.
+  // Top tick carries the unit ("+3.5ft"); ends clamped against clipping.
   if (tideY && Number.isFinite(tideMin) && Number.isFinite(tideMax)) {
     ctx.font = `11px ${FC_CHART_FONT}`;
     ctx.fillStyle = FC_RETRO.ink;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     const fmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(1);
-    ctx.fillText(fmt(tideMax), plotLeft - 4, tideY(tideMax));
-    ctx.fillText(fmt(tideMin), plotLeft - 4, tideY(tideMin));
+    ctx.fillText(fmt(tideMax) + 'ft', plotLeft - 4, Math.max(tideY(tideMax), 7));
+    ctx.fillText(fmt(tideMin), plotLeft - 4, Math.min(tideY(tideMin), cssH - 7));
     if (tideMin < 0 && tideMax > 0) {
       ctx.fillText('0', plotLeft - 4, tideY(0));
       _fcDrawDashedHGrid(ctx, plotLeft, plotLeft + plotW, tideY(0));
     }
-    ctx.font = `10px ${FC_CHART_FONT}`;
-    ctx.fillStyle = '#404040';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText('ft', plotLeft + 4, top + 2);
   }
 
   // Low-tide markers + sparse labels (with collision avoidance)
@@ -2590,10 +2582,12 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred, buoy
     if (heights[i]    != null && heights[i]    > swellPeak) swellPeak = heights[i];
     if (secHeights[i] != null && secHeights[i] > swellPeak) swellPeak = secHeights[i];
   }
-  let swellMaxY = Math.max(2, Math.ceil(swellPeak * 1.2 / 2) * 2);
+  // Round up to a multiple of 4 so the quartile tick labels land on whole
+  // numbers (a max of 6 used to label as 6/5/3/2/0 — ragged and wrong-looking).
+  let swellMaxY = Math.max(4, Math.ceil(swellPeak * 1.2 / 4) * 4);
   const swellStep = swellMaxY <= 4 ? 1 : (swellMaxY <= 10 ? 2 : 4);
-  // Period right axis: fixed 0–25s.
-  const periodMax = 25;
+  // Period right axis: fixed 0–24s (divisible by 4 → clean quartile ticks).
+  const periodMax = 24;
   // Wind axis: 0 → max(speed) × 1.2, rounded to nearest 5, floor 10.
   let windPeak = 0;
   for (let i = extStart; i <= extEnd; i++) {
