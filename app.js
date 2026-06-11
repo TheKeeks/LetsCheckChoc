@@ -1701,7 +1701,6 @@ const FC_RETRO = {
   windStroke:    '#404040',
   windBand:      'rgba(216, 232, 208, 0.6)',
   tide:          '#2A5D8C',
-  scrubLine:     '#000000',
   scrubDot:      '#000000'
 };
 
@@ -1800,9 +1799,10 @@ function _fcDrawNightShading(ctx, common, plotLeft, plotW, top, height) {
 }
 
 function _fcDrawDaySeparators(ctx, common, plotLeft, plotW, top, height) {
-  // Solid grey midnight verticals — appear as continuous columns when
-  // drawn on every panel canvas.
-  ctx.strokeStyle = '#B0B0B0';
+  // Light midnight verticals — appear as continuous columns when drawn
+  // on every panel canvas; kept faint so they read as calendar guides,
+  // not data.
+  ctx.strokeStyle = 'rgba(44, 40, 37, 0.16)';
   ctx.lineWidth = 1;
   for (let dayOff = 0; dayOff <= common.dayCount; dayOff++) {
     const midDate = new Date(common.firstDay);
@@ -1828,18 +1828,6 @@ function drawScrubberDot(ctx, x, y, _color) {
   ctx.restore();
 }
 
-// 1px solid black vertical scrubber line spanning the full plot height.
-function drawScrubberLine(ctx, x, top, bottom) {
-  ctx.save();
-  ctx.strokeStyle = FC_RETRO.scrubLine;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(x, top);
-  ctx.lineTo(x, bottom);
-  ctx.stroke();
-  ctx.restore();
-}
-
 // ── Per-panel drawers ──────────────────────────────
 
 function drawSwellPanel(common, data) {
@@ -1851,32 +1839,31 @@ function drawSwellPanel(common, data) {
   const isMobile = common.isMobile;
   const plotLeft = FC_PAD.left;
   const plotW    = cssW - FC_PAD.left - FC_PAD.right;
-  // Upper region (~55%) hosts swell-height area + period line; the
-  // remaining ~45% is the direction sub-panel below the divider.
+  // Upper region (~66%) hosts swell-height area + period line — the main
+  // signal gets the space; the direction sub-panel takes the rest.
   const top      = 4;
   const usableH  = cssH - 8;
-  const h        = Math.round(usableH * 0.55);
-  const dividerY = top + h + 4;
-  const subTop   = dividerY + 1;
+  const h        = Math.round(usableH * 0.66);
+  const subTop   = top + h + 5;
   const subBot   = cssH - 2;
 
   // Cream plot background.
   ctx.fillStyle = FC_RETRO.plotBg;
   ctx.fillRect(0, 0, cssW, cssH);
 
-  // Dashed horizontal gridlines on upper region (every quartile).
-  for (let q = 1; q < 4; q++) {
-    const yy = top + (h * q / 4);
+  const { heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellDiv, periodMax, obsHsFt } = data;
+
+  // Dashed horizontal gridlines on the upper region, one per axis division.
+  for (let q = 1; q < swellDiv; q++) {
+    const yy = top + (h * q / swellDiv);
     _fcDrawDashedHGrid(ctx, plotLeft, plotLeft + plotW, yy);
   }
 
-  // Night shading + day separators (full canvas height — they extend
-  // through the direction sub-panel using the same x-coords).
-  _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
-  _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
-  _fcDrawPastDim(ctx, common, plotLeft, plotW, 0, cssH);
-
-  const { heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellStep, periodMax, obsHsFt } = data;
+  // Night shading + day separators span both regions (same x-coords) but
+  // stay inside the framed plot band, not the full canvas.
+  _fcDrawNightShading(ctx, common, plotLeft, plotW, top, subBot - top);
+  _fcDrawDaySeparators(ctx, common, plotLeft, plotW, top, subBot - top);
+  _fcDrawPastDim(ctx, common, plotLeft, plotW, top, subBot - top);
   const ySwell  = (val) => top + h - (Math.min(val, swellMaxY) / swellMaxY) * h;
   const yPeriod = (val) => {
     const v = Math.max(0, Math.min(periodMax, val));
@@ -1970,21 +1957,17 @@ function drawSwellPanel(common, data) {
   ctx.fillStyle = FC_RETRO.ink;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
-  for (let q = 0; q <= 4; q++) {
-    const v = swellMaxY * (1 - q / 4);
+  for (let q = 0; q <= swellDiv; q++) {
+    const v = swellMaxY * (1 - q / swellDiv);
     const label = q === 0 ? `${v}ft` : String(v);
-    ctx.fillText(label, plotLeft - 4, clampLabelY(top + (h * q / 4)));
+    ctx.fillText(label, plotLeft - 4, clampLabelY(top + (h * q / swellDiv)));
   }
   ctx.textAlign = 'left';
-  for (let q = 0; q <= 4; q++) {
-    const v = periodMax * (1 - q / 4);
+  for (let q = 0; q <= swellDiv; q++) {
+    const v = periodMax * (1 - q / swellDiv);
     const label = q === 0 ? `${v}s` : String(v);
-    ctx.fillText(label, plotLeft + plotW + 4, clampLabelY(top + (h * q / 4)));
+    ctx.fillText(label, plotLeft + plotW + 4, clampLabelY(top + (h * q / swellDiv)));
   }
-
-  // ── Divider between upper region and direction sub-panel ──
-  ctx.fillStyle = '#808080';
-  ctx.fillRect(plotLeft, dividerY, plotW, 1);
 
   // ── Direction sub-panel ──
   // Y-axis is compass degrees the swell is COMING FROM. The visible band
@@ -2087,10 +2070,16 @@ function drawSwellPanel(common, data) {
   ctx.textBaseline = 'top';
   ctx.fillText('FROM', plotLeft + plotW - 6, subTop + 3);
 
+  // Crisp 1px frames around both plot regions — Excel-97 style finished
+  // edges instead of fills bleeding into the cream.
+  ctx.strokeStyle = '#808080';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(plotLeft + 0.5, top + 0.5, plotW - 1, h - 1);
+  ctx.strokeRect(plotLeft + 0.5, subTop + 0.5, plotW - 1, subBot - subTop - 1);
+
   // Dashed "now" line spanning the height region and the direction
-  // sub-panel (same span as the scrubber line), drawn before the scrubber
-  // so the solid black scrubber line layers on top.
-  const nowX = _fcDrawNowLine(ctx, common, plotLeft, plotW, top, cssH - 2);
+  // sub-panel, drawn before the scrubber dots so markers layer on top.
+  const nowX = _fcDrawNowLine(ctx, common, plotLeft, plotW, top, subBot);
 
   // Live buoy observation at "now" — white diamond on the swell panel.
   // The buoy reports TOTAL significant height while the line plots the
@@ -2120,11 +2109,12 @@ function drawSwellPanel(common, data) {
     ctx.restore();
   }
 
-  // Scrubber vertical line + dots.
+  // Scrubber dots. The vertical scrub line itself is the HTML
+  // .forecast-crosshair overlay — drawing a second line on the canvas at
+  // the same x doubled it into a smudge, so the canvas only marks values.
   const sIdx = STATE.scrubberIdx;
   if (typeof sIdx === 'number' && sIdx >= 0 && sIdx <= common.lastIdx) {
     const tx = xPos(common.allTimes[sIdx]);
-    drawScrubberLine(ctx, tx, top, cssH - 2);
     // Upper region: secondary height, primary height, period.
     const secH = secHeights[sIdx];
     if (secH != null && secH >= 1.0) {
@@ -2177,9 +2167,9 @@ function drawWindPanel(common, data) {
 
   ctx.fillStyle = FC_RETRO.plotBg;
   ctx.fillRect(0, 0, cssW, cssH);
-  _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
-  _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
-  _fcDrawPastDim(ctx, common, plotLeft, plotW, 0, cssH);
+  _fcDrawNightShading(ctx, common, plotLeft, plotW, top, h);
+  _fcDrawDaySeparators(ctx, common, plotLeft, plotW, top, h);
+  _fcDrawPastDim(ctx, common, plotLeft, plotW, top, h);
 
   const { windSpeeds, windDirs, windMaxY } = data;
   const yWind = (val) => top + h - (Math.min(val, windMaxY) / windMaxY) * h;
@@ -2255,14 +2245,16 @@ function drawWindPanel(common, data) {
     ctx.fillText(label, plotLeft - 4, yy);
   }
 
-  // Dashed "now" line (drawn before the scrubber so it layers beneath).
+  // Crisp 1px plot frame, then the dashed "now" line beneath the markers.
+  ctx.strokeStyle = '#808080';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(plotLeft + 0.5, top + 0.5, plotW - 1, h - 1);
   _fcDrawNowLine(ctx, common, plotLeft, plotW, top, top + h);
 
-  // Scrubber vertical line + dot.
+  // Scrubber dot (the scrub line is the HTML crosshair overlay).
   const sIdx = STATE.scrubberIdx;
   if (typeof sIdx === 'number' && sIdx >= 0 && sIdx <= common.lastIdx) {
     const tx = xPos(common.allTimes[sIdx]);
-    drawScrubberLine(ctx, tx, top, top + h);
     const ws = windSpeeds[sIdx];
     if (ws != null) {
       drawScrubberDot(ctx, tx, yWind(ws));
@@ -2286,9 +2278,9 @@ function drawTidePanel(common, data) {
 
   ctx.fillStyle = FC_RETRO.plotBg;
   ctx.fillRect(0, 0, cssW, cssH);
-  _fcDrawNightShading(ctx, common, plotLeft, plotW, 0, cssH);
-  _fcDrawDaySeparators(ctx, common, plotLeft, plotW, 0, cssH);
-  _fcDrawPastDim(ctx, common, plotLeft, plotW, 0, cssH);
+  _fcDrawNightShading(ctx, common, plotLeft, plotW, top, h);
+  _fcDrawDaySeparators(ctx, common, plotLeft, plotW, top, h);
+  _fcDrawPastDim(ctx, common, plotLeft, plotW, top, h);
 
   const { tidePred, tideHiLo } = data;
   let tideMin = 0, tideMax = 1, tideY = null;
@@ -2459,7 +2451,10 @@ function drawTidePanel(common, data) {
     }
   }
 
-  // Dashed "now" line (drawn before the scrubber so it layers beneath).
+  // Crisp 1px plot frame, then the dashed "now" line beneath the markers.
+  ctx.strokeStyle = '#808080';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(plotLeft + 0.5, top + 0.5, plotW - 1, h - 1);
   _fcDrawNowLine(ctx, common, plotLeft, plotW, top, top + h);
 
   // Scrubber dot on the tide curve. Tide values come from tidePred
@@ -2482,7 +2477,6 @@ function drawTidePanel(common, data) {
       if (Number.isFinite(va) && Number.isFinite(vb) && b > a) {
         const v = va + (vb - va) * ((tMs - a) / (b - a));
         const tx = _fcXFor(ts, common, plotLeft, plotW);
-        drawScrubberLine(ctx, tx, top, top + h);
         drawScrubberDot(ctx, tx, tideY(v));
       }
     }
@@ -2582,11 +2576,18 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred, buoy
     if (heights[i]    != null && heights[i]    > swellPeak) swellPeak = heights[i];
     if (secHeights[i] != null && secHeights[i] > swellPeak) swellPeak = secHeights[i];
   }
-  // Round up to a multiple of 4 so the quartile tick labels land on whole
-  // numbers (a max of 6 used to label as 6/5/3/2/0 — ragged and wrong-looking).
-  let swellMaxY = Math.max(4, Math.ceil(swellPeak * 1.2 / 4) * 4);
-  const swellStep = swellMaxY <= 4 ? 1 : (swellMaxY <= 10 ? 2 : 4);
-  // Period right axis: fixed 0–24s (divisible by 4 → clean quartile ticks).
+  // Tight, even axis: smallest max from {4, 6, 8, 12, 16, …} that clears the
+  // peak by ~10%, so a small week isn't squashed into the bottom quarter of
+  // an oversized scale. 6 splits into thirds (0/2/4/6); multiples of 4 into
+  // quarters — either way every tick (and the paired period tick) lands on a
+  // whole number.
+  const swellTarget = swellPeak * 1.1;
+  let swellMaxY;
+  if (swellTarget <= 4) swellMaxY = 4;
+  else if (swellTarget <= 6) swellMaxY = 6;
+  else swellMaxY = Math.ceil(swellTarget / 4) * 4;
+  const swellDiv = swellMaxY === 6 ? 3 : 4; // shared y-axis division count
+  // Period right axis: fixed 0–24s (divides evenly by 3 and 4).
   const periodMax = 24;
   // Wind axis: 0 → max(speed) × 1.2, rounded to nearest 5, floor 10.
   let windPeak = 0;
@@ -2611,7 +2612,7 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred, buoy
 
   // Draw each panel canvas.
   const swellPayload = {
-    heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellStep, periodMax,
+    heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellDiv, periodMax,
     // Current observed total Hs (feet) from the buoy, for the "obs" marker.
     obsHsFt: buoyParsed && buoyParsed.waveHeight != null ? buoyParsed.waveHeight : null
   };
