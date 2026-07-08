@@ -582,6 +582,9 @@ body[data-era="web1"] #panel-spectral-row {
   gap: 8px;
   margin: 8px 0;
   flex-wrap: wrap;
+  /* Hug each card to its own content — the short table card must not
+     stretch to match the taller compass card, or it floats in dead gray. */
+  align-items: flex-start;
 }
 body[data-era="web1"] #panel-spectral-row .panel-half {
   flex: 1 1 320px;
@@ -689,7 +692,9 @@ body[data-era="web1"] #spectral-summary-table .period-chip {
   vertical-align: -1px;
 }
 
-/* Compass rose canvas wrap — deep-sunken cream framed display. */
+/* Compass rose canvas wrap — deep-sunken cream framed display. Kept
+   square (aspect-ratio 1) and centered so the round rose fills its frame
+   edge-to-edge instead of floating in a wide landscape cream box. */
 body[data-era="web1"] #panel-compass .chart-container {
   background: #F8F4E8;
   border: 2px solid;
@@ -697,9 +702,13 @@ body[data-era="web1"] #panel-compass .chart-container {
   box-shadow:
     inset 1px 1px 0 0 #808080,
     inset -1px -1px 0 0 #C0C0C0;
-  padding: 4px;
-  margin: 6px 8px;
+  padding: 6px;
+  margin: 4px auto;
   box-sizing: border-box;
+  height: auto;
+  width: 100%;
+  max-width: 340px;
+  aspect-ratio: 1 / 1;
 }
 body[data-era="web1"] #panel-compass canvas {
   background: transparent;
@@ -732,12 +741,34 @@ body[data-era="web1"] .rose-scale-chip:active {
   border-color: #404040 #FFFFFF #FFFFFF #404040;
 }
 
-body[data-era="web1"] #panel-compass .rose-legend,
 body[data-era="web1"] #panel-spectral-row .widget-help {
   margin: 4px 8px;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
   color: #000000;
+}
+/* Legend sits directly beneath the (centered, 340px) rose frame and
+   shares its width, so it reads as part of the same instrument. */
+body[data-era="web1"] #panel-compass .rose-legend {
+  margin: 2px auto 6px auto;
+  width: 100%;
+  max-width: 340px;
+  padding: 0 6px 4px;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: #000000;
+}
+/* Center the toggle over the rose it drives. Shrink-wrapped (width
+   fit-content + auto margins) so the base white pill background doesn't
+   stretch; squared + transparent to match the Win95 beveled chips. */
+body[data-era="web1"] #panel-compass .rose-scale-toggle {
+  display: flex;
+  width: fit-content;
+  margin: 6px auto 2px auto;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
 }
 
 /* ── Current Conditions row (5 small cards) ──────────────────────── */
