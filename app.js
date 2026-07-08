@@ -93,7 +93,10 @@ const STATE = {
   lastSpectral: null,
   lastBuoyParsed: null,
   lastSpecSummary: null,    // latest .spec/pipeline summary row (shared Hs source)
-  roseScaleMode: 'linear'   // 'linear' | 'sqrt'; persisted to localStorage
+  roseScaleMode: 'linear',  // 'linear' | 'sqrt'; persisted to localStorage
+  _roseHover: null,         // wedge id under the cursor (compass rose inspection)
+  _roseWedges: null,        // hit-test geometry recorded by drawCompassRose
+  _roseGeom: null
 };
 
 // ── Utility functions ────────────────────────────
@@ -1269,6 +1272,8 @@ async function loadAllData(buoy) {
     if (parsed && parsed.bins && parsed.bins.length > 0) {
       STATE.lastSpectral = parsed;
       STATE.lastBuoyParsed = buoyParsed;
+      // New bins → any prior hover selection points at stale wedges.
+      _setRoseHover(null);
       showSpectralCharts();
       renderSpectralSummary(spectralRaw, buoyParsed);
       requestAnimationFrame(() => {
@@ -3708,30 +3713,50 @@ function drawCompassRose(spectral, buoyParsed) {
   // half-width follows the directional-spread parameter r1. All wedges
   // originate at center and overlap at a fixed alpha so distinct swell
   // trains remain visually separable.
+  STATE._roseWedges = null;
+  STATE._roseGeom = null;
   if (spectral && spectral.bins && spectral.bins.length) {
     const rMax = r * 0.95;
     const compressed = STATE.roseScaleMode === 'sqrt';
     const scaleFn = compressed ? Math.sqrt : (v => v);
 
+    // Total spectral energy (Σ energy·df) so each wedge can report its
+    // share in the hover readout. df mirrors hsFromBinsFt's differencing.
+    const bins = spectral.bins;
+    let m0 = 0;
+    const binShare = bins.map((b, i) => {
+      const df = i < bins.length - 1
+        ? Math.abs(bins[i + 1].freq - bins[i].freq)
+        : (i > 0 ? Math.abs(bins[i].freq - bins[i - 1].freq) : 0.005);
+      const e = b.energy > 0 ? b.energy * df : 0;
+      m0 += e;
+      return e;
+    });
+
     const wedges = [];
     let maxScaled = 0;
-    for (const b of spectral.bins) {
+    for (let i = 0; i < bins.length; i++) {
+      const b = bins[i];
       if (!(b.energy > 0) || !(b.period > 0) || !Number.isFinite(b.dir1)) continue;
       const scaled = scaleFn(b.energy);
       if (scaled > maxScaled) maxScaled = scaled;
       wedges.push({
+        id: wedges.length,
         period: b.period,
         dir: ((b.dir1 % 360) + 360) % 360,
         r1: Number.isFinite(b.r1) ? Math.max(0, Math.min(1, b.r1)) : null,
+        share: m0 > 0 ? binShare[i] / m0 : 0,
         scaled
       });
     }
-
     if (maxScaled > 0) {
       // Render largest wedges first so small ones stay visible on top.
       wedges.sort((a, b) => b.scaled - a.scaled);
 
+      const hoverId = STATE._roseHover;
+      const hasHover = hoverId != null && wedges.some(w => w.id === hoverId);
       const ALPHA = 0.55;
+      const drawn = [];
       for (const w of wedges) {
         const rOuter = (w.scaled / maxScaled) * rMax;
         if (rOuter <= 0.5) continue;
@@ -3743,14 +3768,24 @@ function drawCompassRose(spectral, buoyParsed) {
           : Math.max(3, Math.min(25, Math.sqrt(2 * (1 - w.r1)) * (180 / Math.PI)));
         const startAngle = degToRad(w.dir - halfDeg - 90);
         const endAngle = degToRad(w.dir + halfDeg - 90);
+        const isHover = hasHover && w.id === hoverId;
 
-        ctx.fillStyle = periodColorRGBA(w.period, ALPHA);
+        ctx.fillStyle = periodColorRGBA(w.period, isHover ? 0.9 : (hasHover ? 0.18 : ALPHA));
         ctx.beginPath();
         ctx.moveTo(cx, cy);
         ctx.arc(cx, cy, rOuter, startAngle, endAngle);
         ctx.closePath();
         ctx.fill();
+        if (isHover) {
+          ctx.strokeStyle = periodColorRGBA(w.period, 1);
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+        // Keep hit-test geometry only for wedges actually drawn.
+        drawn.push({ id: w.id, dir: w.dir, halfDeg, rOuter, period: w.period, share: w.share });
       }
+      STATE._roseWedges = drawn;
+      STATE._roseGeom = { cx, cy, size };
     }
   }
 
@@ -3773,6 +3808,85 @@ function drawCompassRose(spectral, buoyParsed) {
     ctx.fillText('Hs', cx, cy + 14);
   }
 }
+
+// ── Compass rose hover / tap inspection ─────────
+//
+// Hit-tests the pointer against the wedge geometry recorded by
+// drawCompassRose, highlights the most specific (smallest) wedge under
+// the cursor, and describes that swell band in the readout strip.
+// Desktop: hover; touch: tap toggles, tapping empty space clears.
+
+function _roseWedgeAt(evX, evY) {
+  const g = STATE._roseGeom;
+  const wedges = STATE._roseWedges;
+  if (!g || !wedges || !wedges.length) return null;
+  const dx = evX - g.cx;
+  const dy = evY - g.cy;
+  const radius = Math.hypot(dx, dy);
+  if (radius > g.size / 2) return null;
+  const angle = (radToDeg(Math.atan2(dy, dx)) + 90 + 360) % 360;
+  let best = null;
+  for (const w of wedges) {
+    let d = Math.abs(angle - w.dir) % 360;
+    if (d > 180) d = 360 - d;
+    if (d > w.halfDeg + 1) continue;
+    if (radius > w.rOuter + 2) continue;
+    // Smallest covering wedge = the one visually on top (largest drawn first).
+    if (!best || w.rOuter < best.rOuter) best = w;
+  }
+  return best;
+}
+
+function _setRoseHover(w) {
+  const id = w ? w.id : null;
+  if (STATE._roseHover === id) return;
+  STATE._roseHover = id;
+  const readout = el('rose-readout');
+  if (readout) {
+    if (w) {
+      const inWin = STATE.isChocomount && swellDirClass(w.dir) === 'dir-in';
+      const pct = w.share >= 0.01 ? Math.round(w.share * 100) + '%' : '<1%';
+      readout.textContent =
+        `${w.period.toFixed(1)}s from ${directionLabel(w.dir)} (${Math.round(w.dir)}°) · ${pct} of energy${inWin ? ' · in window' : ''}`;
+      readout.classList.add('has-band');
+      readout.classList.toggle('in-window', inWin);
+    } else {
+      readout.textContent = 'hover a petal to inspect that swell band';
+      readout.classList.remove('has-band', 'in-window');
+    }
+  }
+  if (STATE.lastSpectral) drawCompassRose(STATE.lastSpectral, STATE.lastBuoyParsed);
+}
+
+(function initRoseHover() {
+  let raf = null;
+  function attach() {
+    const canvas = el('compass-canvas');
+    if (!canvas || canvas._roseHoverWired) return;
+    canvas._roseHoverWired = true;
+    canvas.addEventListener('mousemove', (e) => {
+      if (raf) return; // one hit-test per frame
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        const rect = canvas.getBoundingClientRect();
+        _setRoseHover(_roseWedgeAt(e.clientX - rect.left, e.clientY - rect.top));
+      });
+    });
+    canvas.addEventListener('mouseleave', () => _setRoseHover(null));
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const w = _roseWedgeAt(e.clientX - rect.left, e.clientY - rect.top);
+      // Tap a petal to select it (no-op if already selected via hover);
+      // tap empty space to clear — the touch equivalent of mouseleave.
+      _setRoseHover(w);
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attach);
+  } else {
+    attach();
+  }
+})();
 
 // ════════════════════════════════════════════════
 // WAVE ENERGY SPECTRUM (Canvas 2D)

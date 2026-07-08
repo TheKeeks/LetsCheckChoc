@@ -747,6 +747,28 @@ body[data-era="web1"] #panel-spectral-row .widget-help {
   font-size: 11px;
   color: #000000;
 }
+/* Hover/tap readout beneath the rose — same sunken status-bar field as
+   the table's freshness strip, width matched to the 340px rose frame. */
+body[data-era="web1"] #panel-compass .rose-readout {
+  width: 100%;
+  max-width: 340px;
+  margin: 4px auto 0 auto;
+  padding: 2px 6px;
+  background: #C0C0C0;
+  border: 1px solid;
+  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 11px;
+  color: #6a645c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+body[data-era="web1"] #panel-compass .rose-readout.has-band { color: #000000; }
+body[data-era="web1"] #panel-compass .rose-readout.in-window { color: #006400; }
+body[data-era="web1"] #compass-canvas { cursor: crosshair; }
+
 /* Legend sits directly beneath the (centered, 340px) rose frame and
    shares its width, so it reads as part of the same instrument. */
 body[data-era="web1"] #panel-compass .rose-legend {
