@@ -983,6 +983,18 @@ a:hover { text-decoration: underline; }
   user-select: none;
 }
 
+/* Rose hover readout — plain fallback; Win95 styling in styles-retro.css. */
+.rose-readout {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--ink3);
+  text-align: center;
+  padding: 4px 8px;
+  user-select: none;
+}
+.rose-readout.has-band { color: var(--ink); }
+.rose-readout.in-window { color: var(--green); }
+
 .rose-legend-bar {
   height: 6px;
   border-radius: 3px;
