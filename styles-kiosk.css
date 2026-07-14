@@ -125,13 +125,14 @@ body.kiosk .np-seg::before {
   text-shadow: none;
   z-index: 0;
 }
-body.kiosk .np-seg-lg { font-size: 3.4rem; }
+body.kiosk .np-seg-lg { font-size: 3rem; }
+body.kiosk .np-seg-md2 { font-size: 2.1rem; }
 body.kiosk .np-seg-md { font-size: 1.9rem; }
-body.kiosk .np-seg-sm { font-size: 1.3rem; }
-body.kiosk .np-secondary .np-seg {
-  color: var(--np-blue-dim);
-  text-shadow: 0 0 4px rgba(56, 182, 255, 0.35);
-}
+body.kiosk .np-seg-sm { font-size: 1.15rem; }
+/* Softer ghost so small digits stay crisp. */
+body.kiosk .np-seg::before { color: rgba(56, 182, 255, 0.07); }
+/* Secondary swell: distinguished by SIZE, not by dimming. */
+body.kiosk .np-secondary .np-seg { color: var(--np-blue); }
 
 /* Edge-lit amplifier legends. */
 body.kiosk .np-legend,
@@ -170,7 +171,8 @@ body.kiosk .np-days {
   width: 100%;
 }
 body.kiosk .np-day {
-  padding: 18px 20px 14px;
+  padding: 16px 16px 12px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -183,29 +185,59 @@ body.kiosk .np-day-title {
   padding-bottom: 8px;
   text-align: center;
 }
+/* Swell block, per the sketch: numbers stacked on the left (height huge,
+   "@ period" on its own line beneath), direction column on the right. */
 body.kiosk .np-swell {
   display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  line-height: 1.1;
-}
-body.kiosk .np-swell .np-dir {
-  display: inline-flex;
   align-items: center;
-  margin-left: auto;
+  justify-content: space-between;
+  gap: 12px;
+  line-height: 1.05;
 }
-body.kiosk .np-secondary { opacity: 0.85; }
+body.kiosk .np-micro {
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--np-green-dim);
+  margin-bottom: 2px;
+}
+body.kiosk .np-swell-ht { white-space: nowrap; }
+body.kiosk .np-swell-per { margin-top: 2px; white-space: nowrap; }
+body.kiosk .np-swell-dir {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 64px;
+  flex-shrink: 0;
+}
+body.kiosk .np-swell-dir .np-arrow { font-size: 1.9rem; margin: 0; }
+body.kiosk .np-secondary { margin-top: -2px; }
+
+/* Wind reading — one consistent shape everywhere: ↘ 11 MPH NW */
+body.kiosk .np-windline {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+body.kiosk .np-unit-sm {
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--np-green);
+  text-shadow: 0 0 5px rgba(93, 230, 154, 0.35);
+}
+
+/* Low-tide modules: time line, wind line beneath. */
 body.kiosk .np-low {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
   padding: 10px 14px;
 }
-body.kiosk .np-low .np-low-wind {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-}
+body.kiosk .np-low-when { white-space: nowrap; }
 body.kiosk .np-sunrow {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -214,9 +246,17 @@ body.kiosk .np-sunrow {
   border-top: 1px solid var(--np-bezel);
   padding-top: 12px;
 }
-body.kiosk .np-sun-cell { text-align: center; }
-body.kiosk .np-sun-cell .np-legend { display: block; margin-bottom: 2px; font-size: 11px; }
-body.kiosk .np-sun-wind { margin-top: 2px; }
+body.kiosk .np-sun-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+}
+body.kiosk .np-sun-cell .np-legend { font-size: 11px; }
+body.kiosk .np-sun-time { white-space: nowrap; }
+body.kiosk .np-sun-wind { justify-content: center; }
+body.kiosk .np-sun-wind .np-windline { flex-wrap: wrap; justify-content: center; white-space: normal; }
 body.kiosk .np-moonrow {
   display: flex;
   align-items: center;

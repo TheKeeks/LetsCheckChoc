@@ -238,28 +238,43 @@ function kioskArrowHTML(fromDeg) {
   return `<span class="np-arrow" style="transform:rotate(${travel}deg)">↑</span>`;
 }
 
-function kioskSegHTML(text, extraClass) {
+// noGhost: ghost segments read as mud at small sizes — only the big
+// readouts carry them.
+function kioskSegHTML(text, extraClass, noGhost) {
+  if (noGhost) return `<span class="np-seg ${extraClass || ''}">${text}</span>`;
   const ghost = String(text).replace(/[0-9]/g, '8');
   return `<span class="np-seg ${extraClass || ''}" data-ghost="${ghost}">${text}</span>`;
 }
 
+// "↘ 11 MPH NW" — arrow, seven-seg speed, unit, FROM label. One shape
+// everywhere wind appears so the reading is always parsed the same way.
 function kioskWindHTML(wind) {
-  if (!wind) return '<span class="np-legend np-dim">—</span>';
-  return kioskArrowHTML(wind.dir) +
-    kioskSegHTML(Math.round(wind.mph), 'np-seg-sm') +
-    `<span class="np-legend"> ${wind.dir != null ? directionLabel(wind.dir) : ''}</span>`;
+  if (!wind) return '<span class="np-legend np-dim">NO DATA</span>';
+  return `<span class="np-windline">` +
+    kioskArrowHTML(wind.dir) +
+    kioskSegHTML(Math.round(wind.mph), 'np-seg-sm', true) +
+    `<span class="np-unit-sm">MPH</span>` +
+    `<span class="np-legend">${wind.dir != null ? directionLabel(wind.dir) : ''}</span>` +
+    `</span>`;
 }
 
+// Sketch layout: height range huge with "@ period" stacked beneath it on
+// its own line; direction arrow + FROM label as a right-hand column.
 function kioskSwellRowHTML(sw, cls) {
   if (!sw) return '';
   const range = sw.min === sw.max ? String(sw.max) : `${sw.min}-${sw.max}`;
+  const primary = cls === 'np-primary';
   const dirLabel = sw.dir != null ? `${directionLabel(sw.dir)} ${Math.round(sw.dir)}°` : '';
   return `<div class="np-swell ${cls}">` +
-    kioskSegHTML(range, cls === 'np-primary' ? 'np-seg-lg' : 'np-seg-md') +
-    '<span class="np-unit">FT</span>' +
-    (sw.period != null ? `<span class="np-at">@</span>${kioskSegHTML(sw.period, 'np-seg-md')}<span class="np-unit">S</span>` : '') +
-    `<span class="np-dir">${kioskArrowHTML(sw.dir)}<span class="np-legend">${dirLabel}</span></span>` +
-    '</div>';
+    `<div class="np-swell-nums">` +
+      `<div class="np-micro">${primary ? 'SWELL' : 'SECONDARY'}</div>` +
+      `<div class="np-swell-ht">${kioskSegHTML(range, primary ? 'np-seg-lg' : 'np-seg-md2')}<span class="np-unit">FT</span></div>` +
+      (sw.period != null
+        ? `<div class="np-swell-per"><span class="np-at">@</span>${kioskSegHTML(sw.period, primary ? 'np-seg-md' : 'np-seg-sm', !primary)}<span class="np-unit">S</span></div>`
+        : '') +
+    `</div>` +
+    `<div class="np-swell-dir">${kioskArrowHTML(sw.dir)}<span class="np-legend">${dirLabel}</span></div>` +
+    `</div>`;
 }
 
 function kioskDayCardHTML(s) {
@@ -267,9 +282,9 @@ function kioskDayCardHTML(s) {
     ? s.lows.map(lo => {
         const c = kioskFmtClock(lo.t);
         return `<div class="np-module np-low">` +
-          `<span class="np-legend">LOW</span>` +
-          kioskSegHTML(c.seg, 'np-seg-md') + `<span class="np-unit">${c.ampm}</span>` +
-          `<span class="np-low-wind">${kioskWindHTML(lo.wind)}</span>` +
+          `<div class="np-low-when"><span class="np-legend">LOW @</span> ` +
+            kioskSegHTML(c.seg, 'np-seg-md') + `<span class="np-unit">${c.ampm}</span></div>` +
+          `<div class="np-low-wind">${kioskWindHTML(lo.wind)}</div>` +
           `</div>`;
       }).join('')
     : '<div class="np-module np-low"><span class="np-legend np-dim">NO LOW TIDE</span></div>';
@@ -280,7 +295,7 @@ function kioskDayCardHTML(s) {
     const c = kioskFmtClock(e.t);
     return `<div class="np-sun-cell">` +
       `<span class="np-legend">${label}</span>` +
-      kioskSegHTML(c.seg, 'np-seg-sm') + `<span class="np-unit">${c.ampm}</span>` +
+      `<div class="np-sun-time">${kioskSegHTML(c.seg, 'np-seg-sm', true)}<span class="np-unit-sm">${c.ampm}</span></div>` +
       `<div class="np-sun-wind">${kioskWindHTML(e.wind)}</div>` +
       `</div>`;
   };
