@@ -1,9 +1,37 @@
 /* ════════════════════════════════════════════════════════════════════
-   CHOC TV — kiosk mode styles (?kiosk=1)
-   Every rule is scoped to body.kiosk (mirroring the body[data-era]
-   pattern), so this file is inert for normal visitors. Loaded after
-   styles-retro.css to win the cascade.
+   CHOC TV — "Night Passage" kiosk theme (?kiosk=1)
+   ────────────────────────────────────────────────────────────────────
+   1980s marine instrument cluster: anti-glare graphite, smoked-glass
+   modules, seven-segment readouts with LED bloom. Glow hierarchy:
+   BLUE = primary live data, GREEN = legends/labels/units, RED = alerts
+   and the power pilot lamp, YELLOW = directional arrows only.
+   Every rule is scoped to body.kiosk — inert for normal visitors.
+   Loaded after styles-retro.css to win the cascade.
    ════════════════════════════════════════════════════════════════════ */
+
+/* Seven-segment display face (DSEG7 Classic, SIL OFL — self-hosted). */
+@font-face {
+  font-family: "DSEG7";
+  src: url("fonts/DSEG7Classic-Regular.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+body.kiosk {
+  --np-bg: #101214;
+  --np-glass: #0b0f13;
+  --np-glass2: #0c1116;
+  --np-bezel: #26323b;
+  --np-bezel-hi: #3a4a56;
+  --np-blue: #38b6ff;
+  --np-blue-dim: rgba(56, 182, 255, 0.55);
+  --np-green: #5de69a;
+  --np-green-dim: rgba(93, 230, 154, 0.5);
+  --np-red: #ff5252;
+  --np-yellow: #ffd23f;
+  --np-seg: "DSEG7", "Courier New", monospace;
+}
 
 /* ── Chrome hiding: everything except the rotating panel + status strip ── */
 body.kiosk #win95-titlebar,
@@ -16,34 +44,40 @@ body.kiosk #panel-tides,
 body.kiosk #panel-tide-map,
 body.kiosk #view-regression,
 body.kiosk #view-surflog,
+body.kiosk #conditions-row,
+body.kiosk #page-footer,
+body.kiosk #buoy-map-summary,
 body.kiosk .auth-bar,
 body.kiosk .widget-help,
 body.kiosk .forecast-controls-bar,
+body.kiosk .forecast-header-row,
 body.kiosk .panel-footer {
   display: none !important;
 }
 
-/* ── Panel rotation: force-hide the panels that are not active. The
-   "shown" state stays whatever app.js sets inline (e.g. loadAllData's
-   display:'' on #panel-spectral-row); these rules only ever hide. ── */
-body.kiosk:not([data-kiosk-panel="conditions"]) #conditions-row { display: none !important; }
+/* ── Panel rotation ── */
+body.kiosk:not([data-kiosk-panel="days1"]) #kiosk-days-1 { display: none !important; }
+body.kiosk:not([data-kiosk-panel="days2"]) #kiosk-days-2 { display: none !important; }
 body.kiosk:not([data-kiosk-panel="forecast"]) #panel-forecast { display: none !important; }
 body.kiosk:not([data-kiosk-panel="spectral"]) #panel-spectral-row { display: none !important; }
 
-/* ── Full-viewport ambient layout ── */
+/* ── Full-viewport graphite faceplate ── */
 body.kiosk {
   overflow: hidden;
+  background: var(--np-bg);
+  color: var(--np-green);
 }
 body.kiosk #app {
   max-width: none;
   width: 100%;
   height: 100vh;
-  padding: 12px 20px 56px; /* bottom clears the fixed status strip */
+  padding: 16px 24px 60px; /* bottom clears the fixed status strip */
   margin: 0;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  background: var(--np-bg);
 }
 body.kiosk #app-window {
   border: none;
@@ -51,92 +85,347 @@ body.kiosk #app-window {
   margin: 0;
   padding: 0;
   max-width: none;
+  background: var(--np-bg);
 }
 
-/* ── Big type: conditions panel reads across the room ── */
-body.kiosk .conditions-row {
-  max-width: none;
+/* ── Shared instrument pieces ─────────────────────────────────────── */
+
+/* Smoked-glass module with machined bezel + faint inner glow. */
+body.kiosk .np-module,
+body.kiosk .np-day {
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(56, 182, 255, 0.05), transparent 55%),
+    linear-gradient(180deg, var(--np-glass) 0%, var(--np-glass2) 100%);
+  border: 1px solid var(--np-bezel);
+  border-top-color: var(--np-bezel-hi);
+  border-radius: 6px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 0 24px rgba(0, 0, 0, 0.55),
+    0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* Seven-segment readout with ghost segments + LED bloom. */
+body.kiosk .np-seg {
+  position: relative;
+  display: inline-block;
+  font-family: var(--np-seg);
+  font-size: 2.6rem;
+  color: var(--np-blue);
+  text-shadow:
+    0 0 5px rgba(56, 182, 255, 0.75),
+    0 0 16px rgba(56, 182, 255, 0.35);
+}
+body.kiosk .np-seg::before {
+  content: attr(data-ghost);
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: rgba(56, 182, 255, 0.09); /* unlit segments, barely there */
+  text-shadow: none;
+  z-index: 0;
+}
+body.kiosk .np-seg-lg { font-size: 3.4rem; }
+body.kiosk .np-seg-md { font-size: 1.9rem; }
+body.kiosk .np-seg-sm { font-size: 1.3rem; }
+body.kiosk .np-secondary .np-seg {
+  color: var(--np-blue-dim);
+  text-shadow: 0 0 4px rgba(56, 182, 255, 0.35);
+}
+
+/* Edge-lit amplifier legends. */
+body.kiosk .np-legend,
+body.kiosk .np-unit,
+body.kiosk .np-at,
+body.kiosk .np-day-title {
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--np-green);
+  text-shadow: 0 0 6px rgba(93, 230, 154, 0.4);
+}
+body.kiosk .np-unit { margin: 0 10px 0 4px; }
+body.kiosk .np-at { margin-right: 4px; color: var(--np-green-dim); }
+body.kiosk .np-dim { color: var(--np-green-dim); text-shadow: none; }
+
+/* Yellow directional arrows (travel direction; FROM label beside). */
+body.kiosk .np-arrow {
+  display: inline-block;
+  width: 1.2em;
+  text-align: center;
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: var(--np-yellow);
+  text-shadow: 0 0 6px rgba(255, 210, 63, 0.6);
+  transform-origin: 50% 50%;
+  margin: 0 4px;
+}
+
+/* ── Day-summary panels ───────────────────────────────────────────── */
+body.kiosk .np-days {
+  display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  margin: 0;
+  gap: 22px;
+  width: 100%;
 }
-body.kiosk .condition-card {
-  min-height: 34vh;
-  justify-content: center;
+body.kiosk .np-day {
+  padding: 18px 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 64vh;
 }
-body.kiosk .condition-card .condition-label {
-  font-size: 15px;
-  height: 28px;
+body.kiosk .np-day-title {
+  font-size: 16px;
+  letter-spacing: 0.3em;
+  border-bottom: 1px solid var(--np-bezel);
+  padding-bottom: 8px;
+  text-align: center;
 }
-body.kiosk .condition-card .condition-value {
-  font-size: clamp(2.4rem, 6vw, 4.5rem);
+body.kiosk .np-swell {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
   line-height: 1.1;
 }
-body.kiosk .condition-card .condition-detail {
-  font-size: 1.05rem;
+body.kiosk .np-swell .np-dir {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+}
+body.kiosk .np-secondary { opacity: 0.85; }
+body.kiosk .np-low {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+}
+body.kiosk .np-low .np-low-wind {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+}
+body.kiosk .np-sunrow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: auto;
+  border-top: 1px solid var(--np-bezel);
+  padding-top: 12px;
+}
+body.kiosk .np-sun-cell { text-align: center; }
+body.kiosk .np-sun-cell .np-legend { display: block; margin-bottom: 2px; font-size: 11px; }
+body.kiosk .np-sun-wind { margin-top: 2px; }
+body.kiosk .np-moonrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding-top: 6px;
+}
+body.kiosk .np-moon-icon {
+  font-size: 1.5rem;
+  filter: grayscale(0.3) brightness(1.15);
 }
 
-/* ── Forecast panel sized to the viewport (canvases are height:100% of
-   their cards, so the resize/invalidate path re-rasterizes cleanly) ── */
-body.kiosk .chart-container-tall {
-  min-height: 0;
+/* ── Forecast chart pane as a dark instrument screen ──────────────── */
+body.kiosk .chart-container-tall { min-height: 0; }
+body.kiosk #view-forecast,
+body.kiosk #panel-forecast {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+body.kiosk #forecast-chart-container { background: transparent !important; }
+body.kiosk #forecast-chart-container .forecast-card {
+  background:
+    linear-gradient(180deg, var(--np-glass) 0%, var(--np-glass2) 100%) !important;
+  border: 1px solid var(--np-bezel) !important;
+  border-top-color: var(--np-bezel-hi) !important;
+  border-radius: 6px !important;
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.5) !important;
 }
 body.kiosk #forecast-chart-container .forecast-card-swell { height: 44vh; min-height: 0; }
 body.kiosk #forecast-chart-container .forecast-card-wind { height: 15vh; min-height: 0; }
 body.kiosk #forecast-chart-container .forecast-card-tide { height: 15vh; min-height: 0; }
+body.kiosk #forecast-chart-container .forecast-card > canvas {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+body.kiosk #forecast-chart-container .forecast-section-label {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: var(--np-green) !important;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif !important;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-shadow: 0 0 6px rgba(93, 230, 154, 0.4);
+}
+body.kiosk #forecast-chart-container .forecast-day-label {
+  color: var(--np-green) !important;
+  text-shadow: 0 0 6px rgba(93, 230, 154, 0.35);
+}
+body.kiosk .forecast-detail-bar {
+  background: var(--np-glass) !important;
+  border: 1px solid var(--np-bezel) !important;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.5) !important;
+  color: var(--np-blue) !important;
+  text-shadow: 0 0 5px rgba(56, 182, 255, 0.4);
+}
+body.kiosk .forecast-detail-bar .detail-time,
+body.kiosk .forecast-detail-bar .detail-val { color: var(--np-blue) !important; }
+body.kiosk .forecast-detail-bar .detail-tide { color: var(--np-green) !important; }
+body.kiosk .forecast-reset-btn { color: var(--np-yellow) !important; }
+body.kiosk .forecast-crosshair { background: rgba(232, 246, 255, 0.55) !important; }
+body.kiosk .forecast-cache-indicator { color: var(--np-green-dim) !important; }
 
-/* ── Spectral panel: rose capped to the viewport, bigger table ── */
+/* ── Spectral pane: table + rose on smoked glass ──────────────────── */
+body.kiosk #panel-spectral-row .panel-half {
+  background: linear-gradient(180deg, var(--np-glass) 0%, var(--np-glass2) 100%);
+  border: 1px solid var(--np-bezel);
+  border-top-color: var(--np-bezel-hi);
+  border-radius: 6px;
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.5);
+  padding-bottom: 10px;
+}
+body.kiosk .retro-card-title-strip {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: var(--np-green) !important;
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif !important;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-shadow: 0 0 6px rgba(93, 230, 154, 0.4);
+}
+body.kiosk #spectral-summary-table {
+  background: transparent;
+  border: 1px solid var(--np-bezel);
+  box-shadow: none;
+}
+body.kiosk #spectral-summary-table th {
+  background: rgba(93, 230, 154, 0.08);
+  color: var(--np-green);
+  border-bottom: 1px solid var(--np-bezel);
+  letter-spacing: 0.1em;
+  font-size: 13px;
+}
+body.kiosk #spectral-summary-table td {
+  border-bottom: 1px solid rgba(38, 50, 59, 0.6);
+  color: var(--np-green);
+  font-size: 14px;
+}
+body.kiosk #spectral-summary-table tr:nth-child(even) td,
+body.kiosk #spectral-summary-table tr:nth-child(odd) td { background: transparent; }
+body.kiosk #spectral-summary-table td.num-cell {
+  color: var(--np-blue);
+  text-shadow: 0 0 5px rgba(56, 182, 255, 0.4);
+}
+body.kiosk #spectral-summary-table .trend-up { color: var(--np-green); }
+body.kiosk #spectral-summary-table .trend-down { color: var(--np-red); }
+body.kiosk #spectral-summary-table .dir-arrow { color: var(--np-yellow); }
+body.kiosk .spectral-status-strip {
+  background: var(--np-glass);
+  border: 1px solid var(--np-bezel);
+  color: var(--np-green);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
 body.kiosk #panel-compass .chart-container {
-  max-width: min(58vh, 46vw);
+  background: var(--np-glass2);
+  border: 1px solid var(--np-bezel);
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.55);
+  max-width: min(52vh, 44vw);
 }
 body.kiosk #panel-compass .rose-legend,
+body.kiosk #panel-compass .rose-readout { max-width: min(52vh, 44vw); }
 body.kiosk #panel-compass .rose-readout {
-  max-width: min(58vh, 46vw);
+  background: var(--np-glass);
+  border: 1px solid var(--np-bezel);
+  color: var(--np-green-dim);
 }
-body.kiosk #spectral-summary-table,
-body.kiosk #spectral-summary-table th,
-body.kiosk #spectral-summary-table td {
-  font-size: 14px;
+body.kiosk #panel-compass .rose-readout.has-band { color: var(--np-blue); }
+body.kiosk #panel-compass .rose-readout.in-window { color: var(--np-green); }
+body.kiosk .rose-legend-ticks, body.kiosk .rose-legend-caption { color: var(--np-green-dim); }
+body.kiosk .rose-scale-toggle { background: transparent; }
+body.kiosk .rose-scale-chip {
+  background: var(--np-glass);
+  color: var(--np-green);
+  border: 1px solid var(--np-bezel);
 }
-body.kiosk .spectral-status-strip {
-  font-size: 14px;
+body.kiosk .rose-scale-chip.is-active,
+body.kiosk .rose-scale-chip.active {
+  color: var(--np-blue);
+  border-color: var(--np-blue-dim);
 }
 
-/* ── Status strip: Win95 taskbar homage, fixed to the bottom edge ── */
+/* ── Status strip: faceplate footer with pilot lamp + NEXT ────────── */
 body.kiosk #kiosk-status {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 44px;
-  background: #C0C0C0;
-  border-top: 2px solid #FFFFFF;
-  box-shadow: inset 0 1px 0 #DFDFDF;
+  height: 48px;
+  background: linear-gradient(180deg, #14181c 0%, #0c0f12 100%);
+  border-top: 1px solid var(--np-bezel-hi);
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 0 14px;
+  padding: 0 16px;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
-  font-size: 14px;
-  color: #000000;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: var(--np-green);
+  text-shadow: 0 0 6px rgba(93, 230, 154, 0.35);
   z-index: 900;
 }
 body.kiosk #kiosk-status .kiosk-status-spacer { flex: 1; }
-body.kiosk #kiosk-status-updated { color: #404040; }
-body.kiosk #kiosk-paused {
-  color: #000080;
-  font-weight: bold;
+body.kiosk #kiosk-pilot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--np-red);
+  box-shadow: 0 0 6px var(--np-red), 0 0 14px rgba(255, 82, 82, 0.5);
+}
+body.kiosk #kiosk-status-updated { color: var(--np-green-dim); text-shadow: none; }
+body.kiosk #kiosk-paused { color: var(--np-red); text-shadow: 0 0 6px rgba(255, 82, 82, 0.5); }
+body.kiosk #kiosk-next {
+  background: var(--np-glass);
+  border: 1px solid var(--np-bezel);
+  border-radius: 4px;
+  color: var(--np-yellow);
+  text-shadow: 0 0 6px rgba(255, 210, 63, 0.45);
+  font: inherit;
+  letter-spacing: 0.14em;
+  padding: 7px 16px;
+  cursor: pointer;
+}
+body.kiosk #kiosk-next:active { border-color: var(--np-yellow); }
+body.kiosk #kiosk-status-clock .np-clock-txt {
+  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: var(--np-green);
+  text-shadow: 0 0 5px rgba(93, 230, 154, 0.35);
 }
 body.kiosk #kiosk-status-clock {
-  background: #C0C0C0;
-  border: 1px solid;
-  border-color: #808080 #FFFFFF #FFFFFF #808080; /* sunken clock well */
-  padding: 4px 12px;
-  font-family: "Courier New", Courier, monospace;
-  font-variant-numeric: tabular-nums;
+  position: relative;
+  background: #07090b;
+  border: 1px solid var(--np-bezel);
+  border-radius: 4px;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.7);
+  padding: 6px 14px;
+  font-family: var(--np-seg);
+  font-size: 15px;
+  letter-spacing: 0.05em;
+  color: var(--np-blue);
+  text-shadow: 0 0 5px rgba(56, 182, 255, 0.6);
 }
 
-/* ── Night dim: ~30% brightness after sunset, restored at sunrise ── */
+/* ── Night dim: ~30% brightness after sunset ── */
 body.kiosk #kiosk-dim {
   position: fixed;
   inset: 0;
@@ -146,6 +435,4 @@ body.kiosk #kiosk-dim {
   transition: opacity 2s linear;
   z-index: 950;
 }
-body.kiosk.kiosk-night #kiosk-dim {
-  opacity: 0.7;
-}
+body.kiosk.kiosk-night #kiosk-dim { opacity: 0.7; }
