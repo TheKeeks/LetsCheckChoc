@@ -13,6 +13,15 @@
   <link rel="stylesheet" href="styles-web1.css">
   <link rel="stylesheet" href="styles-web1-extensions.css">
   <link rel="stylesheet" href="styles-retro.css">
+  <link rel="stylesheet" href="styles-kiosk.css">
+  <!-- Choc TV kiosk mode PWA (?kiosk=1): installable via Add to Home Screen -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#C0C0C0">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Choc TV">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 </head>
 <body data-era="web1">
   <!-- Boat question gate (Win95 modal) -->
@@ -577,6 +586,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="firebase-config.js"></script>
   <script src="app.js"></script>
+  <script src="kiosk.js"></script>
   <div id="toast-container" class="toast-container"></div>
 </body>
 </html>

@@ -1118,7 +1118,26 @@ function setCacheRefreshIndicator(visible) {
   ind.style.display = visible ? '' : 'none';
 }
 
+// ── Load concurrency guard ──────────────────────
+// Rapid buoy clicks, model changes, or the kiosk auto-refresh can start a
+// new load while an older one is still awaiting fetches; the generation
+// counter makes the superseded run stop touching the DOM at its next
+// checkpoint, and _loadInFlight lets timers skip firing mid-load.
+let _loadGen = 0;
+let _loadInFlight = false;
+function isDataLoadInFlight() { return _loadInFlight; }
+
 async function loadAllData(buoy) {
+  const gen = ++_loadGen;
+  _loadInFlight = true;
+  try {
+    await _loadAllDataImpl(buoy, gen);
+  } finally {
+    if (gen === _loadGen) _loadInFlight = false;
+  }
+}
+
+async function _loadAllDataImpl(buoy, _gen) {
   const lat = buoy.lat;
   const lon = buoy.lon;
   const isChoc = buoy.home === 'chocomount';
@@ -1192,6 +1211,7 @@ async function loadAllData(buoy) {
     setForecastModel('');
     marine = await fetchMarineForecast(forecastLat, forecastLon, null);
   }
+  if (_gen !== _loadGen) return; // superseded by a newer load
 
   // Parse buoy data (CORS proxy primary, pipeline fallback for Choc)
   let buoyParsed = parseNDBCStdmet(buoyData);
@@ -1227,6 +1247,7 @@ async function loadAllData(buoy) {
   } else {
     el('panel-tides').style.display = 'none';
   }
+  if (_gen !== _loadGen) return; // superseded by a newer load
 
   // ── Spectral data (compass rose + spectrum) ──
   if (buoy.spectral) {
@@ -1268,6 +1289,7 @@ async function loadAllData(buoy) {
         console.warn('Pipeline spectral fallback failed:', err);
       }
     }
+    if (_gen !== _loadGen) return; // superseded by a newer load
 
     if (parsed && parsed.bins && parsed.bins.length > 0) {
       STATE.lastSpectral = parsed;
@@ -1314,10 +1336,21 @@ async function loadAllData(buoy) {
   highlightNearestTideStation(displayLat, displayLon);
 
   // Update time
+  STATE.lastLoadCompletedAt = Date.now();
   el('header-update-time').textContent = `Updated ${formatTime(new Date())}`;
 }
 
 async function loadPinData(lat, lon) {
+  const gen = ++_loadGen;
+  _loadInFlight = true;
+  try {
+    await _loadPinDataImpl(lat, lon, gen);
+  } finally {
+    if (gen === _loadGen) _loadInFlight = false;
+  }
+}
+
+async function _loadPinDataImpl(lat, lon, _gen) {
   const selectedModel = getForecastModel();
   const tideStn = findNearestTideStation(lat, lon);
   STATE.nearestTideStation = tideStn;
@@ -1360,6 +1393,7 @@ async function loadPinData(lat, lon) {
     setForecastModel('');
     marine = await fetchMarineForecast(lat, lon, null);
   }
+  if (_gen !== _loadGen) return; // superseded by a newer load
 
   const tideHiLoForChart = hiloRaw && hiloRaw.predictions ? hiloRaw.predictions : null;
   const tidePredForChart = predRaw && predRaw.predictions ? predRaw.predictions : null;
@@ -1377,12 +1411,14 @@ async function loadPinData(lat, lon) {
   } else {
     el('panel-tides').style.display = 'none';
   }
+  if (_gen !== _loadGen) return; // superseded by a newer load
 
   // No spectral for pin — show empty state
   el('panel-spectral-row').style.display = '';
   showSpectralEmpty();
 
   highlightNearestTideStation(lat, lon);
+  STATE.lastLoadCompletedAt = Date.now();
   el('header-update-time').textContent = `Updated ${formatTime(new Date())}`;
 }
 
