@@ -90,19 +90,64 @@ body.kiosk #app-window {
 
 /* ── Shared instrument pieces ─────────────────────────────────────── */
 
-/* Smoked-glass module with machined bezel + faint inner glow. */
+/* McIntosh black-glass faceplate: glossy near-black with an aluminum
+   edge catch along the top bevel. */
 body.kiosk .np-module,
 body.kiosk .np-day {
   background:
-    radial-gradient(120% 90% at 50% 0%, rgba(56, 182, 255, 0.05), transparent 55%),
-    linear-gradient(180deg, var(--np-glass) 0%, var(--np-glass2) 100%);
-  border: 1px solid var(--np-bezel);
-  border-top-color: var(--np-bezel-hi);
-  border-radius: 6px;
+    linear-gradient(165deg, rgba(255, 255, 255, 0.05) 0%, transparent 24%),
+    linear-gradient(180deg, #07090c 0%, #040507 100%);
+  border: 1px solid #2c3238;
+  border-top-color: #4a525a;
+  border-radius: 5px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    inset 0 0 24px rgba(0, 0, 0, 0.55),
-    0 2px 6px rgba(0, 0, 0, 0.5);
+    0 2px 10px rgba(0, 0, 0, 0.7),
+    inset 0 0 40px rgba(0, 0, 0, 0.5);
+}
+
+/* The signature blue-backlit meter window: deep blue up top, brighter
+   toward the lamp at the bottom edge, black markings inside. */
+body.kiosk .np-swell:not(.np-slot-empty),
+body.kiosk .np-low:not(.np-slot-empty),
+body.kiosk .np-meter-sm,
+body.kiosk #kiosk-status-clock {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.30) 0%, rgba(255, 255, 255, 0.06) 12%, transparent 30%),
+    radial-gradient(150% 170% at 50% 118%, #8fd8ff 0%, #3b9ae4 42%, #1560ab 82%, #0d4586 100%);
+  border: 1px solid #0a2c52;
+  border-radius: 4px;
+  box-shadow:
+    inset 0 -8px 22px rgba(120, 205, 255, 0.35),
+    inset 0 2px 6px rgba(6, 25, 48, 0.45),
+    0 0 26px rgba(47, 143, 221, 0.30);
+}
+/* Everything printed inside a meter window is black, like meter scales. */
+body.kiosk .np-swell .np-seg,
+body.kiosk .np-low .np-seg,
+body.kiosk .np-meter-sm .np-seg,
+body.kiosk #kiosk-status-clock {
+  color: #0a1826;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+body.kiosk .np-swell .np-seg::before,
+body.kiosk .np-low .np-seg::before,
+body.kiosk .np-meter-sm .np-seg::before {
+  color: rgba(10, 24, 38, 0.15);
+}
+body.kiosk .np-swell .np-legend, body.kiosk .np-swell .np-unit,
+body.kiosk .np-swell .np-at, body.kiosk .np-swell .np-micro,
+body.kiosk .np-low .np-legend, body.kiosk .np-low .np-unit,
+body.kiosk .np-low .np-unit-sm,
+body.kiosk .np-meter-sm .np-legend, body.kiosk .np-meter-sm .np-unit-sm,
+body.kiosk #kiosk-status-clock .np-clock-txt {
+  color: #0b2236;
+  text-shadow: none;
+}
+body.kiosk .np-swell .np-arrow,
+body.kiosk .np-low .np-arrow,
+body.kiosk .np-meter-sm .np-arrow {
+  color: #081522; /* meter-needle black */
+  text-shadow: none;
 }
 
 /* Seven-segment readout with ghost segments + LED bloom. */
@@ -131,8 +176,6 @@ body.kiosk .np-seg-md { font-size: 1.9rem; }
 body.kiosk .np-seg-sm { font-size: 1.15rem; }
 /* Softer ghost so small digits stay crisp. */
 body.kiosk .np-seg::before { color: rgba(56, 182, 255, 0.07); }
-/* Secondary swell: distinguished by SIZE, not by dimming. */
-body.kiosk .np-secondary .np-seg { color: var(--np-blue); }
 
 /* Edge-lit amplifier legends. */
 body.kiosk .np-legend,
@@ -176,7 +219,7 @@ body.kiosk .np-day {
   display: grid;
   /* Fixed slots (title / primary / secondary / low1 / low2 / sun / moon)
      shared by every card, so readings align horizontally across cards. */
-  grid-template-rows: 34px 96px 74px 80px 80px minmax(84px, auto) 30px;
+  grid-template-rows: 34px 100px 76px 80px 80px minmax(100px, auto) 28px;
   row-gap: 10px;
   align-items: center;
   min-height: 64vh;
@@ -199,6 +242,7 @@ body.kiosk .np-swell {
   justify-content: space-between;
   gap: 12px;
   line-height: 1.05;
+  padding: 8px 14px;
 }
 body.kiosk .np-micro {
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
@@ -256,8 +300,18 @@ body.kiosk .np-sun-cell {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
   text-align: center;
+  min-width: 0;
+}
+body.kiosk .np-meter-sm {
+  padding: 6px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
 }
 body.kiosk .np-sun-cell .np-legend { font-size: 11px; }
 body.kiosk .np-sun-time { white-space: nowrap; }
@@ -459,16 +513,10 @@ body.kiosk #kiosk-status-clock .np-clock-txt {
 }
 body.kiosk #kiosk-status-clock {
   position: relative;
-  background: #07090b;
-  border: 1px solid var(--np-bezel);
-  border-radius: 4px;
-  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.7);
   padding: 6px 14px;
   font-family: var(--np-seg);
   font-size: 15px;
   letter-spacing: 0.05em;
-  color: var(--np-blue);
-  text-shadow: 0 0 5px rgba(56, 182, 255, 0.6);
 }
 
 /* ── Night dim: ~30% brightness after sunset ── */
@@ -482,3 +530,7 @@ body.kiosk #kiosk-dim {
   z-index: 950;
 }
 body.kiosk.kiosk-night #kiosk-dim { opacity: 0.7; }
+
+/* Late-cascade pins: readings inside meter windows always print black. */
+body.kiosk .np-swell .np-micro { color: #0b2236; text-shadow: none; }
+body.kiosk .np-secondary .np-seg { color: #0a1826; }

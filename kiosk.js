@@ -296,10 +296,14 @@ function kioskDayCardHTML(s) {
     const e = s.sun[key];
     if (!e) return `<div class="np-sun-cell"><span class="np-legend np-dim">${label} —</span></div>`;
     const c = kioskFmtClock(e.t);
+    // Green nomenclature on the glass; the reading inside its own
+    // blue-backlit meter window (np-meter-sm).
     return `<div class="np-sun-cell">` +
       `<span class="np-legend">${label}</span>` +
-      `<div class="np-sun-time">${kioskSegHTML(c.seg, 'np-seg-sm', true)}<span class="np-unit-sm">${c.ampm}</span></div>` +
-      `<div class="np-sun-wind">${kioskWindHTML(e.wind)}</div>` +
+      `<div class="np-meter-sm">` +
+        `<div class="np-sun-time">${kioskSegHTML(c.seg, 'np-seg-sm', true)}<span class="np-unit-sm">${c.ampm}</span></div>` +
+        `<div class="np-sun-wind">${kioskWindHTML(e.wind)}</div>` +
+      `</div>` +
       `</div>`;
   };
 
