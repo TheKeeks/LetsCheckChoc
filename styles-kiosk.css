@@ -19,7 +19,7 @@
 }
 
 body.kiosk {
-  --np-bg: #101214;
+  --np-bg: #000000;
   --np-glass: #0b0f13;
   --np-glass2: #0c1116;
   --np-bezel: #26323b;
@@ -171,12 +171,18 @@ body.kiosk .np-days {
   width: 100%;
 }
 body.kiosk .np-day {
-  padding: 16px 16px 12px;
+  padding: 14px 16px 12px;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  /* Fixed slots (title / primary / secondary / low1 / low2 / sun / moon)
+     shared by every card, so readings align horizontally across cards. */
+  grid-template-rows: 34px 96px 74px 80px 80px minmax(84px, auto) 30px;
+  row-gap: 10px;
+  align-items: center;
   min-height: 64vh;
+}
+body.kiosk .np-slot-empty {
+  visibility: hidden;
 }
 body.kiosk .np-day-title {
   font-size: 16px;
@@ -242,9 +248,9 @@ body.kiosk .np-sunrow {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-  margin-top: auto;
+  align-self: end;
   border-top: 1px solid var(--np-bezel);
-  padding-top: 12px;
+  padding-top: 10px;
 }
 body.kiosk .np-sun-cell {
   display: flex;
