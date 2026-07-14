@@ -278,33 +278,45 @@ function kioskSwellRowHTML(sw, cls) {
 }
 
 function kioskDayCardHTML(s) {
-  const lowsHTML = s.lows.length
-    ? s.lows.map(lo => {
-        const c = kioskFmtClock(lo.t);
-        return `<div class="np-module np-low">` +
-          `<div class="np-low-when"><span class="np-legend">LOW @</span> ` +
-            kioskSegHTML(c.seg, 'np-seg-md') + `<span class="np-unit">${c.ampm}</span></div>` +
-          `<div class="np-low-wind">${kioskWindHTML(lo.wind)}</div>` +
-          `</div>`;
-      }).join('')
-    : '<div class="np-module np-low"><span class="np-legend np-dim">NO LOW TIDE</span></div>';
+  // Every card renders the SAME fixed slots (primary, secondary, low 1,
+  // low 2, sun row, moon) so corresponding readings sit at identical
+  // heights across the three cards; missing readings leave a quiet gap.
+  const lowSlot = lo => {
+    if (!lo) return '<div class="np-module np-low np-slot-empty"></div>';
+    const c = kioskFmtClock(lo.t);
+    return `<div class="np-module np-low">` +
+      `<div class="np-low-when"><span class="np-legend">LOW @</span> ` +
+        kioskSegHTML(c.seg, 'np-seg-md') + `<span class="np-unit">${c.ampm}</span></div>` +
+      `<div class="np-low-wind">${kioskWindHTML(lo.wind)}</div>` +
+      `</div>`;
+  };
+  const lowsHTML = lowSlot(s.lows[0]) + lowSlot(s.lows[1]);
 
   const sunCell = (key, label) => {
     const e = s.sun[key];
     if (!e) return `<div class="np-sun-cell"><span class="np-legend np-dim">${label} —</span></div>`;
     const c = kioskFmtClock(e.t);
+    // Green nomenclature on the glass; the reading inside its own
+    // blue-backlit meter window (np-meter-sm).
     return `<div class="np-sun-cell">` +
       `<span class="np-legend">${label}</span>` +
-      `<div class="np-sun-time">${kioskSegHTML(c.seg, 'np-seg-sm', true)}<span class="np-unit-sm">${c.ampm}</span></div>` +
-      `<div class="np-sun-wind">${kioskWindHTML(e.wind)}</div>` +
+      `<div class="np-meter-sm">` +
+        `<div class="np-sun-time">${kioskSegHTML(c.seg, 'np-seg-sm', true)}<span class="np-unit-sm">${c.ampm}</span></div>` +
+        `<div class="np-sun-wind">${kioskWindHTML(e.wind)}</div>` +
+      `</div>` +
       `</div>`;
   };
+
+  const secondaryHTML = s.secondary
+    ? kioskSwellRowHTML(s.secondary, 'np-secondary')
+    : '<div class="np-swell np-secondary np-slot-empty"></div>';
 
   return `<div class="np-day">` +
     `<div class="np-day-title">${s.label}</div>` +
     (s.primary
-      ? kioskSwellRowHTML(s.primary, 'np-primary') + kioskSwellRowHTML(s.secondary, 'np-secondary')
+      ? kioskSwellRowHTML(s.primary, 'np-primary')
       : '<div class="np-swell np-primary"><span class="np-legend np-dim">NO SWELL DATA</span></div>') +
+    secondaryHTML +
     lowsHTML +
     `<div class="np-sunrow">${sunCell('sunrise', 'SUNRISE')}${sunCell('noon', 'NOON')}${sunCell('sunset', 'SUNSET')}</div>` +
     `<div class="np-moonrow"><span class="np-moon-icon">${s.moon.icon}</span><span class="np-legend">${s.moon.pct}% FULL</span></div>` +
