@@ -48,10 +48,24 @@ LetsCheckChoc/
 
 ## Choc TV (iPad kiosk mode)
 
-An ambient always-on display mode for an iPad on a stand. Open the site
-with `?kiosk=1` and it skips the gate, boots straight into Chocomount,
-hides all chrome, and cycles three full-screen panels every ~20s:
-current conditions → forecast charts → wave spectra + compass rose.
+An ambient always-on display mode for an iPad on a stand, themed as
+"Night Passage" — a 1980s marine instrument cluster (graphite faceplate,
+smoked-glass modules, seven-segment readouts; blue = live data, green =
+legends, red = alerts, yellow = direction arrows). Open the site with
+`?kiosk=1` and it skips the gate, boots straight into Chocomount, hides
+all chrome, and cycles four full-screen panels every ~20s: day summaries
+(days 1–3) → day summaries (days 4–6) → forecast charts → wave spectra +
+compass rose. A NEXT button in the status strip skips ahead.
+
+Each day card reads: primary (and, when present, secondary) swell as the
+min–max height range over the incoming-tide windows at Silver Eel
+clipped to daylight — sampled with a 1 h swell-travel lag from the
+open-water forecast point (2 h when the buoy-coords toggle is on) —
+period is the ceil of the window mean; the two low tides with wind speed
+and direction at each low; wind at sunrise / noon / sunset; and the moon
+phase (% full). All direction arrows point where the swell or wind is
+going, with the FROM compass label beside.
+
 Data auto-refreshes every 15 minutes (freshness shown in the bottom
 status strip), the display dims to ~30% after local sunset, and tapping
 anywhere pauses rotation for ~60s so the forecast scrubber and rose

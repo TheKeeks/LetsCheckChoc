@@ -1723,14 +1723,20 @@ const FC_CHART_FONT_MONO = '"Courier New", Courier, monospace';
 
 // Retro Win95 chart palette — hardcoded hex literals to match the
 // Forecast-tab visual overhaul. NO css variable indirection.
+// NOTE: every color the chart drawers use lives in this palette (no
+// hardcoded literals in the draw functions) so kiosk.js can re-theme the
+// charts at boot via Object.assign without touching any drawing code.
 const FC_RETRO = {
   plotBg:        '#F8F4E8',
   grid:          '#808080',
   ink:           '#000000',
+  ink2:          '#404040',                   // unit labels, FROM, obs caption
+  frame:         '#808080',                   // 1px plot frames
   swellFill:     '#4A6B9A',
   swellStroke:   '#1A3B6A',
   secSwellFill:  'rgba(74, 107, 154, 0.35)', // primary at 35%
   period:        '#B85A12',
+  periodHalo:    'rgba(248, 244, 232, 0.85)', // legibility halo under period line
   dirPrimary:    '#1A3B6A',
   dirSecondary:  '#1A3B6A',
   // Wind quality colors keyed to the app's earth-tone palette (same stops
@@ -1739,10 +1745,22 @@ const FC_RETRO = {
   windOn:        '#8a3a2e',
   windCross:     '#b87a2e',
   windOff:       '#3a7d56',
+  windNull:      'rgba(128, 128, 128, 0.5)',
   windStroke:    '#404040',
   windBand:      'rgba(216, 232, 208, 0.6)',
   tide:          '#2A5D8C',
-  scrubDot:      '#000000'
+  tideMarkFaint: 'rgba(42, 93, 140, 0.55)',
+  tideMark:      'rgba(42, 93, 140, 0.95)',
+  tideConn:      'rgba(42, 93, 140, 0.7)',
+  scrubDot:      '#000000',
+  nowLine:       'rgba(44, 40, 37, 0.5)',
+  daySep:        'rgba(44, 40, 37, 0.16)',
+  nightShade:    'rgba(44, 40, 37, 0.04)',
+  pastDim:       'rgba(44, 40, 37, 0.045)',
+  obsFill:       '#FFFFFF',
+  obsStroke:     '#000000',
+  pulseCore:     '#1A3B6A',
+  pulseRing:     '26, 59, 106'               // rgb triplet; alpha composed per frame
 };
 
 // Dashed gridline helper — 0.5px stroke, 2-2 dash, color #808080.
@@ -1786,7 +1804,7 @@ function _fcDrawNowLine(ctx, common, plotLeft, plotW, top, bottom) {
   if (nowMs < common.t0 || nowMs > common.tEnd) return null;
   const nowX = _fcXFor(new Date(nowMs), common, plotLeft, plotW);
   ctx.save();
-  ctx.strokeStyle = 'rgba(44, 40, 37, 0.5)';
+  ctx.strokeStyle = FC_RETRO.nowLine;
   ctx.lineWidth = 1;
   ctx.setLineDash([3, 3]);
   ctx.beginPath();
@@ -1807,14 +1825,14 @@ function _fcDrawPastDim(ctx, common, plotLeft, plotW, top, h) {
     _fcXFor(new Date(nowMs), common, plotLeft, plotW),
     plotLeft + plotW
   );
-  ctx.fillStyle = 'rgba(44, 40, 37, 0.045)';
+  ctx.fillStyle = FC_RETRO.pastDim;
   ctx.fillRect(plotLeft, top, nowX - plotLeft, h);
 }
 
 function _fcDrawNightShading(ctx, common, plotLeft, plotW, top, height) {
   const dl0 = common.daylight;
   if (!dl0 || dl0.alwaysDay) return;
-  ctx.fillStyle = 'rgba(44, 40, 37, 0.04)';
+  ctx.fillStyle = FC_RETRO.nightShade;
   for (let dayOff = 0; dayOff < common.dayCount + 1; dayOff++) {
     const dayDate = new Date(common.firstDay);
     dayDate.setDate(dayDate.getDate() + dayOff);
@@ -1843,7 +1861,7 @@ function _fcDrawDaySeparators(ctx, common, plotLeft, plotW, top, height) {
   // Light midnight verticals — appear as continuous columns when drawn
   // on every panel canvas; kept faint so they read as calendar guides,
   // not data.
-  ctx.strokeStyle = 'rgba(44, 40, 37, 0.16)';
+  ctx.strokeStyle = FC_RETRO.daySep;
   ctx.lineWidth = 1;
   for (let dayOff = 0; dayOff <= common.dayCount; dayOff++) {
     const midDate = new Date(common.firstDay);
@@ -1972,11 +1990,11 @@ function drawSwellPanel(common, data) {
   if (periodPts.length >= 2) {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    // Cream halo for legibility against the dark swell fill.
+    // Background-tinted halo for legibility against the swell fill.
     ctx.beginPath();
     ctx.moveTo(periodPts[0][0], periodPts[0][1]);
     for (let i = 1; i < periodPts.length; i++) ctx.lineTo(periodPts[i][0], periodPts[i][1]);
-    ctx.strokeStyle = 'rgba(248, 244, 232, 0.85)';
+    ctx.strokeStyle = FC_RETRO.periodHalo;
     ctx.lineWidth = 4;
     ctx.stroke();
     // Period line — rust orange, 2px.
@@ -2106,14 +2124,14 @@ function drawSwellPanel(common, data) {
   // swell is COMING FROM (oceanographic convention). Top-right of the
   // sub-panel, away from the compass tick labels in the left gutter.
   ctx.font = `bold 10px ${FC_CHART_FONT}`;
-  ctx.fillStyle = '#404040';
+  ctx.fillStyle = FC_RETRO.ink2;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'top';
   ctx.fillText('FROM', plotLeft + plotW - 6, subTop + 3);
 
   // Crisp 1px frames around both plot regions — Excel-97 style finished
   // edges instead of fills bleeding into the cream.
-  ctx.strokeStyle = '#808080';
+  ctx.strokeStyle = FC_RETRO.frame;
   ctx.lineWidth = 1;
   ctx.strokeRect(plotLeft + 0.5, top + 0.5, plotW - 1, h - 1);
   ctx.strokeRect(plotLeft + 0.5, subTop + 0.5, plotW - 1, subBot - subTop - 1);
@@ -2135,14 +2153,14 @@ function drawSwellPanel(common, data) {
     ctx.lineTo(nowX, oy + 4);
     ctx.lineTo(nowX - 4, oy);
     ctx.closePath();
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = FC_RETRO.obsFill;
     ctx.fill();
-    ctx.strokeStyle = '#000000';
+    ctx.strokeStyle = FC_RETRO.obsStroke;
     ctx.lineWidth = 1.5;
     ctx.stroke();
     if (!isMobile) {
       ctx.font = `9px ${FC_CHART_FONT}`;
-      ctx.fillStyle = '#404040';
+      ctx.fillStyle = FC_RETRO.ink2;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText('obs', nowX + 7, oy);
@@ -2220,7 +2238,7 @@ function drawWindPanel(common, data) {
   // Light winds (<5 mph) upgrade one tier so colors don't mislead at calm hours.
   const OFFSHORE_CENTER = 335;
   const colorFor = (dir, speed) => {
-    if (dir == null) return 'rgba(128, 128, 128, 0.5)';
+    if (dir == null) return FC_RETRO.windNull;
     const gap = Math.min(((dir - OFFSHORE_CENTER) % 360 + 360) % 360,
                         ((OFFSHORE_CENTER - dir) % 360 + 360) % 360);
     let bucket;
@@ -2287,7 +2305,7 @@ function drawWindPanel(common, data) {
   }
 
   // Crisp 1px plot frame, then the dashed "now" line beneath the markers.
-  ctx.strokeStyle = '#808080';
+  ctx.strokeStyle = FC_RETRO.frame;
   ctx.lineWidth = 1;
   ctx.strokeRect(plotLeft + 0.5, top + 0.5, plotW - 1, h - 1);
   _fcDrawNowLine(ctx, common, plotLeft, plotW, top, top + h);
@@ -2404,7 +2422,7 @@ function drawTidePanel(common, data) {
       const xx = _fcXFor(new Date(lo.t), common, plotLeft, plotW);
       if (xx < plotLeft || xx > plotLeft + plotW) continue;
       const yy = tideY(lo.v);
-      ctx.fillStyle = 'rgba(42, 93, 140, 0.55)';
+      ctx.fillStyle = FC_RETRO.tideMarkFaint;
       ctx.beginPath();
       ctx.moveTo(xx, yy + 1);
       ctx.lineTo(xx - 3, yy - 4);
@@ -2436,7 +2454,7 @@ function drawTidePanel(common, data) {
       const heightStr = `${lo.v.toFixed(1)}ft`;
 
       // Triangle marker at the trough
-      ctx.fillStyle = 'rgba(42, 93, 140, 0.95)';
+      ctx.fillStyle = FC_RETRO.tideMark;
       ctx.beginPath();
       ctx.moveTo(xx, yy + 2);
       ctx.lineTo(xx - 3, yy - 3);
@@ -2463,7 +2481,7 @@ function drawTidePanel(common, data) {
         if (pushDown) {
           // Connector: thin teal line from trough up to label baseline.
           ctx.save();
-          ctx.strokeStyle = 'rgba(42, 93, 140, 0.7)';
+          ctx.strokeStyle = FC_RETRO.tideConn;
           ctx.lineWidth = 0.5;
           ctx.beginPath();
           ctx.moveTo(xx, yy + 2);
@@ -2478,7 +2496,7 @@ function drawTidePanel(common, data) {
         const baseBot = yy - 4 - lowOff;
         if (pushDown) {
           ctx.save();
-          ctx.strokeStyle = 'rgba(42, 93, 140, 0.7)';
+          ctx.strokeStyle = FC_RETRO.tideConn;
           ctx.lineWidth = 0.5;
           ctx.beginPath();
           ctx.moveTo(xx, yy - 2);
@@ -2493,7 +2511,7 @@ function drawTidePanel(common, data) {
   }
 
   // Crisp 1px plot frame, then the dashed "now" line beneath the markers.
-  ctx.strokeStyle = '#808080';
+  ctx.strokeStyle = FC_RETRO.frame;
   ctx.lineWidth = 1;
   ctx.strokeRect(plotLeft + 0.5, top + 0.5, plotW - 1, h - 1);
   _fcDrawNowLine(ctx, common, plotLeft, plotW, top, top + h);
@@ -3110,14 +3128,14 @@ function _drawNowPulseFrame(staticFrame) {
   // Core dot.
   ctx.beginPath();
   ctx.arc(g.x, g.y, 2.5, 0, Math.PI * 2);
-  ctx.fillStyle = FC_RETRO.swellStroke;
+  ctx.fillStyle = FC_RETRO.pulseCore;
   ctx.fill();
   // Expanding, fading ring (~1.6s cycle).
   if (!staticFrame) {
     const phase = (performance.now() % 1600) / 1600;
     ctx.beginPath();
     ctx.arc(g.x, g.y, 3 + phase * 3, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(26, 59, 106, ${(0.6 * (1 - phase)).toFixed(3)})`;
+    ctx.strokeStyle = `rgba(${FC_RETRO.pulseRing}, ${(0.6 * (1 - phase)).toFixed(3)})`;
     ctx.lineWidth = 1.5;
     ctx.stroke();
   }
@@ -3598,6 +3616,17 @@ function showSpectralCharts() {
 // Period (s) → [R,G,B] anchor stops. Colors keyed to the app's earth-tone
 // palette, re-purposed as a continuous period ramp. Short = wind chop;
 // long = long-period groundswell.
+// Rose/compass colors — palette object (not literals) so kiosk.js can
+// re-theme the rose the same way it re-themes FC_RETRO.
+const ROSE_THEME = {
+  bg:       '#F8F4E8',
+  ring:     '#808080',
+  cardinal: '#000000',
+  window:   '#3a7d56',
+  hs:       '#2c2825',
+  hsSub:    '#8a827a'
+};
+
 const PERIOD_COLOR_STOPS = [
   [2,  [90, 127, 160]],   // #5a7fa0 steel blue
   [7,  [58, 125, 125]],   // #3a7d7d teal
@@ -3671,14 +3700,14 @@ function drawCompassRose(spectral, buoyParsed) {
   const r = size / 2 - (compact ? 22 : 30);
 
   // Cream Win95 background.
-  ctx.fillStyle = '#F8F4E8';
+  ctx.fillStyle = ROSE_THEME.bg;
   ctx.fillRect(0, 0, size, size);
 
   // Concentric reference rings (geometric scaffolding only; radial axis now
   // encodes wave energy density, so no period labels).
   const guideRings = [0.25, 0.5, 0.75, 1.0];
   guideRings.forEach(frac => {
-    ctx.strokeStyle = '#808080';
+    ctx.strokeStyle = ROSE_THEME.ring;
     ctx.lineWidth = 0.5;
     ctx.setLineDash([2, 2]);
     ctx.beginPath();
@@ -3688,7 +3717,7 @@ function drawCompassRose(spectral, buoyParsed) {
   ctx.setLineDash([]);
 
   // Cardinal labels — bold black MS Sans Serif.
-  ctx.fillStyle = '#000000';
+  ctx.fillStyle = ROSE_THEME.cardinal;
   ctx.font = `bold 11px ${FC_CHART_FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -3701,7 +3730,7 @@ function drawCompassRose(spectral, buoyParsed) {
   if (STATE.isChocomount) {
     const min = CONFIG.chocomount.swellWindowMin;
     const max = CONFIG.chocomount.swellWindowMax;
-    ctx.strokeStyle = '#3a7d56';
+    ctx.strokeStyle = ROSE_THEME.window;
     ctx.lineWidth = 1;
     ctx.globalAlpha = 0.4;
     [min, max].forEach(deg => {
@@ -3712,7 +3741,7 @@ function drawCompassRose(spectral, buoyParsed) {
       ctx.stroke();
     });
     // Fill the window arc
-    ctx.fillStyle = '#3a7d56';
+    ctx.fillStyle = ROSE_THEME.window;
     ctx.globalAlpha = 0.06;
     ctx.beginPath();
     ctx.moveTo(cx, cy);
@@ -3722,7 +3751,7 @@ function drawCompassRose(spectral, buoyParsed) {
     ctx.globalAlpha = 1;
     // Swell window degree labels
     ctx.font = `9px ${FC_CHART_FONT}`;
-    ctx.fillStyle = '#3a7d56';
+    ctx.fillStyle = ROSE_THEME.window;
     ctx.globalAlpha = 0.6;
     [min, max].forEach(deg => {
       const rad = degToRad(deg - 90);
@@ -3737,7 +3766,7 @@ function drawCompassRose(spectral, buoyParsed) {
     const midRad = degToRad(midDeg - 90);
     const labelR = r * 0.55;
     ctx.font = `italic 9px ${FC_CHART_FONT}`;
-    ctx.fillStyle = '#3a7d56';
+    ctx.fillStyle = ROSE_THEME.window;
     ctx.globalAlpha = 0.5;
     ctx.fillText('swell window', cx + Math.cos(midRad) * labelR, cy + Math.sin(midRad) * labelR);
     ctx.globalAlpha = 1;
@@ -3835,12 +3864,12 @@ function drawCompassRose(spectral, buoyParsed) {
   const hsVal = hsFt != null ? hsFt.toFixed(1) : null;
   if (hsVal) {
     ctx.font = `bold 14px ${FC_CHART_FONT_MONO}`;
-    ctx.fillStyle = '#2c2825';
+    ctx.fillStyle = ROSE_THEME.hs;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(`${hsVal} ft`, cx, cy);
     ctx.font = `9px ${FC_CHART_FONT}`;
-    ctx.fillStyle = '#8a827a';
+    ctx.fillStyle = ROSE_THEME.hsSub;
     ctx.fillText('Hs', cx, cy + 14);
   }
 }
