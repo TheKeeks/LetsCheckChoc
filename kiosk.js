@@ -410,7 +410,7 @@ function kioskDrawRadar(idx) {
 function kioskRadarArrow(ctx, lx, ly, fromDeg, len, o) {
   const th = fromDeg * Math.PI / 180;
   const ux = Math.sin(th), uy = -Math.cos(th); // unit vector lineup → source
-  const gap = 26;
+  const gap = 30;
   const hx = lx + ux * gap, hy = ly + uy * gap;             // head tip
   const tx = lx + ux * (gap + len), ty = ly + uy * (gap + len); // tail
   const headLen = 10 + o.width * 2.2;
@@ -419,7 +419,7 @@ function kioskRadarArrow(ctx, lx, ly, fromDeg, len, o) {
   ctx.strokeStyle = o.color;
   ctx.fillStyle = o.color;
   ctx.lineWidth = o.width;
-  ctx.setLineDash(o.dashed ? [7, 5] : []);
+  ctx.setLineDash(o.dashed ? [10, 7] : []);
   ctx.beginPath();
   ctx.moveTo(tx, ty);
   ctx.lineTo(hx + ux * headLen, hy + uy * headLen);
@@ -436,19 +436,19 @@ function kioskRadarArrow(ctx, lx, ly, fromDeg, len, o) {
   else ctx.fill();
 
   if (o.label) {
-    const off = 14 + (o.labelPush || 0);
+    const off = 18 + (o.labelPush || 0);
     let px = tx + ux * off, py = ty + uy * off;
     // Horizontal arrows run parallel to their (horizontal) label — float
     // the text up off the shaft in proportion to how horizontal it is.
-    py -= 13 * Math.abs(ux);
-    ctx.font = 'bold 13px Tahoma, Geneva, sans-serif';
+    py -= 16 * Math.abs(ux);
+    ctx.font = 'bold 17px Tahoma, Geneva, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const tw = ctx.measureText(o.label).width;
-    px = Math.max(8 + tw / 2, Math.min(ctx.canvas.clientWidth - 8 - tw / 2, px));
-    py = Math.max(12, Math.min(ctx.canvas.clientHeight - 10, py));
+    px = Math.max(10 + tw / 2, Math.min(ctx.canvas.clientWidth - 10 - tw / 2, px));
+    py = Math.max(14, Math.min(ctx.canvas.clientHeight - 12, py));
     ctx.strokeStyle = '#000';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 5;
     ctx.strokeText(o.label, px, py);
     ctx.fillStyle = o.color;
     ctx.fillText(o.label, px, py);
@@ -580,24 +580,24 @@ function kioskRadarPaint() {
     const closeDirs = sD != null && pD != null &&
       Math.abs(((sD - pD + 540) % 360) - 180) < 16; // bearings within ~16°
     if (sH != null && sD != null) {
-      const len = clampLen(Math.sqrt(sH * sH * (sP || 1)) * 12, 48, rMax * 0.85);
+      const len = clampLen(Math.sqrt(sH * sH * (sP || 1)) * 16, 70, rMax * 0.85);
       kioskRadarArrow(ctx, lx, ly, sD, len, {
-        color: 'rgba(69, 255, 154, 0.55)', width: 2,
+        color: 'rgba(69, 255, 154, 0.55)', width: 3.5,
         label: sH.toFixed(1) + ' FT @ ' + (sP != null ? sP.toFixed(0) : '–') + ' S ' + directionLabel(sD),
-        labelPush: closeDirs ? 26 : 8
+        labelPush: closeDirs ? 30 : 10
       });
     }
     if (pH != null && pD != null) {
-      const len = clampLen(Math.sqrt(pH * pH * (pP || 1)) * 12, 40, rMax * 0.9);
+      const len = clampLen(Math.sqrt(pH * pH * (pP || 1)) * 16, 84, rMax * 0.9);
       kioskRadarArrow(ctx, lx, ly, pD, len, {
-        color: G, width: 3.5,
+        color: G, width: 5.5,
         label: pH.toFixed(1) + ' FT @ ' + (pP != null ? pP.toFixed(0) : '–') + ' S ' + directionLabel(pD)
       });
     }
     if (wD != null) {
-      const len = clampLen((wS || 0) * 6, 42, rMax * 0.8);
+      const len = clampLen((wS || 0) * 8, 62, rMax * 0.8);
       kioskRadarArrow(ctx, lx, ly, wD, len, {
-        color: 'rgba(69, 255, 154, 0.8)', width: 2, dashed: true,
+        color: 'rgba(69, 255, 154, 0.8)', width: 3.5, dashed: true,
         label: (wS != null ? Math.round(wS) : '–') + ' MPH ' + directionLabel(wD)
       });
     }
@@ -608,37 +608,37 @@ function kioskRadarPaint() {
     const dh = Math.round((t.getTime() - Date.now()) / 3600e3);
     ctx.textAlign = 'right';
     ctx.textBaseline = 'alphabetic';
-    ctx.font = '12px Tahoma, Geneva, sans-serif';
+    ctx.font = '15px Tahoma, Geneva, sans-serif';
     ctx.fillStyle = 'rgba(69, 255, 154, 0.6)';
-    ctx.fillText(t.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase(), w - 14, 24);
-    ctx.font = '26px "DSEG14", "Courier New", monospace';
+    ctx.fillText(t.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase(), w - 18, 30);
+    ctx.font = '34px "DSEG14", "Courier New", monospace';
     ctx.fillStyle = G;
-    ctx.fillText(c.seg + ' ' + c.ampm, w - 14, 56);
-    ctx.font = 'bold 12px Tahoma, Geneva, sans-serif';
+    ctx.fillText(c.seg + ' ' + c.ampm, w - 18, 72);
+    ctx.font = 'bold 15px Tahoma, Geneva, sans-serif';
     if (Math.abs(dh) < 1) {
       ctx.fillStyle = '#ff5252';
-      ctx.fillText('● NOW', w - 14, 76);
+      ctx.fillText('● NOW', w - 18, 96);
     } else {
       ctx.fillStyle = dh > 0 ? 'rgba(69, 255, 154, 0.6)' : 'rgba(69, 255, 154, 0.35)';
-      ctx.fillText((dh > 0 ? '+' : '−') + Math.abs(dh) + ' H', w - 14, 76);
+      ctx.fillText((dh > 0 ? '+' : '−') + Math.abs(dh) + ' H', w - 18, 96);
     }
   } else {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '15px Tahoma, Geneva, sans-serif';
+    ctx.font = '18px Tahoma, Geneva, sans-serif';
     ctx.fillStyle = 'rgba(69, 255, 154, 0.5)';
     ctx.fillText('AWAITING FORECAST DATA', w / 2, h / 2 + rMax / 2);
   }
 
   // Lineup marker.
   ctx.beginPath();
-  ctx.arc(lx, ly, 3.5, 0, Math.PI * 2);
+  ctx.arc(lx, ly, 5, 0, Math.PI * 2);
   ctx.fillStyle = G;
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(lx, ly, 8, 0, Math.PI * 2);
+  ctx.arc(lx, ly, 11, 0, Math.PI * 2);
   ctx.strokeStyle = 'rgba(69, 255, 154, 0.45)';
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 1.5;
   ctx.stroke();
 }
 

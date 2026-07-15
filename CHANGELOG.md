@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased] — Choc TV radar: 2/3-map / 1/3-chart split, edge to edge
+
+The radar panel is now a strict split tuned for the iPad: the scope
+holds the top two-thirds of the screen and the swell chart the bottom
+third (above the status strip), both running edge to edge — the
+radar-mode `#app` sheds all padding, the chart's flex chain lifts the
+base 900px panel cap (`max-width: none; width: 100%`), and the chart
+pieces drop their side borders/rounding for the full-bleed look. The
+scope's readings scale up to match: arrow shafts 5.5/3.5px with
+proportionally larger heads, minimum lengths raised so nothing huddles
+at the lineup dot, labels 17px, the corner clock 34px DSEG, and a
+bigger lineup marker. Detail bar bumped to 15px.
+
 ## [Unreleased] — Choc TV: radar full-screen, tap-toggle pause, bigger spectra
 
 Owner feedback pass on the radar rotation. The standalone forecast
