@@ -241,5 +241,43 @@ test('spectral orchestration uses pipeline fallback', function() {
 });
 
 // ── Summary ──────────────────────────────────────────────
+
+
+// ── Test 15: verifAngDiff — signed shortest angular difference ──
+test('verifAngDiff wraps correctly across north', function() {
+  const code = fs.readFileSync('app.js', 'utf8');
+  const m = code.match(/function verifAngDiff\([\s\S]*?\n\}/);
+  assert(m, 'verifAngDiff must exist in app.js');
+  const verifAngDiff = eval('(' + m[0].replace(/^function verifAngDiff/, 'function') + ')');
+  assert(verifAngDiff(10, 350) === 20, '350→10 should be +20, got ' + verifAngDiff(10, 350));
+  assert(verifAngDiff(350, 10) === -20, '10→350 should be −20, got ' + verifAngDiff(350, 10));
+  assert(verifAngDiff(180, 0) === 180, '0→180 should be 180');
+  assert(verifAngDiff(90, 90) === 0, 'same angle should be 0');
+});
+
+// ── Test 16: verifStats — bias/MAE incl. circular + null handling ──
+test('verifStats computes bias/MAE and skips null pairs', function() {
+  const code = fs.readFileSync('app.js', 'utf8');
+  const ang = code.match(/function verifAngDiff\([\s\S]*?\n\}/);
+  const st = code.match(/function verifStats\([\s\S]*?\n\}/);
+  assert(st, 'verifStats must exist in app.js');
+  const verifAngDiff = eval('(' + ang[0].replace(/^function verifAngDiff/, 'function') + ')');
+  const verifStats = eval('(' + st[0].replace(/^function verifStats/, 'function') + ')');
+  const rows = [
+    { o: 2, m: 3 },      // err +1
+    { o: 4, m: 3 },      // err −1
+    { o: 5, m: null },   // skipped
+    { o: null, m: 2 }    // skipped
+  ];
+  const s = verifStats(rows, r => r.o, r => r.m, false);
+  assert(s.n === 2, 'n should be 2, got ' + s.n);
+  assert(Math.abs(s.bias) < 1e-9, 'bias should be 0, got ' + s.bias);
+  assert(Math.abs(s.mae - 1) < 1e-9, 'MAE should be 1, got ' + s.mae);
+  const circ = verifStats([{ o: 350, m: 10 }], r => r.o, r => r.m, true);
+  assert(Math.abs(circ.bias - 20) < 1e-9, 'circular bias should be +20, got ' + circ.bias);
+  const empty = verifStats([], r => r.o, r => r.m, false);
+  assert(empty.n === 0 && empty.bias === null, 'empty rows should give n=0, null bias');
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed > 0) process.exit(1);

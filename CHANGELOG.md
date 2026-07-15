@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased] — Model-vs-buoy nowcast verification (pipeline + Tab 2 panel)
+
+The update-buoy pipeline now logs one verification row per run (every
+2 h) to `data/verification.json`: the buoy's latest observation (Hs,
+DPD/SwP, MWD/SwD from the .spec swell partition) paired with the
+Open-Meteo best_match value for the same hour at two grid points —
+**the buoy itself** (Analysis 1: pure model skill) and **the Choc
+forecast point** (Analysis 2: how different the point the app actually
+forecasts from is). Rows cap at ~1 year (4500); model fetches convert
+m → ft; failures skip the row rather than break buoy.json. New "Model
+vs Buoy — nowcast verification" panel on the Regression tab: a
+bias/MAE table for both analyses (height, period, direction — circular
+math for degrees) over three retro line charts (buoy solid, model@buoy
+dashed, model@Choc dotted) with gap-aware segments, wraparound breaks
+on the direction series, UTC-midnight gridlines, and a "collecting"
+note until a few rows accumulate. First real row logged: buoy 5.9 ft
+vs model 4.7 ft @ buoy / 3.7 ft @ Choc point. test-gate grows to 16
+(verifAngDiff wraparound, verifStats bias/MAE/null handling; summary
+tally moved to end of file so appended tests count).
+
 ## [Unreleased] — Choc TV: radar icon + sources & methodology card
 
 The PWA icons (512/192/180) are regenerated as the radar scope's

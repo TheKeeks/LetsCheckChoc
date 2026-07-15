@@ -22,6 +22,18 @@ BUOY_ID = "44097"
 NDBC_BASE = "https://www.ndbc.noaa.gov/data/realtime2/"
 OUTPUT = Path(__file__).resolve().parent.parent / "data" / "buoy.json"
 
+# ── Nowcast verification ─────────────────────────────────────────────
+# Every run also logs one row comparing the buoy's latest observation
+# against the Open-Meteo model's value for that same hour, at two grid
+# points: the buoy itself (model skill) and the app's Choc forecast
+# point (spatial difference). The site plots data/verification.json.
+VERIF_OUTPUT = Path(__file__).resolve().parent.parent / "data" / "verification.json"
+BUOY_LAT, BUOY_LON = 40.969, -71.124
+CHOC_LAT, CHOC_LON = 41.089152, -71.721050  # CONFIG.chocomount.forecastLat/Lon
+MARINE_API = "https://marine-api.open-meteo.com/v1/marine"
+VERIF_MAX_ROWS = 4500  # ~1 year at 12 rows/day
+M_TO_FT = 3.28084
+
 
 def fetch_text(url):
     """Fetch text from a URL with timeout and error handling."""
@@ -198,6 +210,105 @@ def build_spectral_bins(data_spec_text, swdir_text, swdir2_text, swr1_text, swr2
     return bins
 
 
+def fetch_model_hour(lat, lon, obs_dt):
+    """Open-Meteo marine hourly values (converted to ft) nearest obs_dt,
+    or None when the fetch fails or no sample lands within 90 minutes."""
+    try:
+        resp = requests.get(MARINE_API, params={
+            "latitude": lat,
+            "longitude": lon,
+            "hourly": "wave_height,wave_period,swell_wave_height,"
+                      "swell_wave_period,swell_wave_direction",
+            "past_days": 1,
+            "forecast_days": 1,
+            "timezone": "UTC",
+        }, timeout=30)
+        resp.raise_for_status()
+        hourly = resp.json().get("hourly") or {}
+        times = hourly.get("time") or []
+        best, best_d = -1, 90 * 60
+        for i, t in enumerate(times):
+            dt = datetime.strptime(t, "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
+            d = abs((dt - obs_dt).total_seconds())
+            if d < best_d:
+                best, best_d = i, d
+        if best < 0:
+            return None
+
+        def val(key, ft=False):
+            arr = hourly.get(key) or []
+            v = arr[best] if best < len(arr) else None
+            if v is None:
+                return None
+            return round(v * M_TO_FT, 2) if ft else round(v, 1)
+
+        return {
+            "hs": val("wave_height", ft=True),
+            "wvp": val("wave_period"),
+            "swh": val("swell_wave_height", ft=True),
+            "swp": val("swell_wave_period"),
+            "swd": val("swell_wave_direction"),
+        }
+    except Exception as e:
+        print(f"  Verification: model fetch failed at {lat},{lon}: {e}")
+        return None
+
+
+def append_verification_row(buoy, spectral):
+    """Append one obs-vs-model row to data/verification.json. Best-effort:
+    never lets a failure break the main buoy.json pipeline."""
+    if not buoy or buoy.get("wave_height") is None:
+        print("  Verification: no buoy observation — skipping row")
+        return
+    try:
+        obs_dt = datetime.strptime(buoy["time"], "%Y-%m-%d %H:%M UTC").replace(tzinfo=timezone.utc)
+    except (ValueError, KeyError) as e:
+        print(f"  Verification: unparseable obs time: {e}")
+        return
+
+    doc = {"buoy_id": BUOY_ID, "buoy_coords": [BUOY_LAT, BUOY_LON],
+           "choc_point": [CHOC_LAT, CHOC_LON], "rows": []}
+    if VERIF_OUTPUT.exists():
+        try:
+            with open(VERIF_OUTPUT) as f:
+                loaded = json.load(f)
+            if isinstance(loaded.get("rows"), list):
+                doc["rows"] = loaded["rows"]
+        except Exception as e:
+            print(f"  Verification: could not read existing file ({e}) — starting fresh")
+
+    t_iso = obs_dt.strftime("%Y-%m-%dT%H:%MZ")
+    if doc["rows"] and doc["rows"][-1].get("t") == t_iso:
+        print(f"  Verification: obs {t_iso} already logged — skipping")
+        return
+
+    spectral = spectral or {}
+    swh_m = spectral.get("swell_height_m")
+    row = {
+        "t": t_iso,
+        "buoy": {
+            "hs": buoy.get("wave_height"),
+            "dpd": buoy.get("dominant_period"),
+            "mwd": buoy.get("mean_wave_direction"),
+            "swh": round(swh_m * M_TO_FT, 2) if swh_m is not None else None,
+            "swp": spectral.get("swell_period"),
+            "swd": spectral.get("swell_direction"),
+        },
+        "mb": fetch_model_hour(BUOY_LAT, BUOY_LON, obs_dt),
+        "mc": fetch_model_hour(CHOC_LAT, CHOC_LON, obs_dt),
+    }
+    if row["mb"] is None and row["mc"] is None:
+        print("  Verification: both model fetches failed — skipping row")
+        return
+
+    doc["rows"].append(row)
+    doc["rows"] = doc["rows"][-VERIF_MAX_ROWS:]
+    doc["updated"] = datetime.now(timezone.utc).isoformat()
+    with open(VERIF_OUTPUT, "w") as f:
+        json.dump(doc, f, separators=(",", ":"))
+    print(f"  Verification: logged obs {t_iso} ({len(doc['rows'])} rows)")
+
+
 def main():
     print(f"Fetching NDBC buoy {BUOY_ID} data...")
     fetch_time = datetime.now(timezone.utc).isoformat()
@@ -272,6 +383,12 @@ def main():
         print(f"  Spectral bins: {len(spectral_bins)} frequency bins")
     else:
         print("  Warning: no spectral bin data parsed")
+
+    # Nowcast verification row (best-effort; never fails the pipeline).
+    try:
+        append_verification_row(buoy, spectral)
+    except Exception as e:
+        print(f"  Verification: unexpected error: {e}")
 
 
 if __name__ == "__main__":

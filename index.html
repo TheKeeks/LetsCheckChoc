@@ -407,6 +407,29 @@
         </details>
       </section>
 
+      <!-- Model vs buoy nowcast verification (fed by the update-buoy
+           pipeline's data/verification.json, one row every 2 hours) -->
+      <section class="panel" id="panel-verification" style="display:none;">
+        <fieldset class="w1-fieldset">
+          <legend>Model vs Buoy — nowcast verification</legend>
+          <div class="verif-legend" id="verif-legend"></div>
+          <div class="verif-stats" id="verif-stats"></div>
+          <div class="verif-chart-block">
+            <div class="verif-chart-label">Wave height (ft, total Hs)</div>
+            <canvas id="verif-canvas-height"></canvas>
+          </div>
+          <div class="verif-chart-block">
+            <div class="verif-chart-label">Swell period (s)</div>
+            <canvas id="verif-canvas-period"></canvas>
+          </div>
+          <div class="verif-chart-block">
+            <div class="verif-chart-label">Swell direction (°from)</div>
+            <canvas id="verif-canvas-dir"></canvas>
+          </div>
+        </fieldset>
+        <div class="panel-footer" id="footer-verification"></div>
+      </section>
+
       <!-- Drill-down side panel -->
       <div id="reg-drilldown-backdrop" class="reg-drilldown-backdrop" style="display:none;"></div>
       <aside id="reg-drilldown" class="reg-drilldown" style="display:none;" aria-hidden="true">
