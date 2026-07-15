@@ -53,9 +53,24 @@ faceplate with phosphor-green readouts (14-segment digits, big filled
 direction arrows with the reading printed on the arrow; red appears only
 as the chart alert color). Open the site with
 `?kiosk=1` and it skips the gate, boots straight into Chocomount, hides
-all chrome, and cycles four full-screen panels every ~20s: day summaries
-(days 1–3) → day summaries (days 4–6) → forecast charts → wave spectra +
-compass rose. A NEXT button in the status strip skips ahead.
+all chrome, and cycles five full-screen panels every ~20s: day summaries
+(days 1–3) → day summaries (days 4–6) → night radar → forecast charts →
+wave spectra + compass rose. A NEXT button in the status strip skips
+ahead.
+
+The **night radar** panel is a radar-scope animation of the lineup:
+the Fishers coastline at Chocomount (same framing as the satellite
+lineup image), range rings, a rotating sweep, and the hour's primary
+swell / secondary swell / wind arrows converging on the lineup with
+their readings printed beside them. Playback drives the app's own
+forecast scrubber at 1 second = 1 hour through the full forecast and
+loops; the swell chart rides below the scope with its dots and detail
+bar moving in lockstep, and the scope's clock shows the frame's day,
+time, and offset from now. The panel dwells for one full loop
+(~168 s), and a tap pauses playback so the chart can be scrubbed by
+hand — the radar follows the scrub. The coastline trace is provisional
+(hand-traced from `project/assets/lineup.jpg`); swap the `KIOSK_COAST`
+constant in `kiosk.js` when a proper trace exists.
 
 Each day card reads: primary (and, when present, secondary) swell as the
 min–max height range over the incoming-tide windows at Silver Eel
@@ -87,7 +102,8 @@ forecast scrubber and rose hover stay usable.
 - Needs network (no offline cache); if a refresh fails, the status
   strip's "updated X min ago" makes staleness obvious
 - Debug params (seconds): `&kioskRotate=`, `&kioskPause=`,
-  `&kioskRefresh=` — e.g. `?kiosk=1&kioskRotate=5` for quick cycling
+  `&kioskRefresh=`, `&kioskRadarStep=` (radar seconds-per-hour,
+  default 1) — e.g. `?kiosk=1&kioskRotate=5` for quick cycling
 
 ## App Structure
 
