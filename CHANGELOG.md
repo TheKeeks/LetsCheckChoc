@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased] — Choc TV: radar icon + sources & methodology card
+
+The PWA icons (512/192/180) are regenerated as the radar scope's
+identity: the Chocomount coastline outline with the swell-window cone
+and lineup dot, phosphor green on true black (`scripts/generate_icons.js`
+rewritten; manifest background/theme now #000000). New ⓘ SOURCES
+button in the kiosk status strip opens a per-panel methodology card —
+day summaries (incoming-tide windows, swell lag, wind sampling, moon),
+radar loop (arrow semantics, swell window, playback), and wave spectra
+(decomposition, rose encoding) — each ending with its data sources
+(Open-Meteo, NOAA CO-OPS 8510719, NDBC 44097 + pipeline fallback).
+Plain text, no links, phosphor-styled; opening pauses rotation, any
+tap on the card closes it without resuming the radar under the reader,
+and the card closes automatically on panel change.
+
 ## [Unreleased] — Choc TV radar: 2/3-map / 1/3-chart split, edge to edge
 
 The radar panel is now a strict split tuned for the iPad: the scope

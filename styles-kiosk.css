@@ -523,7 +523,8 @@ body.kiosk #kiosk-pilot {
 }
 body.kiosk #kiosk-status-updated { color: var(--np-green-dim); }
 body.kiosk #kiosk-paused { color: var(--np-green); font-weight: bold; }
-body.kiosk #kiosk-next {
+body.kiosk #kiosk-next,
+body.kiosk #kiosk-info {
   background: var(--np-bg);
   border: 1px solid var(--np-hairline);
   border-radius: 4px;
@@ -533,7 +534,47 @@ body.kiosk #kiosk-next {
   padding: 7px 16px;
   cursor: pointer;
 }
-body.kiosk #kiosk-next:active { border-color: var(--np-green); }
+body.kiosk #kiosk-next:active,
+body.kiosk #kiosk-info:active { border-color: var(--np-green); }
+
+/* ── Sources & methodology card ───────────────────────────────────── */
+body.kiosk #kiosk-info-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 950; /* above the status strip */
+  background: rgba(0, 0, 0, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+body.kiosk #kiosk-info-card {
+  max-width: 780px;
+  max-height: 78vh;
+  overflow-y: auto;
+  background: var(--np-bg);
+  border: 1px solid var(--np-green-dim);
+  border-radius: 4px;
+  padding: 24px 30px;
+  color: var(--np-green);
+  font: 16px/1.55 Tahoma, Geneva, sans-serif;
+}
+body.kiosk #kiosk-info-card h3 {
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--np-green);
+  margin: 16px 0 6px;
+}
+body.kiosk #kiosk-info-card h3:first-child { margin-top: 0; }
+body.kiosk #kiosk-info-card p {
+  margin: 0 0 10px;
+  color: rgba(69, 255, 154, 0.85);
+}
+body.kiosk #kiosk-info-card .np-info-live {
+  color: var(--np-green-dim);
+  font-size: 13px;
+}
 body.kiosk #kiosk-status-clock {
   border: 1px solid var(--np-hairline);
   border-radius: 4px;
