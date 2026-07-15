@@ -48,10 +48,10 @@ LetsCheckChoc/
 
 ## Choc TV (iPad kiosk mode)
 
-An ambient always-on display mode for an iPad on a stand, themed as
-"Night Passage" — a 1980s marine instrument cluster (graphite faceplate,
-smoked-glass modules, seven-segment readouts; blue = live data, green =
-legends, red = alerts, yellow = direction arrows). Open the site with
+An ambient always-on display mode for an iPad on a stand: true-black
+faceplate with phosphor-green readouts (14-segment digits, big filled
+direction arrows with the reading printed on the arrow; red appears only
+as the chart alert color). Open the site with
 `?kiosk=1` and it skips the gate, boots straight into Chocomount, hides
 all chrome, and cycles four full-screen panels every ~20s: day summaries
 (days 1–3) → day summaries (days 4–6) → forecast charts → wave spectra +
@@ -67,9 +67,8 @@ phase (% full). All direction arrows point where the swell or wind is
 going, with the FROM compass label beside.
 
 Data auto-refreshes every 15 minutes (freshness shown in the bottom
-status strip), the display dims to ~30% after local sunset, and tapping
-anywhere pauses rotation for ~60s so the forecast scrubber and rose
-hover stay usable.
+status strip), and tapping anywhere pauses rotation for ~60s so the
+forecast scrubber and rose hover stay usable.
 
 ### iPad setup (one-time)
 

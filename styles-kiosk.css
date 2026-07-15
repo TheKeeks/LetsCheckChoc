@@ -5,7 +5,8 @@
    the color doing its job on an emissive screen. Numbers are 14-segment
    (DSEG14, one step more detailed than 7-seg); legends are crisp sans.
    Direction arrows are large filled glyphs with the reading printed on
-   the arrow itself. Red appears only as the chart alert color.
+   the arrow itself. Red appears only as the chart alert color. No
+   night dim — green on black is already night-friendly.
    Every rule is scoped to body.kiosk — inert for normal visitors.
    ════════════════════════════════════════════════════════════════════ */
 
@@ -29,7 +30,7 @@ body.kiosk {
   --np-green: #45ff9a;
   --np-green-dim: rgba(69, 255, 154, 0.55);
   --np-green-faint: rgba(69, 255, 154, 0.28);
-  --np-hairline: #143526;
+  --np-hairline: #10291d;
   --np-ink-on-green: #001408;
   --np-red: #ff5252;
   --np-seg: "DSEG14", "Courier New", monospace;
@@ -139,14 +140,6 @@ body.kiosk .np-unit-sm {
   color: var(--np-green-dim);
 }
 body.kiosk .np-at { margin-right: 4px; color: var(--np-green-dim); }
-body.kiosk .np-micro {
-  font-family: Tahoma, Geneva, "MS Sans Serif", sans-serif;
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--np-green-dim);
-  margin-bottom: 2px;
-}
 body.kiosk .np-dim { color: var(--np-green-faint); }
 
 /* ── The arrow: big filled glyph, reading printed on the arrow ────── */
@@ -203,13 +196,13 @@ body.kiosk .np-days {
   width: 100%;
 }
 body.kiosk .np-day {
-  padding: 14px 16px 12px;
+  padding: 18px 22px 14px;
   min-width: 0;
   display: grid;
   /* Fixed slots (title / primary / secondary / low1 / low2 / sun / moon)
      shared by every card, so readings align horizontally across cards. */
-  grid-template-rows: 32px 104px 84px 84px 84px minmax(112px, auto) 26px;
-  row-gap: 10px;
+  grid-template-rows: 34px 100px 72px 78px 78px minmax(116px, auto) 28px;
+  row-gap: 16px;
   align-items: center;
   min-height: 64vh;
 }
@@ -222,16 +215,21 @@ body.kiosk .np-day-title {
   text-align: center;
 }
 
-/* Swell block: numbers stacked left, big arrow right. */
+/* Swell: one inline phrase ("3-5 FT @ 13 S") on a shared baseline,
+   direction arrow riding to the right as the co-hero. */
 body.kiosk .np-swell {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  line-height: 1.05;
+  gap: 14px;
+  line-height: 1;
 }
-body.kiosk .np-swell-ht { white-space: nowrap; }
-body.kiosk .np-swell-per { margin-top: 2px; white-space: nowrap; }
+body.kiosk .np-swell-line {
+  display: inline-flex;
+  align-items: baseline;
+  white-space: nowrap;
+  min-width: 0;
+}
 body.kiosk .np-swell-dir {
   display: flex;
   align-items: center;
@@ -249,13 +247,13 @@ body.kiosk .np-windline {
   gap: 8px;
 }
 
-/* Low-tide modules: time left, wind arrow right. */
+/* Low-tide rows: open — no boxes, spacing does the separating. */
 body.kiosk .np-low {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 8px 14px;
+  padding: 0 2px;
 }
 body.kiosk .np-low-when { white-space: nowrap; }
 
@@ -460,15 +458,3 @@ body.kiosk #kiosk-status-clock .np-clock-txt {
   font-size: 11px;
   color: var(--np-green-dim);
 }
-
-/* ── Night dim: ~30% brightness after sunset ── */
-body.kiosk #kiosk-dim {
-  position: fixed;
-  inset: 0;
-  background: #000000;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 2s linear;
-  z-index: 950;
-}
-body.kiosk.kiosk-night #kiosk-dim { opacity: 0.7; }

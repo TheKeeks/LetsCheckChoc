@@ -10,7 +10,7 @@
 // Behavior: skips the boat gate, boots straight into Chocomount (the
 // existing initGate 'no' branch does both once sessionStorage is
 // seeded), rotates three full-screen panels, auto-refreshes data every
-// 15 minutes, holds a screen wake lock, and dims after sunset.
+// 15 minutes, and holds a screen wake lock.
 // ════════════════════════════════════════════════════════════════════
 'use strict';
 
@@ -33,7 +33,6 @@ const KIOSK = {
   rotateTimer: null,
   resumeTimer: null,
   wakeLock: null,
-  lastDimCheck: 0,
   lastDaysRender: 0         // lastLoadCompletedAt value the day panels reflect
 };
 
@@ -263,19 +262,18 @@ function kioskWindHTML(wind) {
     `</span>`;
 }
 
-// Sketch layout: height range huge with "@ period" stacked beneath it on
-// its own line; direction arrow + FROM label as a right-hand column.
+// One inline phrase — "3-5 FT @ 13 S" — with the direction arrow
+// (reading printed on it) riding to the right as the co-hero.
 function kioskSwellRowHTML(sw, cls) {
   if (!sw) return '';
   const range = sw.min === sw.max ? String(sw.max) : `${sw.min}-${sw.max}`;
   const primary = cls === 'np-primary';
-  const dirLabel = sw.dir != null ? `${directionLabel(sw.dir)} ${Math.round(sw.dir)}°` : '';
   return `<div class="np-swell ${cls}">` +
-    `<div class="np-swell-nums">` +
-      `<div class="np-micro">${primary ? 'SWELL' : 'SECONDARY'}</div>` +
-      `<div class="np-swell-ht">${kioskSegHTML(range, primary ? 'np-seg-lg' : 'np-seg-md2')}<span class="np-unit">FT</span></div>` +
+    `<div class="np-swell-line">` +
+      kioskSegHTML(range, primary ? 'np-seg-lg' : 'np-seg-md') +
+      `<span class="np-unit">FT</span>` +
       (sw.period != null
-        ? `<div class="np-swell-per"><span class="np-at">@</span>${kioskSegHTML(sw.period, primary ? 'np-seg-md' : 'np-seg-sm', !primary)}<span class="np-unit">S</span></div>`
+        ? `<span class="np-at">@</span>${kioskSegHTML(sw.period, primary ? 'np-seg-md' : 'np-seg-sm')}<span class="np-unit">S</span>`
         : '') +
     `</div>` +
     `<div class="np-swell-dir">${kioskArrowHTML(sw.dir,
@@ -290,9 +288,9 @@ function kioskDayCardHTML(s) {
   // low 2, sun row, moon) so corresponding readings sit at identical
   // heights across the three cards; missing readings leave a quiet gap.
   const lowSlot = lo => {
-    if (!lo) return '<div class="np-module np-low np-slot-empty"></div>';
+    if (!lo) return '<div class="np-low np-slot-empty"></div>';
     const c = kioskFmtClock(lo.t);
-    return `<div class="np-module np-low">` +
+    return `<div class="np-low">` +
       `<div class="np-low-when"><span class="np-legend">LOW @</span> ` +
         kioskSegHTML(c.seg, 'np-seg-md') + `<span class="np-unit">${c.ampm}</span></div>` +
       `<div class="np-low-wind">${kioskWindHTML(lo.wind)}</div>` +
@@ -419,16 +417,6 @@ async function kioskAcquireWakeLock() {
   }
 }
 
-function kioskUpdateNightDim() {
-  try {
-    const dl = calcDaylight(CONFIG.chocomount.lat, CONFIG.chocomount.lon, new Date());
-    const now = Date.now();
-    const night = !!(dl && (dl.alwaysNight ||
-      (!dl.alwaysDay && dl.sunrise && dl.sunset &&
-        (now < dl.sunrise.getTime() || now > dl.sunset.getTime()))));
-    document.body.classList.toggle('kiosk-night', night);
-  } catch (_) { /* leave current dim state */ }
-}
 
 // Kiosk boot watchdog: the normal boot selects Chocomount at the tail of
 // initApp, AFTER the surf-log/Firebase await — on a flaky network that
@@ -469,10 +457,6 @@ function kioskStatusTick() {
   if (STATE.lastLoadCompletedAt && STATE.lastLoadCompletedAt !== KIOSK.lastDaysRender) {
     kioskRenderDays();
   }
-  if (Date.now() - KIOSK.lastDimCheck > 60 * 1000) {
-    KIOSK.lastDimCheck = Date.now();
-    kioskUpdateNightDim();
-  }
 }
 
 // Builds the kiosk-only DOM (day panels, status strip, night-dim overlay,
@@ -487,10 +471,6 @@ function kioskBuildChrome() {
   days2.className = 'np-days';
   app.appendChild(days1);
   app.appendChild(days2);
-
-  const dim = document.createElement('div');
-  dim.id = 'kiosk-dim';
-  document.body.appendChild(dim);
 
   const strip = document.createElement('div');
   strip.id = 'kiosk-status';
@@ -523,7 +503,6 @@ function kioskInit() {
   setInterval(kioskStatusTick, 1000);
   setInterval(kioskRefreshTick, KIOSK.refreshMs);
   kioskStatusTick();
-  kioskUpdateNightDim();
   kioskAcquireWakeLock();
 
   // iOS throttles timers while locked/backgrounded: on return, re-grab the
