@@ -42,9 +42,12 @@
   --temp-warm: #c98a35;
   --temp-hot: #c05545;
   --night-bg: rgba(44, 40, 37, 0.06);
+  --bg-note: #ffffe1;   /* tooltip / notice surfaces (was #ffffe0 and #ffffe1) */
   --serif: 'Libre Baskerville', 'Georgia', serif;
   --mono: 'DM Mono', 'Menlo', monospace;
   --card-r: 8px;
+  --radius-sm: 4px;   /* chips, small controls */
+  --radius-md: 6px;   /* buttons, inputs */
   --gap: 12px;
 }
 
@@ -110,7 +113,7 @@ a:hover { text-decoration: underline; }
   font-family: var(--mono);
   font-size: 0.85rem;
   padding: 10px 32px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--bg-card);
   color: var(--ink2);
@@ -250,9 +253,9 @@ a:hover { text-decoration: underline; }
   z-index: 10;
   margin: 0;
   padding: 8px 10px;
-  background: #ffffe1;
-  border: 1px solid var(--ink2, #5a5550);
-  border-radius: 3px;
+  background: var(--bg-note);
+  border: 1px solid var(--ink2);
+  border-radius: var(--radius-sm);
   width: min(280px, calc(100vw - 32px));
   font-family: var(--mono, monospace);
   font-size: 0.72rem;
@@ -288,6 +291,7 @@ a:hover { text-decoration: underline; }
   top: 6px;
   right: 6px;
   z-index: 4;
+  /* 18px visual, 44px effective touch target (see ::after) */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -296,8 +300,8 @@ a:hover { text-decoration: underline; }
   padding: 0;
   border: 1px solid var(--border, #c8c2b8);
   border-radius: 50%;
-  background: var(--bg-alt, #f5f2ee);
-  color: var(--ink2, #5a5550);
+  background: var(--bg-alt);
+  color: var(--ink2);
   font-family: var(--mono, monospace);
   font-size: 12px;
   font-weight: 600;
@@ -305,9 +309,40 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
   user-select: none;
 }
-.panel-info-toggle:hover {
+.panel-info-toggle::after {
+  content: '';
+  position: absolute;
+  /* Expanded touch target (~40x34): generous vertically, restrained
+     horizontally so it can't poach taps aimed at the "?" badge beside it. */
+  inset: -11px -8px;
+}
+.panel-info-toggle:hover,
+.panel-info-toggle:focus-visible {
   background: var(--bg-card, #fff);
   color: var(--ink, #1a1a2e);
+}
+.panel-info-toggle:active {
+  background: var(--border-l);
+}
+
+/* ── Keyboard focus, app-wide ───────────────────
+   The era themes draw their own dotted outlines; this is the modern
+   baseline so every control has a visible focus state. */
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+.gate-btn:active,
+.sl-btn:active,
+.auth-btn:active,
+.tab-btn:active,
+.forecast-nav-btn:active {
+  filter: brightness(0.94);
 }
 
 /* ── Widget help (collapsible glossary) ─────────
@@ -334,8 +369,8 @@ a:hover { text-decoration: underline; }
   padding: 0;
   border: 1px solid var(--border, #c8c2b8);
   border-radius: 50%;
-  background: var(--bg-alt, #f5f2ee);
-  color: var(--ink2, #5a5550);
+  background: var(--bg-alt);
+  color: var(--ink2);
   font: 700 11px/1 var(--mono, monospace);
   cursor: help;
   list-style: none;
@@ -363,9 +398,9 @@ a:hover { text-decoration: underline; }
 }
 
 .widget-help[open] > summary {
-  background: var(--ink2, #5a5550);
+  background: var(--ink2);
   color: #fff;
-  border-color: var(--ink2, #5a5550);
+  border-color: var(--ink2);
 }
 .widget-help[open] > summary::before {
   color: #fff;
@@ -381,11 +416,11 @@ a:hover { text-decoration: underline; }
   padding: 8px 10px;
   background: #fff;
   border: 1px solid var(--border, #c8c2b8);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   width: min(300px, calc(100vw - 32px));
   font-family: var(--mono, monospace);
   font-size: 0.72rem;
-  color: var(--ink3, #5a5450);
+  color: var(--ink3, var(--ink2));
   line-height: 1.45;
   box-shadow: 0 2px 8px rgba(0,0,0,0.12);
 }
@@ -426,7 +461,7 @@ a:hover { text-decoration: underline; }
 .buoy-map-expand-btn {
   background: transparent;
   border: none;
-  color: #2a5a8a;
+  color: #2a5d8c;
   font-family: inherit;
   font-size: 0.85rem;
   cursor: pointer;
@@ -564,7 +599,7 @@ a:hover { text-decoration: underline; }
 #forecast-chart-container .forecast-card {
   background: #fff;
   border: 1px solid #e0e0e0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 20px 8px 8px 8px;
   margin-bottom: 8px;
   box-sizing: border-box;
@@ -671,8 +706,8 @@ a:hover { text-decoration: underline; }
   height: 16px;
   border: 1px solid var(--border, #c8c2b8);
   border-radius: 50%;
-  background: var(--bg-alt, #f5f2ee);
-  color: var(--ink2, #5a5550);
+  background: var(--bg-alt);
+  color: var(--ink2);
   font-family: var(--mono, monospace);
   font-size: 10px;
   font-weight: 700;
@@ -680,9 +715,9 @@ a:hover { text-decoration: underline; }
 }
 .forecast-help-popover > summary::-webkit-details-marker { display: none; }
 .forecast-help-popover[open] > summary {
-  background: var(--ink2, #5a5550);
+  background: var(--ink2);
   color: #fff;
-  border-color: var(--ink2, #5a5550);
+  border-color: var(--ink2);
 }
 .forecast-help-popover > p {
   position: absolute;
@@ -694,12 +729,12 @@ a:hover { text-decoration: underline; }
   padding: 8px 10px;
   background: #fff;
   border: 1px solid var(--border, #c8c2b8);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   box-shadow: 0 2px 8px rgba(0,0,0,0.12);
   font-family: var(--mono, monospace);
   font-size: 0.7rem;
   font-weight: 400;
-  color: var(--ink3, #5a5450);
+  color: var(--ink3, var(--ink2));
   line-height: 1.45;
 }
 
@@ -716,7 +751,7 @@ a:hover { text-decoration: underline; }
   width: 44px;
   height: 44px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--card-r);
   background: var(--bg-card);
   color: var(--ink2);
   cursor: pointer;
@@ -767,7 +802,7 @@ a:hover { text-decoration: underline; }
   border: 1px solid #c0c0c0;
   box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #ffffff;
   padding: 4px 8px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   margin-bottom: 8px;
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
@@ -839,7 +874,7 @@ a:hover { text-decoration: underline; }
   display: inline-block;
   margin-left: 6px;
   padding: 1px 5px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   background: #ffffff;
   color: #000000;
   border: 1px solid #808080;
@@ -862,7 +897,7 @@ a:hover { text-decoration: underline; }
   gap: 4px;
   font-family: var(--mono, monospace);
   font-size: 0.72rem;
-  color: var(--ink2, #5a5550);
+  color: var(--ink2);
   cursor: pointer;
   margin: 0;
   white-space: nowrap;
@@ -876,13 +911,13 @@ a:hover { text-decoration: underline; }
   gap: 6px;
   font-family: var(--mono, monospace);
   font-size: 0.72rem;
-  color: var(--ink2, #5a5550);
+  color: var(--ink2);
 }
 .forecast-cache-indicator {
   font-family: var(--mono, monospace);
   font-size: 0.7rem;
   font-style: italic;
-  color: var(--ink2, #5a5550);
+  color: var(--ink2);
   opacity: 0.75;
   animation: forecast-cache-pulse 1.4s ease-in-out infinite;
 }
@@ -896,7 +931,7 @@ a:hover { text-decoration: underline; }
   font-size: 0.72rem;
   padding: 3px 6px;
   border: 1px solid var(--border, #e0dbd3);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: #fff;
   color: var(--ink, #2c2825);
 }
@@ -997,7 +1032,7 @@ a:hover { text-decoration: underline; }
 
 .rose-legend-bar {
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: linear-gradient(
     to right,
     #5a7fa0 0%,
@@ -1263,23 +1298,7 @@ a:hover { text-decoration: underline; }
   text-align: center;
 }
 
-.advanced-toggle-btn {
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  color: var(--ink3);
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 20px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  -webkit-tap-highlight-color: transparent;
-}
 
-.advanced-toggle-btn:hover {
-  color: var(--ink);
-  border-color: var(--ink4);
-}
 
 .advanced-toggle-icon {
   display: inline-block;
@@ -1341,11 +1360,11 @@ a:hover { text-decoration: underline; }
   color: var(--ink2);
 }
 .spectral-status-strip::before { content: '●'; }
-.spectral-status-strip.is-live::before { color: #2e7d32; }
+.spectral-status-strip.is-live::before { color: var(--green); }
 .spectral-status-strip.is-stale::before,
 .spectral-status-strip.is-archive::before { color: #b8860b; }
 .spectral-summary-tbl .trend { font-size: 0.65rem; }
-.spectral-summary-tbl .trend-up { color: #2e7d32; }
+.spectral-summary-tbl .trend-up { color: var(--green); }
 .spectral-summary-tbl .trend-down { color: #8a3a2e; }
 .spectral-summary-tbl .dir-arrow {
   display: inline-block;
@@ -1569,7 +1588,7 @@ a:hover { text-decoration: underline; }
   color: var(--ink);
   background: var(--bg-alt);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 8px 10px;
   outline: none;
   transition: border-color 0.15s;
@@ -1595,7 +1614,7 @@ a:hover { text-decoration: underline; }
   color: var(--ink);
   background: var(--bg-alt);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 8px 10px;
   resize: vertical;
   outline: none;
@@ -1634,7 +1653,7 @@ a:hover { text-decoration: underline; }
 .sl-needs-review {
   outline: 1px solid #f5c518;
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .sl-conditions-warning {
@@ -1648,7 +1667,7 @@ a:hover { text-decoration: underline; }
   appearance: none;
   width: 100%;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: var(--border);
   outline: none;
 }
@@ -1692,7 +1711,7 @@ a:hover { text-decoration: underline; }
   position: relative;
   width: 64px;
   height: 64px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   border: 1px solid var(--border);
 }
@@ -1736,7 +1755,7 @@ a:hover { text-decoration: underline; }
   color: var(--ink2);
   background: var(--bg-alt);
   border: 1px solid var(--border-l);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 10px;
   min-height: 40px;
 }
@@ -1785,7 +1804,7 @@ a:hover { text-decoration: underline; }
   color: var(--ink2);
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 9px 16px;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -1899,7 +1918,7 @@ a:hover { text-decoration: underline; }
   width: 32px;
   height: 32px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-l);
 }
 
@@ -1909,7 +1928,7 @@ a:hover { text-decoration: underline; }
   font-size: 0.7rem;
   font-weight: 500;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   min-width: 24px;
   text-align: center;
 }
@@ -1949,7 +1968,7 @@ a:hover { text-decoration: underline; }
   padding: 8px 12px;
   border: 1px solid #f5c518;
   border-left: 3px solid #f5c518;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: rgba(245, 197, 24, 0.10);
   color: var(--ink);
   font-family: var(--serif);
@@ -2045,7 +2064,7 @@ a:hover { text-decoration: underline; }
 
 .sl-weight-bar .sl-w-bar {
   height: 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--green);
   transition: width 0.3s ease;
 }
@@ -2393,13 +2412,14 @@ a:hover { text-decoration: underline; }
 }
 
 .auth-btn {
+  /* normalized to the standard control size (was 0.65rem / 5px 10px) */
   font-family: var(--mono);
-  font-size: 0.65rem;
+  font-size: 0.72rem;
   color: var(--ink2);
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 5px 10px;
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
   cursor: pointer;
   transition: all 0.15s;
   -webkit-tap-highlight-color: transparent;
@@ -2433,7 +2453,7 @@ a:hover { text-decoration: underline; }
   font-family: var(--mono);
   font-size: 0.73rem;
   padding: 10px 18px;
-  border-radius: 8px;
+  border-radius: var(--card-r);
   background: var(--ink);
   color: var(--bg-card);
   opacity: 1;
@@ -2520,7 +2540,7 @@ a:hover { text-decoration: underline; }
   font-size: 0.8rem;
 }
 .header-buoy-label {
-  color: var(--ink3, #5a5450);
+  color: var(--ink3, var(--ink2));
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -2552,7 +2572,7 @@ a:hover { text-decoration: underline; }
   aspect-ratio: 1992 / 949;
   background: #0a0c18;
   overflow: hidden;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .lineup-img {
   width: 100%;
@@ -2580,7 +2600,7 @@ a:hover { text-decoration: underline; }
   color: #fff;
   background: rgba(0, 0, 0, 0.55);
   padding: 4px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   pointer-events: none;
   max-width: calc(100% - 16px);
 }
@@ -2604,16 +2624,16 @@ a:hover { text-decoration: underline; }
   display: inline-block;
   width: 14px;
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
 }
 .lineup-swatch-swell { background: #67e8f9; }
-.lineup-swatch-wind  { background: #fbbf24; }
+.lineup-swatch-wind  { background: #f5c518; }
 
 /* Crowdsource note above Past Sessions table */
 .sl-crowdsource-note {
   font-family: var(--mono, monospace);
   font-size: 0.78rem;
-  color: var(--ink3, #5a5450);
+  color: var(--ink3, var(--ink2));
   font-style: italic;
   padding: 6px 0 8px;
   border-bottom: 1px dashed var(--line, #ccc);
@@ -2643,7 +2663,7 @@ a:hover { text-decoration: underline; }
   font-size: 0.72rem;
   background: var(--bg-alt);
   padding: 0 4px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
 }
 
 /* §3 — "If I went at scrubbed time" prediction widget */
@@ -2710,7 +2730,7 @@ a:hover { text-decoration: underline; }
   padding: 8px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .reg-scatter-title {
   font-family: var(--mono);
@@ -2792,7 +2812,7 @@ a:hover { text-decoration: underline; }
   background: var(--bg-alt);
   color: var(--ink2);
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   margin-left: 4px;
 }
 .reg-drill-close {
@@ -2834,7 +2854,7 @@ a:hover { text-decoration: underline; }
 .reg-drill-photo {
   width: 100%; max-height: 200px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   display: block;
 }
 .reg-drill-photo-counter {
@@ -2843,7 +2863,7 @@ a:hover { text-decoration: underline; }
   background: rgba(0,0,0,0.55);
   color: #fff;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 .reg-drill-rating-row {
   display: grid;
@@ -2862,7 +2882,7 @@ a:hover { text-decoration: underline; }
   color: var(--ink2);
   background: var(--bg-alt);
   padding: 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   line-height: 1.4;
 }
 .reg-drill-link {
@@ -2953,7 +2973,7 @@ a:hover { text-decoration: underline; }
   display: inline-flex;
   background: var(--bg-alt);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 .reg-submodel-tab {
@@ -3021,7 +3041,7 @@ a:hover { text-decoration: underline; }
   padding: 6px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .reg-feature-mini-title {
   font-family: var(--mono);
@@ -3051,12 +3071,12 @@ a:hover { text-decoration: underline; }
   width: 100%;
   height: 12px;
   background: var(--bg-alt);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 .reg-imp-bar {
   height: 100%;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   transition: width 0.25s ease;
 }
 .reg-imp-pos .reg-imp-bar { background: var(--green); }
@@ -3115,7 +3135,7 @@ a:hover { text-decoration: underline; }
   color: var(--red-m);
   background: #f8efed;
   border-left: 3px solid var(--red-m);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   line-height: 1.4;
 }
 .reg-residual {

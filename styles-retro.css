@@ -6,17 +6,17 @@
    the page-level chrome (title bar, outer window, tab fold). It loads
    AFTER styles-web1-extensions.css so it wins the cascade.
 
-   Hardcoded palette — NO css variables here on purpose. Each token
-   below appears as a literal hex value at every use site.
+   Palette: Win95 chrome colors route through the --w1-* tokens defined
+   in styles-web1.css; chart-specific colors below stay literal.
 
-     #C0C0C0  neutral system gray (page bg, card surface)
+     var(--w1-face)  neutral system gray (page bg, card surface)
      #B0B0B0  darker strip (sub-title strips on cards)
-     #000080  title-bar blue
-     #FFFFFF  bevel light edge / body white
-     #808080  bevel dark edge
-     #404040  bevel deepest edge
+     var(--w1-navy)  title-bar blue
+     var(--w1-light)  bevel light edge / body white
+     var(--w1-shadow)  bevel dark edge
+     var(--w1-dark)  bevel deepest edge
      #F8F4E8  plot cream
-     #0000EE  link blue        #551A8B  visited link
+     var(--w1-link)  link blue        var(--w1-vlink)  visited link
      #4A6B9A  primary swell fill
      #1A3B6A  primary swell stroke + direction line
      #B85A12  period line (rust orange)
@@ -44,8 +44,8 @@ body[data-era="web1"] a {
 }
 
 body[data-era="web1"] {
-  background: #C0C0C0;
-  color: #000000;
+  background: var(--w1-face);
+  color: var(--w1-ink);
   font-size: 11px;
   margin: 0;
   padding: 0;
@@ -60,30 +60,30 @@ body[data-era="web1"] .sl-conditions-display {
 }
 
 /* Links — Win95 unvisited blue / visited purple. */
-body[data-era="web1"] a              { color: #0000EE; text-decoration: underline; }
-body[data-era="web1"] a:visited      { color: #551A8B; }
+body[data-era="web1"] a              { color: var(--w1-link); text-decoration: underline; }
+body[data-era="web1"] a:visited      { color: var(--w1-vlink); }
 
 /* ── Bevel primitives ────────────────────────────────────────────── */
 .retro-raised {
-  background: #C0C0C0;
+  background: var(--w1-face);
   border: 2px solid;
-  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  border-color: var(--w1-light) var(--w1-dark) var(--w1-dark) var(--w1-light);
   box-shadow: none;
 }
 .retro-sunken {
-  background: #FFFFFF;
+  background: var(--w1-light);
   border: 2px solid;
-  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  border-color: var(--w1-shadow) var(--w1-light) var(--w1-light) var(--w1-shadow);
   box-shadow: none;
 }
 .retro-deep-sunken {
   /* Two-ring "framed display" — outer 2px deep, inner 1px lighter. */
   background: #F8F4E8;
   border: 2px solid;
-  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  border-color: var(--w1-dark) var(--w1-light) var(--w1-light) var(--w1-dark);
   box-shadow:
-    inset 1px 1px 0 0 #808080,
-    inset -1px -1px 0 0 #C0C0C0;
+    inset 1px 1px 0 0 var(--w1-shadow),
+    inset -1px -1px 0 0 var(--w1-face);
 }
 
 /* Kill rounded corners, drop-shadows, gradients, transitions on every
@@ -104,7 +104,7 @@ body[data-era="web1"] .tab-bar .tab-btn {
 
 /* ── Page-level Win95 window structure ───────────────────────────── */
 
-/* Title bar: full viewport width, 22px tall, solid #000080. */
+/* Title bar: full viewport width, 22px tall, solid var(--w1-navy). */
 body[data-era="web1"] #win95-titlebar {
   position: sticky;
   top: 0;
@@ -112,8 +112,8 @@ body[data-era="web1"] #win95-titlebar {
   display: flex;
   align-items: center;
   height: 22px;
-  background: #000080;
-  color: #FFFFFF;
+  background: var(--w1-navy);
+  color: var(--w1-light);
   padding: 0 2px;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
@@ -132,7 +132,7 @@ body[data-era="web1"] .win95-titlebar-icon {
   flex-shrink: 0;
 }
 body[data-era="web1"] .win95-titlebar-text {
-  color: #FFFFFF;
+  color: var(--w1-light);
   font-size: 11px;
   font-weight: bold;
   flex: 1;
@@ -147,10 +147,10 @@ body[data-era="web1"] .win95-titlebar-ctrls {
 body[data-era="web1"] .win95-tb-btn {
   width: 22px;
   height: 20px;
-  background: #C0C0C0;
-  color: #000000;
+  background: var(--w1-face);
+  color: var(--w1-ink);
   border: 2px solid;
-  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  border-color: var(--w1-light) var(--w1-dark) var(--w1-dark) var(--w1-light);
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
   font-weight: bold;
@@ -166,48 +166,51 @@ body[data-era="web1"] #app-window {
   max-width: none;
   margin: 0;
   padding: 0;
-  background: #C0C0C0;
-  border-left: 2px solid #FFFFFF;
-  border-right: 2px solid #404040;
-  border-bottom: 2px solid #404040;
+  background: var(--w1-face);
+  border-left: 2px solid var(--w1-light);
+  border-right: 2px solid var(--w1-dark);
+  border-bottom: 2px solid var(--w1-dark);
 }
 body[data-era="web1"] #app {
-  background: #C0C0C0;
+  background: var(--w1-face);
   padding: 6px 8px 8px 8px;
 }
 
 /* App header inside the outer window: flat gray strip; no panel chrome. */
 body[data-era="web1"] #app-header {
-  background: #C0C0C0;
+  background: var(--w1-face);
   border: none;
   box-shadow: none;
   padding: 4px 4px 6px 4px;
 }
+/* The window title bar already reads "LetsCheckChoc" 22px above this
+   header — showing the brand twice reads as a rendering mistake. The
+   header keeps the buoy/location line, which is actual information. */
 body[data-era="web1"] .site-title {
-  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
-  font-size: 14px;
+  display: none;
+}
+body[data-era="web1"] .header-location {
+  font-size: 12px;
   font-weight: bold;
-  color: #000000;
-  margin: 0;
 }
 body[data-era="web1"] .header-location,
 body[data-era="web1"] .header-meta,
 body[data-era="web1"] .auth-user-name {
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
-  color: #000000;
+  color: var(--w1-ink);
 }
 
 /* Buoy summary line (the "[change]" address-bar) — sunken inset. */
 body[data-era="web1"] .buoy-map-summary {
-  background: #FFFFFF;
+  background: var(--w1-light);
   border: 2px solid;
-  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  border-color: var(--w1-shadow) var(--w1-light) var(--w1-light) var(--w1-shadow);
   box-shadow: none;
   padding: 3px 8px;
   font-family: "Courier New", Courier, monospace;
   font-size: 12px;
-  color: #000000;
+  color: var(--w1-ink);
 }
 
 /* ── Tab strip — Win95 raised-bevel tab buttons with active fold ───── */
@@ -217,15 +220,15 @@ body[data-era="web1"] .tab-bar {
   padding: 0 6px;
   margin: 6px 0 0 0;
   background: transparent;
-  border-bottom: 2px solid #FFFFFF;
+  border-bottom: 2px solid var(--w1-light);
   position: relative;
   z-index: 2;
 }
 body[data-era="web1"] .tab-bar .tab-btn {
-  background: #C0C0C0;
-  color: #000000;
+  background: var(--w1-face);
+  color: var(--w1-ink);
   border: 2px solid;
-  border-color: #FFFFFF #404040 transparent #FFFFFF;
+  border-color: var(--w1-light) var(--w1-dark) transparent var(--w1-light);
   box-shadow: none;
   padding: 4px 14px 6px 14px;
   margin: 0 -1px -2px 0;
@@ -244,17 +247,17 @@ body[data-era="web1"] .tab-bar .tab-btn.active {
   padding-bottom: 8px;
   /* Active tab: white left/top, dark right, NO bottom — merges into the
      content area below ("Win95 tab fold"). */
-  border-color: #FFFFFF #404040 transparent #FFFFFF;
-  background: #C0C0C0;
+  border-color: var(--w1-light) var(--w1-dark) transparent var(--w1-light);
+  background: var(--w1-face);
 }
 
 /* Tab content area — flat (no inner bevel) so the fold is seamless. */
 body[data-era="web1"] #view-forecast,
 body[data-era="web1"] #view-regression,
 body[data-era="web1"] #view-surflog {
-  background: #C0C0C0;
+  background: var(--w1-face);
   border: 2px solid;
-  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  border-color: var(--w1-light) var(--w1-dark) var(--w1-dark) var(--w1-light);
   box-shadow: none;
   padding: 8px;
   margin-top: 0;
@@ -265,10 +268,10 @@ body[data-era="web1"] #view-surflog {
 /* Auth bar buttons — raised bevel, no rounded corners. */
 body[data-era="web1"] .auth-btn,
 body[data-era="web1"] .buoy-map-expand-btn {
-  background: #C0C0C0;
-  color: #000000;
+  background: var(--w1-face);
+  color: var(--w1-ink);
   border: 2px solid;
-  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  border-color: var(--w1-light) var(--w1-dark) var(--w1-dark) var(--w1-light);
   box-shadow: none;
   padding: 1px 8px;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
@@ -279,26 +282,26 @@ body[data-era="web1"] .buoy-map-expand-btn {
 }
 body[data-era="web1"] .auth-btn:active,
 body[data-era="web1"] .buoy-map-expand-btn:active {
-  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  border-color: var(--w1-dark) var(--w1-light) var(--w1-light) var(--w1-dark);
 }
 
 /* Page footer — flat strip, no border bevel. */
 body[data-era="web1"] #page-footer {
-  background: #C0C0C0;
-  border-top: 1px solid #FFFFFF;
-  box-shadow: inset 0 1px 0 0 #808080;
+  background: var(--w1-face);
+  border-top: 1px solid var(--w1-light);
+  box-shadow: inset 0 1px 0 0 var(--w1-shadow);
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 10px;
-  color: #404040;
+  color: var(--w1-dark);
   padding: 4px 8px;
 }
 
 /* ── Cards (every panel in #view-forecast) ───────────────────────── */
 body[data-era="web1"] #view-forecast .panel,
 body[data-era="web1"] #view-forecast .panel-half {
-  background: #C0C0C0;
+  background: var(--w1-face);
   border: 2px solid;
-  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  border-color: var(--w1-light) var(--w1-dark) var(--w1-dark) var(--w1-light);
   box-shadow: none;
   padding: 0;
   margin: 8px 0;
@@ -312,9 +315,9 @@ body[data-era="web1"] .retro-card-title-strip {
   height: 22px;
   padding: 0 8px;
   background: #B0B0B0;
-  color: #000000;
+  color: var(--w1-ink);
   border: 1px solid;
-  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  border-color: var(--w1-light) var(--w1-dark) var(--w1-dark) var(--w1-light);
   margin: 2px 2px 6px 2px;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
@@ -329,9 +332,9 @@ body[data-era="web1"] .retro-substrip {
   height: 20px;
   padding: 0 8px;
   background: #B0B0B0;
-  color: #000000;
+  color: var(--w1-ink);
   border: 1px solid;
-  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  border-color: var(--w1-light) var(--w1-dark) var(--w1-dark) var(--w1-light);
   margin: 4px 0 0 0;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
@@ -347,7 +350,7 @@ body[data-era="web1"] #view-forecast .panel > .panel-title:not([style*="display:
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
   font-weight: bold;
-  color: #000000;
+  color: var(--w1-ink);
 }
 
 /* The unified forecast card body sits inside #panel-forecast. The chart
@@ -355,7 +358,7 @@ body[data-era="web1"] #view-forecast .panel > .panel-title:not([style*="display:
    raised bevels — they become flat strips inside the card. The plot
    areas (canvases) gain a deep-sunken bevel + cream background. */
 body[data-era="web1"] #forecast-chart-container {
-  background: #C0C0C0;
+  background: var(--w1-face);
   padding: 0 8px 6px 8px;
   position: relative;
 }
@@ -364,7 +367,7 @@ body[data-era="web1"] #forecast-chart-container {
    sub-section inside the unified card. The "Swell"/"Wind"/"Tide" sub-
    title strip is the visible header; the canvas is the framed plot. */
 body[data-era="web1"] #forecast-chart-container .forecast-card {
-  background: #C0C0C0;
+  background: var(--w1-face);
   border: none;
   box-shadow: none;
   padding: 22px 0 0 0;
@@ -385,9 +388,9 @@ body[data-era="web1"] #forecast-chart-container .forecast-section-label {
   display: flex;
   align-items: center;
   background: #B0B0B0;
-  color: #000000;
+  color: var(--w1-ink);
   border: 1px solid;
-  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  border-color: var(--w1-light) var(--w1-dark) var(--w1-dark) var(--w1-light);
   box-shadow: none;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
@@ -422,10 +425,10 @@ body[data-era="web1"] #forecast-chart-container .forecast-card > canvas {
   width: 100%;
   background: #F8F4E8;
   border: 2px solid;
-  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  border-color: var(--w1-dark) var(--w1-light) var(--w1-light) var(--w1-dark);
   box-shadow:
-    inset 1px 1px 0 0 #808080,
-    inset -1px -1px 0 0 #C0C0C0;
+    inset 1px 1px 0 0 var(--w1-shadow),
+    inset -1px -1px 0 0 var(--w1-face);
   box-sizing: border-box;
   border-radius: 0;
 }
@@ -446,7 +449,7 @@ body[data-era="web1"] #forecast-chart-container .forecast-day-label {
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
   font-weight: bold;
-  color: #000000;
+  color: var(--w1-ink);
   line-height: 18px;
   white-space: nowrap;
   pointer-events: none;
@@ -461,10 +464,10 @@ body[data-era="web1"] .forecast-detail-bar {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  background: #FFFFFF;
-  color: #000000;
+  background: var(--w1-light);
+  color: var(--w1-ink);
   border: 2px solid;
-  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  border-color: var(--w1-shadow) var(--w1-light) var(--w1-light) var(--w1-shadow);
   box-shadow: none;
   padding: 3px 8px;
   margin: 4px 8px 4px 8px;
@@ -485,19 +488,19 @@ body[data-era="web1"] .forecast-detail-bar .detail-time {
   font-family: "Courier New", Courier, monospace;
   font-size: 12px;
   font-weight: bold;
-  color: #000000;
+  color: var(--w1-ink);
 }
 body[data-era="web1"] .forecast-detail-bar .detail-item {
   font-family: "Courier New", Courier, monospace;
   font-size: 12px;
-  color: #000000;
+  color: var(--w1-ink);
 }
 body[data-era="web1"] .forecast-detail-bar .detail-val {
-  color: #000000;
+  color: var(--w1-ink);
   font-weight: normal;
 }
 body[data-era="web1"] .forecast-detail-bar .detail-tide {
-  color: #000000;
+  color: var(--w1-ink);
   font-weight: bold;
 }
 
@@ -509,27 +512,27 @@ body[data-era="web1"] .forecast-reset-btn {
   padding: 0;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
-  color: #0000EE;
+  color: var(--w1-link);
   text-decoration: underline;
   cursor: pointer;
   border-radius: 0;
   flex-shrink: 0;
 }
-body[data-era="web1"] .forecast-reset-btn:hover { color: #551A8B; }
+body[data-era="web1"] .forecast-reset-btn:hover { color: var(--w1-vlink); }
 
 /* ── Bottom controls bar — sunken inset strip ────────────────────── */
 body[data-era="web1"] .forecast-controls-bar {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: #C0C0C0;
+  background: var(--w1-face);
   border: 2px solid;
-  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  border-color: var(--w1-shadow) var(--w1-light) var(--w1-light) var(--w1-shadow);
   padding: 4px 8px;
   margin: 6px 8px 4px 8px;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
-  color: #000000;
+  color: var(--w1-ink);
   flex-wrap: wrap;
 }
 body[data-era="web1"] .forecast-controls-spacer {
@@ -543,9 +546,9 @@ body[data-era="web1"] .forecast-controls-bar .forecast-coord-toggle {
   margin: 0;
 }
 body[data-era="web1"] .forecast-controls-bar select {
-  background: #FFFFFF;
+  background: var(--w1-light);
   border: 2px solid;
-  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  border-color: var(--w1-shadow) var(--w1-light) var(--w1-light) var(--w1-shadow);
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
   padding: 1px 4px;
@@ -558,9 +561,9 @@ body[data-era="web1"] .forecast-controls-bar input[type="checkbox"] {
   margin: 0 4px 0 0;
   appearance: none;
   -webkit-appearance: none;
-  background: #FFFFFF;
+  background: var(--w1-light);
   border: 2px solid;
-  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  border-color: var(--w1-shadow) var(--w1-light) var(--w1-light) var(--w1-shadow);
   border-radius: 0;
   position: relative;
   cursor: pointer;
@@ -571,8 +574,8 @@ body[data-era="web1"] .forecast-controls-bar input[type="checkbox"]:checked::aft
   position: absolute;
   left: 1px; top: -2px;
   width: 8px; height: 8px;
-  background-image: linear-gradient(45deg, transparent 45%, #000 45% 55%, transparent 55%),
-                    linear-gradient(-45deg, transparent 45%, #000 45% 55%, transparent 55%);
+  background-image: linear-gradient(45deg, transparent 45%, var(--w1-ink) 45% 55%, transparent 55%),
+                    linear-gradient(-45deg, transparent 45%, var(--w1-ink) 45% 55%, transparent 55%);
 }
 
 /* ── Wave Spectra + Spectral Compass Rose (promoted) ────────────── */
@@ -589,28 +592,28 @@ body[data-era="web1"] #panel-spectral-row {
 body[data-era="web1"] #panel-spectral-row .panel-half {
   flex: 1 1 320px;
   min-width: 0;
-  background: #C0C0C0;
+  background: var(--w1-face);
   border: 2px solid;
-  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  border-color: var(--w1-light) var(--w1-dark) var(--w1-dark) var(--w1-light);
   padding: 0 0 6px 0;
   margin: 0;
 }
 
 /* Wave Spectra table — deep-sunken cream-tinted display, 11px bold
-   header / 11px regular rows, 1px #808080 row separators, alternating
-   #F8F4E8 / #FFFFFF row backgrounds. */
+   header / 11px regular rows, 1px var(--w1-shadow) row separators, alternating
+   #F8F4E8 / var(--w1-light) row backgrounds. */
 body[data-era="web1"] #spectral-summary-table {
   margin: 6px 8px;
-  background: #FFFFFF;
+  background: var(--w1-light);
   border: 2px solid;
-  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  border-color: var(--w1-dark) var(--w1-light) var(--w1-light) var(--w1-dark);
   box-shadow:
-    inset 1px 1px 0 0 #808080,
-    inset -1px -1px 0 0 #C0C0C0;
+    inset 1px 1px 0 0 var(--w1-shadow),
+    inset -1px -1px 0 0 var(--w1-face);
   padding: 4px;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
-  color: #000000;
+  color: var(--w1-ink);
 }
 body[data-era="web1"] #spectral-summary-table table {
   width: 100%;
@@ -622,20 +625,20 @@ body[data-era="web1"] #spectral-summary-table th {
   font-weight: bold;
   text-align: left;
   padding: 3px 6px;
-  background: #C0C0C0;
-  color: #000000;
-  border-bottom: 1px solid #808080;
+  background: var(--w1-face);
+  color: var(--w1-ink);
+  border-bottom: 1px solid var(--w1-shadow);
 }
 body[data-era="web1"] #spectral-summary-table td {
   padding: 3px 6px;
   font-size: 11px;
-  border-bottom: 1px solid #808080;
+  border-bottom: 1px solid var(--w1-shadow);
 }
 body[data-era="web1"] #spectral-summary-table tr:nth-child(even) td {
   background: #F8F4E8;
 }
 body[data-era="web1"] #spectral-summary-table tr:nth-child(odd) td {
-  background: #FFFFFF;
+  background: var(--w1-light);
 }
 
 /* Freshness strip — Win95 status-bar sunken field with an LED dot.
@@ -646,12 +649,12 @@ body[data-era="web1"] .spectral-status-strip {
   gap: 6px;
   margin-bottom: 4px;
   padding: 2px 6px;
-  background: #C0C0C0;
+  background: var(--w1-face);
   border: 1px solid;
-  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  border-color: var(--w1-shadow) var(--w1-light) var(--w1-light) var(--w1-shadow);
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
-  color: #000000;
+  color: var(--w1-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -687,7 +690,7 @@ body[data-era="web1"] #spectral-summary-table .period-chip {
   display: inline-block;
   width: 8px;
   height: 8px;
-  border: 1px solid #404040;
+  border: 1px solid var(--w1-dark);
   margin-right: 4px;
   vertical-align: -1px;
 }
@@ -698,10 +701,10 @@ body[data-era="web1"] #spectral-summary-table .period-chip {
 body[data-era="web1"] #panel-compass .chart-container {
   background: #F8F4E8;
   border: 2px solid;
-  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  border-color: var(--w1-dark) var(--w1-light) var(--w1-light) var(--w1-dark);
   box-shadow:
-    inset 1px 1px 0 0 #808080,
-    inset -1px -1px 0 0 #C0C0C0;
+    inset 1px 1px 0 0 var(--w1-shadow),
+    inset -1px -1px 0 0 var(--w1-face);
   padding: 6px;
   margin: 4px auto;
   box-sizing: border-box;
@@ -723,10 +726,10 @@ body[data-era="web1"] .rose-scale-toggle {
   margin: 4px 8px;
 }
 body[data-era="web1"] .rose-scale-chip {
-  background: #C0C0C0;
-  color: #000000;
+  background: var(--w1-face);
+  color: var(--w1-ink);
   border: 2px solid;
-  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  border-color: var(--w1-light) var(--w1-dark) var(--w1-dark) var(--w1-light);
   padding: 2px 10px;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
@@ -738,14 +741,14 @@ body[data-era="web1"] .rose-scale-chip {
 }
 body[data-era="web1"] .rose-scale-chip.active,
 body[data-era="web1"] .rose-scale-chip:active {
-  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  border-color: var(--w1-dark) var(--w1-light) var(--w1-light) var(--w1-dark);
 }
 
 body[data-era="web1"] #panel-spectral-row .widget-help {
   margin: 4px 8px;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
-  color: #000000;
+  color: var(--w1-ink);
 }
 /* Hover/tap readout beneath the rose — same sunken status-bar field as
    the table's freshness strip, width matched to the 340px rose frame. */
@@ -754,9 +757,9 @@ body[data-era="web1"] #panel-compass .rose-readout {
   max-width: 340px;
   margin: 4px auto 0 auto;
   padding: 2px 6px;
-  background: #C0C0C0;
+  background: var(--w1-face);
   border: 1px solid;
-  border-color: #808080 #FFFFFF #FFFFFF #808080;
+  border-color: var(--w1-shadow) var(--w1-light) var(--w1-light) var(--w1-shadow);
   font-family: "Courier New", Courier, monospace;
   font-size: 11px;
   color: #6a645c;
@@ -765,7 +768,7 @@ body[data-era="web1"] #panel-compass .rose-readout {
   text-overflow: ellipsis;
   box-sizing: border-box;
 }
-body[data-era="web1"] #panel-compass .rose-readout.has-band { color: #000000; }
+body[data-era="web1"] #panel-compass .rose-readout.has-band { color: var(--w1-ink); }
 body[data-era="web1"] #panel-compass .rose-readout.in-window { color: #006400; }
 body[data-era="web1"] #compass-canvas { cursor: crosshair; }
 
@@ -778,7 +781,7 @@ body[data-era="web1"] #panel-compass .rose-legend {
   padding: 0 6px 4px;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
-  color: #000000;
+  color: var(--w1-ink);
 }
 /* Center the toggle over the rose it drives. Shrink-wrapped (width
    fit-content + auto margins) so the base white pill background doesn't
@@ -804,13 +807,13 @@ body[data-era="web1"] .conditions-row {
 }
 
 body[data-era="web1"] .condition-card {
-  background: #C0C0C0;
+  background: var(--w1-face);
   border: 2px solid;
-  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  border-color: var(--w1-light) var(--w1-dark) var(--w1-dark) var(--w1-light);
   box-shadow: none;
   padding: 0;
   border-left-width: 2px !important;
-  border-left-color: #FFFFFF !important;
+  border-left-color: var(--w1-light) !important;
   border-radius: 0;
   position: relative;
   min-height: 80px;
@@ -824,9 +827,9 @@ body[data-era="web1"] .condition-card .condition-label {
   height: 20px;
   padding: 0 8px;
   background: #B0B0B0;
-  color: #000000;
+  color: var(--w1-ink);
   border: 1px solid;
-  border-color: #FFFFFF #404040 #404040 #FFFFFF;
+  border-color: var(--w1-light) var(--w1-dark) var(--w1-dark) var(--w1-light);
   margin: 2px 2px 6px 2px;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
@@ -841,7 +844,7 @@ body[data-era="web1"] .condition-card .condition-value {
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 16px;
   font-weight: bold;
-  color: #000000;
+  color: var(--w1-ink);
   margin: 0;
 }
 
@@ -849,14 +852,14 @@ body[data-era="web1"] .condition-card .condition-detail {
   padding: 2px 10px;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
-  color: #000000;
+  color: var(--w1-ink);
 }
 
 body[data-era="web1"] .condition-card .condition-extra {
   padding: 2px 10px 6px 10px;
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
-  color: #404040;
+  color: var(--w1-dark);
 }
 
 /* Mobile: stack to single column. */
@@ -870,12 +873,12 @@ body[data-era="web1"] .condition-card .condition-extra {
 
 body[data-era="web1"] #panel-lineup .lineup-frame {
   border: 2px solid;
-  border-color: #404040 #FFFFFF #FFFFFF #404040;
+  border-color: var(--w1-dark) var(--w1-light) var(--w1-light) var(--w1-dark);
   box-shadow:
-    inset 1px 1px 0 0 #808080,
-    inset -1px -1px 0 0 #C0C0C0;
+    inset 1px 1px 0 0 var(--w1-shadow),
+    inset -1px -1px 0 0 var(--w1-face);
   margin: 6px 8px;
-  background: #000000;
+  background: var(--w1-ink);
   border-radius: 0;
   position: relative;
 }
@@ -884,7 +887,7 @@ body[data-era="web1"] #panel-lineup .lineup-caption {
   font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
   font-size: 11px;
   font-weight: bold;
-  color: #FFFFFF;
+  color: var(--w1-light);
   background: rgba(0, 0, 0, 0.7);
   padding: 4px 8px;
   letter-spacing: 0;
