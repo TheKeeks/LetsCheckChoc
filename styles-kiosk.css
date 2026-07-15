@@ -76,7 +76,7 @@ body.kiosk #app {
   max-width: none;
   width: 100%;
   height: 100vh;
-  padding: 16px 24px 60px; /* bottom clears the fixed status strip */
+  padding: 24px 24px 64px; /* bottom clears the 48px status strip + 16 */
   margin: 0;
   box-sizing: border-box;
   display: flex;
@@ -194,21 +194,33 @@ body.kiosk .np-arrow-med .np-ao-cap { font-size: 8px; }
 body.kiosk .np-days {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 22px;
+  gap: 24px;
   width: 100%;
 }
 body.kiosk .np-day {
-  padding: 18px 22px 14px;
+  padding: 16px 24px 16px;
   min-width: 0;
   display: grid;
   /* Fixed slots (title / primary / secondary / low1 / low2 / sun / moon)
      shared by every card, so readings align horizontally across cards. */
-  grid-template-rows: 34px 100px 72px 78px 78px minmax(116px, auto) 28px;
+  grid-template-rows: auto 104px 72px 72px 72px auto auto;
   row-gap: 16px;
   align-items: center;
   min-height: 64vh;
 }
 body.kiosk .np-slot-empty { visibility: hidden; }
+/* Rows may never overflow the card border (grid min-content guard). */
+body.kiosk .np-day > * { min-width: 0; }
+/* Panel-wide size tiers: all three cards share one digit size, chosen
+   to fit the widest primary range on the panel. */
+body.kiosk .np-days.np-t1 .np-seg-lg { font-size: 2.3rem; }
+body.kiosk .np-days.np-t1 .np-primary .np-seg-md { font-size: 1.6rem; }
+body.kiosk .np-days.np-t1 .np-primary .np-bigarrow { width: 92px; height: 92px; }
+body.kiosk .np-days.np-t1 .np-day { grid-template-rows: auto 92px 72px 72px 72px auto auto; }
+body.kiosk .np-days.np-t2 .np-seg-lg { font-size: 1.85rem; }
+body.kiosk .np-days.np-t2 .np-primary .np-seg-md { font-size: 1.45rem; }
+body.kiosk .np-days.np-t2 .np-primary .np-bigarrow { width: 84px; height: 84px; }
+body.kiosk .np-days.np-t2 .np-day { grid-template-rows: auto 84px 72px 72px 72px auto auto; }
 body.kiosk .np-day-title {
   font-size: 16px;
   letter-spacing: 0.3em;
@@ -255,9 +267,12 @@ body.kiosk .np-low {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 0 2px;
+  padding: 0;
 }
 body.kiosk .np-low-when { white-space: nowrap; }
+/* Flex wrappers so inline-level line-box struts can't add phantom height
+   under the arrow glyphs (kept the low rows at 76px in a 72px slot). */
+body.kiosk .np-low-wind { display: flex; align-items: center; }
 
 /* Sun row: three columns, green caption over time over wind arrow. */
 body.kiosk .np-sunrow {
@@ -332,6 +347,7 @@ body.kiosk .forecast-crosshair { background: rgba(69, 255, 154, 0.5) !important;
 body.kiosk .forecast-cache-indicator { color: var(--np-green-faint) !important; }
 
 /* ── Spectral pane ────────────────────────────────────────────────── */
+body.kiosk #panel-spectral-row { gap: 24px; }
 body.kiosk #panel-spectral-row .panel-half {
   background: var(--np-bg);
   border: 1px solid var(--np-hairline);
