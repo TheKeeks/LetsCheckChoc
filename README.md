@@ -79,8 +79,10 @@ clipped to daylight — sampled with a 1 h swell-travel lag from the
 open-water forecast point (2 h when the buoy-coords toggle is on) —
 period is the ceil of the window mean; the two low tides with wind speed
 and direction at each low; wind at sunrise / noon / sunset; and the moon
-phase (% full). All direction arrows point where the swell or wind is
-going, with the FROM compass label beside.
+phase (% full). Swell arrows point where the swell is going with the
+FROM label printed on them; day-card winds show as heading dials — a
+compass ring whose rim pointer marks the travel direction, reading
+upright in the middle.
 
 Data auto-refreshes every 15 minutes (freshness shown in the bottom
 status strip), and tapping anywhere pauses rotation for ~60s so the

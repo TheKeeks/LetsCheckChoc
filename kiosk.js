@@ -255,16 +255,36 @@ function kioskSegHTML(text, extraClass, _noGhost) {
   return `<span class="np-seg ${extraClass || ''}">${text}</span>`;
 }
 
-// Wind: one shape everywhere — a medium arrow with the reading printed
-// on it (speed big, "MPH <from>" beneath).
+// Wind on the day cards: a heading dial (owner's pick) — compass ring
+// with a rim pointer at the travel direction; the reading never
+// rotates. Swell keeps the big filled arrows; the radar keeps its
+// vector arrows.
+function kioskDialHTML(fromDeg, numHTML, capHTML) {
+  const travel = fromDeg != null ? Math.round((fromDeg + 180) % 360) : null;
+  let ticks = '';
+  for (let a = 0; a < 360; a += 30) {
+    ticks += `<line transform="rotate(${a} 50 50)" x1="50" y1="6" x2="50" y2="11"/>`;
+  }
+  return `<span class="np-dial">` +
+    `<svg viewBox="0 0 100 100" aria-hidden="true">` +
+      `<circle cx="50" cy="50" r="44" class="np-dial-ring"/>` +
+      `<g class="np-dial-ticks">${ticks}</g>` +
+      (travel != null
+        ? `<path class="np-dial-ptr" transform="rotate(${travel} 50 50)" d="M50 1 L57 16 L43 16 Z"/>`
+        : '') +
+    `</svg>` +
+    `<span class="np-dial-overlay">` +
+      `<span class="np-dial-num">${numHTML}</span>` +
+      `<span class="np-dial-cap">${capHTML}</span>` +
+    `</span>` +
+    `</span>`;
+}
+
 function kioskWindHTML(wind) {
   if (!wind) return '<span class="np-legend np-dim">NO DATA</span>';
   const cap = 'MPH' + (wind.dir != null ? ' ' + directionLabel(wind.dir) : '');
   return `<span class="np-windline">` +
-    kioskArrowHTML(wind.dir,
-      `<span class="np-ao-num">${Math.round(wind.mph)}</span>` +
-      `<span class="np-ao-cap">${cap}</span>`,
-      'np-arrow-med') +
+    kioskDialHTML(wind.dir, Math.round(wind.mph), cap) +
     `</span>`;
 }
 
@@ -717,7 +737,7 @@ function kioskInfoHTML(panel) {
       live('footer-spectral-summary') + live('footer-compass');
   }
   return '<h3>Day summaries</h3>' +
-    '<p>Swell is the min–max over the incoming-tide windows (each low to the next high at Silver Eel) clipped to daylight, sampled from the offshore forecast point with a 1 h swell-travel lag (2 h when the buoy-coords toggle is on). Period is the window mean rounded up. Arrows point where the swell or wind is going, with the FROM compass label printed on them. Winds are read at each low tide and at sunrise / noon / sunset; the moon is percent of full.</p>' +
+    '<p>Swell is the min–max over the incoming-tide windows (each low to the next high at Silver Eel) clipped to daylight, sampled from the offshore forecast point with a 1 h swell-travel lag (2 h when the buoy-coords toggle is on). Period is the window mean rounded up. Swell arrows point where the swell is going, with the FROM compass label printed on them; wind shows as a heading dial whose rim pointer marks where the wind is blowing toward, with speed and FROM label in the middle. Winds are read at each low tide and at sunrise / noon / sunset; the moon is percent of full.</p>' +
     '<h3>Sources</h3>' +
     '<p>Swell &amp; wind: Open-Meteo Marine and Weather (best_match model). Tides and lows: NOAA CO-OPS predictions, Silver Eel Pond station 8510719. Sunrise and sunset: computed solar position. Moon: computed from the synodic month.</p>';
 }
