@@ -1,36 +1,38 @@
 /* ════════════════════════════════════════════════════════════════════
-   CHOC TV — "Night Passage" kiosk theme (?kiosk=1)
+   CHOC TV — kiosk theme (?kiosk=1): black & phosphor green
    ────────────────────────────────────────────────────────────────────
-   1980s marine instrument cluster: anti-glare graphite, smoked-glass
-   modules, seven-segment readouts with LED bloom. Glow hierarchy:
-   BLUE = primary live data, GREEN = legends/labels/units, RED = alerts
-   and the power pilot lamp, YELLOW = directional arrows only.
+   True-black faceplate, green readouts, no synthetic glow — the glow is
+   the color doing its job on an emissive screen. Numbers are 14-segment
+   (DSEG14, one step more detailed than 7-seg); legends are crisp sans.
+   Direction arrows are large filled glyphs with the reading printed on
+   the arrow itself. Red appears only as the chart alert color.
    Every rule is scoped to body.kiosk — inert for normal visitors.
-   Loaded after styles-retro.css to win the cascade.
    ════════════════════════════════════════════════════════════════════ */
 
-/* Seven-segment display face (DSEG7 Classic, SIL OFL — self-hosted). */
 @font-face {
-  font-family: "DSEG7";
-  src: url("fonts/DSEG7Classic-Regular.woff2") format("woff2");
+  font-family: "DSEG14";
+  src: url("fonts/DSEG14Classic-Regular.woff2") format("woff2");
   font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "DSEG14";
+  src: url("fonts/DSEG14Classic-Bold.woff2") format("woff2");
+  font-weight: bold;
   font-style: normal;
   font-display: swap;
 }
 
 body.kiosk {
   --np-bg: #000000;
-  --np-glass: #0b0f13;
-  --np-glass2: #0c1116;
-  --np-bezel: #26323b;
-  --np-bezel-hi: #3a4a56;
-  --np-blue: #38b6ff;
-  --np-blue-dim: rgba(56, 182, 255, 0.55);
-  --np-green: #5de69a;
-  --np-green-dim: rgba(93, 230, 154, 0.5);
+  --np-green: #45ff9a;
+  --np-green-dim: rgba(69, 255, 154, 0.55);
+  --np-green-faint: rgba(69, 255, 154, 0.28);
+  --np-hairline: #143526;
+  --np-ink-on-green: #001408;
   --np-red: #ff5252;
-  --np-yellow: #ffd23f;
-  --np-seg: "DSEG7", "Courier New", monospace;
+  --np-seg: "DSEG14", "Courier New", monospace;
 }
 
 /* ── Chrome hiding: everything except the rotating panel + status strip ── */
@@ -61,7 +63,7 @@ body.kiosk:not([data-kiosk-panel="days2"]) #kiosk-days-2 { display: none !import
 body.kiosk:not([data-kiosk-panel="forecast"]) #panel-forecast { display: none !important; }
 body.kiosk:not([data-kiosk-panel="spectral"]) #panel-spectral-row { display: none !important; }
 
-/* ── Full-viewport graphite faceplate ── */
+/* ── Full-viewport black faceplate ── */
 body.kiosk {
   overflow: hidden;
   background: var(--np-bg);
@@ -87,124 +89,111 @@ body.kiosk #app-window {
   max-width: none;
   background: var(--np-bg);
 }
+body.kiosk #view-forecast,
+body.kiosk #panel-forecast {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
 
 /* ── Shared instrument pieces ─────────────────────────────────────── */
 
-/* McIntosh black-glass faceplate: glossy near-black with an aluminum
-   edge catch along the top bevel. */
+/* Plain black modules with a hairline border. No gradients, no glow. */
 body.kiosk .np-module,
 body.kiosk .np-day {
-  background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.05) 0%, transparent 24%),
-    linear-gradient(180deg, #07090c 0%, #040507 100%);
-  border: 1px solid #2c3238;
-  border-top-color: #4a525a;
-  border-radius: 5px;
-  box-shadow:
-    0 2px 10px rgba(0, 0, 0, 0.7),
-    inset 0 0 40px rgba(0, 0, 0, 0.5);
-}
-
-/* The signature blue-backlit meter window: deep blue up top, brighter
-   toward the lamp at the bottom edge, black markings inside. */
-body.kiosk .np-swell:not(.np-slot-empty),
-body.kiosk .np-low:not(.np-slot-empty),
-body.kiosk .np-meter-sm,
-body.kiosk #kiosk-status-clock {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.30) 0%, rgba(255, 255, 255, 0.06) 12%, transparent 30%),
-    radial-gradient(150% 170% at 50% 118%, #8fd8ff 0%, #3b9ae4 42%, #1560ab 82%, #0d4586 100%);
-  border: 1px solid #0a2c52;
+  background: var(--np-bg);
+  border: 1px solid var(--np-hairline);
   border-radius: 4px;
-  box-shadow:
-    inset 0 -8px 22px rgba(120, 205, 255, 0.35),
-    inset 0 2px 6px rgba(6, 25, 48, 0.45),
-    0 0 26px rgba(47, 143, 221, 0.30);
-}
-/* Everything printed inside a meter window is black, like meter scales. */
-body.kiosk .np-swell .np-seg,
-body.kiosk .np-low .np-seg,
-body.kiosk .np-meter-sm .np-seg,
-body.kiosk #kiosk-status-clock {
-  color: #0a1826;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.22);
-}
-body.kiosk .np-swell .np-seg::before,
-body.kiosk .np-low .np-seg::before,
-body.kiosk .np-meter-sm .np-seg::before {
-  color: rgba(10, 24, 38, 0.15);
-}
-body.kiosk .np-swell .np-legend, body.kiosk .np-swell .np-unit,
-body.kiosk .np-swell .np-at, body.kiosk .np-swell .np-micro,
-body.kiosk .np-low .np-legend, body.kiosk .np-low .np-unit,
-body.kiosk .np-low .np-unit-sm,
-body.kiosk .np-meter-sm .np-legend, body.kiosk .np-meter-sm .np-unit-sm,
-body.kiosk #kiosk-status-clock .np-clock-txt {
-  color: #0b2236;
-  text-shadow: none;
-}
-body.kiosk .np-swell .np-arrow,
-body.kiosk .np-low .np-arrow,
-body.kiosk .np-meter-sm .np-arrow {
-  color: #081522; /* meter-needle black */
-  text-shadow: none;
+  box-shadow: none;
 }
 
-/* Seven-segment readout with ghost segments + LED bloom. */
+/* 14-segment readouts. No ghosts, no bloom — just the lit segments. */
 body.kiosk .np-seg {
-  position: relative;
   display: inline-block;
   font-family: var(--np-seg);
   font-size: 2.6rem;
-  color: var(--np-blue);
-  text-shadow:
-    0 0 5px rgba(56, 182, 255, 0.75),
-    0 0 16px rgba(56, 182, 255, 0.35);
-}
-body.kiosk .np-seg::before {
-  content: attr(data-ghost);
-  position: absolute;
-  left: 0;
-  top: 0;
-  color: rgba(56, 182, 255, 0.09); /* unlit segments, barely there */
-  text-shadow: none;
-  z-index: 0;
+  color: var(--np-green);
 }
 body.kiosk .np-seg-lg { font-size: 3rem; }
 body.kiosk .np-seg-md2 { font-size: 2.1rem; }
 body.kiosk .np-seg-md { font-size: 1.9rem; }
 body.kiosk .np-seg-sm { font-size: 1.15rem; }
-/* Softer ghost so small digits stay crisp. */
-body.kiosk .np-seg::before { color: rgba(56, 182, 255, 0.07); }
 
-/* Edge-lit amplifier legends. */
+/* Crisp sans legends. */
 body.kiosk .np-legend,
 body.kiosk .np-unit,
 body.kiosk .np-at,
 body.kiosk .np-day-title {
-  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-family: Tahoma, Geneva, "MS Sans Serif", sans-serif;
   font-size: 13px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--np-green);
-  text-shadow: 0 0 6px rgba(93, 230, 154, 0.4);
 }
 body.kiosk .np-unit { margin: 0 10px 0 4px; }
-body.kiosk .np-at { margin-right: 4px; color: var(--np-green-dim); }
-body.kiosk .np-dim { color: var(--np-green-dim); text-shadow: none; }
-
-/* Yellow directional arrows (travel direction; FROM label beside). */
-body.kiosk .np-arrow {
-  display: inline-block;
-  width: 1.2em;
-  text-align: center;
-  font-size: 1.25rem;
-  font-weight: bold;
-  color: var(--np-yellow);
-  text-shadow: 0 0 6px rgba(255, 210, 63, 0.6);
-  transform-origin: 50% 50%;
-  margin: 0 4px;
+body.kiosk .np-unit-sm {
+  font-family: Tahoma, Geneva, "MS Sans Serif", sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--np-green-dim);
 }
+body.kiosk .np-at { margin-right: 4px; color: var(--np-green-dim); }
+body.kiosk .np-micro {
+  font-family: Tahoma, Geneva, "MS Sans Serif", sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--np-green-dim);
+  margin-bottom: 2px;
+}
+body.kiosk .np-dim { color: var(--np-green-faint); }
+
+/* ── The arrow: big filled glyph, reading printed on the arrow ────── */
+body.kiosk .np-bigarrow {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 104px;
+  height: 104px;
+  flex-shrink: 0;
+}
+body.kiosk .np-bigarrow svg {
+  width: 100%;
+  height: 100%;
+  fill: var(--np-green);
+}
+body.kiosk .np-arrow-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--np-ink-on-green);
+  line-height: 1.05;
+  pointer-events: none;
+  text-shadow:
+    -1px 0 0 var(--np-green), 1px 0 0 var(--np-green),
+    0 -1px 0 var(--np-green), 0 1px 0 var(--np-green);
+}
+body.kiosk .np-ao-num {
+  font-family: Tahoma, Geneva, sans-serif;
+  font-weight: bold;
+  font-size: 20px;
+  letter-spacing: 0.04em;
+}
+body.kiosk .np-ao-cap {
+  font-family: Tahoma, Geneva, sans-serif;
+  font-weight: bold;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+body.kiosk .np-arrow-med { width: 72px; height: 72px; }
+body.kiosk .np-arrow-med .np-ao-num { font-size: 14px; }
+body.kiosk .np-arrow-med .np-ao-cap { font-size: 8px; }
 
 /* ── Day-summary panels ───────────────────────────────────────────── */
 body.kiosk .np-days {
@@ -219,133 +208,95 @@ body.kiosk .np-day {
   display: grid;
   /* Fixed slots (title / primary / secondary / low1 / low2 / sun / moon)
      shared by every card, so readings align horizontally across cards. */
-  grid-template-rows: 34px 100px 76px 80px 80px minmax(100px, auto) 28px;
+  grid-template-rows: 32px 104px 84px 84px 84px minmax(112px, auto) 26px;
   row-gap: 10px;
   align-items: center;
   min-height: 64vh;
 }
-body.kiosk .np-slot-empty {
-  visibility: hidden;
-}
+body.kiosk .np-slot-empty { visibility: hidden; }
 body.kiosk .np-day-title {
   font-size: 16px;
   letter-spacing: 0.3em;
-  border-bottom: 1px solid var(--np-bezel);
+  border-bottom: 1px solid var(--np-hairline);
   padding-bottom: 8px;
   text-align: center;
 }
-/* Swell block, per the sketch: numbers stacked on the left (height huge,
-   "@ period" on its own line beneath), direction column on the right. */
+
+/* Swell block: numbers stacked left, big arrow right. */
 body.kiosk .np-swell {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   line-height: 1.05;
-  padding: 8px 14px;
-}
-body.kiosk .np-micro {
-  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  color: var(--np-green-dim);
-  margin-bottom: 2px;
 }
 body.kiosk .np-swell-ht { white-space: nowrap; }
 body.kiosk .np-swell-per { margin-top: 2px; white-space: nowrap; }
 body.kiosk .np-swell-dir {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  min-width: 64px;
+  justify-content: center;
   flex-shrink: 0;
 }
-body.kiosk .np-swell-dir .np-arrow { font-size: 1.9rem; margin: 0; }
-body.kiosk .np-secondary { margin-top: -2px; }
+body.kiosk .np-secondary .np-bigarrow { width: 72px; height: 72px; }
+body.kiosk .np-secondary .np-ao-num { font-size: 15px; }
+body.kiosk .np-secondary .np-ao-cap { font-size: 9px; }
 
-/* Wind reading — one consistent shape everywhere: ↘ 11 MPH NW */
+/* Wind reading: arrow with the speed printed on it. */
 body.kiosk .np-windline {
   display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
-  white-space: nowrap;
-}
-body.kiosk .np-unit-sm {
-  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  color: var(--np-green);
-  text-shadow: 0 0 5px rgba(93, 230, 154, 0.35);
+  align-items: center;
+  gap: 8px;
 }
 
-/* Low-tide modules: time line, wind line beneath. */
+/* Low-tide modules: time left, wind arrow right. */
 body.kiosk .np-low {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 10px 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 14px;
 }
 body.kiosk .np-low-when { white-space: nowrap; }
+
+/* Sun row: three columns, green caption over time over wind arrow. */
 body.kiosk .np-sunrow {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   align-self: end;
-  border-top: 1px solid var(--np-bezel);
+  border-top: 1px solid var(--np-hairline);
   padding-top: 10px;
 }
 body.kiosk .np-sun-cell {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   text-align: center;
   min-width: 0;
 }
-body.kiosk .np-meter-sm {
-  padding: 6px 8px;
-  width: 100%;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-}
 body.kiosk .np-sun-cell .np-legend { font-size: 11px; }
 body.kiosk .np-sun-time { white-space: nowrap; }
-body.kiosk .np-sun-wind { justify-content: center; }
-body.kiosk .np-sun-wind .np-windline { flex-wrap: wrap; justify-content: center; white-space: normal; }
 body.kiosk .np-moonrow {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding-top: 6px;
 }
 body.kiosk .np-moon-icon {
-  font-size: 1.5rem;
-  filter: grayscale(0.3) brightness(1.15);
+  font-size: 1.4rem;
+  filter: grayscale(0.4) brightness(1.1);
 }
 
-/* ── Forecast chart pane as a dark instrument screen ──────────────── */
+/* ── Forecast chart pane ──────────────────────────────────────────── */
 body.kiosk .chart-container-tall { min-height: 0; }
-body.kiosk #view-forecast,
-body.kiosk #panel-forecast {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-}
 body.kiosk #forecast-chart-container { background: transparent !important; }
 body.kiosk #forecast-chart-container .forecast-card {
-  background:
-    linear-gradient(180deg, var(--np-glass) 0%, var(--np-glass2) 100%) !important;
-  border: 1px solid var(--np-bezel) !important;
-  border-top-color: var(--np-bezel-hi) !important;
-  border-radius: 6px !important;
-  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+  background: var(--np-bg) !important;
+  border: 1px solid var(--np-hairline) !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
 }
 body.kiosk #forecast-chart-container .forecast-card-swell { height: 44vh; min-height: 0; }
 body.kiosk #forecast-chart-container .forecast-card-wind { height: 15vh; min-height: 0; }
@@ -360,36 +311,32 @@ body.kiosk #forecast-chart-container .forecast-section-label {
   border: none !important;
   box-shadow: none !important;
   color: var(--np-green) !important;
-  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif !important;
+  font-family: Tahoma, Geneva, sans-serif !important;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  text-shadow: 0 0 6px rgba(93, 230, 154, 0.4);
 }
 body.kiosk #forecast-chart-container .forecast-day-label {
   color: var(--np-green) !important;
-  text-shadow: 0 0 6px rgba(93, 230, 154, 0.35);
 }
 body.kiosk .forecast-detail-bar {
-  background: var(--np-glass) !important;
-  border: 1px solid var(--np-bezel) !important;
-  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.5) !important;
-  color: var(--np-blue) !important;
-  text-shadow: 0 0 5px rgba(56, 182, 255, 0.4);
+  background: var(--np-bg) !important;
+  border: 1px solid var(--np-hairline) !important;
+  box-shadow: none !important;
+  color: var(--np-green) !important;
 }
 body.kiosk .forecast-detail-bar .detail-time,
-body.kiosk .forecast-detail-bar .detail-val { color: var(--np-blue) !important; }
-body.kiosk .forecast-detail-bar .detail-tide { color: var(--np-green) !important; }
-body.kiosk .forecast-reset-btn { color: var(--np-yellow) !important; }
-body.kiosk .forecast-crosshair { background: rgba(232, 246, 255, 0.55) !important; }
-body.kiosk .forecast-cache-indicator { color: var(--np-green-dim) !important; }
+body.kiosk .forecast-detail-bar .detail-val { color: var(--np-green) !important; }
+body.kiosk .forecast-detail-bar .detail-tide { color: var(--np-green) !important; font-weight: bold; }
+body.kiosk .forecast-reset-btn { color: var(--np-green) !important; }
+body.kiosk .forecast-crosshair { background: rgba(69, 255, 154, 0.5) !important; }
+body.kiosk .forecast-cache-indicator { color: var(--np-green-faint) !important; }
 
-/* ── Spectral pane: table + rose on smoked glass ──────────────────── */
+/* ── Spectral pane ────────────────────────────────────────────────── */
 body.kiosk #panel-spectral-row .panel-half {
-  background: linear-gradient(180deg, var(--np-glass) 0%, var(--np-glass2) 100%);
-  border: 1px solid var(--np-bezel);
-  border-top-color: var(--np-bezel-hi);
-  border-radius: 6px;
-  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.5);
+  background: var(--np-bg);
+  border: 1px solid var(--np-hairline);
+  border-radius: 4px;
+  box-shadow: none;
   padding-bottom: 10px;
 }
 body.kiosk .retro-card-title-strip {
@@ -397,126 +344,121 @@ body.kiosk .retro-card-title-strip {
   border: none !important;
   box-shadow: none !important;
   color: var(--np-green) !important;
-  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif !important;
+  font-family: Tahoma, Geneva, sans-serif !important;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  text-shadow: 0 0 6px rgba(93, 230, 154, 0.4);
 }
 body.kiosk #spectral-summary-table {
   background: transparent;
-  border: 1px solid var(--np-bezel);
+  border: 1px solid var(--np-hairline);
   box-shadow: none;
 }
 body.kiosk #spectral-summary-table th {
-  background: rgba(93, 230, 154, 0.08);
+  background: rgba(69, 255, 154, 0.07);
   color: var(--np-green);
-  border-bottom: 1px solid var(--np-bezel);
+  border-bottom: 1px solid var(--np-hairline);
   letter-spacing: 0.1em;
   font-size: 13px;
 }
 body.kiosk #spectral-summary-table td {
-  border-bottom: 1px solid rgba(38, 50, 59, 0.6);
+  border-bottom: 1px solid rgba(20, 53, 38, 0.7);
   color: var(--np-green);
   font-size: 14px;
 }
 body.kiosk #spectral-summary-table tr:nth-child(even) td,
 body.kiosk #spectral-summary-table tr:nth-child(odd) td { background: transparent; }
-body.kiosk #spectral-summary-table td.num-cell {
-  color: var(--np-blue);
-  text-shadow: 0 0 5px rgba(56, 182, 255, 0.4);
-}
+body.kiosk #spectral-summary-table td.num-cell { color: var(--np-green); }
 body.kiosk #spectral-summary-table .trend-up { color: var(--np-green); }
 body.kiosk #spectral-summary-table .trend-down { color: var(--np-red); }
-body.kiosk #spectral-summary-table .dir-arrow { color: var(--np-yellow); }
+body.kiosk #spectral-summary-table .dir-arrow { color: var(--np-green); }
 body.kiosk .spectral-status-strip {
-  background: var(--np-glass);
-  border: 1px solid var(--np-bezel);
+  background: transparent;
+  border: 1px solid var(--np-hairline);
   color: var(--np-green);
   font-size: 13px;
   letter-spacing: 0.08em;
 }
 body.kiosk #panel-compass .chart-container {
-  background: var(--np-glass2);
-  border: 1px solid var(--np-bezel);
-  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.55);
+  background: var(--np-bg);
+  border: 1px solid var(--np-hairline);
+  box-shadow: none;
   max-width: min(52vh, 44vw);
 }
 body.kiosk #panel-compass .rose-legend,
 body.kiosk #panel-compass .rose-readout { max-width: min(52vh, 44vw); }
 body.kiosk #panel-compass .rose-readout {
-  background: var(--np-glass);
-  border: 1px solid var(--np-bezel);
+  background: transparent;
+  border: 1px solid var(--np-hairline);
   color: var(--np-green-dim);
 }
-body.kiosk #panel-compass .rose-readout.has-band { color: var(--np-blue); }
-body.kiosk #panel-compass .rose-readout.in-window { color: var(--np-green); }
-body.kiosk .rose-legend-ticks, body.kiosk .rose-legend-caption { color: var(--np-green-dim); }
+body.kiosk #panel-compass .rose-readout.has-band { color: var(--np-green); }
+body.kiosk #panel-compass .rose-readout.in-window { color: var(--np-green); font-weight: bold; }
+body.kiosk .rose-legend-ticks, body.kiosk .rose-legend-caption { color: var(--np-green-faint); }
 body.kiosk .rose-scale-toggle { background: transparent; }
 body.kiosk .rose-scale-chip {
-  background: var(--np-glass);
-  color: var(--np-green);
-  border: 1px solid var(--np-bezel);
+  background: var(--np-bg);
+  color: var(--np-green-dim);
+  border: 1px solid var(--np-hairline);
 }
 body.kiosk .rose-scale-chip.is-active,
 body.kiosk .rose-scale-chip.active {
-  color: var(--np-blue);
-  border-color: var(--np-blue-dim);
+  color: var(--np-green);
+  border-color: var(--np-green-dim);
 }
 
-/* ── Status strip: faceplate footer with pilot lamp + NEXT ────────── */
+/* ── Status strip ─────────────────────────────────────────────────── */
 body.kiosk #kiosk-status {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
   height: 48px;
-  background: linear-gradient(180deg, #14181c 0%, #0c0f12 100%);
-  border-top: 1px solid var(--np-bezel-hi);
+  background: var(--np-bg);
+  border-top: 1px solid var(--np-hairline);
   display: flex;
   align-items: center;
   gap: 18px;
   padding: 0 16px;
-  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  font-family: Tahoma, Geneva, sans-serif;
   font-size: 13px;
   letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--np-green);
-  text-shadow: 0 0 6px rgba(93, 230, 154, 0.35);
   z-index: 900;
 }
 body.kiosk #kiosk-status .kiosk-status-spacer { flex: 1; }
 body.kiosk #kiosk-pilot {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--np-red);
-  box-shadow: 0 0 6px var(--np-red), 0 0 14px rgba(255, 82, 82, 0.5);
+  background: var(--np-green);
 }
-body.kiosk #kiosk-status-updated { color: var(--np-green-dim); text-shadow: none; }
-body.kiosk #kiosk-paused { color: var(--np-red); text-shadow: 0 0 6px rgba(255, 82, 82, 0.5); }
+body.kiosk #kiosk-status-updated { color: var(--np-green-dim); }
+body.kiosk #kiosk-paused { color: var(--np-green); font-weight: bold; }
 body.kiosk #kiosk-next {
-  background: var(--np-glass);
-  border: 1px solid var(--np-bezel);
+  background: var(--np-bg);
+  border: 1px solid var(--np-hairline);
   border-radius: 4px;
-  color: var(--np-yellow);
-  text-shadow: 0 0 6px rgba(255, 210, 63, 0.45);
+  color: var(--np-green);
   font: inherit;
   letter-spacing: 0.14em;
   padding: 7px 16px;
   cursor: pointer;
 }
-body.kiosk #kiosk-next:active { border-color: var(--np-yellow); }
-body.kiosk #kiosk-status-clock .np-clock-txt {
-  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
-  font-size: 11px;
-  color: var(--np-green);
-  text-shadow: 0 0 5px rgba(93, 230, 154, 0.35);
-}
+body.kiosk #kiosk-next:active { border-color: var(--np-green); }
 body.kiosk #kiosk-status-clock {
-  position: relative;
+  border: 1px solid var(--np-hairline);
+  border-radius: 4px;
   padding: 6px 14px;
   font-family: var(--np-seg);
   font-size: 15px;
   letter-spacing: 0.05em;
+  color: var(--np-green);
+}
+body.kiosk #kiosk-status-clock .np-clock-txt {
+  font-family: Tahoma, Geneva, sans-serif;
+  font-size: 11px;
+  color: var(--np-green-dim);
 }
 
 /* ── Night dim: ~30% brightness after sunset ── */
@@ -530,7 +472,3 @@ body.kiosk #kiosk-dim {
   z-index: 950;
 }
 body.kiosk.kiosk-night #kiosk-dim { opacity: 0.7; }
-
-/* Late-cascade pins: readings inside meter windows always print black. */
-body.kiosk .np-swell .np-micro { color: #0b2236; text-shadow: none; }
-body.kiosk .np-secondary .np-seg { color: #0a1826; }
