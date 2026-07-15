@@ -325,13 +325,31 @@ function kioskDayCardHTML(s) {
     `</div>`;
 }
 
+// Digit size is UNIFORM across a panel's three cards (like real LED
+// gear) but steps down when the widest range string that panel must
+// show wouldn't fit the card ("12-15" needs smaller segments than "5").
+function kioskSizeTier(summaries) {
+  const len = Math.max(...summaries.map(s => {
+    if (!s.primary) return 1;
+    const r = s.primary.min === s.primary.max
+      ? String(s.primary.max)
+      : `${s.primary.min}-${s.primary.max}`;
+    return r.length;
+  }));
+  return len <= 2 ? '' : len <= 4 ? 'np-t1' : 'np-t2';
+}
+
 function kioskRenderDays() {
   const p1 = el('kiosk-days-1');
   const p2 = el('kiosk-days-2');
   if (!p1 || !p2) return;
   try {
-    p1.innerHTML = [0, 1, 2].map(o => kioskDayCardHTML(kioskDaySummary(o))).join('');
-    p2.innerHTML = [3, 4, 5].map(o => kioskDayCardHTML(kioskDaySummary(o))).join('');
+    const s1 = [0, 1, 2].map(kioskDaySummary);
+    const s2 = [3, 4, 5].map(kioskDaySummary);
+    p1.className = ('np-days ' + kioskSizeTier(s1)).trim();
+    p2.className = ('np-days ' + kioskSizeTier(s2)).trim();
+    p1.innerHTML = s1.map(kioskDayCardHTML).join('');
+    p2.innerHTML = s2.map(kioskDayCardHTML).join('');
     KIOSK.lastDaysRender = STATE.lastLoadCompletedAt || 0;
   } catch (err) {
     console.warn('kiosk day render failed:', err);
