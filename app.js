@@ -7208,14 +7208,16 @@ const VERIF_GET = {
     obs: r => r.buoy && (r.buoy.swd != null ? r.buoy.swd : r.buoy.mwd),
     mb: r => r.mb && r.mb.swd,
     mc: r => r.mc && r.mc.swd,
-    circular: true
+    circular: true,
+    // Compass names read better than raw degrees for the axis.
+    fmtY: v => directionLabel(((v % 360) + 360) % 360)
   }
 };
 
 const VERIF_SERIES_STYLE = [
-  { key: 'obs', label: 'buoy (observed)', dash: null, width: 2 },
-  { key: 'mb', label: 'model @ buoy', dash: [6, 4], width: 1.5 },
-  { key: 'mc', label: 'model @ Choc point', dash: [2, 3], width: 1.5 }
+  { key: 'obs', label: 'Buoy — actually measured', dash: null, width: 2 },
+  { key: 'mb', label: 'Model’s claim at the buoy', dash: [6, 4], width: 1.5 },
+  { key: 'mc', label: 'Model’s claim at the Choc forecast point', dash: [2, 3], width: 1.5 }
 ];
 
 function _verifSeriesColor(key) {
@@ -7263,13 +7265,14 @@ function drawVerifChart(canvasId, rows, getters) {
     const y = padT + (plotH * g / 2);
     ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke();
   }
+  const fmtY = getters.fmtY || (v => v.toFixed(0));
   ctx.font = `10px ${FC_CHART_FONT}`;
   ctx.fillStyle = FC_RETRO.ink2;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText(hi.toFixed(0), padL + plotW + 4, padT);
-  ctx.fillText(((hi + lo) / 2).toFixed(0), padL + plotW + 4, padT + plotH / 2);
-  ctx.fillText(lo.toFixed(0), padL + plotW + 4, padT + plotH);
+  ctx.fillText(fmtY(hi), padL + plotW + 4, padT);
+  ctx.fillText(fmtY((hi + lo) / 2), padL + plotW + 4, padT + plotH / 2);
+  ctx.fillText(fmtY(lo), padL + plotW + 4, padT + plotH);
   const dayMs = 86400e3;
   const labelEvery = Math.max(1, Math.ceil((tRange / dayMs) / 7));
   let dayN = 0;
@@ -7355,13 +7358,17 @@ function _verifRender() {
     };
     statsBox.innerHTML =
       '<table class="verif-table"><thead><tr><th></th>' +
-      '<th colspan="2">Analysis 1 — model skill<br>(model @ buoy vs buoy)</th>' +
-      '<th colspan="2">Analysis 2 — spatial offset<br>(model @ Choc point vs buoy)</th><th rowspan="2">n</th></tr>' +
-      '<tr><th></th><th>bias</th><th>MAE</th><th>bias</th><th>MAE</th></tr></thead><tbody>' +
+      '<th colspan="2">How accurate is the model?<br><span class="verif-th-sub">its claim at the buoy vs what the buoy measured</span></th>' +
+      '<th colspan="2">How different is the Choc forecast point?<br><span class="verif-th-sub">its claim at the Choc point vs the buoy</span></th><th rowspan="2">readings</th></tr>' +
+      '<tr><th></th><th>typical miss</th><th>typical size</th><th>typical miss</th><th>typical size</th></tr></thead><tbody>' +
       metric('Height', VERIF_GET.height, 1, ' ft') +
       metric('Period', VERIF_GET.period, 1, ' s') +
       metric('Direction', VERIF_GET.dir, 0, '°') +
-      '</tbody></table>';
+      '</tbody></table>' +
+      '<p class="verif-table-note sl-hint"><strong>Typical miss</strong> (bias): which way the model is usually wrong — ' +
+      '<strong>+</strong> means it claims more than the buoy measures, <strong>−</strong> means less. ' +
+      '<strong>Typical size</strong> (mean absolute error): how far off it usually is, ignoring direction. ' +
+      'Small numbers are good.</p>';
     document.querySelectorAll('#panel-verification .verif-chart-block').forEach(b => { b.style.display = ''; });
   }
 
@@ -7372,8 +7379,9 @@ function _verifRender() {
   }
 
   setFooter('footer-verification',
-    'NDBC 44097 observations vs Open-Meteo best_match for the same hour, logged every 2 h by the update-buoy pipeline. ' +
-    'Bias = mean(model − buoy); MAE = mean |error|. Period and direction compare the swell partitions (spectral SwP/SwD vs swell_wave_*), falling back to DPD/MWD when the spectral summary is missing.');
+    'Measured: NDBC buoy 44097 (Block Island). Claimed: Open-Meteo best_match for the same hour, at the buoy’s own coordinates and at the Choc forecast point. ' +
+    'Logged every 2 h by the update-buoy pipeline. Gaps in a line are buoy outages (never interpolated); a direction line that jumps edges crossed north. ' +
+    'Technically: typical miss = bias = mean(model − buoy); typical size = MAE. Period/direction compare swell partitions (SwP/SwD vs swell_wave_*), falling back to DPD/MWD.');
 }
 
 function renderVerificationPanel() {
