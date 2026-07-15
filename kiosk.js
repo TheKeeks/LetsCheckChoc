@@ -438,6 +438,9 @@ function kioskRadarArrow(ctx, lx, ly, fromDeg, len, o) {
   if (o.label) {
     const off = 14 + (o.labelPush || 0);
     let px = tx + ux * off, py = ty + uy * off;
+    // Horizontal arrows run parallel to their (horizontal) label — float
+    // the text up off the shaft in proportion to how horizontal it is.
+    py -= 13 * Math.abs(ux);
     ctx.font = 'bold 13px Tahoma, Geneva, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -564,11 +567,11 @@ function kioskRadarPaint() {
     const closeDirs = sD != null && pD != null &&
       Math.abs(((sD - pD + 540) % 360) - 180) < 16; // bearings within ~16°
     if (sH != null && sD != null) {
-      const len = clampLen(Math.sqrt(sH * sH * (sP || 1)) * 12, 34, rMax * 0.85);
+      const len = clampLen(Math.sqrt(sH * sH * (sP || 1)) * 12, 48, rMax * 0.85);
       kioskRadarArrow(ctx, lx, ly, sD, len, {
         color: 'rgba(69, 255, 154, 0.55)', width: 2,
         label: sH.toFixed(1) + ' FT @ ' + (sP != null ? sP.toFixed(0) : '–') + ' S ' + directionLabel(sD),
-        labelPush: closeDirs ? 26 : 0
+        labelPush: closeDirs ? 26 : 8
       });
     }
     if (pH != null && pD != null) {
@@ -579,7 +582,7 @@ function kioskRadarPaint() {
       });
     }
     if (wD != null) {
-      const len = clampLen((wS || 0) * 6, 30, rMax * 0.8);
+      const len = clampLen((wS || 0) * 6, 42, rMax * 0.8);
       kioskRadarArrow(ctx, lx, ly, wD, len, {
         color: 'rgba(69, 255, 154, 0.8)', width: 2, dashed: true,
         label: (wS != null ? Math.round(wS) : '–') + ' MPH ' + directionLabel(wD)
