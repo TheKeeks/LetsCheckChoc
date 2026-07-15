@@ -307,12 +307,13 @@ body.kiosk .np-moon-icon {
 }
 
 /* ── Night radar scope ────────────────────────────────────────────── */
-/* The scope takes every pixel the swell chart below doesn't need. */
+/* Top two-thirds of the screen, edge to edge; the swell chart takes
+   the bottom third (minus the status strip), also edge to edge. */
 body.kiosk #kiosk-radar {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+  height: 66.7vh;
   min-height: 0;
   display: flex;
-  margin-bottom: 12px;
 }
 body.kiosk #kiosk-radar-canvas {
   width: 100%;
@@ -320,7 +321,25 @@ body.kiosk #kiosk-radar-canvas {
   background: var(--np-bg);
 }
 body.kiosk[data-kiosk-panel="radar"] #app {
-  padding: 12px 16px 60px;
+  padding: 0 0 48px; /* only the status strip is spared */
+  justify-content: flex-start;
+}
+/* Flex chain so the swell chart fills every remaining pixel. */
+body.kiosk[data-kiosk-panel="radar"] #app-window,
+body.kiosk[data-kiosk-panel="radar"] #view-forecast,
+body.kiosk[data-kiosk-panel="radar"] #panel-forecast,
+body.kiosk[data-kiosk-panel="radar"] #forecast-chart-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  max-width: none; /* the base 900px panel cap is for the desktop page */
+  width: 100%;
+}
+body.kiosk[data-kiosk-panel="radar"] #forecast-chart-container .forecast-card-swell {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
 }
 /* Only the swell chart rides along — wind and tide strips yield the
    vertical room to the scope. */
@@ -328,9 +347,14 @@ body.kiosk[data-kiosk-panel="radar"] .forecast-card-wind,
 body.kiosk[data-kiosk-panel="radar"] .forecast-card-tide {
   display: none !important;
 }
-body.kiosk[data-kiosk-panel="radar"] #forecast-chart-container .forecast-card-swell {
-  height: 24vh;
+/* Full-bleed: no side borders or rounding on the chart pieces. */
+body.kiosk[data-kiosk-panel="radar"] .forecast-card,
+body.kiosk[data-kiosk-panel="radar"] .forecast-detail-bar {
+  border-left: none !important;
+  border-right: none !important;
+  border-radius: 0 !important;
 }
+body.kiosk .forecast-detail-bar { font-size: 15px; }
 /* No card title over the chart on the radar panel — the scope is the hero. */
 body.kiosk #panel-forecast .retro-card-title-strip { display: none !important; }
 
