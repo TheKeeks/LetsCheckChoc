@@ -210,7 +210,9 @@ function kioskDaySummary(dayOffset) {
       : dayOffset === 1 ? 'TOMORROW'
       : day.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase(),
     primary: band(pri, null),
-    secondary: band(sec, 1.0),
+    // Owner call: secondary shows whenever the model reports one, no
+    // matter how small — only truly absent data leaves the slot empty.
+    secondary: band(sec, null),
     lows: lows.map(lo => ({ t: lo.t, wind: kioskWindAt(lo.t) })),
     sun: {
       sunrise: dl.sunrise ? { t: dl.sunrise, wind: kioskWindAt(dl.sunrise.getTime()) } : null,
