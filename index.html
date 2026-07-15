@@ -411,19 +411,24 @@
            pipeline's data/verification.json, one row every 2 hours) -->
       <section class="panel" id="panel-verification" style="display:none;">
         <fieldset class="w1-fieldset">
-          <legend>Model vs Buoy — nowcast verification</legend>
+          <legend>Model vs Buoy — is the forecast telling the truth?</legend>
+          <p class="verif-intro sl-hint">Every 2 hours the site records what the buoy actually
+            <strong>measured</strong> and what the forecast model <strong>claimed</strong> for that
+            same hour. Each chart below is a timeline (oldest on the left, newest on the right —
+            faint vertical lines are midnight). The closer the dashed/dotted model lines hug the
+            solid buoy line, the more the forecast can be trusted.</p>
           <div class="verif-legend" id="verif-legend"></div>
           <div class="verif-stats" id="verif-stats"></div>
           <div class="verif-chart-block">
-            <div class="verif-chart-label">Wave height (ft, total Hs)</div>
+            <div class="verif-chart-label">Wave height — feet (total sea state)</div>
             <canvas id="verif-canvas-height"></canvas>
           </div>
           <div class="verif-chart-block">
-            <div class="verif-chart-label">Swell period (s)</div>
+            <div class="verif-chart-label">Swell period — seconds between waves (longer = more powerful, organized swell)</div>
             <canvas id="verif-canvas-period"></canvas>
           </div>
           <div class="verif-chart-block">
-            <div class="verif-chart-label">Swell direction (°from)</div>
+            <div class="verif-chart-label">Swell direction — where the swell is coming from</div>
             <canvas id="verif-canvas-dir"></canvas>
           </div>
         </fieldset>

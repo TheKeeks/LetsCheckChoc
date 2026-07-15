@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased] — Verification panel: plain-language labels
+
+Relabeled the Model-vs-Buoy panel for a non-technical reader. Legend
+title becomes "is the forecast telling the truth?" with an intro line
+explaining the 2-hour measured-vs-claimed logging and how to read the
+timelines. Table headers become "How accurate is the model?" / "How
+different is the Choc forecast point?" with bias → "typical miss" and
+MAE → "typical size", plus a footnote decoding the signs; the stats
+terms stay in the footer for rigor. Chart labels explain the units
+("seconds between waves — longer = more powerful"), the direction
+chart's y-axis now shows compass names instead of raw degrees
+(drawVerifChart grows an fmtY hook), and legend entries read
+"Buoy — actually measured" / "Model's claim at …".
+
 ## [Unreleased] — Model-vs-buoy nowcast verification (pipeline + Tab 2 panel)
 
 The update-buoy pipeline now logs one verification row per run (every
