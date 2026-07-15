@@ -684,9 +684,16 @@ body[data-era="web1"] {
   pointer-events: none;
   font-family: var(--w1-sans);
   font-size: 11px;
-  color: #606060;
+  color: var(--w1-dark);
   font-style: italic;
   font-weight: normal;
+  /* Chip treatment so the untouched control reads as tappable, not broken. */
+  margin: 0 auto;
+  width: fit-content;
+  padding: 1px 10px;
+  background: var(--w1-face);
+  border: 1px solid;
+  border-color: var(--w1-light) var(--w1-shadow) var(--w1-shadow) var(--w1-light);
   /* Position above the slider track. The .sl-range stack centres it. */
   left: 0;
   right: 0;

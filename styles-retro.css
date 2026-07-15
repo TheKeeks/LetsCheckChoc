@@ -183,12 +183,15 @@ body[data-era="web1"] #app-header {
   box-shadow: none;
   padding: 4px 4px 6px 4px;
 }
+/* The window title bar already reads "LetsCheckChoc" 22px above this
+   header — showing the brand twice reads as a rendering mistake. The
+   header keeps the buoy/location line, which is actual information. */
 body[data-era="web1"] .site-title {
-  font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
-  font-size: 14px;
+  display: none;
+}
+body[data-era="web1"] .header-location {
+  font-size: 12px;
   font-weight: bold;
-  color: var(--w1-ink);
-  margin: 0;
 }
 body[data-era="web1"] .header-location,
 body[data-era="web1"] .header-meta,

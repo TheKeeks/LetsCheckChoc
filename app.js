@@ -2569,11 +2569,23 @@ function renderDayLabels(common) {
     const visEnd   = Math.min(_fcXFor(dayEnd,   common, plotLeft, plotW), plotLeft + plotW);
     if (visEnd <= visStart + 8) continue;
     const xx = (visStart + visEnd) / 2;
+    const colW = visEnd - visStart;
     const dayDelta = Math.round((dayStart - todayLocal) / 86400000);
+    // Pick a label that fits the day's column so narrow (mobile) charts
+    // don't render "Tue 7/TodayomorrTni…" overlaps: full name when the
+    // column is wide, bare weekday when tight, alternating when tighter.
     let label;
-    if (dayDelta === 0)      label = 'Today';
-    else if (dayDelta === 1) label = 'Tomorrow';
-    else label = `${dayStart.toLocaleDateString('en-US',{weekday:'short'})} ${dayStart.getMonth()+1}/${dayStart.getDate()}`;
+    if (colW >= 76) {
+      if (dayDelta === 0)      label = 'Today';
+      else if (dayDelta === 1) label = 'Tomorrow';
+      else label = `${dayStart.toLocaleDateString('en-US',{weekday:'short'})} ${dayStart.getMonth()+1}/${dayStart.getDate()}`;
+    } else if (colW >= 34) {
+      label = dayDelta === 0 ? 'Today' : dayStart.toLocaleDateString('en-US', { weekday: 'short' });
+    } else if (dayOff % 2 === 0 || dayDelta === 0) {
+      label = dayDelta === 0 ? 'Now' : dayStart.toLocaleDateString('en-US', { weekday: 'narrow' });
+    } else {
+      continue; // too narrow — skip to keep neighbors legible
+    }
     const span = document.createElement('span');
     span.className = 'forecast-day-label';
     span.textContent = label;

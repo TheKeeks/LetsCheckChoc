@@ -54,6 +54,8 @@ body.kiosk .auth-bar,
 body.kiosk .widget-help,
 body.kiosk .forecast-controls-bar,
 body.kiosk .forecast-header-row,
+body.kiosk .panel-info-toggle,
+body.kiosk .panel-info-popover,
 body.kiosk .panel-footer {
   display: none !important;
 }
