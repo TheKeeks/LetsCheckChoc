@@ -45,45 +45,45 @@ const KIOSK = {
 // everywhere.
 function kioskApplyNightPalette() {
   Object.assign(FC_RETRO, {
-    plotBg:        '#0c1116',
-    grid:          'rgba(93, 230, 154, 0.16)',
-    ink:           '#5de69a',
-    ink2:          'rgba(93, 230, 154, 0.55)',
-    frame:         '#26323b',
-    swellFill:     'rgba(56, 182, 255, 0.25)',
-    swellStroke:   '#38b6ff',
-    secSwellFill:  'rgba(56, 182, 255, 0.10)',
-    period:        '#5de69a',
-    periodHalo:    'rgba(12, 17, 22, 0.85)',
-    dirPrimary:    '#38b6ff',
-    dirSecondary:  '#38b6ff',
+    plotBg:        '#020604',
+    grid:          'rgba(69, 255, 154, 0.14)',
+    ink:           '#45ff9a',
+    ink2:          'rgba(69, 255, 154, 0.55)',
+    frame:         '#143526',
+    swellFill:     'rgba(69, 255, 154, 0.16)',
+    swellStroke:   '#45ff9a',
+    secSwellFill:  'rgba(69, 255, 154, 0.07)',
+    period:        '#b9ffd9',
+    periodHalo:    'rgba(0, 0, 0, 0.85)',
+    dirPrimary:    '#45ff9a',
+    dirSecondary:  '#45ff9a',
     windOn:        'rgba(255, 82, 82, 0.70)',
-    windCross:     'rgba(216, 166, 54, 0.55)',
-    windOff:       'rgba(61, 220, 132, 0.45)',
-    windNull:      'rgba(120, 140, 150, 0.3)',
-    windStroke:    'rgba(226, 240, 248, 0.45)',
-    windBand:      'rgba(93, 230, 154, 0.07)',
-    tide:          '#38b6ff',
-    tideMarkFaint: 'rgba(56, 182, 255, 0.45)',
-    tideMark:      'rgba(56, 182, 255, 0.95)',
-    tideConn:      'rgba(56, 182, 255, 0.6)',
-    scrubDot:      '#e8f6ff',
+    windCross:     'rgba(216, 166, 54, 0.50)',
+    windOff:       'rgba(69, 255, 154, 0.35)',
+    windNull:      'rgba(120, 150, 130, 0.3)',
+    windStroke:    'rgba(230, 255, 240, 0.40)',
+    windBand:      'rgba(69, 255, 154, 0.06)',
+    tide:          '#45ff9a',
+    tideMarkFaint: 'rgba(69, 255, 154, 0.45)',
+    tideMark:      'rgba(69, 255, 154, 0.95)',
+    tideConn:      'rgba(69, 255, 154, 0.6)',
+    scrubDot:      '#eafff2',
     nowLine:       'rgba(255, 82, 82, 0.65)',
-    daySep:        'rgba(226, 240, 248, 0.10)',
+    daySep:        'rgba(230, 255, 240, 0.09)',
     nightShade:    'rgba(0, 0, 0, 0.38)',
     pastDim:       'rgba(0, 0, 0, 0.30)',
-    obsFill:       '#0c1116',
-    obsStroke:     '#38b6ff',
+    obsFill:       '#020604',
+    obsStroke:     '#45ff9a',
     pulseCore:     '#ff5252',
     pulseRing:     '255, 82, 82'
   });
   Object.assign(ROSE_THEME, {
-    bg:       '#0c1116',
-    ring:     'rgba(93, 230, 154, 0.28)',
-    cardinal: '#5de69a',
-    window:   '#5de69a',
-    hs:       '#38b6ff',
-    hsSub:    'rgba(93, 230, 154, 0.6)'
+    bg:       '#020604',
+    ring:     'rgba(69, 255, 154, 0.25)',
+    cardinal: '#45ff9a',
+    window:   '#45ff9a',
+    hs:       '#45ff9a',
+    hsSub:    'rgba(69, 255, 154, 0.6)'
   });
 }
 
@@ -230,31 +230,36 @@ function kioskFmtClock(t) {
   return { seg: `${h}:${String(d.getMinutes()).padStart(2, '0')}`, ampm: d.getHours() >= 12 ? 'PM' : 'AM' };
 }
 
-// Directional arrow: FROM label, arrow points where it's going (travel),
-// matching drawArrow and every arrow in the sketch. Yellow per the spec.
-function kioskArrowHTML(fromDeg) {
+// The arrow, per the sketch: a big filled glyph rotated to the TRAVEL
+// direction (FROM label semantics preserved in the printed text), with
+// the reading printed ON the arrow. The SVG rotates; the overlay text
+// stays upright.
+function kioskArrowHTML(fromDeg, overlayHTML, cls) {
   if (fromDeg == null) return '';
   const travel = Math.round((fromDeg + 180) % 360);
-  return `<span class="np-arrow" style="transform:rotate(${travel}deg)">↑</span>`;
+  return `<span class="np-bigarrow ${cls || ''}">` +
+    `<svg viewBox="0 0 100 140" style="transform:rotate(${travel}deg)" aria-hidden="true">` +
+      `<path d="M50 2 L98 62 L74 62 L74 138 L26 138 L26 62 L2 62 Z"/>` +
+    `</svg>` +
+    (overlayHTML ? `<span class="np-arrow-overlay">${overlayHTML}</span>` : '') +
+    `</span>`;
 }
 
-// noGhost: ghost segments read as mud at small sizes — only the big
-// readouts carry them.
-function kioskSegHTML(text, extraClass, noGhost) {
-  if (noGhost) return `<span class="np-seg ${extraClass || ''}">${text}</span>`;
-  const ghost = String(text).replace(/[0-9]/g, '8');
-  return `<span class="np-seg ${extraClass || ''}" data-ghost="${ghost}">${text}</span>`;
+// Crisp 14-segment readout — no ghost segments, no bloom.
+function kioskSegHTML(text, extraClass, _noGhost) {
+  return `<span class="np-seg ${extraClass || ''}">${text}</span>`;
 }
 
-// "↘ 11 MPH NW" — arrow, seven-seg speed, unit, FROM label. One shape
-// everywhere wind appears so the reading is always parsed the same way.
+// Wind: one shape everywhere — a medium arrow with the reading printed
+// on it (speed big, "MPH <from>" beneath).
 function kioskWindHTML(wind) {
   if (!wind) return '<span class="np-legend np-dim">NO DATA</span>';
+  const cap = 'MPH' + (wind.dir != null ? ' ' + directionLabel(wind.dir) : '');
   return `<span class="np-windline">` +
-    kioskArrowHTML(wind.dir) +
-    kioskSegHTML(Math.round(wind.mph), 'np-seg-sm', true) +
-    `<span class="np-unit-sm">MPH</span>` +
-    `<span class="np-legend">${wind.dir != null ? directionLabel(wind.dir) : ''}</span>` +
+    kioskArrowHTML(wind.dir,
+      `<span class="np-ao-num">${Math.round(wind.mph)}</span>` +
+      `<span class="np-ao-cap">${cap}</span>`,
+      'np-arrow-med') +
     `</span>`;
 }
 
@@ -273,7 +278,10 @@ function kioskSwellRowHTML(sw, cls) {
         ? `<div class="np-swell-per"><span class="np-at">@</span>${kioskSegHTML(sw.period, primary ? 'np-seg-md' : 'np-seg-sm', !primary)}<span class="np-unit">S</span></div>`
         : '') +
     `</div>` +
-    `<div class="np-swell-dir">${kioskArrowHTML(sw.dir)}<span class="np-legend">${dirLabel}</span></div>` +
+    `<div class="np-swell-dir">${kioskArrowHTML(sw.dir,
+      sw.dir != null
+        ? `<span class="np-ao-num">${directionLabel(sw.dir)}</span><span class="np-ao-cap">${Math.round(sw.dir)}°</span>`
+        : '')}</div>` +
     `</div>`;
 }
 
@@ -296,14 +304,10 @@ function kioskDayCardHTML(s) {
     const e = s.sun[key];
     if (!e) return `<div class="np-sun-cell"><span class="np-legend np-dim">${label} —</span></div>`;
     const c = kioskFmtClock(e.t);
-    // Green nomenclature on the glass; the reading inside its own
-    // blue-backlit meter window (np-meter-sm).
     return `<div class="np-sun-cell">` +
       `<span class="np-legend">${label}</span>` +
-      `<div class="np-meter-sm">` +
-        `<div class="np-sun-time">${kioskSegHTML(c.seg, 'np-seg-sm', true)}<span class="np-unit-sm">${c.ampm}</span></div>` +
-        `<div class="np-sun-wind">${kioskWindHTML(e.wind)}</div>` +
-      `</div>` +
+      `<div class="np-sun-time">${kioskSegHTML(c.seg, 'np-seg-sm')}<span class="np-unit-sm">${c.ampm}</span></div>` +
+      `<div class="np-sun-wind">${kioskWindHTML(e.wind)}</div>` +
       `</div>`;
   };
 
