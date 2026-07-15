@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — Day cards: wind becomes a heading dial
+
+Owner pick (option C, wind only): the day cards' wind readings are now
+heading dials — a compass ring with 30° ticks and a rim pointer at the
+travel direction, the speed and FROM label upright in the middle
+(kioskDialHTML). Same 72px slot as the old medium arrows so row
+alignment across cards is unchanged. Swell keeps the big filled
+arrows; the radar keeps its vector arrows. Info card + README wording
+updated.
+
 ## [Unreleased] — Choc TV: Orbitron instrument type
 
 The kiosk's sans face is now Orbitron (self-hosted variable woff2,
