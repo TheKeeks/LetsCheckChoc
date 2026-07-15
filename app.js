@@ -1718,7 +1718,7 @@ const FC_PAD = { left: 44, right: 40 };
 // chrome so canvas text reads as text rather than a rasterized image.
 // Monospace numeric readouts use Courier New, matching the address-bar
 // and detail-bar field fonts.
-const FC_CHART_FONT = '"MS Sans Serif", Tahoma, sans-serif';
+let FC_CHART_FONT = '"MS Sans Serif", Tahoma, sans-serif'; // kiosk.js re-points this at Orbitron
 const FC_CHART_FONT_MONO = '"Courier New", Courier, monospace';
 
 // Retro Win95 chart palette — hardcoded hex literals to match the

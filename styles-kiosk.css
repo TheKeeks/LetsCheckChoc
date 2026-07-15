@@ -11,6 +11,13 @@
    ════════════════════════════════════════════════════════════════════ */
 
 @font-face {
+  font-family: "Orbitron";
+  src: url("fonts/Orbitron-Variable.woff2") format("woff2");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
   font-family: "DSEG14";
   src: url("fonts/DSEG14Classic-Regular.woff2") format("woff2");
   font-weight: normal;
@@ -34,6 +41,7 @@ body.kiosk {
   --np-ink-on-green: #001408;
   --np-red: #ff5252;
   --np-seg: "DSEG14", "Courier New", monospace;
+  --np-sans: "Orbitron", Tahoma, Geneva, sans-serif;
 }
 
 /* ── Chrome hiding: everything except the rotating panel + status strip ── */
@@ -130,17 +138,17 @@ body.kiosk .np-legend,
 body.kiosk .np-unit,
 body.kiosk .np-at,
 body.kiosk .np-day-title {
-  font-family: Tahoma, Geneva, "MS Sans Serif", sans-serif;
-  font-size: 13px;
-  letter-spacing: 0.14em;
+  font-family: var(--np-sans);
+  font-size: 12px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--np-green);
 }
 body.kiosk .np-unit { margin: 0 10px 0 4px; }
 body.kiosk .np-unit-sm {
-  font-family: Tahoma, Geneva, "MS Sans Serif", sans-serif;
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  font-family: var(--np-sans);
+  font-size: 9px;
+  letter-spacing: 0.05em;
   color: var(--np-green-dim);
 }
 body.kiosk .np-at { margin-right: 4px; color: var(--np-green-dim); }
@@ -177,20 +185,20 @@ body.kiosk .np-arrow-overlay {
     0 -1px 0 var(--np-green), 0 1px 0 var(--np-green);
 }
 body.kiosk .np-ao-num {
-  font-family: Tahoma, Geneva, sans-serif;
-  font-weight: bold;
-  font-size: 20px;
-  letter-spacing: 0.04em;
+  font-family: var(--np-sans);
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: 0.02em;
 }
 body.kiosk .np-ao-cap {
-  font-family: Tahoma, Geneva, sans-serif;
-  font-weight: bold;
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-family: var(--np-sans);
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.03em;
 }
 body.kiosk .np-arrow-med { width: 72px; height: 72px; }
-body.kiosk .np-arrow-med .np-ao-num { font-size: 14px; }
-body.kiosk .np-arrow-med .np-ao-cap { font-size: 8px; }
+body.kiosk .np-arrow-med .np-ao-num { font-size: 13px; }
+body.kiosk .np-arrow-med .np-ao-cap { font-size: 7px; }
 
 /* ── Day-summary panels ───────────────────────────────────────────── */
 body.kiosk .np-days {
@@ -224,8 +232,8 @@ body.kiosk .np-days.np-t2 .np-primary .np-seg-md { font-size: 1.45rem; }
 body.kiosk .np-days.np-t2 .np-primary .np-bigarrow { width: 84px; height: 84px; }
 body.kiosk .np-days.np-t2 .np-day { grid-template-rows: auto 84px 72px 72px 72px auto auto; }
 body.kiosk .np-day-title {
-  font-size: 16px;
-  letter-spacing: 0.3em;
+  font-size: 15px;
+  letter-spacing: 0.18em;
   border-bottom: 1px solid var(--np-hairline);
   padding-bottom: 8px;
   text-align: center;
@@ -253,8 +261,8 @@ body.kiosk .np-swell-dir {
   flex-shrink: 0;
 }
 body.kiosk .np-secondary .np-bigarrow { width: 72px; height: 72px; }
-body.kiosk .np-secondary .np-ao-num { font-size: 15px; }
-body.kiosk .np-secondary .np-ao-cap { font-size: 9px; }
+body.kiosk .np-secondary .np-ao-num { font-size: 14px; }
+body.kiosk .np-secondary .np-ao-cap { font-size: 8px; }
 
 /* Wind reading: arrow with the speed printed on it. */
 body.kiosk .np-windline {
@@ -354,7 +362,11 @@ body.kiosk[data-kiosk-panel="radar"] .forecast-detail-bar {
   border-right: none !important;
   border-radius: 0 !important;
 }
-body.kiosk .forecast-detail-bar { font-size: 15px; }
+body.kiosk .forecast-detail-bar { font-size: 13px; font-family: var(--np-sans); }
+body.kiosk .forecast-detail-bar .detail-time,
+body.kiosk .forecast-detail-bar .detail-val,
+body.kiosk .forecast-detail-bar .detail-tide,
+body.kiosk .forecast-reset-btn { font-family: var(--np-sans) !important; }
 /* No card title over the chart on the radar panel — the scope is the hero. */
 body.kiosk #panel-forecast .retro-card-title-strip { display: none !important; }
 
@@ -380,8 +392,8 @@ body.kiosk #forecast-chart-container .forecast-section-label {
   border: none !important;
   box-shadow: none !important;
   color: var(--np-green) !important;
-  font-family: Tahoma, Geneva, sans-serif !important;
-  letter-spacing: 0.2em;
+  font-family: var(--np-sans) !important;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 body.kiosk #forecast-chart-container .forecast-day-label {
@@ -426,8 +438,8 @@ body.kiosk .retro-card-title-strip {
   border: none !important;
   box-shadow: none !important;
   color: var(--np-green) !important;
-  font-family: Tahoma, Geneva, sans-serif !important;
-  letter-spacing: 0.2em;
+  font-family: var(--np-sans) !important;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 body.kiosk #spectral-summary-table {
@@ -439,17 +451,19 @@ body.kiosk #spectral-summary-table th {
   background: rgba(69, 255, 154, 0.07);
   color: var(--np-green);
   border-bottom: 1px solid var(--np-hairline);
-  letter-spacing: 0.1em;
-  font-size: 17px;
+  letter-spacing: 0.05em;
+  font-family: var(--np-sans);
+  font-size: 14px;
   padding: 12px 10px;
 }
 body.kiosk #spectral-summary-table td {
   border-bottom: 1px solid rgba(20, 53, 38, 0.7);
   color: var(--np-green);
-  font-size: 20px;
+  font-family: var(--np-sans);
+  font-size: 16px;
   padding: 14px 10px;
 }
-body.kiosk #spectral-summary-table td.num-cell { font-size: 21px; }
+body.kiosk #spectral-summary-table td.num-cell { font-size: 17px; }
 body.kiosk #spectral-summary-table tr:nth-child(even) td,
 body.kiosk #spectral-summary-table tr:nth-child(odd) td { background: transparent; }
 body.kiosk #spectral-summary-table td.num-cell { color: var(--np-green); }
@@ -460,8 +474,9 @@ body.kiosk .spectral-status-strip {
   background: transparent;
   border: 1px solid var(--np-hairline);
   color: var(--np-green);
-  font-size: 15px;
-  letter-spacing: 0.08em;
+  font-family: var(--np-sans);
+  font-size: 12px;
+  letter-spacing: 0.04em;
   padding: 10px 14px;
 }
 body.kiosk #panel-compass .chart-container {
@@ -476,7 +491,8 @@ body.kiosk #panel-compass .rose-readout {
   background: transparent;
   border: 1px solid var(--np-hairline);
   color: var(--np-green-dim);
-  font-size: 15px;
+  font-family: var(--np-sans);
+  font-size: 12px;
 }
 body.kiosk .rose-legend-ticks, body.kiosk .rose-legend-caption { font-size: 13px; }
 body.kiosk #panel-compass .rose-readout.has-band { color: var(--np-green); }
@@ -507,9 +523,9 @@ body.kiosk #kiosk-status {
   align-items: center;
   gap: 18px;
   padding: 0 16px;
-  font-family: Tahoma, Geneva, sans-serif;
-  font-size: 13px;
-  letter-spacing: 0.12em;
+  font-family: var(--np-sans);
+  font-size: 12px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--np-green);
   z-index: 900;
@@ -557,11 +573,12 @@ body.kiosk #kiosk-info-card {
   border-radius: 4px;
   padding: 24px 30px;
   color: var(--np-green);
-  font: 16px/1.55 Tahoma, Geneva, sans-serif;
+  font: 15px/1.6 Tahoma, Geneva, sans-serif; /* long-form text stays readable */
 }
 body.kiosk #kiosk-info-card h3 {
+  font-family: var(--np-sans);
   font-size: 13px;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--np-green);
   margin: 16px 0 6px;
@@ -585,7 +602,7 @@ body.kiosk #kiosk-status-clock {
   color: var(--np-green);
 }
 body.kiosk #kiosk-status-clock .np-clock-txt {
-  font-family: Tahoma, Geneva, sans-serif;
-  font-size: 11px;
+  font-family: var(--np-sans);
+  font-size: 10px;
   color: var(--np-green-dim);
 }

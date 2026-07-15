@@ -441,7 +441,7 @@ function kioskRadarArrow(ctx, lx, ly, fromDeg, len, o) {
     // Horizontal arrows run parallel to their (horizontal) label — float
     // the text up off the shaft in proportion to how horizontal it is.
     py -= 16 * Math.abs(ux);
-    ctx.font = 'bold 17px Tahoma, Geneva, sans-serif';
+    ctx.font = '700 16px "Orbitron", Tahoma, Geneva, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const tw = ctx.measureText(o.label).width;
@@ -608,13 +608,13 @@ function kioskRadarPaint() {
     const dh = Math.round((t.getTime() - Date.now()) / 3600e3);
     ctx.textAlign = 'right';
     ctx.textBaseline = 'alphabetic';
-    ctx.font = '15px Tahoma, Geneva, sans-serif';
+    ctx.font = '500 13px "Orbitron", Tahoma, Geneva, sans-serif';
     ctx.fillStyle = 'rgba(69, 255, 154, 0.6)';
     ctx.fillText(t.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase(), w - 18, 30);
     ctx.font = '34px "DSEG14", "Courier New", monospace';
     ctx.fillStyle = G;
     ctx.fillText(c.seg + ' ' + c.ampm, w - 18, 72);
-    ctx.font = 'bold 15px Tahoma, Geneva, sans-serif';
+    ctx.font = '700 13px "Orbitron", Tahoma, Geneva, sans-serif';
     if (Math.abs(dh) < 1) {
       ctx.fillStyle = '#ff5252';
       ctx.fillText('● NOW', w - 18, 96);
@@ -625,7 +625,7 @@ function kioskRadarPaint() {
   } else {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '18px Tahoma, Geneva, sans-serif';
+    ctx.font = '500 16px "Orbitron", Tahoma, Geneva, sans-serif';
     ctx.fillStyle = 'rgba(69, 255, 154, 0.5)';
     ctx.fillText('AWAITING FORECAST DATA', w / 2, h / 2 + rMax / 2);
   }
@@ -977,6 +977,9 @@ if (isKioskMode()) {
   try { sessionStorage.setItem('lcc-gate', 'no'); } catch (_) { /* private mode */ }
   // Night Passage: swap the canvas palettes before any chart ever draws.
   kioskApplyNightPalette();
+  // Instrument face type: chart canvases label in Orbitron too (axis
+  // ticks, day labels). Segment digits stay DSEG14.
+  FC_CHART_FONT = '"Orbitron", Tahoma, Geneva, sans-serif';
   // The radar shadows every scrubber repaint — including manual scrubs
   // while paused — by wrapping the app's applier (classic-script function
   // declarations are writable globals; app.js has already executed).

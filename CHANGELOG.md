@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased] — Choc TV: Orbitron instrument type
+
+The kiosk's sans face is now Orbitron (self-hosted variable woff2,
+OFL license included), routed through a new --np-sans token: day-card
+legends/titles/units, arrow overlays, status strip + buttons, info-card
+headings, spectral table/status strip, rose readout, detail bar, and
+the chart canvases (FC_CHART_FONT is reassigned at kiosk boot — const
+→ let in app.js; the main site keeps MS Sans Serif). The radar scope's
+canvas labels and time-block captions render in Orbitron too. The
+segment digits stay DSEG14 and the info card's long-form paragraphs
+stay Tahoma for reading comfort. Orbitron runs wide, so sizes drop a
+point and tracking tightens across the board; spectra table re-measured
+clip-free and day cards verified against the suite.
+
 ## [Unreleased] — Verification panel: plain-language labels
 
 Relabeled the Model-vs-Buoy panel for a non-technical reader. Legend
