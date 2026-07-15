@@ -63,7 +63,10 @@ body.kiosk .panel-footer {
 /* ── Panel rotation ── */
 body.kiosk:not([data-kiosk-panel="days1"]) #kiosk-days-1 { display: none !important; }
 body.kiosk:not([data-kiosk-panel="days2"]) #kiosk-days-2 { display: none !important; }
-body.kiosk:not([data-kiosk-panel="forecast"]) #panel-forecast { display: none !important; }
+body.kiosk:not([data-kiosk-panel="radar"]) #kiosk-radar { display: none !important; }
+/* The forecast card is shared: full-screen on its own panel, and riding
+   below the scope (swell chart only) on the radar panel. */
+body.kiosk:not([data-kiosk-panel="forecast"]):not([data-kiosk-panel="radar"]) #panel-forecast { display: none !important; }
 body.kiosk:not([data-kiosk-panel="spectral"]) #panel-spectral-row { display: none !important; }
 
 /* ── Full-viewport black faceplate ── */
@@ -302,6 +305,30 @@ body.kiosk .np-moonrow {
 body.kiosk .np-moon-icon {
   font-size: 1.4rem;
   filter: grayscale(0.4) brightness(1.1);
+}
+
+/* ── Night radar scope ────────────────────────────────────────────── */
+body.kiosk #kiosk-radar {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+body.kiosk #kiosk-radar-canvas {
+  height: 42vh;
+  aspect-ratio: 1992 / 949; /* the lineup.jpg frame the trace maps onto */
+  max-width: 100%;
+  background: var(--np-bg);
+  border: 1px solid var(--np-hairline);
+  border-radius: 4px;
+}
+/* On the radar panel only the swell chart rides along — wind and tide
+   strips yield the vertical room to the scope. */
+body.kiosk[data-kiosk-panel="radar"] .forecast-card-wind,
+body.kiosk[data-kiosk-panel="radar"] .forecast-card-tide {
+  display: none !important;
+}
+body.kiosk[data-kiosk-panel="radar"] #forecast-chart-container .forecast-card-swell {
+  height: 26vh;
 }
 
 /* ── Forecast chart pane ──────────────────────────────────────────── */

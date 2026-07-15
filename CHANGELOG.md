@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased] — Choc TV: night-radar panel (animated swell/wind loop)
+
+New fifth kiosk rotation panel, `radar`: a phosphor radar-scope
+rendering of the Chocomount lineup — coastline outline (provisional
+hand trace of `project/assets/lineup.jpg`, swappable via the
+`KIOSK_COAST` constant), range rings, rotating sweep, swell-window
+cone, and the hour's primary swell / secondary swell / wind arrows
+converging on the lineup with readings printed beside them, plus a
+14-segment time block with a red NOW tag and ±hour offset. Playback
+drives the existing forecast scrubber (`applyScrubberToHour`) at
+1 s = 1 forecast hour through the full forecast and loops; the swell
+chart rides below the scope (wind/tide strips hidden on this panel
+only) so its dots, crosshair, and detail bar move in lockstep. The
+panel dwells one full loop, a tap pauses playback for hand-scrubbing
+(the radar follows via a kiosk-scoped wrapper around
+`applyScrubberToHour`), and leaving the panel stops the timer and
+snaps the scrubber back to now. Debug param `&kioskRadarStep=`
+(seconds per hour). No app.js changes; all new code is kiosk-scoped.
+
 ## [Unreleased] — Forecast tab polish pass
 
 Six-commit visual cleanup of the Forecast tab. No new features, no
