@@ -7112,7 +7112,8 @@ function renderRegressionTab() {
   const thresholds = el('panel-regression-thresholds');
   const submodel = el('panel-regression-submodel');
   const weights = el('panel-surflog-weights');
-  const sections = [summary, prediction, pva, thresholds, submodel, weights];
+  const verification = el('panel-verification');
+  const sections = [summary, prediction, pva, thresholds, submodel, weights, verification];
   if (!isChoc) {
     if (empty) empty.style.display = '';
     sections.forEach(s => { if (s) s.style.display = 'none'; });
@@ -7149,6 +7150,248 @@ function renderRegressionTab() {
 
   // Weights panel (renderWeightsPanel toggles its own display).
   renderWeightsPanel();
+
+  renderVerificationPanel();
+}
+
+// ════════════════════════════════════════════════
+// MODEL vs BUOY — nowcast verification (Tab 2)
+// ════════════════════════════════════════════════
+//
+// The update-buoy pipeline logs one row every 2 hours pairing the
+// buoy's latest observation with the Open-Meteo model value for that
+// same hour at two grid points: the buoy itself ("mb" — pure model
+// skill) and the Choc forecast point ("mc" — how different the point
+// the app actually forecasts from is). This panel plots the series
+// and summarizes bias/MAE for both analyses.
+
+let _verifDoc = null;
+let _verifFetchedAt = 0;
+
+// Signed shortest angular difference a − b, in (−180, 180].
+function verifAngDiff(a, b) {
+  let d = (a - b) % 360;
+  if (d > 180) d -= 360;
+  if (d <= -180) d += 360;
+  return d;
+}
+
+// Mean error (bias) + mean absolute error over rows where both the
+// observation and the model value exist. `circular` treats values as
+// compass degrees.
+function verifStats(rows, getObs, getModel, circular) {
+  let n = 0, sum = 0, sumAbs = 0;
+  for (const r of rows) {
+    const o = getObs(r), m = getModel(r);
+    if (o == null || m == null) continue;
+    const e = circular ? verifAngDiff(m, o) : (m - o);
+    n++; sum += e; sumAbs += Math.abs(e);
+  }
+  return n ? { n, bias: sum / n, mae: sumAbs / n } : { n: 0, bias: null, mae: null };
+}
+
+// Row accessors shared by the stats table and the charts. Period and
+// direction prefer the buoy's spectral swell partition (same concept
+// as the model's swell_wave_*) and fall back to the stdmet values.
+const VERIF_GET = {
+  height: {
+    obs: r => r.buoy && r.buoy.hs,
+    mb: r => r.mb && r.mb.hs,
+    mc: r => r.mc && r.mc.hs
+  },
+  period: {
+    obs: r => r.buoy && (r.buoy.swp != null ? r.buoy.swp : r.buoy.dpd),
+    mb: r => r.mb && r.mb.swp,
+    mc: r => r.mc && r.mc.swp
+  },
+  dir: {
+    obs: r => r.buoy && (r.buoy.swd != null ? r.buoy.swd : r.buoy.mwd),
+    mb: r => r.mb && r.mb.swd,
+    mc: r => r.mc && r.mc.swd,
+    circular: true
+  }
+};
+
+const VERIF_SERIES_STYLE = [
+  { key: 'obs', label: 'buoy (observed)', dash: null, width: 2 },
+  { key: 'mb', label: 'model @ buoy', dash: [6, 4], width: 1.5 },
+  { key: 'mc', label: 'model @ Choc point', dash: [2, 3], width: 1.5 }
+];
+
+function _verifSeriesColor(key) {
+  return key === 'obs' ? FC_RETRO.ink
+    : key === 'mb' ? FC_RETRO.swellStroke
+    : FC_RETRO.windCross;
+}
+
+function drawVerifChart(canvasId, rows, getters) {
+  const canvas = el(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dims = ensureCanvasCssDims(canvas, ctx);
+  const w = dims.cssW, h = dims.cssH;
+  if (!w || !h) return;
+
+  const padL = 8, padR = 44, padT = 8, padB = 20;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+
+  ctx.fillStyle = FC_RETRO.plotBg;
+  ctx.fillRect(0, 0, w, h);
+
+  const t0 = new Date(rows[0].t).getTime();
+  const t1 = new Date(rows[rows.length - 1].t).getTime();
+  const tRange = Math.max(1, t1 - t0);
+  const xFor = t => padL + ((t - t0) / tRange) * plotW;
+
+  // Y extent across every plotted value, padded.
+  let lo = Infinity, hi = -Infinity;
+  for (const r of rows) {
+    for (const s of VERIF_SERIES_STYLE) {
+      const v = getters[s.key](r);
+      if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    }
+  }
+  if (!isFinite(lo)) return;
+  const span = Math.max(1e-6, hi - lo);
+  lo -= span * 0.12; hi += span * 0.12;
+  const yFor = v => padT + (1 - (v - lo) / (hi - lo)) * plotH;
+
+  // Grid: three horizontal lines + a tick at each UTC midnight.
+  ctx.strokeStyle = FC_RETRO.grid;
+  ctx.lineWidth = 1;
+  for (let g = 0; g <= 2; g++) {
+    const y = padT + (plotH * g / 2);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke();
+  }
+  ctx.font = `10px ${FC_CHART_FONT}`;
+  ctx.fillStyle = FC_RETRO.ink2;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(hi.toFixed(0), padL + plotW + 4, padT);
+  ctx.fillText(((hi + lo) / 2).toFixed(0), padL + plotW + 4, padT + plotH / 2);
+  ctx.fillText(lo.toFixed(0), padL + plotW + 4, padT + plotH);
+  const dayMs = 86400e3;
+  const labelEvery = Math.max(1, Math.ceil((tRange / dayMs) / 7));
+  let dayN = 0;
+  for (let d = Math.ceil(t0 / dayMs) * dayMs; d <= t1; d += dayMs, dayN++) {
+    const x = xFor(d);
+    ctx.strokeStyle = FC_RETRO.daySep;
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
+    if (dayN % labelEvery === 0) {
+      ctx.fillStyle = FC_RETRO.ink2;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(new Date(d).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' }), x, padT + plotH + 4);
+    }
+  }
+
+  // Series: break segments at nulls and (for direction) at wraparounds.
+  for (const s of VERIF_SERIES_STYLE) {
+    ctx.strokeStyle = _verifSeriesColor(s.key);
+    ctx.fillStyle = _verifSeriesColor(s.key);
+    ctx.lineWidth = s.width;
+    ctx.setLineDash(s.dash || []);
+    ctx.beginPath();
+    let prev = null;
+    for (const r of rows) {
+      const v = getters[s.key](r);
+      if (v == null) { prev = null; continue; }
+      const x = xFor(new Date(r.t).getTime());
+      const y = yFor(v);
+      if (prev == null || (getters.circular && Math.abs(v - prev) > 180)) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+      prev = v;
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Dots make short/holey series readable.
+    if (rows.length <= 60) {
+      for (const r of rows) {
+        const v = getters[s.key](r);
+        if (v == null) continue;
+        ctx.beginPath();
+        ctx.arc(xFor(new Date(r.t).getTime()), yFor(v), 1.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  ctx.strokeStyle = FC_RETRO.frame;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(padL + 0.5, padT + 0.5, plotW - 1, plotH - 1);
+}
+
+function _verifFmt(v, digits, unit) {
+  if (v == null) return '—';
+  const s = v.toFixed(digits);
+  return (v >= 0 ? '+' : '') + s + unit;
+}
+
+function _verifRender() {
+  const statsBox = el('verif-stats');
+  const legendBox = el('verif-legend');
+  if (!statsBox) return;
+  const rows = (_verifDoc && Array.isArray(_verifDoc.rows)) ? _verifDoc.rows : [];
+
+  if (legendBox) {
+    legendBox.innerHTML = VERIF_SERIES_STYLE.map(s =>
+      `<span class="verif-legend-item"><span class="verif-swatch verif-swatch-${s.key}"></span>${s.label}</span>`
+    ).join('');
+  }
+
+  if (rows.length < 2) {
+    statsBox.innerHTML = `<span class="sl-hint">Collecting — ${rows.length} observation${rows.length === 1 ? '' : 's'} logged so far. ` +
+      'The update-buoy pipeline adds one every 2 hours; charts appear once a few accumulate.</span>';
+    document.querySelectorAll('#panel-verification .verif-chart-block').forEach(b => { b.style.display = rows.length ? '' : 'none'; });
+    if (!rows.length) return;
+  } else {
+    const metric = (label, g, digits, unit) => {
+      const mb = verifStats(rows, g.obs, g.mb, g.circular);
+      const mc = verifStats(rows, g.obs, g.mc, g.circular);
+      return `<tr><td>${label}</td>` +
+        `<td>${_verifFmt(mb.bias, digits, unit)}</td><td>${mb.mae == null ? '—' : mb.mae.toFixed(digits) + unit}</td>` +
+        `<td>${_verifFmt(mc.bias, digits, unit)}</td><td>${mc.mae == null ? '—' : mc.mae.toFixed(digits) + unit}</td>` +
+        `<td>${mb.n}</td></tr>`;
+    };
+    statsBox.innerHTML =
+      '<table class="verif-table"><thead><tr><th></th>' +
+      '<th colspan="2">Analysis 1 — model skill<br>(model @ buoy vs buoy)</th>' +
+      '<th colspan="2">Analysis 2 — spatial offset<br>(model @ Choc point vs buoy)</th><th rowspan="2">n</th></tr>' +
+      '<tr><th></th><th>bias</th><th>MAE</th><th>bias</th><th>MAE</th></tr></thead><tbody>' +
+      metric('Height', VERIF_GET.height, 1, ' ft') +
+      metric('Period', VERIF_GET.period, 1, ' s') +
+      metric('Direction', VERIF_GET.dir, 0, '°') +
+      '</tbody></table>';
+    document.querySelectorAll('#panel-verification .verif-chart-block').forEach(b => { b.style.display = ''; });
+  }
+
+  if (rows.length) {
+    drawVerifChart('verif-canvas-height', rows, VERIF_GET.height);
+    drawVerifChart('verif-canvas-period', rows, VERIF_GET.period);
+    drawVerifChart('verif-canvas-dir', rows, VERIF_GET.dir);
+  }
+
+  setFooter('footer-verification',
+    'NDBC 44097 observations vs Open-Meteo best_match for the same hour, logged every 2 h by the update-buoy pipeline. ' +
+    'Bias = mean(model − buoy); MAE = mean |error|. Period and direction compare the swell partitions (spectral SwP/SwD vs swell_wave_*), falling back to DPD/MWD when the spectral summary is missing.');
+}
+
+function renderVerificationPanel() {
+  const panel = el('panel-verification');
+  if (!panel) return;
+  panel.style.display = '';
+  const stale = !_verifDoc || Date.now() - _verifFetchedAt > 10 * 60e3;
+  if (stale) {
+    fetch('data/verification.json', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(doc => {
+        _verifFetchedAt = Date.now();
+        if (doc && Array.isArray(doc.rows)) _verifDoc = doc;
+        _verifRender();
+      })
+      .catch(() => { _verifRender(); });
+  }
+  _verifRender();
 }
 
 // ── Tab 2 §6: Sub-model selector ──────────────────────────────────────

@@ -3161,3 +3161,35 @@ summary:focus-visible {
 }
 .reg-raw-weights-details > summary:hover { color: var(--ink); }
 .reg-raw-weights-body { padding-top: 8px; }
+
+/* ── Model vs Buoy verification panel (Tab 2) ── */
+.verif-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 4px 0 10px;
+  font-size: 12px;
+  color: var(--ink2);
+}
+.verif-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.verif-swatch { width: 18px; height: 0; border-top: 3px solid; display: inline-block; }
+.verif-swatch-obs { border-top-color: #000000; }
+.verif-swatch-mb { border-top-color: #1A3B6A; border-top-style: dashed; }
+.verif-swatch-mc { border-top-color: #b87a2e; border-top-style: dotted; }
+.verif-stats { margin-bottom: 12px; overflow-x: auto; }
+.verif-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+.verif-table th, .verif-table td {
+  border: 1px solid var(--border, #999);
+  padding: 4px 8px;
+  text-align: center;
+}
+.verif-table th { background: var(--bg-alt, #efefef); font-weight: bold; }
+.verif-table td:first-child { text-align: left; font-weight: bold; }
+.verif-chart-block { margin-bottom: 12px; }
+.verif-chart-label { font-size: 11px; color: var(--ink2); margin-bottom: 2px; }
+#verif-canvas-height, #verif-canvas-period { width: 100%; height: 150px; display: block; }
+#verif-canvas-dir { width: 100%; height: 120px; display: block; }
