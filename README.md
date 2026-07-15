@@ -83,7 +83,12 @@ going, with the FROM compass label beside.
 
 Data auto-refreshes every 15 minutes (freshness shown in the bottom
 status strip), and tapping anywhere pauses rotation for ~60s so the
-forecast scrubber and rose hover stay usable.
+forecast scrubber and rose hover stay usable. An ⓘ SOURCES button in
+the status strip opens a per-panel card explaining how the readings
+are computed and where the data comes from (plain text, no links — a
+tapped link would navigate the appliance away). The PWA icon is the
+radar scope's coastline outline with the swell-window cone
+(regenerate with `node scripts/generate_icons.js`).
 
 ### iPad setup (one-time)
 

@@ -693,8 +693,50 @@ function kioskRadarStop() {
   if (STATE.forecastChart) resetScrubberToNow();
 }
 
+// ── Sources & methodology card ───────────────────
+// One ⓘ button in the status strip opens a per-panel card explaining
+// what the readings mean and where the data comes from. Plain text, no
+// links — a tapped link would navigate the appliance away.
+function kioskInfoHTML(panel) {
+  const live = id => {
+    const f = el(id);
+    const t = f && f.textContent ? f.textContent.trim() : '';
+    return t ? '<p class="np-info-live">' + t + '</p>' : '';
+  };
+  if (panel === 'radar') {
+    return '<h3>Radar loop</h3>' +
+      '<p>The scope replays the forecast at 1 second per hour and loops. Arrows show primary swell, secondary swell (dimmer), and wind (dashed), each pointing the way it travels and converging on the Chocomount lineup; arrow length scales with energy. The shaded cone is the 115–158° swell window, and the chart below tracks the same hour. Tap to pause, tap again to resume; dragging the chart scrubs by hand. The coastline is a provisional trace of the satellite lineup image.</p>' +
+      '<h3>Sources</h3>' +
+      '<p>Swell &amp; wind: Open-Meteo Marine and Weather forecast (best_match model) at the offshore forecast point. Tide: NOAA CO-OPS predictions, Silver Eel Pond station 8510719.</p>';
+  }
+  if (panel === 'spectral') {
+    return '<h3>Wave spectra</h3>' +
+      '<p>The table decomposes the buoy’s raw wave spectrum into primary swell, wind waves, and total significant height (Hs — the mean of the highest third of waves). The rose bins spectral energy by arrival direction: petal length is that band’s height contribution, color is its period, and the outlined wedge is the 115–158° swell window.</p>' +
+      '<h3>Sources</h3>' +
+      '<p>NDBC buoy 44097 (Block Island) raw and directional spectra, fetched live via CORS proxy, with the repository’s two-hour pipeline (data/buoy.json) as fallback.</p>' +
+      live('footer-spectral-summary') + live('footer-compass');
+  }
+  return '<h3>Day summaries</h3>' +
+    '<p>Swell is the min–max over the incoming-tide windows (each low to the next high at Silver Eel) clipped to daylight, sampled from the offshore forecast point with a 1 h swell-travel lag (2 h when the buoy-coords toggle is on). Period is the window mean rounded up. Arrows point where the swell or wind is going, with the FROM compass label printed on them. Winds are read at each low tide and at sunrise / noon / sunset; the moon is percent of full.</p>' +
+    '<h3>Sources</h3>' +
+    '<p>Swell &amp; wind: Open-Meteo Marine and Weather (best_match model). Tides and lows: NOAA CO-OPS predictions, Silver Eel Pond station 8510719. Sunrise and sunset: computed solar position. Moon: computed from the synodic month.</p>';
+}
+
+function kioskToggleInfo(force) {
+  const ov = el('kiosk-info-overlay');
+  if (!ov) return;
+  const show = force != null ? force : ov.style.display === 'none';
+  if (show) {
+    el('kiosk-info-card').innerHTML = kioskInfoHTML(document.body.dataset.kioskPanel);
+    ov.style.display = '';
+  } else {
+    ov.style.display = 'none';
+  }
+}
+
 function kioskShowPanel(name) {
   document.body.dataset.kioskPanel = name;
+  kioskToggleInfo(false); // a stale card must not outlive its panel
   if (name === 'days1' || name === 'days2') kioskRenderDays();
   if (name !== 'radar') kioskRadarStop();
   // Redraw after the browser has laid out the newly-visible container —
@@ -751,10 +793,14 @@ function kioskScheduleNext() {
 // re-arm the pause instead of resuming). Touches on the NEXT button
 // are exempt — advancing shouldn't also freeze the rotation.
 function kioskPause(ev) {
-  if (ev && ev.target && ev.target.closest && ev.target.closest('#kiosk-next')) return;
+  const t = ev && ev.target && ev.target.closest ? ev.target : null;
+  if (t && t.closest('#kiosk-next')) return;
+  // Info-card touches pause and re-arm but never resume — closing the
+  // card shouldn't restart the radar under the reader.
+  const onInfo = t && (t.closest('#kiosk-info') || t.closest('#kiosk-info-overlay'));
   const onRadar = document.body.dataset.kioskPanel === 'radar';
-  if (onRadar && KIOSK.state === 'paused') {
-    const onChart = ev && ev.target && ev.target.closest && ev.target.closest('#panel-forecast');
+  if (onRadar && KIOSK.state === 'paused' && !onInfo) {
+    const onChart = t && t.closest('#panel-forecast');
     if (!onChart) { kioskResumeInPlace(); return; }
   }
   KIOSK.state = 'paused';
@@ -879,6 +925,7 @@ function kioskBuildChrome() {
     '<span id="kiosk-status-updated">loading…</span>' +
     '<span id="kiosk-paused" style="display:none">⏸ PAUSED — RESUMES SHORTLY</span>' +
     '<span class="kiosk-status-spacer"></span>' +
+    '<button type="button" id="kiosk-info" aria-label="Sources and methodology">ⓘ SOURCES</button>' +
     '<button type="button" id="kiosk-next">NEXT ▸</button>' +
     '<span id="kiosk-status-clock"></span>';
   document.body.appendChild(strip);
@@ -888,6 +935,15 @@ function kioskBuildChrome() {
     if (KIOSK.state === 'paused') kioskResume();
     else kioskAdvance();
   });
+
+  // Sources & methodology card (content filled per panel on open).
+  const info = document.createElement('div');
+  info.id = 'kiosk-info-overlay';
+  info.style.display = 'none';
+  info.innerHTML = '<div id="kiosk-info-card"></div>';
+  document.body.appendChild(info);
+  el('kiosk-info').addEventListener('click', () => kioskToggleInfo());
+  info.addEventListener('click', () => kioskToggleInfo(false));
 }
 
 function kioskInit() {

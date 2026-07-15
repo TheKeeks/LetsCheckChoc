@@ -1,7 +1,7 @@
-// Dev-only: renders the Choc TV PWA icons (Win95 navy tile, beveled
-// border, the titlebar wave glyph, "CHOC TV" wordmark) to PNG via a
-// headless-Chromium canvas. Never loaded by the page; run once when the
-// icon design changes:
+// Dev-only: renders the Choc TV PWA icons — the radar scope's coastline
+// outline with the swell-window cone and lineup dot, phosphor green on
+// true black — to PNG via a headless-Chromium canvas. Never loaded by
+// the page; run once when the icon design changes:
 //
 //   node scripts/generate_icons.js
 //
@@ -26,49 +26,83 @@ async function main() {
   const page = await browser.newPage();
 
   const dataUrls = await page.evaluate(sizes => {
+    // Mirror of KIOSK_COAST in kiosk.js (normalized over the lineup.jpg
+    // frame, 1992×949; lineup at frame center). Keep in sync by hand —
+    // this script never loads the page.
+    const SHORE = [
+      [0.216, 1.000], [0.199, 0.915], [0.201, 0.845], [0.216, 0.775],
+      [0.238, 0.708], [0.259, 0.649], [0.281, 0.594], [0.306, 0.545],
+      [0.336, 0.499], [0.367, 0.463], [0.399, 0.428], [0.433, 0.392],
+      [0.468, 0.357], [0.503, 0.327], [0.541, 0.303], [0.577, 0.288],
+      [0.612, 0.282], [0.647, 0.286], [0.678, 0.301], [0.700, 0.329],
+      [0.719, 0.364], [0.741, 0.409], [0.766, 0.451], [0.796, 0.482],
+      [0.833, 0.508], [0.874, 0.527], [0.919, 0.544], [0.963, 0.556],
+      [1.000, 0.562]
+    ];
+    const ASPECT = 1992 / 949;
+    const WIN_MIN = 115, WIN_MAX = 158; // swell window bearings
+
     function drawIcon(size) {
       const c = document.createElement('canvas');
       c.width = size; c.height = size;
       const ctx = c.getContext('2d');
-      const u = size / 64; // design units on a 64px grid
 
-      // Face + Win95 raised bevel
-      ctx.fillStyle = '#C0C0C0';
+      // Square crop of the frame, centered on the lineup: frame height =
+      // icon height, horizontal overflow cropped evenly.
+      const fh = size, fw = size * ASPECT;
+      const fx = (size - fw) / 2, fy = 0;
+      const px = p => [fx + p[0] * fw, fy + p[1] * fh];
+      const lx = size / 2, ly = size / 2;
+
+      ctx.fillStyle = '#000000';
       ctx.fillRect(0, 0, size, size);
-      const bev = Math.max(2, Math.round(3 * u));
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, size, bev); ctx.fillRect(0, 0, bev, size);
-      ctx.fillStyle = '#404040';
-      ctx.fillRect(0, size - bev, size, bev); ctx.fillRect(size - bev, 0, bev, size);
 
-      // Navy inner tile (title-bar blue)
-      const inset = Math.round(7 * u);
-      ctx.fillStyle = '#000080';
-      ctx.fillRect(inset, inset, size - 2 * inset, size - 2 * inset);
+      // Land mass above the shore line.
+      ctx.beginPath();
+      const [x0, y0] = px(SHORE[0]);
+      ctx.moveTo(x0, y0);
+      for (let i = 1; i < SHORE.length; i++) { const [x, y] = px(SHORE[i]); ctx.lineTo(x, y); }
+      ctx.lineTo(size, size * 0.562);
+      ctx.lineTo(size, 0); ctx.lineTo(0, 0); ctx.lineTo(0, size);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(69, 255, 154, 0.10)';
+      ctx.fill();
 
-      // Wave glyph — two white sine crests across the tile
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = Math.max(2, Math.round(2.6 * u));
+      // Coastline stroke.
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      for (let i = 1; i < SHORE.length; i++) { const [x, y] = px(SHORE[i]); ctx.lineTo(x, y); }
+      ctx.lineTo(size, size * 0.562);
+      ctx.strokeStyle = '#45ff9a';
+      ctx.lineWidth = Math.max(2, size * 0.022);
+      ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
-      const left = inset + 6 * u, right = size - inset - 6 * u;
-      [0.42, 0.56].forEach(frac => {
-        const midY = size * frac;
-        const amp = 5 * u;
-        ctx.beginPath();
-        for (let x = left; x <= right; x += u / 2) {
-          const t = (x - left) / (right - left);
-          const y = midY + Math.sin(t * Math.PI * 3) * amp;
-          if (x === left) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-      });
+      ctx.stroke();
 
-      // Wordmark
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = `bold ${Math.round(9.5 * u)}px Tahoma, Geneva, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('CHOC TV', size / 2, size * 0.76);
+      // Swell-window cone from the lineup (compass θ → canvas θ − 90°).
+      const r = size * 0.44;
+      const a1 = WIN_MIN * Math.PI / 180 - Math.PI / 2;
+      const a2 = WIN_MAX * Math.PI / 180 - Math.PI / 2;
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      ctx.arc(lx, ly, r, a1, a2);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(69, 255, 154, 0.14)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(69, 255, 154, 0.55)';
+      ctx.lineWidth = Math.max(1.5, size * 0.012);
+      ctx.stroke();
+
+      // Lineup dot.
+      ctx.beginPath();
+      ctx.arc(lx, ly, size * 0.035, 0, Math.PI * 2);
+      ctx.fillStyle = '#45ff9a';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(lx, ly, size * 0.07, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(69, 255, 154, 0.5)';
+      ctx.lineWidth = Math.max(1.5, size * 0.012);
+      ctx.stroke();
 
       return c.toDataURL('image/png');
     }
