@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — Choc TV: radar full-screen, tap-toggle pause, bigger spectra
+
+Owner feedback pass on the radar rotation. The standalone forecast
+panel is gone (the radar already carries the swell chart), so the
+kiosk cycles four panels. The scope now fills every pixel the swell
+chart doesn't need: the canvas is full-bleed, the coastline trace
+keeps its true proportions inside a fit-contained frame (letterbox is
+black-on-black) with the shore's right end extended to the screen
+edge, and the corner captions ("CHOCOMOUNT — NIGHT RADAR", the legend
+line) and the chart's title strip are deleted. Tapping the scope now
+toggles: tap pauses the loop, re-tap resumes it in place (chart
+touches still scrub, and the pause backstop resumes in place instead
+of advancing). Wave-spectra panel legibility: table headers 17px /
+cells 20px with real padding, bigger status strip, compass rose grown
+to min(66vh, 46vw). The swell chart's direction axis is capped at due
+east (90°) — swell can't arrive from over the island — so the E–SW
+band gets the full strip height.
+
 ## [Unreleased] — Choc TV: night-radar panel (animated swell/wind loop)
 
 New fifth kiosk rotation panel, `radar`: a phosphor radar-scope

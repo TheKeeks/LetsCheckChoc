@@ -64,9 +64,8 @@ body.kiosk .panel-footer {
 body.kiosk:not([data-kiosk-panel="days1"]) #kiosk-days-1 { display: none !important; }
 body.kiosk:not([data-kiosk-panel="days2"]) #kiosk-days-2 { display: none !important; }
 body.kiosk:not([data-kiosk-panel="radar"]) #kiosk-radar { display: none !important; }
-/* The forecast card is shared: full-screen on its own panel, and riding
-   below the scope (swell chart only) on the radar panel. */
-body.kiosk:not([data-kiosk-panel="forecast"]):not([data-kiosk-panel="radar"]) #panel-forecast { display: none !important; }
+/* The swell chart lives on the radar panel only (no standalone panel). */
+body.kiosk:not([data-kiosk-panel="radar"]) #panel-forecast { display: none !important; }
 body.kiosk:not([data-kiosk-panel="spectral"]) #panel-spectral-row { display: none !important; }
 
 /* ── Full-viewport black faceplate ── */
@@ -308,28 +307,32 @@ body.kiosk .np-moon-icon {
 }
 
 /* ── Night radar scope ────────────────────────────────────────────── */
+/* The scope takes every pixel the swell chart below doesn't need. */
 body.kiosk #kiosk-radar {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
-  justify-content: center;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 body.kiosk #kiosk-radar-canvas {
-  height: 42vh;
-  aspect-ratio: 1992 / 949; /* the lineup.jpg frame the trace maps onto */
-  max-width: 100%;
+  width: 100%;
+  height: 100%;
   background: var(--np-bg);
-  border: 1px solid var(--np-hairline);
-  border-radius: 4px;
 }
-/* On the radar panel only the swell chart rides along — wind and tide
-   strips yield the vertical room to the scope. */
+body.kiosk[data-kiosk-panel="radar"] #app {
+  padding: 12px 16px 60px;
+}
+/* Only the swell chart rides along — wind and tide strips yield the
+   vertical room to the scope. */
 body.kiosk[data-kiosk-panel="radar"] .forecast-card-wind,
 body.kiosk[data-kiosk-panel="radar"] .forecast-card-tide {
   display: none !important;
 }
 body.kiosk[data-kiosk-panel="radar"] #forecast-chart-container .forecast-card-swell {
-  height: 26vh;
+  height: 24vh;
 }
+/* No card title over the chart on the radar panel — the scope is the hero. */
+body.kiosk #panel-forecast .retro-card-title-strip { display: none !important; }
 
 /* ── Forecast chart pane ──────────────────────────────────────────── */
 body.kiosk .chart-container-tall { min-height: 0; }
@@ -374,14 +377,26 @@ body.kiosk .forecast-crosshair { background: rgba(69, 255, 154, 0.5) !important;
 body.kiosk .forecast-cache-indicator { color: var(--np-green-faint) !important; }
 
 /* ── Spectral pane ────────────────────────────────────────────────── */
-body.kiosk #panel-spectral-row { gap: 24px; }
+/* The base 900px panel cap is for the desktop page — the kiosk row
+   takes the full screen width, table half slightly wider so every
+   column fits at kiosk type sizes. */
+body.kiosk #panel-spectral-row {
+  gap: 24px;
+  max-width: none;
+  width: 100%;
+  align-items: center;
+}
 body.kiosk #panel-spectral-row .panel-half {
   background: var(--np-bg);
   border: 1px solid var(--np-hairline);
   border-radius: 4px;
   box-shadow: none;
   padding-bottom: 10px;
+  max-width: none;
 }
+body.kiosk #panel-spectral-summary { flex: 1.3 1 0; }
+body.kiosk #panel-compass { flex: 1 1 0; }
+body.kiosk #spectral-summary-table table { width: 100%; }
 body.kiosk .retro-card-title-strip {
   background: transparent !important;
   border: none !important;
@@ -401,13 +416,16 @@ body.kiosk #spectral-summary-table th {
   color: var(--np-green);
   border-bottom: 1px solid var(--np-hairline);
   letter-spacing: 0.1em;
-  font-size: 13px;
+  font-size: 17px;
+  padding: 12px 10px;
 }
 body.kiosk #spectral-summary-table td {
   border-bottom: 1px solid rgba(20, 53, 38, 0.7);
   color: var(--np-green);
-  font-size: 14px;
+  font-size: 20px;
+  padding: 14px 10px;
 }
+body.kiosk #spectral-summary-table td.num-cell { font-size: 21px; }
 body.kiosk #spectral-summary-table tr:nth-child(even) td,
 body.kiosk #spectral-summary-table tr:nth-child(odd) td { background: transparent; }
 body.kiosk #spectral-summary-table td.num-cell { color: var(--np-green); }
@@ -418,22 +436,25 @@ body.kiosk .spectral-status-strip {
   background: transparent;
   border: 1px solid var(--np-hairline);
   color: var(--np-green);
-  font-size: 13px;
+  font-size: 15px;
   letter-spacing: 0.08em;
+  padding: 10px 14px;
 }
 body.kiosk #panel-compass .chart-container {
   background: var(--np-bg);
   border: 1px solid var(--np-hairline);
   box-shadow: none;
-  max-width: min(52vh, 44vw);
+  max-width: min(66vh, 46vw);
 }
 body.kiosk #panel-compass .rose-legend,
-body.kiosk #panel-compass .rose-readout { max-width: min(52vh, 44vw); }
+body.kiosk #panel-compass .rose-readout { max-width: min(66vh, 46vw); }
 body.kiosk #panel-compass .rose-readout {
   background: transparent;
   border: 1px solid var(--np-hairline);
   color: var(--np-green-dim);
+  font-size: 15px;
 }
+body.kiosk .rose-legend-ticks, body.kiosk .rose-legend-caption { font-size: 13px; }
 body.kiosk #panel-compass .rose-readout.has-band { color: var(--np-green); }
 body.kiosk #panel-compass .rose-readout.in-window { color: var(--np-green); font-weight: bold; }
 body.kiosk .rose-legend-ticks, body.kiosk .rose-legend-caption { color: var(--np-green-faint); }

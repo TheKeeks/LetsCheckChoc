@@ -2036,7 +2036,9 @@ function drawSwellPanel(common, data) {
   const winMin = CONFIG.chocomount.swellWindowMin;
   const winMax = CONFIG.chocomount.swellWindowMax;
   const winMid = (winMin + winMax) / 2;
-  const dirRangeMin = winMid - 120;
+  // Owner call: the axis never shows north of due east — swell at Choc
+  // can't arrive from over the island, so E (90°) caps the top.
+  const dirRangeMin = Math.max(winMid - 120, 90);
   const dirRangeMax = winMid + 120;
   const dirRange    = dirRangeMax - dirRangeMin;
   const subInsetT = subTop + 4;

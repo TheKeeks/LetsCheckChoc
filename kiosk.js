@@ -9,8 +9,8 @@
 //
 // Behavior: skips the boat gate, boots straight into Chocomount (the
 // existing initGate 'no' branch does both once sessionStorage is
-// seeded), rotates five full-screen panels (day summaries ×2, night
-// radar, forecast charts, spectra), auto-refreshes data every
+// seeded), rotates four full-screen panels (day summaries ×2, radar
+// loop with the swell chart, spectra), auto-refreshes data every
 // 15 minutes, and holds a screen wake lock.
 // ════════════════════════════════════════════════════════════════════
 'use strict';
@@ -25,7 +25,7 @@ function isKioskMode() {
 }
 
 const KIOSK = {
-  panels: ['days1', 'days2', 'radar', 'forecast', 'spectral'],
+  panels: ['days1', 'days2', 'radar', 'spectral'],
   idx: 0,
   rotateMs: 20 * 1000,      // panel dwell time
   pauseMs: 60 * 1000,       // interaction pause before rotation resumes
@@ -464,20 +464,32 @@ function kioskRadarPaint() {
   if (!w || !h) return;
 
   const G = '#45ff9a';
-  const lx = KIOSK_COAST.lineup[0] * w, ly = KIOSK_COAST.lineup[1] * h;
+  // The canvas fills the screen; the coastline trace keeps its true
+  // proportions inside a fit-contained frame (the lineup.jpg aspect),
+  // centered — the surrounding letterbox is black-on-black. When the
+  // screen is wider than the frame, the shore's right end extends
+  // straight to the canvas edge so the coast never stops mid-air.
+  const FRAME_ASPECT = 1992 / 949;
+  let fw = w, fh = w / FRAME_ASPECT;
+  if (fh > h) { fh = h; fw = h * FRAME_ASPECT; }
+  const fx = (w - fw) / 2, fy = (h - fh) / 2;
+  const lx = fx + KIOSK_COAST.lineup[0] * fw, ly = fy + KIOSK_COAST.lineup[1] * fh;
   const rMax = h * 0.62;
-  const px = p => [p[0] * w, p[1] * h];
+  const px = p => [fx + p[0] * fw, fy + p[1] * fh];
   const trace = pts => {
     const [x0, y0] = px(pts[0]);
     ctx.moveTo(x0, y0);
     for (let i = 1; i < pts.length; i++) { const [x, y] = px(pts[i]); ctx.lineTo(x, y); }
   };
+  const shore = KIOSK_COAST.shore;
+  const shoreEndY = fy + shore[shore.length - 1][1] * fh;
 
   // Faceplate + land mass (everything above/left of the shore line).
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, w, h);
   ctx.beginPath();
-  trace(KIOSK_COAST.shore);
+  trace(shore);
+  ctx.lineTo(w, shoreEndY);
   ctx.lineTo(w, 0); ctx.lineTo(0, 0); ctx.lineTo(0, h);
   ctx.closePath();
   ctx.fillStyle = 'rgba(69, 255, 154, 0.06)';
@@ -516,7 +528,8 @@ function kioskRadarPaint() {
 
   // Coastline stroke + ponds on top of the sweep.
   ctx.beginPath();
-  trace(KIOSK_COAST.shore);
+  trace(shore);
+  ctx.lineTo(w, shoreEndY);
   ctx.strokeStyle = 'rgba(69, 255, 154, 0.9)';
   ctx.lineWidth = 1.5;
   ctx.lineJoin = 'round';
@@ -627,16 +640,6 @@ function kioskRadarPaint() {
   ctx.strokeStyle = 'rgba(69, 255, 154, 0.45)';
   ctx.lineWidth = 1;
   ctx.stroke();
-
-  // Scope captions, top-left.
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  ctx.font = '12px Tahoma, Geneva, sans-serif';
-  ctx.fillStyle = 'rgba(69, 255, 154, 0.8)';
-  ctx.fillText('CHOCOMOUNT — NIGHT RADAR', 14, 24);
-  ctx.font = '10px Tahoma, Geneva, sans-serif';
-  ctx.fillStyle = 'rgba(69, 255, 154, 0.4)';
-  ctx.fillText('1 SEC = 1 HR · FULL FORECAST LOOP · SWELL / 2ND / WIND', 14, 42);
 }
 
 // Continuous sweep animation — runs only while the radar panel is up
@@ -701,14 +704,7 @@ function kioskShowPanel(name) {
 
 function kioskRedrawPanel(name) {
   try {
-    if (name === 'forecast' && STATE.forecastData && STATE.forecastData.marine) {
-      invalidateCanvasDPR(el('forecast-canvas-swell'));
-      invalidateCanvasDPR(el('forecast-canvas-wind'));
-      invalidateCanvasDPR(el('forecast-canvas-tide'));
-      const d = STATE.forecastData;
-      drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo, d.tidePred, d.buoyParsed);
-      resetScrubberToNow();
-    } else if (name === 'radar') {
+    if (name === 'radar') {
       // The swell chart rides below the scope at radar-mode sizes, so it
       // must be laid out fresh at those dims before playback starts.
       if (STATE.forecastData && STATE.forecastData.marine) {
@@ -749,17 +745,37 @@ function kioskScheduleNext() {
   KIOSK.rotateTimer = setTimeout(kioskAdvance, ms);
 }
 
-// Any touch pauses rotation so the scrubber / rose hover can be used;
-// every further touch re-arms the resume window. Touches on the NEXT
-// button are exempt — advancing shouldn't also freeze the rotation.
+// Any touch pauses rotation so the scrubber / rose hover can be used.
+// On the radar a tap is a toggle: tap pauses the loop, re-tap resumes
+// it in place (touches on the chart below are scrubbing, so they only
+// re-arm the pause instead of resuming). Touches on the NEXT button
+// are exempt — advancing shouldn't also freeze the rotation.
 function kioskPause(ev) {
   if (ev && ev.target && ev.target.closest && ev.target.closest('#kiosk-next')) return;
+  const onRadar = document.body.dataset.kioskPanel === 'radar';
+  if (onRadar && KIOSK.state === 'paused') {
+    const onChart = ev && ev.target && ev.target.closest && ev.target.closest('#panel-forecast');
+    if (!onChart) { kioskResumeInPlace(); return; }
+  }
   KIOSK.state = 'paused';
   clearTimeout(KIOSK.rotateTimer);
   const cue = el('kiosk-paused');
-  if (cue) cue.style.display = '';
+  if (cue) {
+    cue.textContent = onRadar ? '⏸ PAUSED — TAP TO RESUME' : '⏸ PAUSED — RESUMES SHORTLY';
+    cue.style.display = '';
+  }
   clearTimeout(KIOSK.resumeTimer);
-  KIOSK.resumeTimer = setTimeout(kioskResume, KIOSK.pauseMs);
+  // Backstop so an accidental tap can't freeze an unattended kiosk.
+  KIOSK.resumeTimer = setTimeout(onRadar ? kioskResumeInPlace : kioskResume, KIOSK.pauseMs);
+}
+
+// Resume the radar loop where it left off — no panel change.
+function kioskResumeInPlace() {
+  KIOSK.state = 'rotating';
+  clearTimeout(KIOSK.resumeTimer);
+  const cue = el('kiosk-paused');
+  if (cue) cue.style.display = 'none';
+  kioskScheduleNext(); // re-arm the dwell; playback ticks pick back up
 }
 
 function kioskResume() {
@@ -912,6 +928,26 @@ if (isKioskMode()) {
   applyScrubberToHour = function (idx) {
     kioskAppApplyScrubber(idx);
     if (document.body.dataset.kioskPanel === 'radar') kioskDrawRadar(idx);
+  };
+  // A full chart redraw (15-min data refresh, resize) resets the
+  // scrubber to "now" — mid-loop or mid-pause that would yank the radar
+  // off its hour. Hold the displayed hour across the redraw and re-apply
+  // it synchronously, so the loop carries on where it was.
+  const kioskAppDrawForecast = drawForecastChart;
+  drawForecastChart = function () {
+    const cs = STATE.forecastChart;
+    const holdMs = document.body.dataset.kioskPanel === 'radar' && KIOSK.radarTimer &&
+      cs && KIOSK_RADAR.idx >= 0 && KIOSK_RADAR.idx < cs.times.length
+      ? cs.times[KIOSK_RADAR.idx].getTime() : null;
+    kioskAppDrawForecast.apply(null, arguments);
+    if (holdMs != null && STATE.forecastChart) {
+      const hi = findHourIndexForTime(holdMs, STATE.forecastChart);
+      if (hi >= 0) {
+        STATE.scrubberIdx = hi;
+        KIOSK_RADAR.idx = hi;
+        applyScrubberToHour(hi);
+      }
+    }
   };
   // This script sits at the end of <body>, so body exists at parse time:
   // flag it immediately so kiosk CSS applies before first paint.
