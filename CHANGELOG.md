@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased] — Radar: owner-traced features, taller chart, cleaner labels
+
+The scope shrinks 66.7 → 56vh and crops the top 15% of the frame (all
+land), handing the swell chart real vertical amplitude. The owner's
+traced features are mapped onto the shore by along-coast position +
+offset and drawn on the scope: rock spots (dark dots with a faint rim —
+the NW-of-reef cluster, offshore SW rocks, shoreline strings east and
+south), the three wave-break lines on the reef (dashed), the parking
+lot outline, and the dotted path from the lot to the beach. Arrow
+labels drop the compass word (the bearing against the swell-window cone
+carries direction) and all mph/s units go lowercase with no space after
+the number ("1.9ft @ 12s", "7mph") — including the day cards' period
+("9s") and the wind dials' caption ("mph WNW").
+
 ## [Unreleased] — Day cards: wind becomes a heading dial
 
 Owner pick (option C, wind only): the day cards' wind readings are now
