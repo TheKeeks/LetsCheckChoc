@@ -26,20 +26,23 @@ async function main() {
   const page = await browser.newPage();
 
   const dataUrls = await page.evaluate(sizes => {
-    // Mirror of KIOSK_COAST in kiosk.js (normalized over the lineup.jpg
-    // frame, 1992×949; lineup at frame center). Keep in sync by hand —
-    // this script never loads the page.
+    // Mirror of KIOSK_COAST in kiosk.js (the owner-traced coastline,
+    // normalized over the sketch frame). Keep in sync by hand — this
+    // script never loads the page.
     const SHORE = [
-      [0.216, 1.000], [0.199, 0.915], [0.201, 0.845], [0.216, 0.775],
-      [0.238, 0.708], [0.259, 0.649], [0.281, 0.594], [0.306, 0.545],
-      [0.336, 0.499], [0.367, 0.463], [0.399, 0.428], [0.433, 0.392],
-      [0.468, 0.357], [0.503, 0.327], [0.541, 0.303], [0.577, 0.288],
-      [0.612, 0.282], [0.647, 0.286], [0.678, 0.301], [0.700, 0.329],
-      [0.719, 0.364], [0.741, 0.409], [0.766, 0.451], [0.796, 0.482],
-      [0.833, 0.508], [0.874, 0.527], [0.919, 0.544], [0.963, 0.556],
-      [1.000, 0.562]
+      [0.013, 0.978], [0.058, 0.942], [0.102, 0.917], [0.139, 0.894],
+      [0.160, 0.880], [0.156, 0.833], [0.159, 0.772], [0.168, 0.711],
+      [0.181, 0.656], [0.196, 0.606], [0.215, 0.556], [0.236, 0.506],
+      [0.259, 0.456], [0.285, 0.400], [0.312, 0.350], [0.338, 0.306],
+      [0.364, 0.261], [0.390, 0.220], [0.416, 0.183], [0.442, 0.156],
+      [0.469, 0.139], [0.497, 0.113], [0.524, 0.091], [0.550, 0.072],
+      [0.576, 0.058], [0.602, 0.050], [0.623, 0.056], [0.644, 0.067],
+      [0.665, 0.080], [0.686, 0.098], [0.702, 0.120], [0.717, 0.150],
+      [0.730, 0.183], [0.743, 0.220], [0.759, 0.244], [0.780, 0.267],
+      [0.806, 0.291], [0.838, 0.313], [0.869, 0.330], [0.901, 0.344],
+      [0.932, 0.353], [0.963, 0.356], [0.992, 0.359]
     ];
-    const ASPECT = 1992 / 949;
+    const ASPECT = 2.122;
     const WIN_MIN = 115, WIN_MAX = 158; // swell window bearings
 
     function drawIcon(size) {
@@ -47,10 +50,10 @@ async function main() {
       c.width = size; c.height = size;
       const ctx = c.getContext('2d');
 
-      // Square crop of the frame, centered on the lineup: frame height =
-      // icon height, horizontal overflow cropped evenly.
-      const fh = size, fw = size * ASPECT;
-      const fx = (size - fw) / 2, fy = 0;
+      // Square crop of the frame, centered on the lineup point.
+      const LINEUP = [0.482, 0.306];
+      const fh = size * 1.3, fw = fh * ASPECT;
+      const fx = size / 2 - LINEUP[0] * fw, fy = size / 2 - LINEUP[1] * fh;
       const px = p => [fx + p[0] * fw, fy + p[1] * fh];
       const lx = size / 2, ly = size / 2;
 
@@ -62,8 +65,8 @@ async function main() {
       const [x0, y0] = px(SHORE[0]);
       ctx.moveTo(x0, y0);
       for (let i = 1; i < SHORE.length; i++) { const [x, y] = px(SHORE[i]); ctx.lineTo(x, y); }
-      ctx.lineTo(size, size * 0.562);
-      ctx.lineTo(size, 0); ctx.lineTo(0, 0); ctx.lineTo(0, size);
+      ctx.lineTo(size * 3, size * 0.5);
+      ctx.lineTo(size * 3, -size); ctx.lineTo(-size, -size); ctx.lineTo(-size, size * 2);
       ctx.closePath();
       ctx.fillStyle = 'rgba(69, 255, 154, 0.10)';
       ctx.fill();
@@ -72,7 +75,7 @@ async function main() {
       ctx.beginPath();
       ctx.moveTo(x0, y0);
       for (let i = 1; i < SHORE.length; i++) { const [x, y] = px(SHORE[i]); ctx.lineTo(x, y); }
-      ctx.lineTo(size, size * 0.562);
+      ctx.lineTo(size * 3, size * 0.5);
       ctx.strokeStyle = '#45ff9a';
       ctx.lineWidth = Math.max(2, size * 0.022);
       ctx.lineJoin = 'round';
