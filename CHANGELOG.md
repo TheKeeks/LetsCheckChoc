@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased] — Radar: the owner's coastline replaces the provisional trace
+
+KIOSK_COAST is now the owner's own sketch, digitized in its native
+positions — shore polyline (43 points, frame aspect 2.122), rock
+clusters, reef wave-break lines, parking lot, and beach path — with the
+lineup point seated just seaward of the traced break lines. The paint
+code contain-fits the new frame and extends both shore ends along
+their own headings past the screen edges (replacing the old
+right-edge-only extension and the top-crop, which the tighter frame no
+longer needs); the pond blob from the old satellite trace is gone. The
+PWA icons are regenerated from the same shore, crop centered on the
+lineup. Info card + README updated: the trace is no longer provisional.
+
 ## [Unreleased] — Radar: owner-traced features, taller chart, cleaner labels
 
 The scope shrinks 66.7 → 56vh and crops the top 15% of the frame (all
