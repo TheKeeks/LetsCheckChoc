@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased] — Radar: back to the satellite trace, landmark labels, period-axis color
+
+The owner's sketch coastline and its features (rocks, break lines,
+lot, path) are removed — the positions hadn't survived the conversion —
+and the scope returns to the original satellite-derived trace (shore +
+pond, lineup at frame center) with the fill-height + 15% top-crop
+framing kept from the legibility pass. The swell-window cone's edges
+are now labeled in small Orbitron with what they actually point at:
+MONTAUK PT on the southern edge (158°), SOUTHWEST PT (BLOCK) on the
+eastern edge (115°). PWA icons regenerated from the restored shore.
+On the swell chart (site-wide), the right-hand period axis labels now
+render in the period line's own color so scale and line read as one.
+
 ## [Unreleased] — Radar: the owner's coastline replaces the provisional trace
 
 KIOSK_COAST is now the owner's own sketch, digitized in its native

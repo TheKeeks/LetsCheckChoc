@@ -69,11 +69,11 @@ bar moving in lockstep, and the clock in the scope's corner shows the
 frame's day, time, and offset from now. The panel dwells for one full
 loop (~168 s). Tapping the scope pauses the loop; tapping again
 resumes it in place (touches on the chart scrub it by hand — the radar
-follows the scrub). The coastline — plus the rock spots, reef
-wave-break lines, parking lot, and beach path — is the owner's own
-trace, digitized into the `KIOSK_COAST` constant in `kiosk.js`
-(normalized coords over the sketch frame; the PWA icon mirrors the
-same shore).
+follows the scrub). The coastline is traced from the satellite lineup
+image (`KIOSK_COAST` in `kiosk.js`; the PWA icon mirrors the same
+shore), and the swell-window cone's edges are labeled with the
+landmarks they point at — Montauk Point and Block Island's Southwest
+Point.
 
 Each day card reads: primary (and, when present, secondary) swell as the
 min–max height range over the incoming-tide windows at Silver Eel
