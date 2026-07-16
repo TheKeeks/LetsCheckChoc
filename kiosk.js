@@ -282,7 +282,7 @@ function kioskDialHTML(fromDeg, numHTML, capHTML) {
 
 function kioskWindHTML(wind) {
   if (!wind) return '<span class="np-legend np-dim">NO DATA</span>';
-  const cap = 'MPH' + (wind.dir != null ? ' ' + directionLabel(wind.dir) : '');
+  const cap = 'mph' + (wind.dir != null ? ' ' + directionLabel(wind.dir) : '');
   return `<span class="np-windline">` +
     kioskDialHTML(wind.dir, Math.round(wind.mph), cap) +
     `</span>`;
@@ -299,7 +299,7 @@ function kioskSwellRowHTML(sw, cls) {
       kioskSegHTML(range, primary ? 'np-seg-lg' : 'np-seg-md') +
       `<span class="np-unit">FT</span>` +
       (sw.period != null
-        ? `<span class="np-at">@</span>${kioskSegHTML(sw.period, primary ? 'np-seg-md' : 'np-seg-sm')}<span class="np-unit">S</span>`
+        ? `<span class="np-at">@</span>${kioskSegHTML(sw.period, primary ? 'np-seg-md' : 'np-seg-sm')}<span class="np-unit np-unit-tight">s</span>`
         : '') +
     `</div>` +
     `<div class="np-swell-dir">${kioskArrowHTML(sw.dir,
@@ -416,7 +416,32 @@ const KIOSK_COAST = {
     [0.733, 0.208], [0.744, 0.238], [0.749, 0.275], [0.757, 0.300],
     [0.752, 0.345], [0.735, 0.378], [0.712, 0.392], [0.692, 0.380],
     [0.678, 0.350], [0.669, 0.318]
-  ]]
+  ]],
+  // Owner-traced features (mapped from their sketch onto this shore by
+  // along-coast position + offset): rock spots, the wave-break lines on
+  // the reef, the parking lot, and the path from the lot to the beach.
+  rocks: [
+    [0.504, 0.361], [0.508, 0.352], [0.513, 0.347], [0.519, 0.345],
+    [0.524, 0.352], [0.529, 0.359], [0.533, 0.364], [0.520, 0.361],
+    [0.513, 0.360],
+    [0.351, 0.529], [0.356, 0.545], [0.354, 0.557], [0.358, 0.573],
+    [0.363, 0.560], [0.372, 0.591],
+    [0.281, 0.595], [0.285, 0.612], [0.277, 0.629], [0.281, 0.646],
+    [0.282, 0.668], [0.275, 0.680],
+    [0.222, 0.780], [0.229, 0.790], [0.232, 0.795], [0.238, 0.804],
+    [0.243, 0.810],
+    [0.803, 0.503], [0.813, 0.510], [0.828, 0.515], [0.836, 0.520],
+    [0.853, 0.523], [0.865, 0.530], [0.877, 0.537], [0.885, 0.541],
+    [0.913, 0.547], [0.926, 0.554], [0.939, 0.559],
+    [0.977, 0.560], [0.987, 0.566], [0.996, 0.570]
+  ],
+  breaks: [
+    [[0.440, 0.439], [0.491, 0.402], [0.534, 0.352]],
+    [[0.501, 0.457], [0.551, 0.410]],
+    [[0.534, 0.498], [0.551, 0.484]]
+  ],
+  lot: [[0.407, 0.224], [0.414, 0.228], [0.420, 0.321], [0.410, 0.324]],
+  path: [[0.415, 0.323], [0.424, 0.337], [0.436, 0.347], [0.449, 0.348]]
 };
 
 const KIOSK_RADAR = { idx: -1, sweep: 0, raf: null, lastT: 0 };
@@ -485,14 +510,15 @@ function kioskRadarPaint() {
 
   const G = '#45ff9a';
   // The canvas fills the screen; the coastline trace keeps its true
-  // proportions inside a fit-contained frame (the lineup.jpg aspect),
-  // centered — the surrounding letterbox is black-on-black. When the
-  // screen is wider than the frame, the shore's right end extends
-  // straight to the canvas edge so the coast never stops mid-air.
+  // proportions filled to the canvas height with the top 15% of the
+  // frame cropped away (all land) — the water gets the pixels. The
+  // shore's right end extends straight to the canvas edge so the coast
+  // never stops mid-air.
   const FRAME_ASPECT = 1992 / 949;
-  let fw = w, fh = w / FRAME_ASPECT;
-  if (fh > h) { fh = h; fw = h * FRAME_ASPECT; }
-  const fx = (w - fw) / 2, fy = (h - fh) / 2;
+  const CROP = 0.15; // top slice of the frame hidden off-canvas
+  const fh = h / (1 - CROP);
+  const fw = fh * FRAME_ASPECT;
+  const fx = (w - fw) / 2, fy = -CROP * fh;
   const lx = fx + KIOSK_COAST.lineup[0] * fw, ly = fy + KIOSK_COAST.lineup[1] * fh;
   const rMax = h * 0.62;
   const px = p => [fx + p[0] * fw, fy + p[1] * fh];
@@ -565,6 +591,43 @@ function kioskRadarPaint() {
     ctx.stroke();
   }
 
+  // Owner-traced features. Rocks: dark spots with a faint rim.
+  const rockR = Math.max(2, fh * 0.006);
+  for (let ri = 0; ri < KIOSK_COAST.rocks.length; ri++) {
+    const [rx, ry] = px(KIOSK_COAST.rocks[ri]);
+    ctx.beginPath();
+    ctx.arc(rx, ry, rockR * (0.8 + (ri % 3) * 0.25), 0, Math.PI * 2);
+    ctx.fillStyle = '#000';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(69, 255, 154, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  // Wave-break lines on the reef.
+  ctx.setLineDash([8, 5]);
+  ctx.strokeStyle = 'rgba(69, 255, 154, 0.5)';
+  ctx.lineWidth = 2;
+  for (const line of KIOSK_COAST.breaks) {
+    ctx.beginPath();
+    trace(line);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // Parking lot + the path down to the beach.
+  ctx.beginPath();
+  trace(KIOSK_COAST.lot);
+  ctx.closePath();
+  ctx.strokeStyle = 'rgba(69, 255, 154, 0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.beginPath();
+  trace(KIOSK_COAST.path);
+  ctx.setLineDash([3, 4]);
+  ctx.strokeStyle = 'rgba(69, 255, 154, 0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.setLineDash([]);
+
   // Swell window cone (compass bearing θ → canvas angle θ − 90°).
   const c1 = CONFIG.chocomount.swellWindowMin * Math.PI / 180 - Math.PI / 2;
   const c2 = CONFIG.chocomount.swellWindowMax * Math.PI / 180 - Math.PI / 2;
@@ -599,11 +662,13 @@ function kioskRadarPaint() {
     // whenever the model reports one, no matter how small.
     const closeDirs = sD != null && pD != null &&
       Math.abs(((sD - pD + 540) % 360) - 180) < 16; // bearings within ~16°
+    // No compass words in the labels — the arrow's own bearing against
+    // the swell-window cone carries the direction.
     if (sH != null && sD != null) {
       const len = clampLen(Math.sqrt(sH * sH * (sP || 1)) * 16, 70, rMax * 0.85);
       kioskRadarArrow(ctx, lx, ly, sD, len, {
         color: 'rgba(69, 255, 154, 0.55)', width: 3.5,
-        label: sH.toFixed(1) + ' FT @ ' + (sP != null ? sP.toFixed(0) : '–') + ' S ' + directionLabel(sD),
+        label: sH.toFixed(1) + 'ft @ ' + (sP != null ? sP.toFixed(0) : '–') + 's',
         labelPush: closeDirs ? 30 : 10
       });
     }
@@ -611,14 +676,14 @@ function kioskRadarPaint() {
       const len = clampLen(Math.sqrt(pH * pH * (pP || 1)) * 16, 84, rMax * 0.9);
       kioskRadarArrow(ctx, lx, ly, pD, len, {
         color: G, width: 5.5,
-        label: pH.toFixed(1) + ' FT @ ' + (pP != null ? pP.toFixed(0) : '–') + ' S ' + directionLabel(pD)
+        label: pH.toFixed(1) + 'ft @ ' + (pP != null ? pP.toFixed(0) : '–') + 's'
       });
     }
     if (wD != null) {
       const len = clampLen((wS || 0) * 8, 62, rMax * 0.8);
       kioskRadarArrow(ctx, lx, ly, wD, len, {
         color: 'rgba(69, 255, 154, 0.8)', width: 3.5, dashed: true,
-        label: (wS != null ? Math.round(wS) : '–') + ' MPH ' + directionLabel(wD)
+        label: (wS != null ? Math.round(wS) : '–') + 'mph'
       });
     }
 

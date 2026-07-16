@@ -145,6 +145,8 @@ body.kiosk .np-day-title {
   color: var(--np-green);
 }
 body.kiosk .np-unit { margin: 0 10px 0 4px; }
+/* lowercase unit hugging its number ("9s") */
+body.kiosk .np-unit-tight { margin: 0 10px 0 0; text-transform: none; }
 body.kiosk .np-unit-sm {
   font-family: var(--np-sans);
   font-size: 9px;
@@ -365,7 +367,7 @@ body.kiosk .np-moon-icon {
    the bottom third (minus the status strip), also edge to edge. */
 body.kiosk #kiosk-radar {
   flex: 0 0 auto;
-  height: 66.7vh;
+  height: 56vh; /* was 2/3 — the chart below earns the difference */
   min-height: 0;
   display: flex;
 }
