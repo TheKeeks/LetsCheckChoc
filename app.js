@@ -2021,12 +2021,16 @@ function drawSwellPanel(common, data) {
     const label = q === 0 ? `${v}ft` : String(v);
     ctx.fillText(label, plotLeft - 4, clampLabelY(top + (h * q / swellDiv)));
   }
+  // Period axis wears the period line's own color so the right-hand
+  // scale reads as belonging to that line.
   ctx.textAlign = 'left';
+  ctx.fillStyle = FC_RETRO.period;
   for (let q = 0; q <= swellDiv; q++) {
     const v = periodMax * (1 - q / swellDiv);
     const label = q === 0 ? `${v}s` : String(v);
     ctx.fillText(label, plotLeft + plotW + 4, clampLabelY(top + (h * q / swellDiv)));
   }
+  ctx.fillStyle = FC_RETRO.ink;
 
   // ── Direction sub-panel ──
   // Y-axis is compass degrees the swell is COMING FROM. The visible band

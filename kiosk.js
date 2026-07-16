@@ -393,54 +393,30 @@ function kioskRenderDays() {
 // second (KIOSK.radarStepMs) through the full forecast, looping, with
 // the live swell chart + its moving dots visible below the scope.
 
-// OWNER-TRACED COASTLINE — digitized from the owner's sketch (traced
-// over the radar frame, with their features drawn in). Points are
-// normalized 0..1 [x, y] over the sketch's own frame (aspect below),
-// listed SW end → E end; land is above/left of the shore. `lineup` is
-// the arrows' convergence point, seated just seaward of the traced
-// wave-break lines on the reef.
+// COASTLINE — hand-traced from project/assets/lineup.jpg (1992×949).
+// Points are normalized 0..1 [x, y] over that image frame, listed
+// upcoast → downcoast; `lineup` is the arrows' convergence point
+// (image center, matching the lineup-map overlay). Land is everything
+// above/left of the shore polyline.
 const KIOSK_COAST = {
-  aspect: 2.122,
-  lineup: [0.482, 0.306],
+  aspect: 1992 / 949,
+  lineup: [0.5, 0.5],
   shore: [
-    [0.013, 0.978], [0.058, 0.942], [0.102, 0.917], [0.139, 0.894],
-    [0.160, 0.880], [0.156, 0.833], [0.159, 0.772], [0.168, 0.711],
-    [0.181, 0.656], [0.196, 0.606], [0.215, 0.556], [0.236, 0.506],
-    [0.259, 0.456], [0.285, 0.400], [0.312, 0.350], [0.338, 0.306],
-    [0.364, 0.261], [0.390, 0.220], [0.416, 0.183], [0.442, 0.156],
-    [0.469, 0.139], [0.497, 0.113], [0.524, 0.091], [0.550, 0.072],
-    [0.576, 0.058], [0.602, 0.050], [0.623, 0.056], [0.644, 0.067],
-    [0.665, 0.080], [0.686, 0.098], [0.702, 0.120], [0.717, 0.150],
-    [0.730, 0.183], [0.743, 0.220], [0.759, 0.244], [0.780, 0.267],
-    [0.806, 0.291], [0.838, 0.313], [0.869, 0.330], [0.901, 0.344],
-    [0.932, 0.353], [0.963, 0.356], [0.992, 0.359]
+    [0.216, 1.000], [0.199, 0.915], [0.201, 0.845], [0.216, 0.775],
+    [0.238, 0.708], [0.259, 0.649], [0.281, 0.594], [0.306, 0.545],
+    [0.336, 0.499], [0.367, 0.463], [0.399, 0.428], [0.433, 0.392],
+    [0.468, 0.357], [0.503, 0.327], [0.541, 0.303], [0.577, 0.288],
+    [0.612, 0.282], [0.647, 0.286], [0.678, 0.301], [0.700, 0.329],
+    [0.719, 0.364], [0.741, 0.409], [0.766, 0.451], [0.796, 0.482],
+    [0.833, 0.508], [0.874, 0.527], [0.919, 0.544], [0.963, 0.556],
+    [1.000, 0.562]
   ],
-  ponds: [],
-  // The owner's drawn features, in their traced positions: rock spots,
-  // the wave-break lines on the reef, the parking lot, and the path
-  // from the lot down to the beach.
-  rocks: [
-    [0.460, 0.186], [0.467, 0.174], [0.475, 0.167], [0.483, 0.162],
-    [0.490, 0.169], [0.496, 0.176], [0.503, 0.180], [0.485, 0.181],
-    [0.474, 0.183],
-    [0.284, 0.473], [0.292, 0.489], [0.288, 0.513], [0.299, 0.520],
-    [0.304, 0.500], [0.318, 0.531],
-    [0.198, 0.602], [0.203, 0.622], [0.195, 0.647], [0.200, 0.667],
-    [0.204, 0.689], [0.196, 0.713],
-    [0.166, 0.887], [0.174, 0.902], [0.170, 0.922], [0.177, 0.936],
-    [0.172, 0.956],
-    [0.792, 0.298], [0.801, 0.307], [0.817, 0.311], [0.825, 0.318],
-    [0.842, 0.322], [0.854, 0.331], [0.866, 0.339], [0.874, 0.344],
-    [0.904, 0.351], [0.916, 0.359], [0.929, 0.364],
-    [0.969, 0.358], [0.979, 0.364], [0.988, 0.369]
-  ],
-  breaks: [
-    [[0.385, 0.302], [0.445, 0.233], [0.503, 0.164]],
-    [[0.460, 0.299], [0.526, 0.230]],
-    [[0.509, 0.343], [0.530, 0.320]]
-  ],
-  lot: [[0.325, 0.058], [0.336, 0.056], [0.350, 0.169], [0.338, 0.178]],
-  path: [[0.344, 0.173], [0.356, 0.187], [0.372, 0.191], [0.390, 0.183]]
+  ponds: [[
+    [0.667, 0.290], [0.673, 0.245], [0.690, 0.212], [0.712, 0.200],
+    [0.733, 0.208], [0.744, 0.238], [0.749, 0.275], [0.757, 0.300],
+    [0.752, 0.345], [0.735, 0.378], [0.712, 0.392], [0.692, 0.380],
+    [0.678, 0.350], [0.669, 0.318]
+  ]]
 };
 
 const KIOSK_RADAR = { idx: -1, sweep: 0, raf: null, lastT: 0 };
@@ -508,14 +484,16 @@ function kioskRadarPaint() {
   if (!w || !h) return;
 
   const G = '#45ff9a';
-  // The canvas fills the screen; the owner's trace keeps its true
-  // proportions contain-fitted and centered. Both shore ends extend
-  // along their own headings past the canvas edges so the coast never
-  // stops mid-air, whatever the screen shape.
+  // The canvas fills the screen; the coastline trace keeps its true
+  // proportions filled to the canvas height with the top 15% of the
+  // frame cropped away (all land) — the water gets the pixels. The
+  // shore's right end extends straight to the canvas edge so the coast
+  // never stops mid-air.
   const FRAME_ASPECT = KIOSK_COAST.aspect;
-  let fw = w, fh = w / FRAME_ASPECT;
-  if (fh > h) { fh = h; fw = h * FRAME_ASPECT; }
-  const fx = (w - fw) / 2, fy = (h - fh) / 2;
+  const CROP = 0.15; // top slice of the frame hidden off-canvas
+  const fh = h / (1 - CROP);
+  const fw = fh * FRAME_ASPECT;
+  const fx = (w - fw) / 2, fy = -CROP * fh;
   const lx = fx + KIOSK_COAST.lineup[0] * fw, ly = fy + KIOSK_COAST.lineup[1] * fh;
   const rMax = h * 0.62;
   const px = p => [fx + p[0] * fw, fy + p[1] * fh];
@@ -525,24 +503,15 @@ function kioskRadarPaint() {
     for (let i = 1; i < pts.length; i++) { const [x, y] = px(pts[i]); ctx.lineTo(x, y); }
   };
   const shore = KIOSK_COAST.shore;
-  // Off-canvas extensions of the first/last shore segments.
-  const EXT = w + h;
-  const ext = (a, b) => {
-    const [ax, ay] = px(a), [bx, by] = px(b);
-    const d = Math.hypot(ax - bx, ay - by) || 1;
-    return [ax + ((ax - bx) / d) * EXT, ay + ((ay - by) / d) * EXT];
-  };
-  const extStart = ext(shore[0], shore[1]);
-  const extEnd = ext(shore[shore.length - 1], shore[shore.length - 2]);
+  const shoreEndY = fy + shore[shore.length - 1][1] * fh;
 
   // Faceplate + land mass (everything above/left of the shore line).
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, w, h);
   ctx.beginPath();
-  ctx.moveTo(extStart[0], extStart[1]);
   trace(shore);
-  ctx.lineTo(extEnd[0], extEnd[1]);
-  ctx.lineTo(w + EXT, -EXT); ctx.lineTo(-EXT, -EXT);
+  ctx.lineTo(w, shoreEndY);
+  ctx.lineTo(w, 0); ctx.lineTo(0, 0); ctx.lineTo(0, h);
   ctx.closePath();
   ctx.fillStyle = 'rgba(69, 255, 154, 0.06)';
   ctx.fill();
@@ -578,11 +547,10 @@ function kioskRadarPaint() {
   }
   ctx.restore();
 
-  // Coastline stroke on top of the sweep.
+  // Coastline stroke + ponds on top of the sweep.
   ctx.beginPath();
-  ctx.moveTo(extStart[0], extStart[1]);
   trace(shore);
-  ctx.lineTo(extEnd[0], extEnd[1]);
+  ctx.lineTo(w, shoreEndY);
   ctx.strokeStyle = 'rgba(69, 255, 154, 0.9)';
   ctx.lineWidth = 1.5;
   ctx.lineJoin = 'round';
@@ -598,43 +566,6 @@ function kioskRadarPaint() {
     ctx.stroke();
   }
 
-  // Owner-traced features. Rocks: dark spots with a faint rim.
-  const rockR = Math.max(2, fh * 0.006);
-  for (let ri = 0; ri < KIOSK_COAST.rocks.length; ri++) {
-    const [rx, ry] = px(KIOSK_COAST.rocks[ri]);
-    ctx.beginPath();
-    ctx.arc(rx, ry, rockR * (0.8 + (ri % 3) * 0.25), 0, Math.PI * 2);
-    ctx.fillStyle = '#000';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(69, 255, 154, 0.5)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
-  // Wave-break lines on the reef.
-  ctx.setLineDash([8, 5]);
-  ctx.strokeStyle = 'rgba(69, 255, 154, 0.5)';
-  ctx.lineWidth = 2;
-  for (const line of KIOSK_COAST.breaks) {
-    ctx.beginPath();
-    trace(line);
-    ctx.stroke();
-  }
-  ctx.setLineDash([]);
-  // Parking lot + the path down to the beach.
-  ctx.beginPath();
-  trace(KIOSK_COAST.lot);
-  ctx.closePath();
-  ctx.strokeStyle = 'rgba(69, 255, 154, 0.4)';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  ctx.beginPath();
-  trace(KIOSK_COAST.path);
-  ctx.setLineDash([3, 4]);
-  ctx.strokeStyle = 'rgba(69, 255, 154, 0.35)';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  ctx.setLineDash([]);
-
   // Swell window cone (compass bearing θ → canvas angle θ − 90°).
   const c1 = CONFIG.chocomount.swellWindowMin * Math.PI / 180 - Math.PI / 2;
   const c2 = CONFIG.chocomount.swellWindowMax * Math.PI / 180 - Math.PI / 2;
@@ -647,6 +578,24 @@ function kioskRadarPaint() {
   ctx.strokeStyle = 'rgba(69, 255, 154, 0.16)';
   ctx.lineWidth = 1;
   ctx.stroke();
+
+  // The window's real-world frame: its southern edge points at Montauk
+  // Point, its eastern edge at Block Island's Southwest Point.
+  ctx.font = '500 11px "Orbitron", Tahoma, Geneva, sans-serif';
+  ctx.fillStyle = 'rgba(69, 255, 154, 0.55)';
+  const coneEdge = deg => {
+    const r = rMax * 0.92 + 8;
+    const th = deg * Math.PI / 180;
+    return [lx + r * Math.sin(th), ly - r * Math.cos(th)];
+  };
+  const [mtkX, mtkY] = coneEdge(CONFIG.chocomount.swellWindowMax);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('MONTAUK PT', mtkX, Math.min(mtkY, h - 16));
+  const [blkX, blkY] = coneEdge(CONFIG.chocomount.swellWindowMin);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('SOUTHWEST PT (BLOCK)', blkX + 4, blkY);
 
   // ── The hour's arrows, converging on the lineup ──
   const fd = STATE.forecastData;
@@ -797,7 +746,7 @@ function kioskInfoHTML(panel) {
   };
   if (panel === 'radar') {
     return '<h3>Radar loop</h3>' +
-      '<p>The scope replays the forecast at 1 second per hour and loops. Arrows show primary swell, secondary swell (dimmer), and wind (dashed), each pointing the way it travels and converging on the Chocomount lineup; arrow length scales with energy. The shaded cone is the 115–158° swell window, and the chart below tracks the same hour. Tap to pause, tap again to resume; dragging the chart scrubs by hand. The coastline, rocks, reef break lines, parking lot, and beach path are traced from the owner’s own sketch of the spot.</p>' +
+      '<p>The scope replays the forecast at 1 second per hour and loops. Arrows show primary swell, secondary swell (dimmer), and wind (dashed), each pointing the way it travels and converging on the Chocomount lineup; arrow length scales with energy. The shaded cone is the 115–158° swell window, and the chart below tracks the same hour. Tap to pause, tap again to resume; dragging the chart scrubs by hand. The coastline is traced from the satellite lineup image; the window’s edges point at Montauk Point and Block Island’s Southwest Point.</p>' +
       '<h3>Sources</h3>' +
       '<p>Swell &amp; wind: Open-Meteo Marine and Weather forecast (best_match model) at the offshore forecast point. Tide: NOAA CO-OPS predictions, Silver Eel Pond station 8510719.</p>';
   }
