@@ -170,11 +170,19 @@ function kioskDaySummary(dayOffset) {
     return { start: lo.t, end: nextHigh ? nextHigh.t : lo.t + 6.2 * 3600e3 };
   });
 
+  // Degrade gracefully when NOAA's tide predictions are down (it
+  // happens): sample the whole daylight span instead of the
+  // incoming-tide windows, and say so on the card, rather than
+  // blanking every reading to NO SWELL DATA.
+  const tidesDown = !windows.length;
+  const sampleWindows = !tidesDown ? windows
+    : (dl.sunrise && dl.sunset ? [{ start: dl.sunrise.getTime(), end: dl.sunset.getTime() }] : []);
+
   const lag = kioskSwellLagMs();
   const pri = { hts: [], pers: [], x: 0, y: 0, n: 0 };
   const sec = { hts: [], pers: [], x: 0, y: 0, n: 0 };
   if (mh && dl.sunrise && dl.sunset) {
-    for (const w of windows) {
+    for (const w of sampleWindows) {
       const a = Math.max(w.start, dl.sunrise.getTime());
       const b = Math.min(w.end, dl.sunset.getTime());
       for (let t = a; t <= b; t += 3600e3) {
@@ -217,6 +225,7 @@ function kioskDaySummary(dayOffset) {
     // Owner call: secondary shows whenever the model reports one, no
     // matter how small — only truly absent data leaves the slot empty.
     secondary: band(sec, null),
+    tidesDown,
     lows: lows.map(lo => ({ t: lo.t, wind: kioskWindAt(lo.t) })),
     sun: {
       sunrise: dl.sunrise ? { t: dl.sunrise, wind: kioskWindAt(dl.sunrise.getTime()) } : null,
@@ -322,7 +331,12 @@ function kioskDayCardHTML(s) {
       `<div class="np-low-wind">${kioskWindHTML(lo.wind)}</div>` +
       `</div>`;
   };
-  const lowsHTML = lowSlot(s.lows[0]) + lowSlot(s.lows[1]);
+  // Tide-service outage: the first low slot carries the honest note
+  // (the swell range above is the full daylight span in that case).
+  const lowsHTML = s.tidesDown
+    ? '<div class="np-low"><span class="np-legend np-dim">NO TIDE DATA — ALL-DAY SWELL</span></div>' +
+      lowSlot(null)
+    : lowSlot(s.lows[0]) + lowSlot(s.lows[1]);
 
   const sunCell = (key, label) => {
     const e = s.sun[key];
@@ -758,7 +772,7 @@ function kioskInfoHTML(panel) {
       live('footer-spectral-summary') + live('footer-compass');
   }
   return '<h3>Day summaries</h3>' +
-    '<p>Swell is the min–max over the incoming-tide windows (each low to the next high at Silver Eel) clipped to daylight, sampled from the offshore forecast point with a 1 h swell-travel lag (2 h when the buoy-coords toggle is on). Period is the window mean rounded up. Swell arrows point where the swell is going, with the FROM compass label printed on them; wind shows as a heading dial whose rim pointer marks where the wind is blowing toward, with speed and FROM label in the middle. Winds are read at each low tide and at sunrise / noon / sunset; the moon is percent of full.</p>' +
+    '<p>Swell is the min–max over the incoming-tide windows (each low to the next high at Silver Eel) clipped to daylight, sampled from the offshore forecast point with a 1 h swell-travel lag (2 h when the buoy-coords toggle is on). Period is the window mean rounded up. Swell arrows point where the swell is going, with the FROM compass label printed on them; wind shows as a heading dial whose rim pointer marks where the wind is blowing toward, with speed and FROM label in the middle. Winds are read at each low tide and at sunrise / noon / sunset; the moon is percent of full. If NOAA’s tide predictions are unavailable, the swell range falls back to all daylight hours and the card says so.</p>' +
     '<h3>Sources</h3>' +
     '<p>Swell &amp; wind: Open-Meteo Marine and Weather (best_match model). Tides and lows: NOAA CO-OPS predictions, Silver Eel Pond station 8510719. Sunrise and sunset: computed solar position. Moon: computed from the synodic month.</p>';
 }
