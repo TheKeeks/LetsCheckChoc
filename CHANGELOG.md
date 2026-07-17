@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased] — Day cards degrade gracefully when NOAA tide predictions are down
+
+Diagnosis of "swell data isn't loading": Open-Meteo swell is fine
+(exact app request replayed — 200, all 168 hours), but NOAA CO-OPS
+tide *predictions* are erroring service-wide ("No Predictions data was
+found…" for every station and datum, including NOAA's own documented
+sample request; observed water levels still work). With no lows, the
+day cards had no incoming-tide windows and blanked every reading to
+NO SWELL DATA. Now: when tide predictions are unavailable, the cards
+sample the full daylight span instead and the first low slot says
+"NO TIDE DATA — ALL-DAY SWELL". Suite grows a tide-outage context
+(CO-OPS stub returns NOAA's error JSON) asserting the primary swell
+band still renders with the note.
+
 ## [Unreleased] — Radar: back to the satellite trace, landmark labels, period-axis color
 
 The owner's sketch coastline and its features (rocks, break lines,
