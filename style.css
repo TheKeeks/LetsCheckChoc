@@ -3196,3 +3196,10 @@ summary:focus-visible {
 .verif-intro { margin: 2px 0 10px; max-width: 72ch; }
 .verif-th-sub { font-weight: normal; font-size: 11px; color: var(--ink2); }
 .verif-table-note { margin: 8px 0 0; max-width: 78ch; }
+
+/* ── Forecast chart touch (audit C45) ─────────────
+   The browser keeps vertical swipes over the chart as page scrolls (and
+   pinch-zoom); app.js scrubs only on a drag that starts out horizontal. */
+#forecast-chart-container canvas {
+  touch-action: pan-y pinch-zoom;
+}

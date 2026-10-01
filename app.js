@@ -2810,6 +2810,13 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred, buoy
 // sessionStorage 'lcc-scrubber-hour' (ISO hour string).
 
 let _forecastInteractionAbort = null;
+// Gesture state lives here, not in setupForecastInteraction's closure:
+// a ResizeObserver redraw re-wires the listeners, and a drag must survive
+// that (audit C45). drag = the canvas a mouse drag started on; touch =
+// the touch's start point and its locked direction ('h' scrubs, 'v'
+// scrolls the page).
+const _fcGesture = { drag: null, touchStart: null, touchMode: null };
+const FC_TOUCH_SLOP_PX = 8;
 
 function findHourIndexForTime(targetMs, cs) {
   let best = -1;
@@ -2981,8 +2988,11 @@ function applyScrubberToHour(idx) {
   document.querySelectorAll('.scrub-badge').forEach(b => b.remove());
 
   // ── "Reset to now" link visibility (lives inside the detail bar) ──
+  // visibility, not display: its space stays reserved, so showing it on
+  // the first scrub doesn't re-wrap the detail bar and resize the chart
+  // container (which costs a full redraw + listener re-wire, audit C45).
   const resetBtn = el('forecast-reset-now');
-  if (resetBtn) resetBtn.style.display = isScrubberAtNow() ? 'none' : '';
+  if (resetBtn) resetBtn.style.visibility = isScrubberAtNow() ? 'hidden' : 'visible';
 
   // ── Cross-feature: Tab 2 prediction widget tracks the scrubber too. ──
   if (typeof _regNotifyScrubberMoved === 'function') _regNotifyScrubberMoved();
@@ -3035,13 +3045,11 @@ function setupForecastInteraction(container) {
     el('forecast-canvas-tide')
   ].filter(Boolean);
 
-  let dragging = false;
-  let dragSrc = null;
+  const g = _fcGesture;
 
   for (const cv of canvases) {
     cv.addEventListener('mousedown', (e) => {
-      dragging = true;
-      dragSrc = cv;
+      g.drag = cv;
       cv.style.cursor = 'ew-resize';
       const idx = indexFromClientXOnCanvas(e.clientX, cv);
       setScrubberToIdx(idx, true);
@@ -3049,37 +3057,52 @@ function setupForecastInteraction(container) {
     }, { signal });
 
     cv.addEventListener('mousemove', (e) => {
-      if (!dragging) return;
-      const idx = indexFromClientXOnCanvas(e.clientX, dragSrc || cv);
+      if (!g.drag) return;
+      const idx = indexFromClientXOnCanvas(e.clientX, g.drag);
       setScrubberToIdx(idx, true);
     }, { signal });
 
+    // Touch: the canvases are touch-action: pan-y, so the browser keeps
+    // vertical swipes as page scrolls. Nothing moves on touchstart; once
+    // the finger has travelled FC_TOUCH_SLOP_PX the gesture locks to a
+    // direction, and only a horizontal drag scrubs (and blocks the
+    // default). A plain tap still scrubs via the compatibility mousedown.
     cv.addEventListener('touchstart', (e) => {
-      if (e.touches.length !== 1) return;
-      const idx = indexFromClientXOnCanvas(e.touches[0].clientX, cv);
-      setScrubberToIdx(idx, true);
+      g.touchMode = null;
+      g.touchStart = e.touches.length === 1
+        ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
     }, { passive: true, signal });
 
     cv.addEventListener('touchmove', (e) => {
-      if (e.touches.length !== 1) return;
-      e.preventDefault();
-      const idx = indexFromClientXOnCanvas(e.touches[0].clientX, cv);
-      setScrubberToIdx(idx, true);
+      if (!g.touchStart || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if (!g.touchMode) {
+        const dx = Math.abs(t.clientX - g.touchStart.x);
+        const dy = Math.abs(t.clientY - g.touchStart.y);
+        if (dx < FC_TOUCH_SLOP_PX && dy < FC_TOUCH_SLOP_PX) return;
+        g.touchMode = dx > dy ? 'h' : 'v';
+      }
+      if (g.touchMode !== 'h') return;
+      if (e.cancelable) e.preventDefault();
+      setScrubberToIdx(indexFromClientXOnCanvas(t.clientX, cv), true);
     }, { passive: false, signal });
+
+    const endTouch = () => { g.touchStart = null; g.touchMode = null; };
+    cv.addEventListener('touchend', endTouch, { passive: true, signal });
+    cv.addEventListener('touchcancel', endTouch, { passive: true, signal });
   }
 
   // Even when the cursor strays off a canvas, dragging should still follow
   // until mouseup. Listen to window-level mousemove for that.
   window.addEventListener('mousemove', (e) => {
-    if (!dragging || !dragSrc) return;
-    const idx = indexFromClientXOnCanvas(e.clientX, dragSrc);
+    if (!g.drag) return;
+    const idx = indexFromClientXOnCanvas(e.clientX, g.drag);
     setScrubberToIdx(idx, true);
   }, { signal });
 
   window.addEventListener('mouseup', () => {
-    dragging = false;
-    if (dragSrc) dragSrc.style.cursor = '';
-    dragSrc = null;
+    if (g.drag) g.drag.style.cursor = '';
+    g.drag = null;
   }, { signal });
 }
 
