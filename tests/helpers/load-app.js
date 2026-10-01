@@ -14,9 +14,10 @@
 //             branch (default ''; with kiosk: true the kiosk functions are
 //             defined but Choc TV does not boot).
 //   firebase  true or { mode, logs, fail, firstAuthMs, anonMs, fsMs,
-//             noStorage } → run tests/fixtures/firebase-stub.js and the real
-//             firebase-config.js before app.js (default: not loaded; the
-//             globals firebase/fbAuth/fbFirestore are then undefined).
+//             noStorage, rules } → run tests/fixtures/firebase-stub.js and
+//             the real firebase-config.js before app.js (default: not
+//             loaded; the globals firebase/fbAuth/fbFirestore are then
+//             undefined).
 //   fetch     async (url, init) => Response | descriptor | null, where a
 //             descriptor is { status = 200, body | json | file, headers,
 //             delayMs } (`file` is a path under tests/fixtures; delayMs runs
@@ -425,6 +426,7 @@ function loadApp(opts = {}) {
     if (fb.anonMs != null) context.__FB_ANON_MS = fb.anonMs;
     if (fb.fsMs != null) context.__FB_FS_MS = fb.fsMs;
     if (fb.noStorage) context.__FB_NO_STORAGE = true;
+    if (fb.rules) context.__FB_RULES = true;
     runFile('tests/fixtures/firebase-stub.js');
     runFile('firebase-config.js');
   }

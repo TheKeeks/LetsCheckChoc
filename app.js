@@ -4702,6 +4702,47 @@ function updateAuthUI(user) {
   updateStorageNote();
 }
 
+// Called by firebase-config.js just before an anonymous session signs in to
+// a Google account that already exists (a returning crew member on a new
+// device, the home-screen app, after Sign out). That account has its own
+// uid, and firestore.rules refuse an update that changes a doc's owner, so
+// the migration could not move a session the anonymous uid already synced.
+// While we are still that uid, delete its docs (an owner delete is allowed)
+// and keep the entries here, unowned: migrateAnonDataToUser then re-creates
+// them as the Google uid. Resolves with the released entries, so a sign-in
+// that does not complete can put them back (restoreReleasedEntries).
+async function releaseAnonEntries(anonUid) {
+  var released = [];
+  var mine = (STATE.surfLog || []).filter(function(e) { return e && anonUid && e.userId === anonUid; });
+  await Promise.all(mine.map(function(entry) {
+    return fbFirestore.collection('surf_logs').doc(entry.id).delete().then(function() {
+      entry.userId = '';
+      _slUnsyncedIds.add(entry.id);   // only this device holds it now
+      released.push(entry);
+    }, function(e) {
+      // Never synced (no doc to delete), or refused: the migration still
+      // tries it, and says so if it cannot be moved.
+      console.warn('Could not release anonymous entry:', e);
+    });
+  }));
+  if (released.length) saveSurfLog();
+  return released;
+}
+
+// The Google sign-in did not complete, so we are still the anonymous uid:
+// re-create the released sessions under it. One that cannot be saved stays
+// here unowned, and moves with the next sign-in.
+async function restoreReleasedEntries(released) {
+  for (var i = 0; i < released.length; i++) {
+    try {
+      await saveLogEntryToFirebase(released[i]);
+    } catch(e) {
+      console.warn('Could not restore released entry:', e);
+    }
+  }
+  saveSurfLog(); renderSurfLogTable();
+}
+
 // Called by firebase-config.js when an anonymous session becomes a Google
 // one. Moves only the sessions logged under the anonymous uid being left
 // (`prevAnonUid`) or never synced (no userId). STATE.surfLog can also hold
@@ -4712,24 +4753,29 @@ async function migrateAnonDataToUser(prevAnonUid) {
     return e && (!e.userId || (!!prevAnonUid && e.userId === prevAnonUid));
   });
   if (entriesToMigrate.length > 0) {
-    var count = 0;
+    var count = 0, failed = 0;
     for (var i = 0; i < entriesToMigrate.length; i++) {
       var entry = entriesToMigrate[i];
       var prevOwner = entry.userId;
       // Unowned: saveLogEntryToFirebase stamps the new uid once the write
-      // lands. An entry the anonymous uid already synced stays its doc in
-      // Firestore (the rules refuse a change of owner), so restore on failure.
+      // lands. signInWithGoogle released the docs the anonymous uid had
+      // synced, so this is a create. One it could not release is still that
+      // uid's doc (the rules refuse a change of owner), so restore on failure.
       entry.userId = '';
       try {
         await saveLogEntryToFirebase(entry);
         count++;
       } catch(e) {
         entry.userId = prevOwner;
+        failed++;
         console.warn('Migration failed for entry:', e);
       }
     }
     if (count > 0) {
       showToast(count + ' session' + (count !== 1 ? 's' : '') + ' synced to your account', 'success');
+    }
+    if (failed > 0) {
+      showToast('\u26a0 ' + failed + ' session' + (failed !== 1 ? 's' : '') + ' logged before sign-in could not be moved to your account', 'warn');
     }
   }
   try {
@@ -4776,13 +4822,14 @@ async function addLogEntry(entry) {
   saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
   try {
     await saveLogEntryToFirebase(entry);
-    // Re-save after Firebase upload replaces data-URI photos with Storage URLs
-    saveSurfLog();
-    renderSurfLogTable();
   } catch(e) {
     console.warn('Firebase save failed (entry saved locally):', e);
     showToast('\u26a0 Saved locally \u2014 sync failed', 'warn');
   }
+  // Re-save after Firebase upload replaces data-URI photos with Storage URLs.
+  // A log load that landed meanwhile kept this entry (loadLogsFromFirebase).
+  saveSurfLog();
+  renderSurfLogTable();
 }
 
 async function updateLogEntry(id, updates) {
@@ -4865,7 +4912,16 @@ async function retryFailedPhotoUploads() {
   }
 }
 
+// Ids of entries (or edits) this device holds that have not reached
+// Firestore yet: a save in flight (a photo still uploading) or one that
+// failed. loadLogsFromFirebase keeps the local copy of these instead of
+// letting a snapshot without them wipe them out (load-path#4).
+const _slUnsyncedIds = new Set();
+// The log query in flight, { uid, snap }; see loadLogsFromFirebase.
+let _slLogQuery = null;
+
 async function saveLogEntryToFirebase(entry) {
+  _slUnsyncedIds.add(entry.id);
   if (!window._fbUserId) {
     await new Promise(function(resolve) {
       let attempts = 0;
@@ -4883,6 +4939,7 @@ async function saveLogEntryToFirebase(entry) {
   // saving one of theirs would take it over (audit C26). firestore.rules
   // refuses that too; refusing here keeps local state honest.
   if (entry.userId && entry.userId !== window._fbUserId) {
+    _slUnsyncedIds.delete(entry.id);
     throw new Error('Not your entry (owner ' + entry.userId + ') — not saved to cloud');
   }
   const d = new Date(entry.timestamp);
@@ -4961,6 +5018,7 @@ async function saveLogEntryToFirebase(entry) {
     payload.repairedFields = entry.repairedFields;
   }
   await fbFirestore.collection('surf_logs').doc(entry.id).set(payload);
+  _slUnsyncedIds.delete(entry.id);
   // An entry logged before sign-in finished had no owner; it is ours now.
   if (!entry.userId) entry.userId = window._fbUserId;
 }
@@ -4983,12 +5041,22 @@ async function loadLogsFromFirebase() {
     return;
   }
 
-  // Fetch all entries (community log — all authenticated users see all sessions)
-  const snap = await fbFirestore.collection('surf_logs')
-    .orderBy('createdAt', 'desc')
-    .limit(200)
-    .get();
-  STATE.surfLog = snap.docs.map(function(doc) {
+  // Fetch all entries (community log — all authenticated users see all sessions).
+  // A restored Google session asks for the log twice at once (the auth
+  // handler in firebase-config.js and initApp's loadSurfLog): share one
+  // query, so a second copy cannot land a moment later and re-render the
+  // table under the user's finger (an open row detail would close).
+  const uid = window._fbUserId;
+  if (!_slLogQuery || _slLogQuery.uid !== uid) {
+    const q = _slLogQuery = {
+      uid: uid,
+      snap: fbFirestore.collection('surf_logs').orderBy('createdAt', 'desc').limit(200).get()
+    };
+    const done = function() { if (_slLogQuery === q) _slLogQuery = null; };
+    q.snap.then(done, done);
+  }
+  const snap = await _slLogQuery.snap;
+  const fresh = snap.docs.map(function(doc) {
     const d = doc.data();
     return {
       id: d.id,
@@ -5001,6 +5069,14 @@ async function loadLogsFromFirebase() {
       displayName: d.displayName || ''
     };
   });
+  // The Surf Log form works before this load lands. Keep what this device
+  // holds that the snapshot lacks or has an older copy of (a session saved
+  // meanwhile, an edit still uploading, a failed sync) rather than dropping
+  // it from the table and the local mirror (load-path#4).
+  const unsynced = (STATE.surfLog || []).filter(function(e) { return e && _slUnsyncedIds.has(e.id); });
+  STATE.surfLog = unsynced.concat(fresh.filter(function(e) {
+    return !unsynced.some(function(u) { return u.id === e.id; });
+  }));
   saveSurfLog();
   slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
 }

@@ -13,14 +13,26 @@
 //   __FB_LOGS        array of surf_logs documents returned by get()
 //   __FB_FAIL        { get, set, delete, put } → that call rejects
 //   __FB_NO_STORAGE  truthy → firebase.storage is missing (blocked script)
+//   __FB_RULES       truthy → Firestore keeps its docs (seeded from
+//                    __FB_LOGS; get() serves them) and checks each write's
+//                    owner the way firestore.rules does: create claims the
+//                    writer's uid, update needs the stored AND the new owner
+//                    to be the writer, delete needs the stored owner to be
+//                    the writer (a missing doc cannot be deleted). A refused
+//                    write rejects with permission-denied and is not recorded.
 // Read at call time, so a test can set them after load:
 //   __FB_LINK_ERROR  error code linkWithPopup() rejects with (default
 //                    'auth/popup-closed-by-user'), e.g.
 //                    'auth/credential-already-in-use'
 //   __FB_POPUP_USER  { uid, displayName } → signInWithPopup() signs that
-//                    Google user in (default: rejects, popup closed)
+//                    Google user in (default: rejects, popup closed). With
+//                    an '...-already-in-use' __FB_LINK_ERROR, the link error
+//                    also carries that user's Google credential (as the
+//                    real SDK's err.credential), for signInWithCredential().
+//   __FB_CREDENTIAL_ERROR  error code signInWithCredential() rejects with
 // Every write is recorded on window.__FB_WRITES as
-//   { op: 'set'|'update'|'delete'|'put', path, data }.
+//   { op: 'set'|'update'|'delete'|'put', path, data, uid } (uid = the
+//   signed-in writer, so a test can replay it as that principal).
 (function () {
   'use strict';
   var w = window;
@@ -34,7 +46,13 @@
   function makeUser(uid, isAnonymous, displayName) {
     return {
       uid: uid, isAnonymous: isAnonymous, displayName: displayName || null, email: null,
-      linkWithPopup: function () { return Promise.reject(stubError(w.__FB_LINK_ERROR || 'auth/popup-closed-by-user')); }
+      linkWithPopup: function () {
+        var e = stubError(w.__FB_LINK_ERROR || 'auth/popup-closed-by-user');
+        if (/already-in-use$/.test(e.code) && w.__FB_POPUP_USER) {
+          e.credential = { providerId: 'google.com', _stubUser: w.__FB_POPUP_USER };
+        }
+        return Promise.reject(e);
+      }
     };
   }
   function emit() { listeners.slice().forEach(function (cb) { cb(currentUser); }); }
@@ -67,16 +85,48 @@
         emit();
         return { user: currentUser };
       });
+    },
+    signInWithCredential: function (cred) {
+      var p = cred && cred._stubUser;
+      if (w.__FB_CREDENTIAL_ERROR || !p) return Promise.reject(stubError(w.__FB_CREDENTIAL_ERROR || 'auth/invalid-credential'));
+      return later(10, function () {
+        currentUser = makeUser(p.uid, false, p.displayName);
+        emit();
+        return { user: currentUser };
+      });
     }
   };
   function authFn() { return auth; }
   authFn.GoogleAuthProvider = function GoogleAuthProvider() {};
 
+  // __FB_RULES: the stored docs, by path, and firestore.rules' owner checks.
+  var rules = !!w.__FB_RULES;
+  var store = {};
+  if (rules) (w.__FB_LOGS || []).forEach(function (d) { store['surf_logs/' + d.id] = d; });
+  function ownerAllows(op, path, data) {
+    var uid = currentUser && currentUser.uid, stored = store[path];
+    if (!uid) return false;
+    if (op === 'delete') return !!stored && stored.userId === uid;
+    if (stored && stored.userId !== uid) return false;
+    var next = op === 'update' ? Object.assign({}, stored, data) : data;
+    return !!next && next.userId === uid;
+  }
+  function storedDocs(collection) {
+    if (!rules) return w.__FB_LOGS || [];
+    return Object.keys(store).filter(function (k) { return k.indexOf(collection + '/') === 0; })
+      .map(function (k) { return store[k]; });
+  }
+
   function docRef(collection, id) {
     var path = collection + '/' + id;
     function write(op, data) {
       if (fail[op]) return Promise.reject(stubError('permission-denied'));
-      writes.push({ op: op, path: path, data: data });
+      if (rules && !ownerAllows(op, path, data)) return Promise.reject(stubError('permission-denied'));
+      writes.push({ op: op, path: path, data: data, uid: currentUser ? currentUser.uid : null });
+      if (rules) {
+        if (op === 'delete') delete store[path];
+        else store[path] = op === 'update' ? Object.assign({}, store[path], data) : data;
+      }
       return Promise.resolve();
     }
     return {
@@ -85,7 +135,7 @@
       update: function (data) { return write('update', data); },
       delete: function () { return write('delete', null); },
       get: function () {
-        var d = (w.__FB_LOGS || []).find(function (x) { return x.id === id; });
+        var d = storedDocs(collection).find(function (x) { return x.id === id; });
         return Promise.resolve({ id: id, exists: !!d, data: function () { return d; } });
       }
     };
@@ -99,7 +149,7 @@
       get: function () {
         return later(+(w.__FB_FS_MS != null ? w.__FB_FS_MS : 100), function () {
           if (fail.get) throw stubError('permission-denied');
-          var docs = (w.__FB_LOGS || []).map(function (d) {
+          var docs = storedDocs(collection).map(function (d) {
             return { id: d.id, data: function () { return d; } };
           });
           return { docs: docs, size: docs.length, empty: !docs.length, forEach: function (f) { docs.forEach(f); } };
@@ -118,7 +168,7 @@
       child: function (p) { return storageRef(path ? path + '/' + p : p); },
       put: function (data) {
         if (fail.put) return Promise.reject(stubError('storage/unauthorized'));
-        writes.push({ op: 'put', path: path, data: null });
+        writes.push({ op: 'put', path: path, data: null, uid: currentUser ? currentUser.uid : null });
         return Promise.resolve({ ref: this });
       },
       getDownloadURL: function () { return Promise.resolve('https://firebasestorage.test/' + encodeURIComponent(path)); },
