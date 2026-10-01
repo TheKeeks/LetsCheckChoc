@@ -114,12 +114,33 @@ function signInWithGoogle() {
     currentUser.linkWithPopup(provider).then(done).catch(function(err) {
       if (err.code === 'auth/credential-already-in-use' ||
           err.code === 'auth/email-already-in-use') {
-        return fbAuth.signInWithPopup(provider).then(done).catch(function(e) {
-          done();
-          if (e.code !== 'auth/popup-closed-by-user' &&
-              e.code !== 'auth/cancelled-popup-request') {
-            console.warn('Google sign-in failed:', e);
-          }
+        // This Google account already has its own uid, and firestore.rules
+        // refuse an update that changes a doc's owner. While still the
+        // anonymous owner, release its synced sessions; once the Google uid
+        // is in, migrateAnonDataToUser re-creates them under it.
+        var release = typeof releaseAnonEntries === 'function'
+          ? releaseAnonEntries(currentUser.uid) : Promise.resolve([]);
+        return release.catch(function(e) {
+          console.warn('Releasing anonymous entries failed:', e);
+          return [];
+        }).then(function(released) {
+          // The link error carries the Google credential from the popup.
+          // Signing in with it needs no second popup, which iOS Safari
+          // blocks because no tap opened it.
+          var signIn = err.credential
+            ? fbAuth.signInWithCredential(err.credential)
+            : fbAuth.signInWithPopup(provider);
+          return signIn.then(done).catch(function(e) {
+            done();
+            // Still anonymous: put the released sessions back under this uid.
+            if (released.length && typeof restoreReleasedEntries === 'function') {
+              restoreReleasedEntries(released);
+            }
+            if (e.code !== 'auth/popup-closed-by-user' &&
+                e.code !== 'auth/cancelled-popup-request') {
+              console.warn('Google sign-in failed:', e);
+            }
+          });
         });
       }
       done();

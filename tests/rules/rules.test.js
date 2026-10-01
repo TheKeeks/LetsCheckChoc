@@ -180,12 +180,63 @@ test("DENY: deleting someone else's entry; ALLOW reading the community log while
   await assertFails(logs(env.unauthenticatedContext().firestore()).get());
 });
 
-test('DENY: an anonymous uid cannot move its synced entry to the Google uid it signs into (documented limitation)', async () => {
+test('anonymous → Google: an owner-changing update stays DENIED; release (owner delete) then create is ALLOWED', async () => {
   await env.clearFirestore();
   const { doc } = await appWrites('anonX', formEntry('anon1', 'anonX'));
   await assertSucceeds(logs(anonCtx('anonX').firestore()).doc('anon1').set(doc.data));
+  // A rule cannot tell that the anonymous uid was this person, so the
+  // Google uid may not take the doc over...
   const asGoogle = await appWrites('crewA', formEntry('anon1', 'crewA'));
   await assertFails(logs(crewA()).doc('anon1').set(asGoogle.doc.data));
+  // ...so signInWithGoogle releases it while still the anonymous owner, and
+  // the migration re-creates it under the Google uid.
+  await assertSucceeds(logs(anonCtx('anonX').firestore()).doc('anon1').delete());
+  await assertSucceeds(logs(crewA()).doc('anon1').set(asGoogle.doc.data));
+  // A session that never synced has no doc to release, and is a plain create.
+  await assertFails(logs(anonCtx('anonX').firestore()).doc('never1').delete());
+  const fresh = await appWrites('crewA', formEntry('never1', ''));
+  await assertSucceeds(logs(crewA()).doc('never1').set(fresh.doc.data));
+});
+
+// The whole client flow, end to end against these rules: a returning crew
+// member logs a session anonymously (addLogEntry), then signs in to their
+// existing Google account (signInWithGoogle → link refused → release →
+// signInWithCredential → migrateAnonDataToUser). The real firebase-config.js
+// and app.js run in the vm harness against the stub, which records every
+// write with its writer's uid; each write is replayed here, in order, as
+// that principal.
+test('sign-in migration end to end: every write the client makes is allowed and the session ends up the Google uid\'s', async () => {
+  await env.clearFirestore();
+  const app = loadApp({ firebase: { mode: 'returning_anon' } });
+  await app.clock.tick(100);
+  assert.equal(app.run('window._fbUserId'), 'anon-1');
+  let added = false;
+  app.call('addLogEntry', formEntry('ignored', '')).then(() => { added = true; });
+  for (let i = 0; i < 50 && !added; i++) await app.clock.tick(100);
+  assert.ok(added, 'addLogEntry finished');
+  const id = app.run('STATE.surfLog[0].id');
+  app.run("window.__FB_LINK_ERROR = 'auth/credential-already-in-use'; window.__FB_POPUP_USER = { uid: 'google-1', displayName: 'Crew Member' };");
+  app.call('signInWithGoogle');
+  await app.clock.tick(1000);
+  assert.equal(app.run('window._fbUserId'), 'google-1');
+
+  // The plain stub accepts every write, so the emulator alone judges them.
+  const principal = { 'anon-1': () => anonCtx('anon-1'), 'google-1': () => googleCtx('google-1', 'me@example.com') };
+  const writes = app.clone('window.__FB_WRITES').filter(w => w.op !== 'put');
+  assert.deepEqual(writes.map(w => w.op + ' as ' + w.uid), ['set as anon-1', 'delete as anon-1', 'set as google-1']);
+  for (const w of writes) {
+    const ref = logs(principal[w.uid]().firestore()).doc(w.path.split('/').pop());
+    const label = w.op + ' ' + w.path + ' as ' + w.uid;
+    if (w.op === 'delete') {
+      await assertSucceeds(ref.delete()).catch(e => { throw new Error(label + ': ' + e.message); });
+    } else {
+      for (const k of ['createdAt', 'repairedAt']) if (k in w.data) w.data[k] = SERVER_TS();
+      await assertSucceeds(ref.set(w.data)).catch(e => { throw new Error(label + ': ' + e.message); });
+    }
+  }
+  let owner;
+  await env.withSecurityRulesDisabled(async ctx => { owner = (await ctx.firestore().collection('surf_logs').doc(id).get()).data().userId; });
+  assert.equal(owner, 'google-1');
 });
 
 // ── Firestore: validation (audit C29) ──────────────────

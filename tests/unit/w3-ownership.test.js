@@ -106,7 +106,11 @@ test('Backfill with no sessions of your own does nothing', async () => {
 });
 
 test('anonymous → Google migration moves only the anonymous uid\'s (and unowned) entries', async () => {
-  const app = loadApp({ firebase: { mode: 'returning_anon' } });
+  // Rules mode: Firestore holds anon1 under anon-1 (synced while anonymous)
+  // and refuses a change of owner, as firestore.rules does. Without it this
+  // test passed while the real rules left anon1 stranded under anon-1.
+  const app = loadApp({ firebase: { mode: 'returning_anon', rules: true,
+    logs: [doc('anon1', 'anon-1'), doc('theirs1', 'crewB'), doc('other-account', 'google-old')] } });
   await app.clock.tick(100);   // restored anonymous session anon-1
   assert.equal(app.run('window._fbUserId'), 'anon-1');
   // What an anonymous session can hold: its own sessions, one logged before
@@ -118,14 +122,17 @@ test('anonymous → Google migration moves only the anonymous uid\'s (and unowne
     ${JSON.stringify(doc('theirs1', 'crewB'))},
     ${JSON.stringify(doc('other-account', 'google-old'))}
   ]`);
-  // Google account already exists → link fails → signInWithPopup switches uid.
+  // Google account already exists → link fails → sign in with its credential.
   app.run("window.__FB_LINK_ERROR = 'auth/credential-already-in-use'; window.__FB_POPUP_USER = { uid: 'google-1', displayName: 'Me' };");
   app.call('signInWithGoogle');
   await app.clock.tick(500);
   assert.equal(app.run('window._fbUserId'), 'google-1');
   const written = sets(app);
   assert.deepEqual(written.map(w => w.path).sort(), ['surf_logs/anon1', 'surf_logs/local1']);
-  assert.ok(written.every(w => w.data.userId === 'google-1'));
+  assert.ok(written.every(w => w.data.userId === 'google-1' && w.uid === 'google-1'));
+  // The only other write: anon-1 releasing its own synced doc first.
+  const others = app.clone('window.__FB_WRITES').filter(w => w.op !== 'set').map(w => w.op + ' ' + w.path + ' as ' + w.uid);
+  assert.deepEqual(others, ['delete surf_logs/anon1 as anon-1']);
 });
 
 test('migration that the rules refuse (anon entry already synced) keeps the entry with its owner', async () => {
