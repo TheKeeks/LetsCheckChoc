@@ -39,11 +39,19 @@ const CONFIG = {
     // wind_wave_*), so historical swell must hit this marine archive.
     openMeteoMarineArchive: 'https://marine-api.open-meteo.com/v1/marine',
     coops: 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter',
-    ndbcProxies: [
-      { name: 'corsproxy.io', wrap: function(url) { return 'https://corsproxy.io/?' + encodeURIComponent(url); } },
-      { name: 'allorigins',   wrap: function(url) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url); } },
-      { name: 'codetabs',     wrap: function(url) { return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url); } }
-    ],
+    // CORS relays for www.ndbc.noaa.gov, which sends no CORS headers, so a
+    // browser can't read it directly. Empty on purpose: the free relays we
+    // used are dead (corsproxy.io 403 "keyless_legacy_url", allorigins 522
+    // after ~20 s, codetabs 503), and walking them cost every load ~15 s
+    // before the chart and ~34 s before the spectra. Chocomount reads the
+    // pipeline's data/buoy.json instead (scripts/fetch_buoy.py, every 2 h);
+    // other buoys show an honest "no live data" state.
+    // To re-add a WORKING relay you control (e.g. a Cloudflare Worker that
+    // fetches the NDBC URL and adds Access-Control-Allow-Origin: *):
+    //   { name: 'worker', wrap: function(url) { return 'https://<your-worker>.workers.dev/?url=' + encodeURIComponent(url); } }
+    // It is then tried for non-Choc buoys (off the chart's critical path)
+    // and by the surf log's NDBC-history fallback.
+    ndbcProxies: [],
     ndbcBase: 'https://www.ndbc.noaa.gov/data/realtime2/'
   },
   map: {
@@ -440,12 +448,18 @@ const PIPELINE_CACHE_KEY = 'lcc-cache-pipeline';
 
 function roundCoord(v) { return Math.round(v * 1000) / 1000; }
 
-function readCache(key, ttlMs) {
+// readCache(key, ttlMs) → the cached data while younger than ttlMs, else
+// null. With { allowStale: true } it returns { data, ts, stale } for a copy
+// of ANY age (stale = past ttlMs), so a failed refresh can fall back to the
+// last good copy and still report when that copy was really fetched.
+function readCache(key, ttlMs, opts) {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
     const { ts, data } = JSON.parse(raw);
-    if (Date.now() - ts < ttlMs) return data;
+    const fresh = Date.now() - ts < ttlMs;
+    if (opts && opts.allowStale) return data == null ? null : { data, ts, stale: !fresh };
+    if (fresh) return data;
   } catch (_) { /* fall through */ }
   return null;
 }
@@ -474,14 +488,38 @@ function marineCacheKey(lat, lon, model) {
 function windCacheKey(lat, lon) {
   return `lcc-cache-wind-${roundCoord(lat)}-${roundCoord(lon)}`;
 }
+// Keyed by the span actually fetched (rangeHours wins, as in
+// fetchTidePredictions), so a call with rangeDays left to its default and
+// a read that passes undefined can never disagree again.
 function tidePredCacheKey(stationId, rangeDays, rangeHours) {
-  return `lcc-cache-tide-${stationId}-d${rangeDays || ''}-h${rangeHours || ''}`;
+  const hours = rangeHours != null ? rangeHours : (rangeDays || 3) * 24;
+  return `lcc-cache-tide-${stationId}-h${hours}`;
 }
 function tideHiLoCacheKey(stationId, rangeDays) {
   return `lcc-cache-hilo-${stationId}-d${rangeDays}`;
 }
 function waterTempCacheKey(stationId) {
   return `lcc-cache-water-${stationId}`;
+}
+
+// Tide spans the forecast chart (and Choc TV's day cards) fetch. The fetch
+// calls and the cache-first reads both use these, so their keys match.
+const CHART_TIDE_SPAN = { hiloDays: 10, predHours: 168 };
+
+// CO-OPS answers an outage with HTTP 200 and {"error": ...}; only a body
+// with predictions is data (and only that may overwrite a good cached copy).
+function tidesUsable(data) {
+  return !!(data && Array.isArray(data.predictions) && data.predictions.length);
+}
+
+// The 6-min tide copies used to be keyed "...-d3-h168" / "...-d3-h", which
+// nothing reads any more; drop them (~70 KB each of a ~5 MB iOS quota).
+function dropLegacyTideCacheKeys() {
+  try {
+    Object.keys(localStorage)
+      .filter(k => /^lcc-cache-tide-.+-d\d*-h\d*$/.test(k))
+      .forEach(k => localStorage.removeItem(k));
+  } catch (_) { /* non-fatal */ }
 }
 
 async function fetchText(url, timeout = 10000) {
@@ -589,7 +627,9 @@ async function fetchMarineForecast(lat, lon, model) {
   });
   if (model) params.set('models', model);
   const data = await fetchJSON(`${CONFIG.api.openMeteoMarine}?${params}`);
-  if (data) writeCache(marineCacheKey(lat, lon, model), data);
+  // Only real data may replace the last good copy (an all-null model
+  // response would otherwise wipe the stale fallback).
+  if (marineHasUsableData(data)) writeCache(marineCacheKey(lat, lon, model), data);
   return data;
 }
 
@@ -605,7 +645,7 @@ async function fetchWindForecast(lat, lon) {
     forecast_days: 7
   });
   const data = await fetchJSON(`${CONFIG.api.openMeteoWeather}?${params}`);
-  if (data) writeCache(windCacheKey(lat, lon), data);
+  if (data && data.hourly) writeCache(windCacheKey(lat, lon), data);
   return data;
 }
 
@@ -632,7 +672,7 @@ async function fetchTidePredictions(stationId, rangeDays = 3, rangeHours) {
     format: 'json'
   });
   const data = await fetchJSON(`${CONFIG.api.coops}?${params}`);
-  if (data) writeCache(tidePredCacheKey(stationId, rangeDays, rangeHours), data);
+  if (tidesUsable(data)) writeCache(tidePredCacheKey(stationId, rangeDays, rangeHours), data);
   return data;
 }
 
@@ -656,7 +696,7 @@ async function fetchTideHiLo(stationId, rangeDays = 3) {
     format: 'json'
   });
   const data = await fetchJSON(`${CONFIG.api.coops}?${params}`);
-  if (data) writeCache(tideHiLoCacheKey(stationId, rangeDays), data);
+  if (tidesUsable(data)) writeCache(tideHiLoCacheKey(stationId, rangeDays), data);
   return data;
 }
 
@@ -1014,8 +1054,8 @@ function selectBuoy(buoy) {
   STATE.pinLat = lat;
   STATE.pinLon = lon;
 
-  // Move forecast pin near buoy
-  STATE.forecastPin.setLatLng([lat, lon]);
+  // Move forecast pin near buoy (no pin when Leaflet failed to load)
+  STATE.forecastPin?.setLatLng([lat, lon]);
 
   // Update header
   const prefix = STATE.isChocomount ? 'Choc · ' : '';
@@ -1089,12 +1129,13 @@ function renderForecastSet(ctx) {
     tideHiLo, tidePred, tideStn
   } = ctx;
 
-  updateSwellCard(buoyParsed, marine, buoy, pipelineData?.spectral_summary);
+  updateSwellCard(buoyParsed, marine, buoy, pipelineSwellBand(pipelineData, buoy));
   updateWindCard(wind, buoyParsed, isChoc, displayLat, displayLon);
   updateWaterTempCard(buoyParsed, marine, isChoc);
   updateDaylightCard(displayLat, displayLon);
   updateSecondarySwellCard(marine, isChoc, forecastLat, forecastLon);
   updateCoordFooters(buoy, forecastLat, forecastLon, displayLat, displayLon);
+  setForecastUnavailable(!(marine && marine.hourly));
 
   if (marine && marine.hourly) {
     const daylight = calcDaylight(displayLat, displayLon, new Date());
@@ -1139,6 +1180,7 @@ function renderPinForecastSet(ctx) {
   updateDaylightCard(lat, lon);
   updateSecondarySwellCard(marine, false, lat, lon);
   updateCoordFooters(null, lat, lon, lat, lon);
+  setForecastUnavailable(!(marine && marine.hourly));
 
   if (marine && marine.hourly) {
     const daylight = calcDaylight(lat, lon, new Date());
@@ -1157,10 +1199,241 @@ function renderPinForecastSet(ctx) {
   }
 }
 
-function setCacheRefreshIndicator(visible) {
+// visible: the cache-first paint is up while the refresh runs. staleAsOf
+// (epoch ms): the refresh FAILED and the chart shows the last good copy
+// from then, so say so instead of "refreshing…".
+function setCacheRefreshIndicator(visible, staleAsOf) {
   const ind = el('forecast-cache-indicator');
   if (!ind) return;
-  ind.style.display = visible ? '' : 'none';
+  const stale = Number.isFinite(staleAsOf);
+  ind.style.display = visible || stale ? '' : 'none';
+  ind.classList.toggle('is-stale', stale);
+  ind.textContent = stale
+    ? `Saved forecast from ${formatAsOfTime(staleAsOf)} · refresh failed`
+    : 'Cached · refreshing…';
+}
+
+// Explicit empty state for the forecast chart when there is truly no
+// forecast (Open-Meteo failed and no saved copy is young enough), instead
+// of blank canvases under a header claiming "Updated".
+function setForecastUnavailable(on) {
+  const container = el('forecast-chart-container');
+  if (!container) return;
+  container.classList.toggle('is-unavailable', !!on);
+  let note = el('forecast-unavailable-msg');
+  if (!on) {
+    if (note) note.style.display = 'none';
+    return;
+  }
+  if (!note) {
+    note = document.createElement('div');
+    note.id = 'forecast-unavailable-msg';
+    note.className = 'forecast-unavailable-msg';
+    note.setAttribute('role', 'status');
+    container.insertBefore(note, container.firstChild);
+  }
+  note.textContent = "Forecast unavailable: Open-Meteo didn't respond and there's no saved forecast from the last 24 h. Reload to try again.";
+  note.style.display = '';
+}
+
+// "6:12 AM" today, "Wed 6:12 PM" on any other day.
+function formatAsOfTime(ms) {
+  const d = new Date(ms);
+  return d.toDateString() === new Date().toDateString()
+    ? formatTime(d)
+    : `${formatDayShort(d)} ${formatTime(d)}`;
+}
+
+// ── Buoy obs from the pipeline / NDBC ──
+// Obs times arrive as "YYYY-MM-DD HH:mm UTC" (NDBC stdmet rows and the
+// pipeline's buoy.time). → epoch ms, or null.
+function parseBuoyObsTime(s) {
+  const m = typeof s === 'string' && s.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}) UTC$/);
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null;
+}
+
+// Tags a parsed obs with its buoy, its obs time (parsed once) and where it
+// came from ('pipeline' | 'live'), so a cached reading can never paint
+// under another buoy's name and the cards can show its true age.
+function tagBuoyParsed(parsed, buoy, src) {
+  if (!parsed) return null;
+  return Object.assign(parsed, { buoyId: buoy.id, obsMs: parseBuoyObsTime(parsed.time), src });
+}
+
+// The pipeline's data/buoy.json carries one buoy (44097). Use it only for
+// that buoy: before, every spectral buoy showed 44097's numbers.
+function pipelineIsFor(pData, buoy) {
+  return !!(pData && buoy && pData.buoy_id === buoy.id);
+}
+
+function buoyParsedFromPipeline(pData, buoy) {
+  if (!pipelineIsFor(pData, buoy) || !pData.buoy) return null;
+  const b = pData.buoy;
+  return tagBuoyParsed({
+    waveHeight: b.wave_height,
+    dominantPeriod: b.dominant_period,
+    meanDirection: b.mean_wave_direction,
+    waterTemp: b.water_temp,
+    windSpeed: b.wind_speed,
+    windDir: b.wind_direction,
+    windGust: b.wind_gust,
+    time: b.time || 'pipeline data'
+  }, buoy, 'pipeline');
+}
+
+// Pipeline spectral bins for the compass rose / spectrum, or null when the
+// pipeline file isn't this buoy's or has no bins.
+function pipelineSpectralFor(buoy, pData) {
+  if (!pipelineIsFor(pData, buoy)) return null;
+  const bins = pData.spectral_bins;
+  if (!Array.isArray(bins) || !bins.length) return null;
+  return { freqs: bins.map(b => b.freq), bins };
+}
+
+// The swell card's 8 s+ band for this buoy: the pipeline's own swell_band
+// when it provides one, else integrated here from its spectral bins.
+function pipelineSwellBand(pData, buoy) {
+  if (!pipelineIsFor(pData, buoy)) return null;
+  const sb = pData.swell_band;
+  if (sb && Number.isFinite(sb.hs_m)) {
+    return {
+      hsM: sb.hs_m,
+      peakPeriod: Number.isFinite(sb.peak_period_s) ? sb.peak_period_s : null,
+      dir: Number.isFinite(sb.dir_deg) ? sb.dir_deg : null,
+      minPeriod: Number.isFinite(sb.min_period_s) ? sb.min_period_s : SWELL_BAND_MIN_PERIOD_S
+    };
+  }
+  return swellBandFromBins(pData.spectral_bins, SWELL_BAND_MIN_PERIOD_S);
+}
+
+// ── Forecast fetch round (buoy and pin loads) ──
+// How old a saved copy may be and still stand in for a failed refresh: a
+// day-old forecast is still a useful guide (shown as stale), and tide
+// predictions are astronomical, so a 10-day hi/lo saved 4 days ago still
+// covers today through Choc TV's day 5.
+const STALE_FALLBACK_MAX_MS = {
+  forecast: 24 * 60 * 60 * 1000,
+  tide: 4 * 24 * 60 * 60 * 1000
+};
+
+// One source after its fetch: the live response when usable (as of the
+// moment its fetcher saved it under liveKey), else the first usable saved
+// copy among `keys` younger than maxAgeMs (keeping its ORIGINAL fetch
+// time), else nothing.
+// → { data, asOf, origin: 'live' | 'stale-cache' | 'failed', keyIdx }
+function settleSource(live, usable, liveKey, keys, maxAgeMs, roundStart) {
+  if (usable(live)) {
+    // Saved during this round (5 s slack for clock jitter); else the save
+    // failed (quota) and an older copy is sitting there, so use now.
+    const savedAt = readCacheTs(liveKey);
+    const asOf = savedAt != null && savedAt >= roundStart - 5000 ? savedAt : Date.now();
+    return { data: live, asOf, origin: 'live', keyIdx: -1 };
+  }
+  for (let i = 0; i < keys.length; i++) {
+    const hit = readCache(keys[i], maxAgeMs, { allowStale: true });
+    if (hit && !hit.stale && usable(hit.data)) {
+      return { data: hit.data, asOf: hit.ts, origin: 'stale-cache', keyIdx: i };
+    }
+  }
+  return { data: null, asOf: null, origin: 'failed', keyIdx: -1 };
+}
+
+// Fetches marine, wind and the chart's tide spans in parallel, then settles
+// each (live → saved copy → nothing). A network blip on a chosen model
+// shows best_match for this load only; the choice is forgotten only when
+// the model answered with no usable data for the spot.
+// → { marine, marineModel (model of the data returned), wind, hiloRaw,
+//     predRaw, health: { marine, wind, tides } as { asOf, origin } }
+async function fetchForecastRound({ forecastLat, forecastLon, windLat, windLon, tideStn, selectedModel }) {
+  const roundStart = Date.now();
+  let [marine, wind, hiloRaw, predRaw] = await Promise.all([
+    fetchMarineForecast(forecastLat, forecastLon, selectedModel),
+    fetchWindForecast(windLat, windLon),
+    tideStn ? fetchTideHiLo(tideStn.id, CHART_TIDE_SPAN.hiloDays) : Promise.resolve(null),
+    tideStn ? fetchTidePredictions(tideStn.id, undefined, CHART_TIDE_SPAN.predHours) : Promise.resolve(null)
+  ]);
+  let marineModel = selectedModel;
+  let noCoverage = false;
+  if (selectedModel && !marineHasUsableData(marine)) {
+    // fetchJSON returns null for a timeout, HTTP error or offline; a real
+    // body with all-null series means the model doesn't cover this spot.
+    noCoverage = marine != null;
+    showToast(noCoverage
+      ? `Model ${selectedModel} has no data here, falling back to best_match`
+      : `Model ${selectedModel} didn't respond, showing best_match for now`, 'warn');
+    if (noCoverage) setForecastModel('');
+    marineModel = '';
+    marine = await fetchMarineForecast(forecastLat, forecastLon, null);
+  }
+  const maxAge = STALE_FALLBACK_MAX_MS;
+  // Saved copies to fall back on: the user's model first, then best_match.
+  const models = selectedModel && !noCoverage ? [selectedModel, ''] : [''];
+  const m = settleSource(marine, marineHasUsableData, marineCacheKey(forecastLat, forecastLon, marineModel),
+    models.map(mm => marineCacheKey(forecastLat, forecastLon, mm)), maxAge.forecast, roundStart);
+  if (m.origin === 'stale-cache') marineModel = models[m.keyIdx];
+  const windKey = windCacheKey(windLat, windLon);
+  const w = settleSource(wind, d => !!(d && d.hourly), windKey, [windKey], maxAge.forecast, roundStart);
+  const none = { data: null, asOf: null, origin: 'failed' };
+  const hiloKey = tideStn && tideHiLoCacheKey(tideStn.id, CHART_TIDE_SPAN.hiloDays);
+  const predKey = tideStn && tidePredCacheKey(tideStn.id, undefined, CHART_TIDE_SPAN.predHours);
+  const h = tideStn ? settleSource(hiloRaw, tidesUsable, hiloKey, [hiloKey], maxAge.tide, roundStart) : none;
+  const p = tideStn ? settleSource(predRaw, tidesUsable, predKey, [predKey], maxAge.tide, roundStart) : none;
+  // Tides = hi/lo + 6-min curve: the oldest of whichever rendered.
+  const tideParts = [h, p].filter(s => s.data);
+  const tides = tideParts.length
+    ? {
+        asOf: Math.min(...tideParts.map(s => s.asOf)),
+        origin: tideParts.some(s => s.origin === 'stale-cache') ? 'stale-cache' : 'live'
+      }
+    : { asOf: null, origin: 'failed' };
+  return {
+    marine: m.data, marineModel, wind: w.data, hiloRaw: h.data, predRaw: p.data,
+    health: {
+      marine: { asOf: m.asOf, origin: m.origin },
+      wind: { asOf: w.asOf, origin: w.origin },
+      tides
+    }
+  };
+}
+
+// SHARED CONTRACT with kiosk.js (Choc TV status strip), set after every
+// completed load:
+//   STATE.dataAsOf    epoch ms of the OLDEST fetch time among the marine
+//                     forecast, wind and tides actually rendered (a stale
+//                     fallback keeps its original cache time), or null.
+//   STATE.dataHealth  { marine:{asOf, origin}, wind:{asOf, origin},
+//                     tides:{asOf, origin}, buoy:{obsMs, origin} }; origin is
+//                     'live' | 'cache' | 'stale-cache' | 'pipeline' | 'failed'.
+// STATE.lastLoadCompletedAt stays the "a load finished" signal; these say
+// how old the data on screen really is. The header shows the same truth.
+function recordDataHealth(health, buoyHealth, hasTideStation) {
+  STATE.dataHealth = {
+    marine: health.marine,
+    wind: health.wind,
+    tides: health.tides,
+    buoy: buoyHealth
+  };
+  const asOfs = [health.marine, health.wind, health.tides]
+    .map(s => s.asOf).filter(Number.isFinite);
+  STATE.dataAsOf = asOfs.length ? Math.min(...asOfs) : null;
+
+  const shown = [health.marine, health.wind, hasTideStation ? health.tides : null].filter(Boolean);
+  const anyStale = shown.some(s => s.origin === 'stale-cache');
+  const hdr = el('header-update-time');
+  if (!hdr) return;
+  let text;
+  if (health.marine.origin === 'failed') {
+    text = 'Forecast unavailable';
+  } else if (anyStale) {
+    text = `Refresh failed · data from ${formatAsOfTime(STATE.dataAsOf)}`;
+  } else {
+    const missing = [];
+    if (health.wind.origin === 'failed') missing.push('wind');
+    if (hasTideStation && health.tides.origin === 'failed') missing.push('tides');
+    text = `Updated ${formatAsOfTime(STATE.dataAsOf)}` + (missing.length ? ` · no ${missing.join(' or ')}` : '');
+  }
+  hdr.textContent = text;
+  hdr.classList.toggle('is-stale', health.marine.origin === 'failed' || anyStale);
 }
 
 // ── Load concurrency guard ──────────────────────
@@ -1204,8 +1477,8 @@ async function _loadAllDataImpl(buoy, _gen) {
   const cachedMarine   = readCache(marineCacheKey(forecastLat, forecastLon, selectedModel), CACHE_TTL.marine);
   const cachedWind     = readCache(windCacheKey(displayLat, displayLon), CACHE_TTL.wind);
   const cachedPipeline = isChoc ? readCache(PIPELINE_CACHE_KEY, CACHE_TTL.pipeline) : null;
-  const cachedHiLoRaw  = tideStn ? readCache(tideHiLoCacheKey(tideStn.id, 10), CACHE_TTL.hilo) : null;
-  const cachedPredRaw  = tideStn ? readCache(tidePredCacheKey(tideStn.id, undefined, 168), CACHE_TTL.tide) : null;
+  const cachedHiLoRaw  = tideStn ? readCache(tideHiLoCacheKey(tideStn.id, CHART_TIDE_SPAN.hiloDays), CACHE_TTL.hilo) : null;
+  const cachedPredRaw  = tideStn ? readCache(tidePredCacheKey(tideStn.id, undefined, CHART_TIDE_SPAN.predHours), CACHE_TTL.tide) : null;
   const cachedHiLo = cachedHiLoRaw && cachedHiLoRaw.predictions ? cachedHiLoRaw.predictions : null;
   const cachedPred = cachedPredRaw && cachedPredRaw.predictions ? cachedPredRaw.predictions : null;
 
@@ -1213,19 +1486,12 @@ async function _loadAllDataImpl(buoy, _gen) {
   const canRenderFromCache = !!(cachedMarine && cachedMarine.hourly && cachedWind && tidesCacheReady);
 
   if (canRenderFromCache) {
-    let cachedBuoyParsed = STATE._cachedBuoyParsed || null;
-    if (!cachedBuoyParsed && cachedPipeline && cachedPipeline.buoy) {
-      cachedBuoyParsed = {
-        waveHeight: cachedPipeline.buoy.wave_height,
-        dominantPeriod: cachedPipeline.buoy.dominant_period,
-        meanDirection: cachedPipeline.buoy.mean_wave_direction,
-        waterTemp: cachedPipeline.buoy.water_temp,
-        windSpeed: cachedPipeline.buoy.wind_speed,
-        windDir: cachedPipeline.buoy.wind_direction,
-        windGust: cachedPipeline.buoy.wind_gust,
-        time: cachedPipeline.buoy.time || 'pipeline data'
-      };
-    }
+    // Only this buoy's own reading: another buoy's cached obs (or 44097's
+    // pipeline data) must never paint under this buoy's name.
+    const prevParsed = STATE._cachedBuoyParsed;
+    const cachedBuoyParsed = prevParsed && prevParsed.buoyId === buoy.id
+      ? prevParsed
+      : buoyParsedFromPipeline(cachedPipeline, buoy);
     renderForecastSet({
       buoy, isChoc, selectedModel,
       forecastLat, forecastLon, displayLat, displayLon,
@@ -1236,54 +1502,45 @@ async function _loadAllDataImpl(buoy, _gen) {
     setCacheRefreshIndicator(true);
   } else {
     el('val-swell-height').textContent = '···';
+    // The whole swell card, so the previous buoy's detail and source can't
+    // sit under this buoy's name while the load runs.
+    el('val-swell-detail').textContent = '···';
+    el('val-swell-arrival').style.display = 'none';
+    setFooter('footer-swell', '');
     el('val-wind-speed').textContent = '···';
     el('val-water-temp').textContent = '···';
     el('val-tide').textContent = '···';
     setCacheRefreshIndicator(false);
   }
 
-  // ── Fire all parallel fetches (forecast chart deps) ──
-  let [marine, wind, buoyData, pipelineData, hiloRaw, predRaw] = await Promise.all([
-    fetchMarineForecast(forecastLat, forecastLon, selectedModel),
-    fetchWindForecast(displayLat, displayLon),
-    buoy.spectral ? fetchNDBCStdmet(buoy.id) : Promise.resolve(null),
-    isChoc ? fetchPipelineBuoy() : Promise.resolve(null),
-    tideStn ? fetchTideHiLo(tideStn.id, 10) : Promise.resolve(null),
-    tideStn ? fetchTidePredictions(tideStn.id, undefined, 168) : Promise.resolve(null)
-  ]);
-  if (selectedModel && !marineHasUsableData(marine)) {
-    showToast(`Model ${selectedModel} unavailable, falling back to best_match`, 'warn');
-    setForecastModel('');
-    marine = await fetchMarineForecast(forecastLat, forecastLon, null);
-  }
+  // Live NDBC (non-Choc buoys, and only with a relay in
+  // CONFIG.api.ndbcProxies) starts now but never gates the chart: the
+  // forecast renders on Open-Meteo + CO-OPS and the buoy reading is patched
+  // in when it lands. Choc's buoy comes from the pipeline's data/buoy.json.
+  const liveBuoyP = buoy.spectral && !isChoc ? fetchNDBCStdmet(buoy.id) : Promise.resolve(null);
+  const pipelineP = isChoc ? fetchPipelineBuoy() : Promise.resolve(null);
+
+  // ── Forecast chart deps (live → saved copy → nothing) ──
+  const round = await fetchForecastRound({
+    forecastLat, forecastLon, windLat: displayLat, windLon: displayLon, tideStn, selectedModel
+  });
+  const pipelineData = await pipelineP;
   if (_gen !== _loadGen) return; // superseded by a newer load
 
-  // Parse buoy data (CORS proxy primary, pipeline fallback for Choc)
-  let buoyParsed = parseNDBCStdmet(buoyData);
-  if (!buoyParsed && pipelineData && pipelineData.buoy) {
-    buoyParsed = {
-      waveHeight: pipelineData.buoy.wave_height,
-      dominantPeriod: pipelineData.buoy.dominant_period,
-      meanDirection: pipelineData.buoy.mean_wave_direction,
-      waterTemp: pipelineData.buoy.water_temp,
-      windSpeed: pipelineData.buoy.wind_speed,
-      windDir: pipelineData.buoy.wind_direction,
-      windGust: pipelineData.buoy.wind_gust,
-      time: pipelineData.buoy.time || 'pipeline data'
-    };
-  }
+  let buoyParsed = buoyParsedFromPipeline(pipelineData, buoy);
   STATE._cachedBuoyParsed = buoyParsed;
 
-  const tideHiLoForChart = hiloRaw && hiloRaw.predictions ? hiloRaw.predictions : null;
-  const tidePredForChart = predRaw && predRaw.predictions ? predRaw.predictions : null;
-
-  renderForecastSet({
-    buoy, isChoc, selectedModel,
+  const renderCtx = {
+    buoy, isChoc, selectedModel: round.marineModel,
     forecastLat, forecastLon, displayLat, displayLon,
-    marine, wind, buoyParsed, pipelineData,
-    tideHiLo: tideHiLoForChart, tidePred: tidePredForChart, tideStn
-  });
-  setCacheRefreshIndicator(false);
+    marine: round.marine, wind: round.wind, buoyParsed, pipelineData,
+    tideHiLo: round.hiloRaw ? round.hiloRaw.predictions : null,
+    tidePred: round.predRaw ? round.predRaw.predictions : null,
+    tideStn
+  };
+  renderForecastSet(renderCtx);
+  setCacheRefreshIndicator(false,
+    round.health.marine.origin === 'stale-cache' ? round.health.marine.asOf : undefined);
 
   // ── Tides panel ──
   if (STATE.nearestTideStation) {
@@ -1293,6 +1550,15 @@ async function _loadAllDataImpl(buoy, _gen) {
     el('panel-tides').style.display = 'none';
   }
   if (_gen !== _loadGen) return; // superseded by a newer load
+
+  // ── Live buoy reading (non-Choc, relay configured) ──
+  const liveParsed = tagBuoyParsed(parseNDBCStdmet(await liveBuoyP), buoy, 'live');
+  if (_gen !== _loadGen) return; // superseded by a newer load
+  if (liveParsed) {
+    buoyParsed = liveParsed;
+    STATE._cachedBuoyParsed = buoyParsed;
+    renderForecastSet(Object.assign(renderCtx, { buoyParsed }));
+  }
 
   // ── Spectral data (compass rose + spectrum) ──
   if (buoy.spectral) {
@@ -1305,20 +1571,24 @@ async function _loadAllDataImpl(buoy, _gen) {
     let spectralRaw = null;
     let isStale = false;
 
-    // Try live CORS fetch first
-    try {
-      spectralRaw = await fetchNDBCSpectral(buoy.id);
-      parsed = parseNDBCSpectral(spectralRaw);
-    } catch (err) {
-      console.warn('Spectral CORS fetch failed:', buoy.id, err);
+    // Live NDBC for non-Choc buoys (only with a relay configured; with none
+    // every file comes back null at once). Choc is pipeline-only.
+    if (!isChoc) {
+      try {
+        spectralRaw = await fetchNDBCSpectral(buoy.id);
+        parsed = parseNDBCSpectral(spectralRaw);
+      } catch (err) {
+        console.warn('Spectral CORS fetch failed:', buoy.id, err);
+      }
     }
 
-    // Fallback to pipeline data
+    // Pipeline data, only when it is this buoy's own
     if (!parsed || !parsed.bins || parsed.bins.length === 0) {
       try {
-        const pData = await fetchPipelineBuoy();
-        if (pData && pData.spectral_bins && pData.spectral_bins.length > 0) {
-          parsed = { freqs: pData.spectral_bins.map(b => b.freq), bins: pData.spectral_bins };
+        const pData = pipelineData || await fetchPipelineBuoy();
+        const fromPipeline = pipelineSpectralFor(buoy, pData);
+        if (fromPipeline) {
+          parsed = fromPipeline;
           isStale = true;
           // Use pipeline spectral summary for the summary table
           if (pData.spectral_summary) {
@@ -1367,7 +1637,16 @@ async function _loadAllDataImpl(buoy, _gen) {
       );
     } else {
       console.warn('Spectral parse returned no bins for buoy', buoy.id);
-      showSpectralEmpty(buoy.id);
+      if (!isChoc) {
+        // Nothing of this buoy's own: drop the last buoy's spectrum so a
+        // resize or rose-scale redraw can't repaint it under this name.
+        STATE.lastSpectral = null;
+        STATE.lastBuoyParsed = null;
+      }
+      showSpectralEmpty(buoy.id, isChoc
+        ? `No spectral data for ${buoy.id} in the latest pipeline update.`
+        : `No live spectrum for ${buoy.id}: NDBC doesn't allow browser requests and no relay is set up. ` +
+          `Only Choc's buoy (44097) is fetched, every 2 h, by the pipeline.`);
       el('panel-spectral-summary').style.display = 'none';
     }
   } else {
@@ -1380,9 +1659,13 @@ async function _loadAllDataImpl(buoy, _gen) {
   // ── Tide station map ──
   highlightNearestTideStation(displayLat, displayLon);
 
-  // Update time
+  // Update time: lastLoadCompletedAt = this load finished; dataAsOf and the
+  // header = how old the data on screen really is.
   STATE.lastLoadCompletedAt = Date.now();
-  el('header-update-time').textContent = `Updated ${formatTime(new Date())}`;
+  recordDataHealth(round.health, {
+    obsMs: buoyParsed ? buoyParsed.obsMs : null,
+    origin: buoyParsed ? buoyParsed.src : 'failed'
+  }, !!tideStn);
 }
 
 async function loadPinData(lat, lon) {
@@ -1403,8 +1686,8 @@ async function _loadPinDataImpl(lat, lon, _gen) {
   // ── SWR: paint from cache before any network hits ──
   const cachedMarine  = readCache(marineCacheKey(lat, lon, selectedModel), CACHE_TTL.marine);
   const cachedWind    = readCache(windCacheKey(lat, lon), CACHE_TTL.wind);
-  const cachedHiLoRaw = tideStn ? readCache(tideHiLoCacheKey(tideStn.id, 10), CACHE_TTL.hilo) : null;
-  const cachedPredRaw = tideStn ? readCache(tidePredCacheKey(tideStn.id, undefined, 168), CACHE_TTL.tide) : null;
+  const cachedHiLoRaw = tideStn ? readCache(tideHiLoCacheKey(tideStn.id, CHART_TIDE_SPAN.hiloDays), CACHE_TTL.hilo) : null;
+  const cachedPredRaw = tideStn ? readCache(tidePredCacheKey(tideStn.id, undefined, CHART_TIDE_SPAN.predHours), CACHE_TTL.tide) : null;
   const cachedHiLo = cachedHiLoRaw && cachedHiLoRaw.predictions ? cachedHiLoRaw.predictions : null;
   const cachedPred = cachedPredRaw && cachedPredRaw.predictions ? cachedPredRaw.predictions : null;
 
@@ -1420,35 +1703,30 @@ async function _loadPinDataImpl(lat, lon, _gen) {
     setCacheRefreshIndicator(true);
   } else {
     el('val-swell-height').textContent = '···';
+    el('val-swell-detail').textContent = '···';
+    el('val-swell-arrival').style.display = 'none';
+    setFooter('footer-swell', '');
     el('val-wind-speed').textContent = '···';
     el('val-water-temp').textContent = '···';
     el('val-tide').textContent = '···';
     setCacheRefreshIndicator(false);
   }
 
-  // ── Fire fresh fetches in parallel ──
-  let [marine, wind, hiloRaw, predRaw] = await Promise.all([
-    fetchMarineForecast(lat, lon, selectedModel),
-    fetchWindForecast(lat, lon),
-    tideStn ? fetchTideHiLo(tideStn.id, 10) : Promise.resolve(null),
-    tideStn ? fetchTidePredictions(tideStn.id, undefined, 168) : Promise.resolve(null)
-  ]);
-  if (selectedModel && !marineHasUsableData(marine)) {
-    showToast(`Model ${selectedModel} unavailable, falling back to best_match`, 'warn');
-    setForecastModel('');
-    marine = await fetchMarineForecast(lat, lon, null);
-  }
+  // ── Fire fresh fetches in parallel (live → saved copy → nothing) ──
+  const round = await fetchForecastRound({
+    forecastLat: lat, forecastLon: lon, windLat: lat, windLon: lon, tideStn, selectedModel
+  });
   if (_gen !== _loadGen) return; // superseded by a newer load
 
-  const tideHiLoForChart = hiloRaw && hiloRaw.predictions ? hiloRaw.predictions : null;
-  const tidePredForChart = predRaw && predRaw.predictions ? predRaw.predictions : null;
-
   renderPinForecastSet({
-    selectedModel, lat, lon,
-    marine, wind,
-    tideHiLo: tideHiLoForChart, tidePred: tidePredForChart, tideStn
+    selectedModel: round.marineModel, lat, lon,
+    marine: round.marine, wind: round.wind,
+    tideHiLo: round.hiloRaw ? round.hiloRaw.predictions : null,
+    tidePred: round.predRaw ? round.predRaw.predictions : null,
+    tideStn
   });
-  setCacheRefreshIndicator(false);
+  setCacheRefreshIndicator(false,
+    round.health.marine.origin === 'stale-cache' ? round.health.marine.asOf : undefined);
 
   if (STATE.nearestTideStation) {
     await loadTidesPanel(STATE.nearestTideStation);
@@ -1464,71 +1742,152 @@ async function _loadPinDataImpl(lat, lon, _gen) {
 
   highlightNearestTideStation(lat, lon);
   STATE.lastLoadCompletedAt = Date.now();
-  el('header-update-time').textContent = `Updated ${formatTime(new Date())}`;
+  recordDataHealth(round.health, { obsMs: null, origin: 'failed' }, !!tideStn);
 }
 
 // ════════════════════════════════════════════════
 // UPDATE CONDITION CARDS
 // ════════════════════════════════════════════════
 
-function updateSwellCard(buoyParsed, marine, buoy, spectralSummary) {
+// ── Swell band (hero swell card) ──
+// The card reports the >= 8 s part of the buoy spectrum. NDBC's own SwH at
+// 44097 only counts >= 10 s energy (its separation frequency is missing, so
+// it splits at a fixed 0.10 Hz), which files the 8-9 s swell that
+// CHOCOMOUNT_KNOWLEDGE.md counts among Choc's best days under "wind waves".
+// 8 s matches computePrimarySwellDir's band. NDBC's split stays in the
+// spectral table.
+const SWELL_BAND_MIN_PERIOD_S = 8;
+
+// Hs, peak period and energy-weighted direction of the >= minPeriod part of
+// a spectrum: Hs = 4·sqrt(Σ E·df), each bin's df running between the
+// midpoints to its neighbours (NDBC bands are unevenly spaced).
+// → { hsM, peakPeriod, dir, minPeriod }, or null without bins.
+function swellBandFromBins(bins, minPeriod = SWELL_BAND_MIN_PERIOD_S) {
+  if (!Array.isArray(bins)) return null;
+  const sorted = bins.filter(b => b && b.freq > 0).sort((a, b) => a.freq - b.freq);
+  if (!sorted.length) return null;
+  let m0 = 0, sx = 0, sy = 0, peak = null;
+  for (let i = 0; i < sorted.length; i++) {
+    const b = sorted[i];
+    if (1 / b.freq < minPeriod - 1e-6) continue;
+    const prev = sorted[i - 1], next = sorted[i + 1];
+    const lo = prev ? (prev.freq + b.freq) / 2 : b.freq - (next ? (next.freq - b.freq) / 2 : 0.0025);
+    const hi = next ? (b.freq + next.freq) / 2 : b.freq + (b.freq - lo);
+    const e = b.energy > 0 ? b.energy * (hi - lo) : 0;
+    if (!e) continue;
+    m0 += e;
+    if (!peak || b.energy > peak.energy) peak = b;
+    if (Number.isFinite(b.dir1)) {
+      sx += Math.cos(b.dir1 * Math.PI / 180) * e;
+      sy += Math.sin(b.dir1 * Math.PI / 180) * e;
+    }
+  }
+  return {
+    hsM: 4 * Math.sqrt(m0),
+    peakPeriod: peak ? 1 / peak.freq : null,
+    dir: sx || sy ? (Math.atan2(sy, sx) * 180 / Math.PI + 360) % 360 : null,
+    minPeriod
+  };
+}
+
+// ── Buoy obs age ──
+// The pipeline lands every 2-8 h, so a "current" reading can be most of a
+// tide cycle old. Amber past 2 h, red past 6 h; "Current" only within 90 min.
+const BUOY_OBS_CURRENT_MS = 90 * 60 * 1000;
+const BUOY_OBS_STALE_MS = 2 * 60 * 60 * 1000;
+const BUOY_OBS_OLD_MS = 6 * 60 * 60 * 1000;
+
+// → { ageMs, label: '2h 30m ago', level: 'fresh' | 'stale' | 'old' }, or
+// null when the obs time is unknown.
+function buoyObsAge(obsMs, nowMs = Date.now()) {
+  if (!Number.isFinite(obsMs)) return null;
+  const ageMs = Math.max(0, nowMs - obsMs);
+  return {
+    ageMs,
+    // formatAgo measures from Date.now(); shift so it measures ageMs.
+    label: formatAgo(new Date(Date.now() - ageMs)),
+    level: ageMs > BUOY_OBS_OLD_MS ? 'old' : ageMs > BUOY_OBS_STALE_MS ? 'stale' : 'fresh'
+  };
+}
+
+// The buoy sits ~50 mi out, so what it measured reaches Choc one travel
+// time after the OBSERVATION, not after now. A clock time keeps an old
+// reading from passing for an ETA.
+function buoySwellArrivalText(periodS, obsMs, nowMs = Date.now()) {
+  const arrival = swellArrivalTime(periodS, CONFIG.chocomount.buoyDistanceMiles);
+  if (!arrival) return null;
+  if (!Number.isFinite(obsMs)) return `${arrival.label} buoy-to-Choc travel`;
+  const atMs = obsMs + arrival.minutes * 60 * 1000;
+  return `${atMs > nowMs ? 'reaches' : 'reached'} Choc ~${formatTime(new Date(atMs))}`;
+}
+
+function updateSwellCard(buoyParsed, marine, buoy, swellBand) {
   const isChoc = STATE.isChocomount;
   const card = el('card-swell');
-  card.classList.remove('quality-good', 'quality-fair', 'quality-poor');
+  card.classList.remove('quality-good', 'quality-fair', 'quality-poor', 'is-stale', 'is-old');
+  const label = card.querySelector('.condition-label');
+  const extra = el('val-swell-arrival');
 
   // Prefer buoy data for current swell
   if (buoyParsed && buoyParsed.waveHeight != null) {
     const totalH = buoyParsed.waveHeight;  // WVHT total (ft) — swell + wind waves
-    const d = buoyParsed.meanDirection;
+    const age = buoyObsAge(buoyParsed.obsMs);
 
-    // Use spectral swell-only height when available (consistent with ML model variable)
-    const specSwellM = spectralSummary?.swell_height_m;
-    const swellFt = (specSwellM != null && specSwellM < 90)
-      ? Math.round(specSwellM * 3.28084 * 10) / 10 : null;
-    const displayP = (swellFt != null && spectralSummary?.swell_period != null)
-      ? spectralSummary.swell_period : buoyParsed.dominantPeriod;
+    // Hero number: the 8 s+ band of the spectrum (see SWELL_BAND_MIN_PERIOD_S),
+    // with its own peak period and direction (none when the band is flat).
+    // Total WVHT stays in the detail.
+    const band = swellBand && Number.isFinite(swellBand.hsM) ? swellBand : null;
+    const swellFt = band ? Math.round(band.hsM * 3.28084 * 10) / 10 : null;
+    const d = band ? (band.dir != null ? Math.round(band.dir) : null) : buoyParsed.meanDirection;
+    const displayP = band ? band.peakPeriod : buoyParsed.dominantPeriod;
 
     // Card accent based on total wave height
     if (totalH >= 3) card.classList.add('quality-good');
     else if (totalH >= 1.5) card.classList.add('quality-fair');
     else card.classList.add('quality-poor');
+    if (age && age.level !== 'fresh') card.classList.add('is-' + age.level);
 
+    if (label) {
+      const what = band ? `Swell ${band.minPeriod}+ sec` : 'Swell';
+      label.textContent = `${what}: ${age && age.ageMs <= BUOY_OBS_CURRENT_MS ? 'Current' : 'Buoy'}`;
+    }
     el('val-swell-height').textContent = swellFt != null
       ? `${swellFt.toFixed(1)} ft swell`
       : `${totalH.toFixed(1)} ft`;
     el('val-swell-height').className = `condition-value ${swellDirClass(d)}`;
     el('val-swell-detail').textContent = `${displayP ? displayP.toFixed(0) + 's' : '—'} · ${directionLabel(d)} (${d != null ? d + '°' : '—'})${swellFt != null ? ' · ' + totalH.toFixed(1) + ' ft total' : ''}`;
 
-    // Swell arrival estimator (Chocomount only)
-    if (isChoc && displayP) {
-      const arrival = swellArrivalTime(displayP, CONFIG.chocomount.buoyDistanceMiles);
-      if (arrival) {
-        el('val-swell-arrival').style.display = '';
-        el('val-swell-arrival').textContent = `Swell arriving from ~${CONFIG.chocomount.buoyDistanceMiles} miles away: ${arrival.label}`;
-      }
-    } else {
-      el('val-swell-arrival').style.display = 'none';
-    }
+    // When the buoy measured it, and (Choc) when that swell reaches the
+    // beach, from the band's period.
+    const parts = [];
+    if (age) parts.push(`Buoy obs ${formatAsOfTime(buoyParsed.obsMs)} (${age.label})`);
+    const arrivalText = isChoc && displayP ? buoySwellArrivalText(displayP, buoyParsed.obsMs) : null;
+    if (arrivalText) parts.push(arrivalText);
+    extra.style.display = parts.length ? '' : 'none';
+    extra.textContent = parts.join(' · ');
 
     const buoyLabel = buoy ? `ndbc ${buoy.id} · ${buoy.name}` : 'ndbc buoy';
+    const obsNote = age ? ` · obs ${formatAsOfTime(buoyParsed.obsMs)}` : '';
     const buoyUrl = buoy ? `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}` : 'https://www.ndbc.noaa.gov/';
-    setFooter('footer-swell', buoyLabel, buoyUrl, 'ndbc station page');
+    setFooter('footer-swell', buoyLabel + obsNote, buoyUrl, 'ndbc station page');
 
   } else if (marine && marine.current) {
-    // Fallback to Open-Meteo current — use swell-only variables for consistency with ML model
+    // No buoy reading: Open-Meteo's model nowcast (swell-only variables)
     const c = marine.current;
     const h = c.swell_wave_height ?? c.wave_height;
     const p = c.swell_wave_period ?? c.wave_period;
     const d = c.swell_wave_direction ?? c.wave_direction;
+    if (label) label.textContent = 'Swell: Current';
     el('val-swell-height').textContent = h != null ? `${h.toFixed(1)} ft` : '—';
     el('val-swell-height').className = 'condition-value';
     el('val-swell-detail').textContent = `${p ? p.toFixed(0) + 's' : '—'} · ${directionLabel(d)}`;
-    el('val-swell-arrival').style.display = 'none';
+    extra.style.display = 'none';
     setFooter('footer-swell', 'Open-Meteo Marine', 'https://open-meteo.com/en/docs/marine-weather-api', 'open-meteo.com');
   } else {
+    if (label) label.textContent = 'Swell: Current';
     el('val-swell-height').textContent = '—';
     el('val-swell-detail').textContent = 'No data available';
-    el('val-swell-arrival').style.display = 'none';
+    extra.style.display = 'none';
     setFooter('footer-swell', 'No data source available');
   }
 }
@@ -1723,7 +2082,7 @@ function highlightNearestTideStation(lat, lon) {
       if (div) div.style.background = '#2c2825';
     }
     // Center tide map on the area
-    STATE.tideMap.setView([lat, lon], 8);
+    STATE.tideMap?.setView([lat, lon], 8);
   }
 }
 
@@ -1955,7 +2314,7 @@ function drawSwellPanel(common, data) {
   ctx.fillStyle = FC_RETRO.plotBg;
   ctx.fillRect(0, 0, cssW, cssH);
 
-  const { heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellDiv, periodMax, obsHsFt } = data;
+  const { heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellDiv, periodMax, obsHsFt, obsMs } = data;
 
   // Dashed horizontal gridlines on the upper region, one per axis division.
   for (let q = 1; q < swellDiv; q++) {
@@ -2189,20 +2548,24 @@ function drawSwellPanel(common, data) {
 
   // Dashed "now" line spanning the height region and the direction
   // sub-panel, drawn before the scrubber dots so markers layer on top.
-  const nowX = _fcDrawNowLine(ctx, common, plotLeft, plotW, top, subBot);
+  _fcDrawNowLine(ctx, common, plotLeft, plotW, top, subBot);
 
-  // Live buoy observation at "now" — white diamond on the swell panel.
-  // The buoy reports TOTAL significant height while the line plots the
-  // swell component, so this reads as "measured sea vs forecast swell"
-  // (approximate by design). Clamped to the axis ceiling.
-  if (nowX != null && obsHsFt != null) {
+  // Buoy observation — white diamond on the swell panel at the time it was
+  // MEASURED (the pipeline lands every 2-8 h, so pinning it to the now line
+  // passed an old reading off as current); skipped when that time is
+  // unknown or over 6 h old. The buoy reports TOTAL significant height while
+  // the line plots the swell component, so this reads as "measured sea vs
+  // forecast swell" (approximate by design). Clamped to the axis ceiling.
+  const obsX = obsHsFt != null && obsMs != null && Date.now() - obsMs <= BUOY_OBS_OLD_MS &&
+    obsMs >= common.t0 && obsMs <= common.tEnd ? xPos(new Date(obsMs)) : null;
+  if (obsX != null) {
     const oy = ySwell(Math.min(obsHsFt, swellMaxY));
     ctx.save();
     ctx.beginPath();
-    ctx.moveTo(nowX, oy - 4);
-    ctx.lineTo(nowX + 4, oy);
-    ctx.lineTo(nowX, oy + 4);
-    ctx.lineTo(nowX - 4, oy);
+    ctx.moveTo(obsX, oy - 4);
+    ctx.lineTo(obsX + 4, oy);
+    ctx.lineTo(obsX, oy + 4);
+    ctx.lineTo(obsX - 4, oy);
     ctx.closePath();
     ctx.fillStyle = FC_RETRO.obsFill;
     ctx.fill();
@@ -2214,7 +2577,7 @@ function drawSwellPanel(common, data) {
       ctx.fillStyle = FC_RETRO.ink2;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText('obs', nowX + 7, oy);
+      ctx.fillText('obs', obsX + 7, oy);
     }
     ctx.restore();
   }
@@ -2735,8 +3098,10 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred, buoy
   // Draw each panel canvas.
   const swellPayload = {
     heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellDiv, periodMax,
-    // Current observed total Hs (feet) from the buoy, for the "obs" marker.
-    obsHsFt: buoyParsed && buoyParsed.waveHeight != null ? buoyParsed.waveHeight : null
+    // Observed total Hs (feet) from the buoy and when it was measured, for
+    // the "obs" marker.
+    obsHsFt: buoyParsed && buoyParsed.waveHeight != null ? buoyParsed.waveHeight : null,
+    obsMs: buoyParsed && Number.isFinite(buoyParsed.obsMs) ? buoyParsed.obsMs : null
   };
   const windPayload  = { windSpeeds, windDirs, windMaxY };
   const tidePayload  = { tidePred, tideHiLo };
@@ -3647,9 +4012,14 @@ function renderSpectralSummary(spectralRaw, buoyParsed) {
     : '—';
 
   const t = trends || {};
+  // NDBC's own swell / wind-sea split (SwH / WWH). The pipeline's buoy,
+  // 44097, reports no separation frequency, so NDBC cuts at a fixed 10 s
+  // and 8-9 s swell lands under wind waves; the swell card's 8 s+ band is
+  // the number to read for Choc.
+  const split = source === 'pipeline' ? ' 10 s' : '';
   const rows = [
-    { label: 'Primary Swell', ht: fmtHtCell(summary.swellHt, t.swellHt), period: fmtPeriodCell(summary.swellPeriod, t.swellPeriod), dir: fmtDir(summary.swellDir) },
-    { label: 'Wind Waves', ht: fmtHtCell(summary.windHt, t.windHt), period: fmtPeriodCell(summary.windPeriod, t.windPeriod), dir: fmtDir(summary.windDir) },
+    { label: `Swell (NDBC${split} split)`, ht: fmtHtCell(summary.swellHt, t.swellHt), period: fmtPeriodCell(summary.swellPeriod, t.swellPeriod), dir: fmtDir(summary.swellDir) },
+    { label: `Wind Waves (NDBC${split} split)`, ht: fmtHtCell(summary.windHt, t.windHt), period: fmtPeriodCell(summary.windPeriod, t.windPeriod), dir: fmtDir(summary.windDir) },
     { label: 'Significant Hs', ht: hsCell, period: '—', dir: '—' }
   ];
 
@@ -3696,7 +4066,8 @@ function renderSpectralSummary(spectralRaw, buoyParsed) {
 // SPECTRAL EMPTY STATE HELPERS
 // ════════════════════════════════════════════════
 
-function showSpectralEmpty(buoyId) {
+// buoyId: a spectral buoy whose data isn't available; message says why.
+function showSpectralEmpty(buoyId, message) {
   const compassContainer = el('compass-canvas').parentElement;
   const spectrumContainer = el('spectrum-canvas').parentElement;
   el('compass-canvas').style.display = 'none';
@@ -3706,7 +4077,7 @@ function showSpectralEmpty(buoyId) {
   spectrumContainer.querySelectorAll('.spectral-empty-msg').forEach(e => e.remove());
   const msg = document.createElement('div');
   msg.className = 'spectral-empty-msg';
-  msg.textContent = 'Please select a buoy with spectral data (e.g., 44097) to view wave energy.';
+  msg.textContent = message || 'Please select a buoy with spectral data (e.g., 44097) to view wave energy.';
   const msg2 = msg.cloneNode(true);
   compassContainer.appendChild(msg);
   spectrumContainer.appendChild(msg2);
@@ -6882,16 +7253,29 @@ function initMatchModal() {
 // SECONDARY SWELL CARD (Tab 1)
 // ════════════════════════════════════════════════
 
+// Index of the current hour in an Open-Meteo hourly series. The series is
+// in the spot's local time (timezone=auto) from local midnight, so "now" is
+// shifted by the response's utc_offset_seconds rather than the device's time
+// zone. Clamped to the series ends; -1 without a series.
+function marineNowIndex(marine, nowMs = Date.now()) {
+  const times = marine && marine.hourly && marine.hourly.time;
+  if (!times || !times.length) return -1;
+  const key = new Date(nowMs + (marine.utc_offset_seconds || 0) * 1000).toISOString().slice(0, 13);
+  const i = times.findIndex(t => String(t).slice(0, 13) === key);
+  if (i >= 0) return i;
+  return key < String(times[0]).slice(0, 13) ? 0 : times.length - 1;
+}
+
 function updateSecondarySwellCard(marine, isChoc, forecastLat, forecastLon) {
   const card = el('card-secondary-swell');
   if (!card) return;
-  const cur = marine && marine.current ? marine.current : null;
   const hourly = marine && marine.hourly ? marine.hourly : null;
-  // The "current" block on Open-Meteo Marine doesn't include secondary-swell
-  // fields — pull from the first hourly slot (which is the current hour).
-  const h = hourly && hourly.secondary_swell_wave_height ? hourly.secondary_swell_wave_height[0] : null;
-  const p = hourly && hourly.secondary_swell_wave_period ? hourly.secondary_swell_wave_period[0] : null;
-  const d = hourly && hourly.secondary_swell_wave_direction ? hourly.secondary_swell_wave_direction[0] : null;
+  // Open-Meteo's "current" block has no secondary-swell fields, so read the
+  // hourly slot for the current hour (slot 0 is local midnight).
+  const i = marineNowIndex(marine);
+  const h = hourly && hourly.secondary_swell_wave_height ? hourly.secondary_swell_wave_height[i] : null;
+  const p = hourly && hourly.secondary_swell_wave_period ? hourly.secondary_swell_wave_period[i] : null;
+  const d = hourly && hourly.secondary_swell_wave_direction ? hourly.secondary_swell_wave_direction[i] : null;
   if (h == null || h < 1) {
     card.style.display = 'none';
     return;
@@ -8934,6 +9318,7 @@ function closeRegressionDrilldown() {
 // ════════════════════════════════════════════════
 
 async function initApp() {
+  dropLegacyTideCacheKeys();
   // Load static data files
   const [buoys, tideStations] = await Promise.all([
     fetchJSON('data/buoys-east-coast.json'),
@@ -8943,9 +9328,18 @@ async function initApp() {
   STATE.buoys = buoys || [];
   STATE.tideStations = tideStations || [];
 
-  // Init maps
-  initBuoyMap();
-  initTideMap();
+  // Init maps. They're optional: if Leaflet didn't load, the forecast must
+  // still load, so a map failure never aborts initApp.
+  if (typeof L !== 'undefined') {
+    try {
+      initBuoyMap();
+      initTideMap();
+    } catch (e) {
+      console.warn('Map init failed:', e);
+    }
+  } else {
+    console.warn('Leaflet unavailable: maps disabled');
+  }
 
   // Wire forecast-coords toggle (Choc only behaviour; the wrap is hidden for
   // non-Choc selections via applyChocOnlyVisibility).
@@ -8956,15 +9350,30 @@ async function initApp() {
   // accessibility users.
   initBuoySelectDropdown();
 
-  // Wire surf log
-  await loadSurfLog();
+  // Default: if gate passed (not by boat), load Chocomount now, before the
+  // surf log (whose Firebase wait used to hold the forecast back by 2-15 s).
+  // Choc TV's boot watchdog may already have selected it: don't load twice.
+  if (STATE.boatGatePassed && !STATE.selectedBuoy) {
+    const chocBuoy = STATE.buoys.find(b => b.home === 'chocomount');
+    if (chocBuoy) {
+      selectBuoy(chocBuoy);
+      STATE.buoyMap?.setView([chocBuoy.lat, chocBuoy.lon], 8);
+    }
+  }
+  // If by boat, just show the map, no auto-select
+
+  // Wire surf log. It loads in the background: nothing on the forecast
+  // needs it, and Firebase auth + Firestore can take seconds (or hang).
   initTabBar();
   initSurfLogForm();
   initMatchModal();
   initPanelInfoToggles();
-  slRetrain();
-  // Re-attempt any photo uploads that failed on a prior session.
-  retryFailedPhotoUploads().catch(function(e) { console.warn('Retry pass failed:', e); });
+  loadSurfLog().then(function() {
+    slRetrain();
+    renderSurfLogTable();
+    // Re-attempt any photo uploads that failed on a prior session.
+    retryFailedPhotoUploads().catch(function(e) { console.warn('Retry pass failed:', e); });
+  }).catch(function(e) { console.warn('Surf log load failed:', e); });
 
   // Wire auth buttons
   el('auth-signin-btn')?.addEventListener('click', function() {
@@ -8985,16 +9394,6 @@ async function initApp() {
   // boat-yes path or the open buoy map view), still apply per-tab gating so
   // Tab 1's lineup map and Tab 3's log form stay hidden.
   updateTabBarVisibility();
-
-  // Default: if gate passed (not by boat), load Chocomount
-  if (STATE.boatGatePassed) {
-    const chocBuoy = STATE.buoys.find(b => b.home === 'chocomount');
-    if (chocBuoy) {
-      selectBuoy(chocBuoy);
-      STATE.buoyMap.setView([chocBuoy.lat, chocBuoy.lon], 8);
-    }
-  }
-  // If by boat, just show the map, no auto-select
 }
 
 // ── Start ────────────────────────────────────────

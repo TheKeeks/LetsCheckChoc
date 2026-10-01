@@ -1387,6 +1387,42 @@ summary:focus-visible {
   color: var(--orange);
 }
 
+/* Data-age cues: the swell card's buoy-obs line goes amber past 2 h and
+   red past 6 h; the header and the chart's cache note go red/amber when a
+   refresh failed. The body[data-era] copies outrank the retro theme. */
+.condition-card.is-stale .condition-extra,
+body[data-era="web1"] .condition-card.is-stale .condition-extra {
+  color: var(--orange);
+  font-weight: bold;
+}
+.condition-card.is-old .condition-extra,
+body[data-era="web1"] .condition-card.is-old .condition-extra {
+  color: var(--red-m);
+  font-weight: bold;
+}
+.header-meta.is-stale,
+body[data-era="web1"] .header-meta.is-stale {
+  color: var(--red-m);
+  font-weight: bold;
+}
+.forecast-cache-indicator.is-stale {
+  color: var(--orange);
+  font-style: normal;
+  opacity: 1;
+  animation: none;
+}
+.forecast-unavailable-msg {
+  padding: 10px 12px;
+  margin: 6px 0;
+  border: 1px solid var(--red-m);
+  background: var(--bg-note);
+  color: var(--red-m);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  text-align: center;
+}
+#forecast-chart-container.is-unavailable canvas { opacity: 0.25; }
+
 /* ── Spectral empty state ────────────────────── */
 .spectral-empty-msg {
   display: flex;

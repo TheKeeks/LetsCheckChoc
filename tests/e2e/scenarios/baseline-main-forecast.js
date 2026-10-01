@@ -1,7 +1,8 @@
 // Baseline: main page with the boat gate skipped (sessionStorage
 // lcc-gate=no) auto-selects Chocomount and draws the forecast chart from
-// the fixtures. Records time-to-chart; the bound is deliberately generous
-// until the dead NDBC proxies leave the critical path (audit C01).
+// the fixtures. Records time-to-chart. With the dead NDBC proxies off the
+// critical path (audit C01) and the Firebase wait gone (C03) the chart is
+// up in well under a second; 3 s leaves headroom for slow CI runners.
 'use strict';
 
 module.exports = {
@@ -18,7 +19,7 @@ module.exports = {
     const chartMs = await ctx.waitForChart();
     ctx.metric('timeToChartMs', chartMs);
     log(`time to chart ${chartMs} ms`);
-    assert.ok(chartMs < 45000, `forecast chart took ${chartMs} ms`);
+    assert.ok(chartMs < 3000, `forecast chart took ${chartMs} ms`);
 
     // The swell panel canvas really has ink on it.
     const inked = await page.evaluate(() => {
