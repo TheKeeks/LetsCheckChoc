@@ -7,8 +7,15 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preload" href="fonts/ms_sans_serif.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fonts/ms_sans_serif_bold.woff2" as="font" type="font/woff2" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Google Fonts must not block first paint: a stalled fonts.googleapis.com
+       held the whole page (boat gate included) blank. Loads as print-only,
+       then switches to all media once it arrives; the fallback fonts show
+       meanwhile (and for good if it never does). -->
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"></noscript>
+  <!-- Leaflet 1.9.4, vendored (see vendor/leaflet/README.md) so a CDN outage
+       can't take the maps, or the app, down. -->
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="styles-web1.css">
   <link rel="stylesheet" href="styles-web1-extensions.css">
@@ -611,7 +618,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="vendor/leaflet/leaflet.js"></script>
   <script src="firebase-config.js"></script>
   <script src="app.js"></script>
   <script src="kiosk.js"></script>
