@@ -253,58 +253,87 @@ function setFooter(id, text, url, urlLabel) {
 }
 
 // ── Daylight calculator (solar position) ─────────
+// NOAA Solar Calculator equations (Meeus, "Astronomical Algorithms"):
+// the sun's declination and the equation of time (minutes) at Julian
+// day `jd`. Good to well under a minute of time for this century.
+function _solarPosition(jd) {
+  const T = (jd - 2451545) / 36525;                        // Julian centuries since J2000
+  const L0 = (280.46646 + T * (36000.76983 + T * 0.0003032)) % 360;
+  const M = 357.52911 + T * (35999.05029 - 0.0001537 * T);
+  const e = 0.016708634 - T * (0.000042037 + 0.0000001267 * T);
+  const Mr = degToRad(M), L0r = degToRad(L0);
+  const C = Math.sin(Mr) * (1.914602 - T * (0.004817 + 0.000014 * T)) +
+    Math.sin(2 * Mr) * (0.019993 - 0.000101 * T) + Math.sin(3 * Mr) * 0.000289;
+  const omega = degToRad(125.04 - 1934.136 * T);
+  const lambda = degToRad(L0 + C - 0.00569 - 0.00478 * Math.sin(omega));
+  const eps0 = 23 + (26 + (21.448 - T * (46.815 + T * (0.00059 - T * 0.001813))) / 60) / 60;
+  const eps = degToRad(eps0 + 0.00256 * Math.cos(omega));
+  const y = Math.tan(eps / 2) * Math.tan(eps / 2);
+  return {
+    decl: radToDeg(Math.asin(Math.sin(eps) * Math.sin(lambda))),
+    eot: 4 * radToDeg(y * Math.sin(2 * L0r) - 2 * e * Math.sin(Mr) +
+      4 * e * y * Math.sin(Mr) * Math.cos(2 * L0r) -
+      0.5 * y * y * Math.sin(4 * L0r) - 1.25 * e * e * Math.sin(2 * Mr))
+  };
+}
+
+// Sunrise/sunset put the sun's centre at the standard -0.833° altitude
+// (34' of refraction plus the 16' solar semi-diameter), civil twilight at
+// -6°. The old geometric-horizon formula ran 5-9 min late at sunrise and
+// early at sunset at Choc; this matches USNO to about a minute (audit C22).
 function calcDaylight(lat, lon, date) {
   const d = new Date(date);
   d.setHours(12, 0, 0, 0);
-  const dayOfYear = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
-  const declination = 23.45 * Math.sin(degToRad(360/365 * (dayOfYear - 81)));
+  // The viewer's calendar day, as 0h UTC. Events are solved in UTC hours
+  // after it (a summer sunset at Choc lands past 24, i.e. 00:2xZ next day).
+  const day0 = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  const jd0 = day0 / 86400000 + 2440587.5;
   const latRad = degToRad(lat);
-  const declRad = degToRad(declination);
 
-  // Hour angle for sunrise/sunset
-  const cosH = -Math.tan(latRad) * Math.tan(declRad);
-  if (cosH < -1) return { alwaysDay: true };
-  if (cosH > 1)  return { alwaysNight: true };
-  const H = radToDeg(Math.acos(cosH));
-
-  // Civil twilight (sun 6° below)
-  const cosHCivil = (Math.cos(degToRad(96)) - Math.sin(latRad) * Math.sin(declRad)) / (Math.cos(latRad) * Math.cos(declRad));
-  const HCivil = cosHCivil >= -1 && cosHCivil <= 1 ? radToDeg(Math.acos(cosHCivil)) : H + 1;
-
-  // Solar noon in UTC hours
-  // Approximate equation of time
-  const B = degToRad(360/365 * (dayOfYear - 81));
-  const EoT = 9.87 * Math.sin(2*B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B); // minutes
-  const solarNoonUTC = 12 - (lon / 15) - (EoT / 60);
-
-  const sunriseUTC = solarNoonUTC - H / 15;
-  const sunsetUTC = solarNoonUTC + H / 15;
-  const firstLightUTC = solarNoonUTC - HCivil / 15;
-  const lastLightUTC = solarNoonUTC + HCivil / 15;
-
-  function hoursToDate(h) {
-    const nd = new Date(d);
-    nd.setUTCHours(Math.floor(h), Math.round((h % 1) * 60), 0, 0);
-    return nd;
+  function cosHourAngle(alt, decl) {
+    const declRad = degToRad(decl);
+    return (Math.sin(degToRad(alt)) - Math.sin(latRad) * Math.sin(declRad)) /
+      (Math.cos(latRad) * Math.cos(declRad));
+  }
+  // UTC hours of the rising/setting crossing of `alt`. Three passes
+  // re-evaluate the sun at the event itself; null if it never crosses.
+  function eventUTC(alt, rising) {
+    let t = 12 - lon / 15, ok = false;
+    for (let i = 0; i < 3; i++) {
+      const sun = _solarPosition(jd0 + t / 24);
+      const cosH = cosHourAngle(alt, sun.decl);
+      if (cosH < -1 || cosH > 1) break;
+      const H = radToDeg(Math.acos(cosH));
+      t = (720 - 4 * lon - sun.eot + (rising ? -4 : 4) * H) / 60;
+      ok = true;
+    }
+    return ok ? t : null;
   }
 
-  const daylightHours = 2 * H / 15;
+  const noonSun = _solarPosition(jd0 + (12 - lon / 15) / 24);
+  const cosH0 = cosHourAngle(-0.833, noonSun.decl);
+  if (cosH0 < -1) return { alwaysDay: true };
+  if (cosH0 > 1)  return { alwaysNight: true };
+
+  const sunriseUTC = eventUTC(-0.833, true);
+  const sunsetUTC = eventUTC(-0.833, false);
+  if (sunriseUTC == null || sunsetUTC == null) return cosH0 < 0 ? { alwaysDay: true } : { alwaysNight: true };
+  // No civil dusk (high-latitude summer): first/last light 4 min out, as before.
+  const civilRise = eventUTC(-6, true);
+  const civilSet = eventUTC(-6, false);
+  const firstLightUTC = civilRise != null ? civilRise : sunriseUTC - 1 / 15;
+  const lastLightUTC = civilSet != null ? civilSet : sunsetUTC + 1 / 15;
+
+  // Whole minutes, as the cards print them.
+  const hoursToDate = h => new Date(day0 + Math.round(h * 60) * 60000);
 
   return {
     firstLight: hoursToDate(firstLightUTC),
     sunrise: hoursToDate(sunriseUTC),
     sunset: hoursToDate(sunsetUTC),
     lastLight: hoursToDate(lastLightUTC),
-    daylightHours: daylightHours
+    daylightHours: sunsetUTC - sunriseUTC
   };
-}
-
-function isNighttime(hour, daylight) {
-  if (!daylight || daylight.alwaysDay) return false;
-  if (daylight.alwaysNight) return true;
-  const sunriseH = daylight.sunrise.getHours() + daylight.sunrise.getMinutes() / 60;
-  const sunsetH = daylight.sunset.getHours() + daylight.sunset.getMinutes() / 60;
-  return hour < sunriseH || hour > sunsetH;
 }
 
 // ── Swell arrival estimator ──────────────────────
