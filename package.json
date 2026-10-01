@@ -1,0 +1,14 @@
+{
+  "name": "letscheckchoc",
+  "private": true,
+  "description": "Surf forecast for Chocomount, Fishers Island NY. Static site (no build); these scripts only run tests.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "test": "TZ=America/New_York node --test --test-reporter=spec 'tests/unit/*.test.js' && node test-gate.js",
+    "test:e2e": "node tests/e2e/run.js",
+    "test:py": "python3 -m unittest discover -s scripts -p 'test_*.py'"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
