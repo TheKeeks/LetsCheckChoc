@@ -142,6 +142,8 @@ function loadSpectralFns() {
     grab('parseSpecSummaryFromText'),
     grab('pickTrendBaseline'),
     grab('computeSpecTrends'),
+    grab('binHasMeasuredDir'),
+    grab('binsHaveMeasuredDir'),
     grab('computePrimarySwellDir'),
     'module.exports = { parseSpectralFile, parseNDBCSpectral, parseSpecRows, parseSpecSummaryFromText, pickTrendBaseline, computeSpecTrends, computePrimarySwellDir };'
   ].join('\n');

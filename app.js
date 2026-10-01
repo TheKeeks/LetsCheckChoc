@@ -818,7 +818,7 @@ function parseNDBCSpectral(spectralData) {
     freq: f,
     period: f > 0 ? 1 / f : 0,
     energy: energy.values[i] || 0,
-    dir1: dir1 && dir1.values[i] != null ? dir1.values[i] : 0,
+    dir1: dir1 && dir1.values[i] != null ? dir1.values[i] : null,
     dir2: dir2 && dir2.values[i] != null ? dir2.values[i] : 0,
     r1: r1 && r1.values[i] != null ? r1.values[i] : 0.5,
     r2: r2 && r2.values[i] != null ? r2.values[i] : 0.25
@@ -1303,10 +1303,8 @@ function pipelineSwellBand(pData, buoy) {
   const specMs = parseBuoyObsTime(pData.spectral_obs_time);
   const obsMs = parseBuoyObsTime(pData.buoy && pData.buoy.time);
   if (carried || (specMs != null && obsMs != null && obsMs - specMs > SPECTRUM_MAX_LAG_MS)) return null;
-  // Without its swdir file the pipeline writes dir1 = 0 in every bin: a
-  // direction nobody measured, not swell from due north.
   const bins = pData.spectral_bins;
-  const hasDir = Array.isArray(bins) && bins.some(b => b && Number.isFinite(b.dir1) && b.dir1 !== 0 && b.dir1 < 999);
+  const hasDir = binsHaveMeasuredDir(bins);
   const sb = pData.swell_band;
   const band = sb && Number.isFinite(sb.hs_m)
     ? {
@@ -3957,12 +3955,25 @@ function computeSpecTrends(latest, baseline) {
   };
 }
 
+// A bin's dir1 is a measurement only when it is finite and not NDBC's 999
+// sentinel. Without the swdir file, older pipeline runs wrote dir1 = 0 in
+// every bin (newer ones write null): a direction nobody measured, not swell
+// from due north.
+function binHasMeasuredDir(b) {
+  return !!b && Number.isFinite(b.dir1) && b.dir1 < 999;
+}
+function binsHaveMeasuredDir(bins) {
+  return Array.isArray(bins) && bins.some(b => binHasMeasuredDir(b) && b.dir1 !== 0);
+}
+
 // Energy-weighted circular mean of dir1 over bins in the swell band (>=8s).
 // Falls back to all positive-energy bins if the swell band is empty.
+// Bins without a measured direction are left out; none at all gives null.
 function computePrimarySwellDir(bins) {
-  if (!bins || !bins.length) return null;
-  const swell = bins.filter(b => b.period >= 8 && b.energy > 0);
-  const pool = swell.length ? swell : bins.filter(b => b.energy > 0);
+  if (!binsHaveMeasuredDir(bins)) return null;
+  const measured = bins.filter(binHasMeasuredDir);
+  const swell = measured.filter(b => b.period >= 8 && b.energy > 0);
+  const pool = swell.length ? swell : measured.filter(b => b.energy > 0);
   if (!pool.length) return null;
   let sx = 0, sy = 0, wsum = 0;
   for (const b of pool) {
