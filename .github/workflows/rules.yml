@@ -1,0 +1,44 @@
+name: Firebase rules
+
+# Runs firestore.rules and storage.rules in the Firebase emulators
+# (tests/rules/rules.test.js). The emulators need Java; the npm packages are
+# installed without saving, so the site keeps zero dependencies. The rules
+# themselves are still pasted into the Firebase console by hand (CLAUDE.md).
+on:
+  push:
+    paths:
+      - 'firestore.rules'
+      - 'storage.rules'
+      - 'firebase.json'
+      - 'firebase-config.js'
+      - 'app.js'
+      - 'tests/rules/**'
+      - 'tests/helpers/**'
+      - 'tests/fixtures/firebase-stub.js'
+      - '.github/workflows/rules.yml'
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: rules-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rules:
+    name: Firestore + Storage rules (emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm i --no-save firebase-tools@15.32.1 @firebase/rules-unit-testing@5.0.2 firebase@12.19.0
+      - run: npm run test:rules
