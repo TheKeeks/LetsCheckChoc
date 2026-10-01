@@ -48,6 +48,7 @@ node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 | `data/buoy.json`, `data/verification.json` | Written by the pipeline bot. Never edit them |
 | `data/buoys-east-coast.json`, `data/tide-stations.json` | Static catalogs read by `initApp` |
 | `scripts/fetch_buoy.py` | Pipeline: NDBC 44097 → `data/buoy.json`, plus model-vs-buoy rows |
+| `scripts/canary.py` | Upstream canary (`.github/workflows/canary.yml`, every 6 h): opens/closes one `data-canary` issue |
 | `scripts/smoke_regression.js`, `scripts/leak_deg_sensitivity.js`, `scripts/generate_icons.js` | Dev-only tools, never loaded by the page |
 | `test-gate.js` | Legacy tests, still run by `npm test` |
 | `tests/` | `tests/helpers/` (vm loader, DOM stub, fixture map), `tests/unit/`, `tests/e2e/`, `tests/fixtures/` |
@@ -99,7 +100,10 @@ each one. Line numbers drift with every edit, so do not cite them in docs.
   Chocomount then falls back to `data/buoy.json`.
 - **Pipeline:** `.github/workflows/update-buoy.yml` runs every 2 h (GitHub drops
   many runs). `scripts/fetch_buoy.py` writes `data/buoy.json` and appends to
-  `data/verification.json`, and the bot commits both straight to `main`.
+  `data/verification.json`, and the bot commits both straight to `main`. If
+  every NDBC file fails it exits 1 and writes nothing; a partial failure keeps
+  the previous sections and lists them in `stale_sections`. Verification rows
+  are hourly and back-fill the hours of dropped runs.
 - **Firebase:** anonymous auth by default, Google sign-in optional. Surf logs
   live in Firestore `surf_logs`, photos in Storage `surf-photos/raw/<uid>/…`.
   `loadSurfLog` waits on `window._fbAuthReady`.
