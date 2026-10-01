@@ -91,8 +91,8 @@ test('fixtureFetch overrides: canned NOAA error body, slow replies lose to the a
 });
 
 test('storage seeds and DOM writes are readable', () => {
-  const app = loadApp({ storage: { local: { 'lcc-forecast-model': 'ecmwf_wam' }, session: { 'lcc-gate': 'no' } } });
-  assert.equal(app.call('getForecastModel'), 'ecmwf_wam');
+  const app = loadApp({ storage: { local: { 'lcc-forecast-model': 'meteofrance_wave' }, session: { 'lcc-gate': 'no' } } });
+  assert.equal(app.call('getForecastModel'), 'meteofrance_wave');
   app.call('setFooter', 'footer-forecast', 'plain text');
   assert.equal(app.dom.byId('footer-forecast').textContent, 'plain text');
 });

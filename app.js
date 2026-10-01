@@ -268,58 +268,87 @@ function setFooter(id, text, url, urlLabel) {
 }
 
 // ── Daylight calculator (solar position) ─────────
+// NOAA Solar Calculator equations (Meeus, "Astronomical Algorithms"):
+// the sun's declination and the equation of time (minutes) at Julian
+// day `jd`. Good to well under a minute of time for this century.
+function _solarPosition(jd) {
+  const T = (jd - 2451545) / 36525;                        // Julian centuries since J2000
+  const L0 = (280.46646 + T * (36000.76983 + T * 0.0003032)) % 360;
+  const M = 357.52911 + T * (35999.05029 - 0.0001537 * T);
+  const e = 0.016708634 - T * (0.000042037 + 0.0000001267 * T);
+  const Mr = degToRad(M), L0r = degToRad(L0);
+  const C = Math.sin(Mr) * (1.914602 - T * (0.004817 + 0.000014 * T)) +
+    Math.sin(2 * Mr) * (0.019993 - 0.000101 * T) + Math.sin(3 * Mr) * 0.000289;
+  const omega = degToRad(125.04 - 1934.136 * T);
+  const lambda = degToRad(L0 + C - 0.00569 - 0.00478 * Math.sin(omega));
+  const eps0 = 23 + (26 + (21.448 - T * (46.815 + T * (0.00059 - T * 0.001813))) / 60) / 60;
+  const eps = degToRad(eps0 + 0.00256 * Math.cos(omega));
+  const y = Math.tan(eps / 2) * Math.tan(eps / 2);
+  return {
+    decl: radToDeg(Math.asin(Math.sin(eps) * Math.sin(lambda))),
+    eot: 4 * radToDeg(y * Math.sin(2 * L0r) - 2 * e * Math.sin(Mr) +
+      4 * e * y * Math.sin(Mr) * Math.cos(2 * L0r) -
+      0.5 * y * y * Math.sin(4 * L0r) - 1.25 * e * e * Math.sin(2 * Mr))
+  };
+}
+
+// Sunrise/sunset put the sun's centre at the standard -0.833° altitude
+// (34' of refraction plus the 16' solar semi-diameter), civil twilight at
+// -6°. The old geometric-horizon formula ran 5-9 min late at sunrise and
+// early at sunset at Choc; this matches USNO to about a minute (audit C22).
 function calcDaylight(lat, lon, date) {
   const d = new Date(date);
   d.setHours(12, 0, 0, 0);
-  const dayOfYear = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
-  const declination = 23.45 * Math.sin(degToRad(360/365 * (dayOfYear - 81)));
+  // The viewer's calendar day, as 0h UTC. Events are solved in UTC hours
+  // after it (a summer sunset at Choc lands past 24, i.e. 00:2xZ next day).
+  const day0 = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  const jd0 = day0 / 86400000 + 2440587.5;
   const latRad = degToRad(lat);
-  const declRad = degToRad(declination);
 
-  // Hour angle for sunrise/sunset
-  const cosH = -Math.tan(latRad) * Math.tan(declRad);
-  if (cosH < -1) return { alwaysDay: true };
-  if (cosH > 1)  return { alwaysNight: true };
-  const H = radToDeg(Math.acos(cosH));
-
-  // Civil twilight (sun 6° below)
-  const cosHCivil = (Math.cos(degToRad(96)) - Math.sin(latRad) * Math.sin(declRad)) / (Math.cos(latRad) * Math.cos(declRad));
-  const HCivil = cosHCivil >= -1 && cosHCivil <= 1 ? radToDeg(Math.acos(cosHCivil)) : H + 1;
-
-  // Solar noon in UTC hours
-  // Approximate equation of time
-  const B = degToRad(360/365 * (dayOfYear - 81));
-  const EoT = 9.87 * Math.sin(2*B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B); // minutes
-  const solarNoonUTC = 12 - (lon / 15) - (EoT / 60);
-
-  const sunriseUTC = solarNoonUTC - H / 15;
-  const sunsetUTC = solarNoonUTC + H / 15;
-  const firstLightUTC = solarNoonUTC - HCivil / 15;
-  const lastLightUTC = solarNoonUTC + HCivil / 15;
-
-  function hoursToDate(h) {
-    const nd = new Date(d);
-    nd.setUTCHours(Math.floor(h), Math.round((h % 1) * 60), 0, 0);
-    return nd;
+  function cosHourAngle(alt, decl) {
+    const declRad = degToRad(decl);
+    return (Math.sin(degToRad(alt)) - Math.sin(latRad) * Math.sin(declRad)) /
+      (Math.cos(latRad) * Math.cos(declRad));
+  }
+  // UTC hours of the rising/setting crossing of `alt`. Three passes
+  // re-evaluate the sun at the event itself; null if it never crosses.
+  function eventUTC(alt, rising) {
+    let t = 12 - lon / 15, ok = false;
+    for (let i = 0; i < 3; i++) {
+      const sun = _solarPosition(jd0 + t / 24);
+      const cosH = cosHourAngle(alt, sun.decl);
+      if (cosH < -1 || cosH > 1) break;
+      const H = radToDeg(Math.acos(cosH));
+      t = (720 - 4 * lon - sun.eot + (rising ? -4 : 4) * H) / 60;
+      ok = true;
+    }
+    return ok ? t : null;
   }
 
-  const daylightHours = 2 * H / 15;
+  const noonSun = _solarPosition(jd0 + (12 - lon / 15) / 24);
+  const cosH0 = cosHourAngle(-0.833, noonSun.decl);
+  if (cosH0 < -1) return { alwaysDay: true };
+  if (cosH0 > 1)  return { alwaysNight: true };
+
+  const sunriseUTC = eventUTC(-0.833, true);
+  const sunsetUTC = eventUTC(-0.833, false);
+  if (sunriseUTC == null || sunsetUTC == null) return cosH0 < 0 ? { alwaysDay: true } : { alwaysNight: true };
+  // No civil dusk (high-latitude summer): first/last light 4 min out, as before.
+  const civilRise = eventUTC(-6, true);
+  const civilSet = eventUTC(-6, false);
+  const firstLightUTC = civilRise != null ? civilRise : sunriseUTC - 1 / 15;
+  const lastLightUTC = civilSet != null ? civilSet : sunsetUTC + 1 / 15;
+
+  // Whole minutes, as the cards print them.
+  const hoursToDate = h => new Date(day0 + Math.round(h * 60) * 60000);
 
   return {
     firstLight: hoursToDate(firstLightUTC),
     sunrise: hoursToDate(sunriseUTC),
     sunset: hoursToDate(sunsetUTC),
     lastLight: hoursToDate(lastLightUTC),
-    daylightHours: daylightHours
+    daylightHours: sunsetUTC - sunriseUTC
   };
-}
-
-function isNighttime(hour, daylight) {
-  if (!daylight || daylight.alwaysDay) return false;
-  if (daylight.alwaysNight) return true;
-  const sunriseH = daylight.sunrise.getHours() + daylight.sunrise.getMinutes() / 60;
-  const sunsetH = daylight.sunset.getHours() + daylight.sunset.getMinutes() / 60;
-  return hour < sunriseH || hour > sunsetH;
 }
 
 // ── Swell arrival estimator ──────────────────────
@@ -521,18 +550,19 @@ async function fetchWithProxies(rawUrl, timeout = 10000) {
 }
 
 // ── API: Open-Meteo Marine ───────────────────────
-// List of Open-Meteo Marine API models verified against the live docs at
-// https://open-meteo.com/en/docs/marine-weather-api (only those that
-// expose swell_wave_* variables are user-selectable).
+// Open-Meteo Marine models that return a usable swell partition at the
+// Choc forecast point, probed live with fetchMarineForecast's exact query
+// (audit C21, 2026-10-01). Auto (best_match) is MeteoFrance MFWAM there.
+// Left out on purpose: gfs_wave025/016 (not model ids; HTTP 400 — the
+// NOAA ids are ncep_*), dwd_ewam (HTTP 400, no data this far west),
+// ecmwf_wam/ecmwf_wam025 (total sea only, swell_* all null) and
+// era5_ocean (all null). Stale stored ids fall back to Auto in
+// getForecastModel.
 const FORECAST_MODELS = [
   { value: 'meteofrance_wave', label: 'MeteoFrance MFWAM (0.08°)' },
-  { value: 'dwd_ewam',         label: 'DWD EWAM (0.05°)' },
-  { value: 'dwd_gwam',         label: 'DWD GWAM (0.25°)' },
-  { value: 'ecmwf_wam',        label: 'ECMWF WAM (~9 km)' },
-  { value: 'ecmwf_wam025',     label: 'ECMWF WAM (0.25°)' },
-  { value: 'gfs_wave025',      label: 'GFS Wave (NOAA, 0.25°)' },
-  { value: 'gfs_wave016',      label: 'GFS Wave (NOAA, 0.16°)' },
-  { value: 'era5_ocean',       label: 'ERA5-Ocean (0.5°)' }
+  { value: 'ncep_gfswave025',  label: 'NOAA GFS-Wave (0.25°)' },
+  { value: 'ncep_gfswave016',  label: 'NOAA GFS-Wave (0.16°)' },
+  { value: 'dwd_gwam',         label: 'DWD GWAM (0.25°, no secondary swell)' }
 ];
 
 async function fetchMarineForecast(lat, lon, model) {
@@ -2795,6 +2825,13 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred, buoy
 // sessionStorage 'lcc-scrubber-hour' (ISO hour string).
 
 let _forecastInteractionAbort = null;
+// Gesture state lives here, not in setupForecastInteraction's closure:
+// a ResizeObserver redraw re-wires the listeners, and a drag must survive
+// that (audit C45). drag = the canvas a mouse drag started on; touch =
+// the touch's start point and its locked direction ('h' scrubs, 'v'
+// scrolls the page).
+const _fcGesture = { drag: null, touchStart: null, touchMode: null };
+const FC_TOUCH_SLOP_PX = 8;
 
 function findHourIndexForTime(targetMs, cs) {
   let best = -1;
@@ -2966,8 +3003,11 @@ function applyScrubberToHour(idx) {
   document.querySelectorAll('.scrub-badge').forEach(b => b.remove());
 
   // ── "Reset to now" link visibility (lives inside the detail bar) ──
+  // visibility, not display: its space stays reserved, so showing it on
+  // the first scrub doesn't re-wrap the detail bar and resize the chart
+  // container (which costs a full redraw + listener re-wire, audit C45).
   const resetBtn = el('forecast-reset-now');
-  if (resetBtn) resetBtn.style.display = isScrubberAtNow() ? 'none' : '';
+  if (resetBtn) resetBtn.style.visibility = isScrubberAtNow() ? 'hidden' : 'visible';
 
   // ── Cross-feature: Tab 2 prediction widget tracks the scrubber too. ──
   if (typeof _regNotifyScrubberMoved === 'function') _regNotifyScrubberMoved();
@@ -3020,13 +3060,11 @@ function setupForecastInteraction(container) {
     el('forecast-canvas-tide')
   ].filter(Boolean);
 
-  let dragging = false;
-  let dragSrc = null;
+  const g = _fcGesture;
 
   for (const cv of canvases) {
     cv.addEventListener('mousedown', (e) => {
-      dragging = true;
-      dragSrc = cv;
+      g.drag = cv;
       cv.style.cursor = 'ew-resize';
       const idx = indexFromClientXOnCanvas(e.clientX, cv);
       setScrubberToIdx(idx, true);
@@ -3034,37 +3072,52 @@ function setupForecastInteraction(container) {
     }, { signal });
 
     cv.addEventListener('mousemove', (e) => {
-      if (!dragging) return;
-      const idx = indexFromClientXOnCanvas(e.clientX, dragSrc || cv);
+      if (!g.drag) return;
+      const idx = indexFromClientXOnCanvas(e.clientX, g.drag);
       setScrubberToIdx(idx, true);
     }, { signal });
 
+    // Touch: the canvases are touch-action: pan-y, so the browser keeps
+    // vertical swipes as page scrolls. Nothing moves on touchstart; once
+    // the finger has travelled FC_TOUCH_SLOP_PX the gesture locks to a
+    // direction, and only a horizontal drag scrubs (and blocks the
+    // default). A plain tap still scrubs via the compatibility mousedown.
     cv.addEventListener('touchstart', (e) => {
-      if (e.touches.length !== 1) return;
-      const idx = indexFromClientXOnCanvas(e.touches[0].clientX, cv);
-      setScrubberToIdx(idx, true);
+      g.touchMode = null;
+      g.touchStart = e.touches.length === 1
+        ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
     }, { passive: true, signal });
 
     cv.addEventListener('touchmove', (e) => {
-      if (e.touches.length !== 1) return;
-      e.preventDefault();
-      const idx = indexFromClientXOnCanvas(e.touches[0].clientX, cv);
-      setScrubberToIdx(idx, true);
+      if (!g.touchStart || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if (!g.touchMode) {
+        const dx = Math.abs(t.clientX - g.touchStart.x);
+        const dy = Math.abs(t.clientY - g.touchStart.y);
+        if (dx < FC_TOUCH_SLOP_PX && dy < FC_TOUCH_SLOP_PX) return;
+        g.touchMode = dx > dy ? 'h' : 'v';
+      }
+      if (g.touchMode !== 'h') return;
+      if (e.cancelable) e.preventDefault();
+      setScrubberToIdx(indexFromClientXOnCanvas(t.clientX, cv), true);
     }, { passive: false, signal });
+
+    const endTouch = () => { g.touchStart = null; g.touchMode = null; };
+    cv.addEventListener('touchend', endTouch, { passive: true, signal });
+    cv.addEventListener('touchcancel', endTouch, { passive: true, signal });
   }
 
   // Even when the cursor strays off a canvas, dragging should still follow
   // until mouseup. Listen to window-level mousemove for that.
   window.addEventListener('mousemove', (e) => {
-    if (!dragging || !dragSrc) return;
-    const idx = indexFromClientXOnCanvas(e.clientX, dragSrc);
+    if (!g.drag) return;
+    const idx = indexFromClientXOnCanvas(e.clientX, g.drag);
     setScrubberToIdx(idx, true);
   }, { signal });
 
   window.addEventListener('mouseup', () => {
-    dragging = false;
-    if (dragSrc) dragSrc.style.cursor = '';
-    dragSrc = null;
+    if (g.drag) g.drag.style.cursor = '';
+    g.drag = null;
   }, { signal });
 }
 
@@ -3102,6 +3155,13 @@ function resetScrubberToNow() {
 
 let _nowPulseRAF = null;
 let _nowPulsePrev = null; // last drawn {x, y} for dirty-rect clearing
+// Each frame makes the browser re-composite the whole overlay, so the
+// ring animates at ~10 fps (it is a 3 px, 1.6 s fade; 60 fps bought
+// nothing visible) and the loop stops while the chart is hidden or
+// scrolled off-screen (audit C36).
+const NOW_PULSE_FRAME_MS = 100;
+let _nowPulseInView = true;   // IntersectionObserver verdict; true until it reports
+let _nowPulseIO = null;
 
 function _ensureNowOverlay(container) {
   let overlay = el('forecast-now-overlay');
@@ -3181,11 +3241,37 @@ function startNowPulse() {
     _drawNowPulseFrame(true); // single static marker, no animation loop
     return;
   }
-  const tick = () => {
-    _drawNowPulseFrame(false);
+  _watchNowPulseViewport();
+  let last = -Infinity;
+  const tick = (ts) => {
+    // Hidden (another tab, a kiosk panel without the chart) or scrolled
+    // away: end the loop instead of spinning. switchTab, the observer
+    // below, visibilitychange and every full chart draw restart it.
+    const container = el('forecast-chart-container');
+    if (!container || container.offsetWidth === 0 || !_nowPulseInView) {
+      _nowPulseRAF = null;
+      return;
+    }
+    if (ts - last >= NOW_PULSE_FRAME_MS) {
+      last = ts;
+      _drawNowPulseFrame(false);
+    }
     _nowPulseRAF = requestAnimationFrame(tick);
   };
   _nowPulseRAF = requestAnimationFrame(tick);
+}
+
+// Pause the pulse while the chart is scrolled off-screen (long phone
+// pages) and resume when it comes back. Created once, on first start.
+function _watchNowPulseViewport() {
+  if (_nowPulseIO || typeof IntersectionObserver !== 'function') return;
+  const container = el('forecast-chart-container');
+  if (!container) return;
+  _nowPulseIO = new IntersectionObserver(entries => {
+    _nowPulseInView = entries[entries.length - 1].isIntersecting;
+    if (_nowPulseInView && STATE.forecastChart && !document.hidden) startNowPulse();
+  });
+  _nowPulseIO.observe(container);
 }
 
 function stopNowPulse() {
@@ -4567,6 +4653,8 @@ function switchTab(tab) {
   if (vF) vF.style.display = tab === 'forecast' ? '' : 'none';
   if (vR) vR.style.display = tab === 'regression' ? '' : 'none';
   if (vS) vS.style.display = tab === 'surflog' ? '' : 'none';
+  // The now-pulse stops itself while the forecast view is hidden.
+  if (tab === 'forecast' && STATE.forecastChart) startNowPulse();
   if (tab === 'regression') {
     renderRegressionTab();
   }
@@ -7069,7 +7157,7 @@ function setForecastModel(v) {
 }
 
 function describeForecastModel(v) {
-  if (!v) return 'Auto (Open-Meteo best_match — typically resolves to GFS Wave for this region)';
+  if (!v) return 'Auto (Open-Meteo best_match = MeteoFrance MFWAM 0.08° at Choc)';
   const m = FORECAST_MODELS.find(x => x.value === v);
   return m ? `${v} · ${m.label}` : v;
 }
@@ -7306,9 +7394,30 @@ function verifStats(rows, getObs, getModel, circular) {
   return n ? { n, bias: sum / n, mae: sumAbs / n } : { n: 0, bias: null, mae: null };
 }
 
-// Row accessors shared by the stats table and the charts. Period and
-// direction prefer the buoy's spectral swell partition (same concept
-// as the model's swell_wave_*) and fall back to the stdmet values.
+// Row accessors shared by the stats table and the charts. Each pairs
+// like with like (audit C15): NDBC's swell split at 44097 is a fixed
+// 0.1 Hz cut (SwP is always ≥ 10 s) while the model's swell_wave_* is
+// its own partition (median 5.6 s at the buoy), so SwP vs swell period
+// measured the two definitions, not the forecast (a fake −5.8 s bias).
+//   Period: buoy energy period Tm-1,0 (tm10, from the spectrum) vs the
+//     model's mean wave period, which MFWAM computes the same way. Rows
+//     logged before the pipeline recorded tm10 use the buoy's DPD.
+//   Direction: rows carrying the model's total-sea direction (wvd)
+//     compare it with the buoy's MWD. Older rows compare the buoy's
+//     ≥ 8 s direction with the model's swell partition only where that
+//     partition is itself ≥ 8 s; otherwise they describe different trains.
+const VERIF_SWELL_MIN_S = 8;
+
+function _verifRowHasWvd(r) {
+  return !!((r.mb && r.mb.wvd != null) || (r.mc && r.mc.wvd != null));
+}
+
+function _verifModelDir(m, r) {
+  if (!m) return null;
+  if (_verifRowHasWvd(r)) return m.wvd;
+  return m.swp != null && m.swp >= VERIF_SWELL_MIN_S ? m.swd : null;
+}
+
 const VERIF_GET = {
   height: {
     obs: r => r.buoy && r.buoy.hs,
@@ -7316,14 +7425,14 @@ const VERIF_GET = {
     mc: r => r.mc && r.mc.hs
   },
   period: {
-    obs: r => r.buoy && (r.buoy.swp != null ? r.buoy.swp : r.buoy.dpd),
-    mb: r => r.mb && r.mb.swp,
-    mc: r => r.mc && r.mc.swp
+    obs: r => r.buoy && (r.buoy.tm10 != null ? r.buoy.tm10 : r.buoy.dpd),
+    mb: r => r.mb && r.mb.wvp,
+    mc: r => r.mc && r.mc.wvp
   },
   dir: {
-    obs: r => r.buoy && (r.buoy.swd != null ? r.buoy.swd : r.buoy.mwd),
-    mb: r => r.mb && r.mb.swd,
-    mc: r => r.mc && r.mc.swd,
+    obs: r => r.buoy && (_verifRowHasWvd(r) ? r.buoy.mwd : r.buoy.swd),
+    mb: r => _verifModelDir(r.mb, r),
+    mc: r => _verifModelDir(r.mc, r),
     circular: true,
     // Compass names read better than raw degrees for the axis.
     fmtY: v => directionLabel(((v % 360) + 360) % 360)
@@ -7374,7 +7483,7 @@ function drawVerifChart(canvasId, rows, getters) {
   lo -= span * 0.12; hi += span * 0.12;
   const yFor = v => padT + (1 - (v - lo) / (hi - lo)) * plotH;
 
-  // Grid: three horizontal lines + a tick at each UTC midnight.
+  // Grid: three horizontal lines + a tick at each local midnight.
   ctx.strokeStyle = FC_RETRO.grid;
   ctx.lineWidth = 1;
   for (let g = 0; g <= 2; g++) {
@@ -7392,7 +7501,12 @@ function drawVerifChart(canvasId, rows, getters) {
   const dayMs = 86400e3;
   const labelEvery = Math.max(1, Math.ceil((tRange / dayMs) / 7));
   let dayN = 0;
-  for (let d = Math.ceil(t0 / dayMs) * dayMs; d <= t1; d += dayMs, dayN++) {
+  // Step calendar days from the first local midnight at/after t0, so each
+  // tick sits on the start of the day its local-date label names (UTC
+  // midnight put "9/29" at 8 PM on 9/29) and 23/25 h DST days stay aligned.
+  const tick = new Date(t0);
+  if (tick.getHours() || tick.getMinutes() || tick.getSeconds() || tick.getMilliseconds()) tick.setHours(24, 0, 0, 0);
+  for (let d = tick.getTime(); d <= t1; tick.setDate(tick.getDate() + 1), d = tick.getTime(), dayN++) {
     const x = xFor(d);
     ctx.strokeStyle = FC_RETRO.daySep;
     ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
@@ -7495,9 +7609,12 @@ function _verifRender() {
   }
 
   setFooter('footer-verification',
-    'Measured: NDBC buoy 44097 (Block Island). Claimed: Open-Meteo best_match for the same hour, at the buoy’s own coordinates and at the Choc forecast point. ' +
-    'Logged every 2 h by the update-buoy pipeline. Gaps in a line are buoy outages (never interpolated); a direction line that jumps edges crossed north. ' +
-    'Technically: typical miss = bias = mean(model − buoy); typical size = MAE. Period/direction compare swell partitions (SwP/SwD vs swell_wave_*), falling back to DPD/MWD.');
+    'Measured: NDBC buoy 44097 (Block Island). Claimed: Open-Meteo best_match (MeteoFrance MFWAM) for the same hour, at the buoy’s own coordinates and at the Choc forecast point. ' +
+    'Logged every 2 h by the update-buoy pipeline. Gaps in a line are missing readings (buoy outages or skipped pipeline runs; never interpolated); a direction line that jumps edges crossed north. ' +
+    'Technically: typical miss = bias = mean(model − buoy); typical size = MAE. Height: total Hs on both sides. ' +
+    'Period: buoy energy period Tm-1,0 from its spectrum (its dominant period DPD on rows logged before Tm-1,0 was recorded) vs the model’s mean wave period. ' +
+    'Direction: buoy MWD vs the model’s mean wave direction; on older rows without it, the buoy’s ≥ 8 s swell direction vs the model swell partition, only at hours when that partition is ≥ 8 s. ' +
+    'NDBC’s own swell split (SwH/SwP) counts only ≥ 10 s energy at this buoy, so it is not compared with the model’s swell partition.');
 }
 
 function renderVerificationPanel() {

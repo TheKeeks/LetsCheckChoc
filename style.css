@@ -3196,3 +3196,19 @@ summary:focus-visible {
 .verif-intro { margin: 2px 0 10px; max-width: 72ch; }
 .verif-th-sub { font-weight: normal; font-size: 11px; color: var(--ink2); }
 .verif-table-note { margin: 8px 0 0; max-width: 78ch; }
+
+/* ── Forecast chart touch (audit C45) ─────────────
+   The browser keeps vertical swipes over the chart as page scrolls (and
+   pinch-zoom); app.js scrubs only on a drag that starts out horizontal. */
+#forecast-chart-container canvas {
+  touch-action: pan-y pinch-zoom;
+}
+
+/* ── Model-vs-Buoy panel at phone width ───────────
+   A fieldset's default min-width is its content's min-content, so the
+   stats table pushed it ~36 px past the panel at 390 px and the panel
+   clipped the right edge of the table and chart axes. Let it shrink;
+   the table scrolls inside .verif-stats instead. */
+#panel-verification .w1-fieldset {
+  min-width: 0;
+}

@@ -143,7 +143,7 @@
         <div class="chart-container chart-container-tall" id="forecast-chart-container">
           <div class="forecast-detail-bar" id="forecast-detail-bar">
             <div class="detail-row" id="forecast-detail-row"></div>
-            <button type="button" id="forecast-reset-now" class="forecast-reset-btn" style="display:none;">Reset to now</button>
+            <button type="button" id="forecast-reset-now" class="forecast-reset-btn" style="visibility:hidden;">Reset to now</button>
           </div>
           <div class="forecast-day-row" id="forecast-day-header" aria-hidden="true"></div>
           <div class="forecast-card forecast-card-swell">
@@ -166,7 +166,7 @@
           <label class="forecast-model-label">
             <span class="forecast-model-label-txt">Model:</span>
             <select id="forecast-model-select" aria-label="Forecast model">
-              <option value="">Auto</option>
+              <option value="">Auto (MFWAM)</option>
             </select>
           </label>
           <label class="forecast-coord-toggle" id="forecast-coord-toggle-wrap" style="display:none;">
@@ -424,11 +424,11 @@
             <canvas id="verif-canvas-height"></canvas>
           </div>
           <div class="verif-chart-block">
-            <div class="verif-chart-label">Swell period — seconds between waves (longer = more powerful, organized swell)</div>
+            <div class="verif-chart-label">Wave period — seconds between waves (buoy energy period vs model mean period)</div>
             <canvas id="verif-canvas-period"></canvas>
           </div>
           <div class="verif-chart-block">
-            <div class="verif-chart-label">Swell direction — where the swell is coming from</div>
+            <div class="verif-chart-label">Wave direction — where the waves come from (older readings: 8 s+ swell only)</div>
             <canvas id="verif-canvas-dir"></canvas>
           </div>
         </fieldset>
@@ -465,19 +465,19 @@
 
           <div class="sl-ratings-row">
             <div class="sl-slider-group w1-untouched" data-rating="size">
-              <label class="sl-label">Size <span class="sl-slider-val" id="sl-size-val">5</span></label>
+              <label class="sl-label" for="sl-size">Size <span class="sl-slider-val" id="sl-size-val">5</span></label>
               <span class="w1-slider-placeholder">Tap to rate</span>
               <input type="range" id="sl-size" class="sl-range w1-untouched" min="0" max="10" value="5">
               <span class="sl-slider-desc" id="sl-size-desc"></span>
             </div>
             <div class="sl-slider-group w1-untouched" data-rating="windQuality">
-              <label class="sl-label">Wind Quality <span class="sl-slider-val" id="sl-wind-val">5</span></label>
+              <label class="sl-label" for="sl-wind-quality">Wind Quality <span class="sl-slider-val" id="sl-wind-val">5</span></label>
               <span class="w1-slider-placeholder">Tap to rate</span>
               <input type="range" id="sl-wind-quality" class="sl-range w1-untouched" min="0" max="10" value="5">
               <span class="sl-slider-desc" id="sl-wind-desc"></span>
             </div>
             <div class="sl-slider-group w1-untouched" data-rating="rideQuality">
-              <label class="sl-label">Ride Quality <span class="sl-slider-val" id="sl-ride-val">5</span></label>
+              <label class="sl-label" for="sl-ride-quality">Ride Quality <span class="sl-slider-val" id="sl-ride-val">5</span></label>
               <span class="w1-slider-placeholder">Tap to rate</span>
               <input type="range" id="sl-ride-quality" class="sl-range w1-untouched" min="0" max="10" value="5">
               <span class="sl-slider-desc" id="sl-ride-desc"></span>
