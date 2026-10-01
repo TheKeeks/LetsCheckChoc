@@ -20,6 +20,7 @@ move `FIXTURE_NOW` to match and update any assertions that depend on it.
 | `coops/water-temp-8510560.json` | `…?date=latest&station=8510560&product=water_temperature&units=english&time_zone=lst_ldt&…` |
 | `coops/error-no-predictions.json` | NOAA's exact HTTP **200** body when predictions are unavailable (recorded for station 9999999; the 2026 outage returned it for every station) |
 | `ndbc/44097.{txt,spec,data_spec,swdir,swdir2,swr1,swr2}` | `www.ndbc.noaa.gov/data/realtime2/44097.*`, captured 14:17 UTC, trimmed to the header line(s) plus the newest 30 rows. Newest stdmet row is 14:00 UTC; data_spec has 98 bands (0.025–0.96 Hz) |
+| `ndbc/44097-20260923T1900Z.data_spec` | One `44097.data_spec` row (2026-09-23 19:00 UTC, captured 2026-10-01 15:16 UTC with the header line): the event where NDBC's SwH said 0.6 m but the 8 s+ band held 2.0 m. `.spec` for that row: WVHT 3.1 m, SwH 0.6 m @ 10.0 s, WWH 3.1 m @ 8.7 s ESE |
 | `pipeline/buoy.json`, `pipeline/verification.json` | Snapshots of the bot-owned `data/` files at commit b528f75 (fetch 13:15 UTC, obs 12:30 UTC). The harnesses serve these for `data/buoy.json` / `data/verification.json`, because the live files change every 2 h |
 | `vendor/leaflet-1.9.4.{js,css}` | `unpkg.com/leaflet@1.9.4/dist/…` (byte-identical, md5 35b48eb9… / c02c12fe…) |
 | `firebase-stub.js` | Hand-written Firebase compat stub (not a recording). Its knobs are documented in the file header |
