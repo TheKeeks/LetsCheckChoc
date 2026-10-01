@@ -13,6 +13,12 @@
 //   __FB_LOGS        array of surf_logs documents returned by get()
 //   __FB_FAIL        { get, set, delete, put } → that call rejects
 //   __FB_NO_STORAGE  truthy → firebase.storage is missing (blocked script)
+// Read at call time, so a test can set them after load:
+//   __FB_LINK_ERROR  error code linkWithPopup() rejects with (default
+//                    'auth/popup-closed-by-user'), e.g.
+//                    'auth/credential-already-in-use'
+//   __FB_POPUP_USER  { uid, displayName } → signInWithPopup() signs that
+//                    Google user in (default: rejects, popup closed)
 // Every write is recorded on window.__FB_WRITES as
 //   { op: 'set'|'update'|'delete'|'put', path, data }.
 (function () {
@@ -28,7 +34,7 @@
   function makeUser(uid, isAnonymous, displayName) {
     return {
       uid: uid, isAnonymous: isAnonymous, displayName: displayName || null, email: null,
-      linkWithPopup: function () { return Promise.reject(stubError('auth/popup-closed-by-user')); }
+      linkWithPopup: function () { return Promise.reject(stubError(w.__FB_LINK_ERROR || 'auth/popup-closed-by-user')); }
     };
   }
   function emit() { listeners.slice().forEach(function (cb) { cb(currentUser); }); }
@@ -53,7 +59,15 @@
       });
     },
     signOut: function () { currentUser = null; emit(); return Promise.resolve(); },
-    signInWithPopup: function () { return Promise.reject(stubError('auth/popup-closed-by-user')); }
+    signInWithPopup: function () {
+      var p = w.__FB_POPUP_USER;
+      if (!p) return Promise.reject(stubError('auth/popup-closed-by-user'));
+      return later(10, function () {
+        currentUser = makeUser(p.uid, false, p.displayName);
+        emit();
+        return { user: currentUser };
+      });
+    }
   };
   function authFn() { return auth; }
   authFn.GoogleAuthProvider = function GoogleAuthProvider() {};
