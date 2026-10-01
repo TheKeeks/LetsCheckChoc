@@ -1292,18 +1292,32 @@ function pipelineSpectralFor(buoy, pData) {
 
 // The swell card's 8 s+ band for this buoy: the pipeline's own swell_band
 // when it provides one, else integrated here from its spectral bins.
+// null when the spectrum is not as new as buoy.time: the card would show
+// it under the obs time's "Current", so it falls back to WVHT / DPD / MWD.
+const SPECTRUM_MAX_LAG_MS = 2 * 60 * 60 * 1000;
 function pipelineSwellBand(pData, buoy) {
   if (!pipelineIsFor(pData, buoy)) return null;
+  // Carried over from an earlier run (data_spec failed), or well behind
+  // the stdmet row (the hourly spectrum normally trails it by < 1 h).
+  const carried = Array.isArray(pData.stale_sections) && pData.stale_sections.includes('spectral_bins');
+  const specMs = parseBuoyObsTime(pData.spectral_obs_time);
+  const obsMs = parseBuoyObsTime(pData.buoy && pData.buoy.time);
+  if (carried || (specMs != null && obsMs != null && obsMs - specMs > SPECTRUM_MAX_LAG_MS)) return null;
+  // Without its swdir file the pipeline writes dir1 = 0 in every bin: a
+  // direction nobody measured, not swell from due north.
+  const bins = pData.spectral_bins;
+  const hasDir = Array.isArray(bins) && bins.some(b => b && Number.isFinite(b.dir1) && b.dir1 !== 0 && b.dir1 < 999);
   const sb = pData.swell_band;
-  if (sb && Number.isFinite(sb.hs_m)) {
-    return {
-      hsM: sb.hs_m,
-      peakPeriod: Number.isFinite(sb.peak_period_s) ? sb.peak_period_s : null,
-      dir: Number.isFinite(sb.dir_deg) ? sb.dir_deg : null,
-      minPeriod: Number.isFinite(sb.min_period_s) ? sb.min_period_s : SWELL_BAND_MIN_PERIOD_S
-    };
-  }
-  return swellBandFromBins(pData.spectral_bins, SWELL_BAND_MIN_PERIOD_S);
+  const band = sb && Number.isFinite(sb.hs_m)
+    ? {
+        hsM: sb.hs_m,
+        peakPeriod: Number.isFinite(sb.peak_period_s) ? sb.peak_period_s : null,
+        dir: Number.isFinite(sb.dir_deg) ? sb.dir_deg : null,
+        minPeriod: Number.isFinite(sb.min_period_s) ? sb.min_period_s : SWELL_BAND_MIN_PERIOD_S
+      }
+    : swellBandFromBins(bins, SWELL_BAND_MIN_PERIOD_S);
+  if (band && !hasDir) band.dir = null;
+  return band;
 }
 
 // ── Forecast fetch round (buoy and pin loads) ──
@@ -1338,6 +1352,21 @@ function settleSource(live, usable, liveKey, keys, maxAgeMs, roundStart) {
   return { data: null, asOf: null, origin: 'failed', keyIdx: -1 };
 }
 
+// A saved Open-Meteo copy's `current` block is the conditions when it was
+// fetched (up to 24 h ago), and the cards label it "Current". Rebuild it
+// from the copy's own forecast for this hour (every `current` field is
+// also an hourly series in both queries).
+function currentFromHourly(data) {
+  const i = marineNowIndex(data);
+  if (i < 0 || !data.current) return data;
+  const current = Object.assign({}, data.current, { time: data.hourly.time[i] });
+  for (const k of Object.keys(current)) {
+    const s = data.hourly[k];
+    if (k !== 'time' && Array.isArray(s)) current[k] = s[i] ?? null;
+  }
+  return Object.assign({}, data, { current });
+}
+
 // Fetches marine, wind and the chart's tide spans in parallel, then settles
 // each (live → saved copy → nothing). A network blip on a chosen model
 // shows best_match for this load only; the choice is forgotten only when
@@ -1370,9 +1399,13 @@ async function fetchForecastRound({ forecastLat, forecastLon, windLat, windLon, 
   const models = selectedModel && !noCoverage ? [selectedModel, ''] : [''];
   const m = settleSource(marine, marineHasUsableData, marineCacheKey(forecastLat, forecastLon, marineModel),
     models.map(mm => marineCacheKey(forecastLat, forecastLon, mm)), maxAge.forecast, roundStart);
-  if (m.origin === 'stale-cache') marineModel = models[m.keyIdx];
+  if (m.origin === 'stale-cache') {
+    marineModel = models[m.keyIdx];
+    m.data = currentFromHourly(m.data);
+  }
   const windKey = windCacheKey(windLat, windLon);
   const w = settleSource(wind, d => !!(d && d.hourly), windKey, [windKey], maxAge.forecast, roundStart);
+  if (w.origin === 'stale-cache') w.data = currentFromHourly(w.data);
   const none = { data: null, asOf: null, origin: 'failed' };
   const hiloKey = tideStn && tideHiLoCacheKey(tideStn.id, CHART_TIDE_SPAN.hiloDays);
   const predKey = tideStn && tidePredCacheKey(tideStn.id, undefined, CHART_TIDE_SPAN.predHours);
@@ -1398,14 +1431,20 @@ async function fetchForecastRound({ forecastLat, forecastLon, windLat, windLon, 
 
 // SHARED CONTRACT with kiosk.js (Choc TV status strip), set after every
 // completed load:
-//   STATE.dataAsOf    epoch ms of the OLDEST fetch time among the marine
-//                     forecast, wind and tides actually rendered (a stale
-//                     fallback keeps its original cache time), or null.
+//   STATE.dataAsOf    epoch ms: how old the swell + wind FORECAST on screen
+//                     is (the older of the two fetch times; a stale fallback
+//                     keeps its original cache time). A load whose marine
+//                     fetch failed leaves the last forecast drawn in
+//                     STATE.forecastData, so that one's age keeps counting;
+//                     null when no forecast is on screen at all. Saved tide
+//                     predictions never age it: they are astronomical and
+//                     stay right within their 4-day cap.
 //   STATE.dataHealth  { marine:{asOf, origin}, wind:{asOf, origin},
 //                     tides:{asOf, origin}, buoy:{obsMs, origin} }; origin is
 //                     'live' | 'cache' | 'stale-cache' | 'pipeline' | 'failed'.
 // STATE.lastLoadCompletedAt stays the "a load finished" signal; these say
 // how old the data on screen really is. The header shows the same truth.
+let _forecastDrawnAsOf = null;   // age of the forecast last drawn by a load
 function recordDataHealth(health, buoyHealth, hasTideStation) {
   STATE.dataHealth = {
     marine: health.marine,
@@ -1413,12 +1452,18 @@ function recordDataHealth(health, buoyHealth, hasTideStation) {
     tides: health.tides,
     buoy: buoyHealth
   };
-  const asOfs = [health.marine, health.wind, health.tides]
-    .map(s => s.asOf).filter(Number.isFinite);
-  STATE.dataAsOf = asOfs.length ? Math.min(...asOfs) : null;
+  const forecast = [health.marine, health.wind];
+  if (health.marine.origin !== 'failed') {
+    // renderForecastSet just drew this marine (+ wind) into forecastData.
+    const asOfs = forecast.map(s => s.asOf).filter(Number.isFinite);
+    _forecastDrawnAsOf = asOfs.length ? Math.min(...asOfs) : null;
+  }
+  // Without marine nothing was redrawn: an older forecast still on the
+  // cards keeps its real age (past the 24 h fallback cap); none → null.
+  const fd = STATE.forecastData;
+  STATE.dataAsOf = fd && fd.marine ? _forecastDrawnAsOf : null;
 
-  const shown = [health.marine, health.wind, hasTideStation ? health.tides : null].filter(Boolean);
-  const anyStale = shown.some(s => s.origin === 'stale-cache');
+  const anyStale = forecast.some(s => s.origin === 'stale-cache');
   const hdr = el('header-update-time');
   if (!hdr) return;
   let text;
@@ -1430,7 +1475,8 @@ function recordDataHealth(health, buoyHealth, hasTideStation) {
     const missing = [];
     if (health.wind.origin === 'failed') missing.push('wind');
     if (hasTideStation && health.tides.origin === 'failed') missing.push('tides');
-    text = `Updated ${formatAsOfTime(STATE.dataAsOf)}` + (missing.length ? ` · no ${missing.join(' or ')}` : '');
+    text = `Updated ${formatAsOfTime(STATE.dataAsOf)}` + (missing.length ? ` · no ${missing.join(' or ')}` : '') +
+      (hasTideStation && health.tides.origin === 'stale-cache' ? ' · saved tides' : '');
   }
   hdr.textContent = text;
   hdr.classList.toggle('is-stale', health.marine.origin === 'failed' || anyStale);
@@ -1834,11 +1880,11 @@ function updateSwellCard(buoyParsed, marine, buoy, swellBand) {
     const age = buoyObsAge(buoyParsed.obsMs);
 
     // Hero number: the 8 s+ band of the spectrum (see SWELL_BAND_MIN_PERIOD_S),
-    // with its own peak period and direction (none when the band is flat).
-    // Total WVHT stays in the detail.
+    // with its own peak period and direction (the buoy's MWD when the band
+    // has none: flat, or no direction file). Total WVHT stays in the detail.
     const band = swellBand && Number.isFinite(swellBand.hsM) ? swellBand : null;
     const swellFt = band ? Math.round(band.hsM * 3.28084 * 10) / 10 : null;
-    const d = band ? (band.dir != null ? Math.round(band.dir) : null) : buoyParsed.meanDirection;
+    const d = band && band.dir != null ? Math.round(band.dir) : buoyParsed.meanDirection;
     const displayP = band ? band.peakPeriod : buoyParsed.dominantPeriod;
 
     // Card accent based on total wave height

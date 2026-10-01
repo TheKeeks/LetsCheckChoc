@@ -120,6 +120,21 @@ test('status strip: a refresh whose forecast fetch failed shows the true age, th
   assert.deepEqual(strip(app), { text: 'updated just now', stale: false, dead: false, banner: '' });
 });
 
+test('status strip: saved tide predictions never age a fresh forecast (cache-derived age agrees with app.js)', async () => {
+  const app = bootKiosk();
+  const S = app.get('STATE');
+  S.selectedBuoy = CHOC;
+  S.isChocomount = true;
+  S.nearestTideStation = { id: '8510719' };
+  S.forecastData = { marine: { hourly: {} }, wind: { hourly: {} }, tideHiLo: [{ t: '2026-10-01 14:00', v: '0.1', type: 'L' }] };
+  writeCaches(app, ['tides']);             // CO-OPS answered once, at 11:00…
+  await app.clock.fastForward(4 * HOUR);
+  writeCaches(app, ['marine', 'wind']);    // …then only Open-Meteo, for 4 h
+  finishLoad(app);
+  await app.clock.tick(1000);
+  assert.deepEqual(strip(app), { text: 'updated just now', stale: false, dead: false, banner: '' });
+});
+
 test('status strip: a finished load with nothing to show reads NO DATA (not "updated just now")', async () => {
   const app = bootKiosk();
   const S = app.get('STATE');

@@ -75,3 +75,89 @@ test('spectral table labels NDBC\'s split for what it is', async () => {
   assert.match(table.innerHTML, /<td>Swell \(NDBC 10 s split\)<\/td><td class="num-cell">1\.0/);
   assert.match(table.innerHTML, /<td>Wind Waves \(NDBC 10 s split\)<\/td>/);
 });
+
+// ── Review: the band must be as new as the obs it is shown under ──
+// When data_spec fails but 44097.txt answers, the pipeline carries the
+// previous spectrum over (stale_sections, spectral_obs_time) and still
+// computes swell_band from it. The card labels the hero with buoy.time, so
+// an old band read as the current swell; it now falls back to the fresh
+// WVHT / DPD / MWD. Without the swdir file every bin's dir1 is 0, which the
+// card showed as swell from due north (out of window): MWD stands in.
+
+// Choc loaded with data/buoy.json replaced by `pipe`.
+async function chocWith(pipe) {
+  const app = loadApp({ fetch: fixtureFetch({ overrides: [['data/buoy.json', { status: 200, json: pipe }]] }) });
+  const choc = prepareScene(app);
+  app.get('STATE').isChocomount = true;
+  // The stub DOM has no selectors: hand the card its label element.
+  const label = app.document.createElement('span');
+  app.dom.byId('card-swell').querySelector = sel => (sel === '.condition-label' ? label : null);
+  await runLoad(app, 'loadAllData', choc);
+  const txt = id => app.dom.byId(id).textContent;
+  return {
+    hero: txt('val-swell-height'),
+    heroClass: app.dom.byId('val-swell-height').className,
+    detail: txt('val-swell-detail'),
+    label: label.textContent,
+    extra: txt('val-swell-arrival')
+  };
+}
+const FRESH_BAND = { hs_m: 0.4, peak_period_s: 8.7, dir_deg: 124.4, min_period_s: 8 };
+const withPipe = extra => Object.assign(JSON.parse(JSON.stringify(PIPE)), extra);
+
+test('pipelineSwellBand: none from a carried-over or lagging spectrum; older pipeline files still work', () => {
+  const app = loadApp();
+  const band = p => app.clone(app.call('pipelineSwellBand', p, { id: '44097' }));
+  // Healthy run: spectrum half an hour behind the 12:30 stdmet row.
+  assert.deepEqual(band(withPipe({ spectral_obs_time: '2026-10-01 12:00 UTC', stale_sections: [], swell_band: FRESH_BAND })),
+    { hsM: 0.4, peakPeriod: 8.7, dir: 124.4, minPeriod: 8 });
+  // data_spec failed: the bins (and the band computed from them) are an
+  // earlier run's.
+  assert.equal(band(withPipe({
+    spectral_obs_time: '2026-09-29 12:00 UTC', stale_sections: ['spectral_summary', 'spectral_bins'], swell_band: FRESH_BAND
+  })), null);
+  assert.equal(band(withPipe({ stale_sections: ['spectral_bins'] })), null, 'no client-side integration of carried bins either');
+  // Not marked stale, but more than 2 h older than buoy.time.
+  assert.equal(band(withPipe({ spectral_obs_time: '2026-10-01 10:00 UTC', stale_sections: [], swell_band: FRESH_BAND })), null);
+  assert.ok(band(withPipe({ spectral_obs_time: '2026-10-01 10:30 UTC', stale_sections: [], swell_band: FRESH_BAND })), '2 h exactly is fine');
+  // Only the stdmet row carried over (older than the spectrum): keep the band.
+  assert.ok(band(withPipe({ spectral_obs_time: '2026-10-01 14:00 UTC', stale_sections: ['buoy'], swell_band: FRESH_BAND })));
+});
+
+test('pipelineSwellBand: bins without a measured direction (dir1 all 0) give no band direction', () => {
+  const app = loadApp();
+  const noSwdir = withPipe({
+    spectral_bins: PIPE.spectral_bins.map(b => Object.assign({}, b, { dir1: 0 })),
+    swell_band: Object.assign({}, FRESH_BAND, { dir_deg: 0 })
+  });
+  const band = app.clone(app.call('pipelineSwellBand', noSwdir, { id: '44097' }));
+  assert.equal(band.dir, null);
+  assert.equal(band.hsM, 0.4, 'the height still stands');
+  delete noSwdir.swell_band;   // integrated here from the same bins
+  assert.equal(app.clone(app.call('pipelineSwellBand', noSwdir, { id: '44097' })).dir, null);
+});
+
+test('Choc swell card: a carried-over spectrum does not headline under the fresh obs time', async () => {
+  const card = await chocWith(withPipe({
+    spectral_obs_time: '2026-09-29 12:00 UTC',
+    stale_sections: ['spectral_summary', 'spectral_bins'],
+    swell_band: { hs_m: 3.53, peak_period_s: 10.5, dir_deg: 105, min_period_s: 8 }
+  }));
+  assert.equal(card.hero, '2.0 ft', 'the fresh total WVHT, not a days-old 11.6 ft band');
+  assert.equal(card.detail, '9s · ESE (120°)');
+  assert.equal(card.label, 'Swell: Buoy');
+  assert.match(card.extra, /^Buoy obs 8:30 AM \(2h 30m ago\) · reaches Choc ~/);
+});
+
+test('Choc swell card: no band direction → the buoy\'s mean wave direction, never "N (0°)"', async () => {
+  const allZero = await chocWith(withPipe({
+    spectral_bins: PIPE.spectral_bins.map(b => Object.assign({}, b, { dir1: 0 })),
+    swell_band: Object.assign({}, FRESH_BAND, { dir_deg: 0 })
+  }));
+  assert.equal(allZero.hero, '1.3 ft swell');
+  assert.equal(allZero.detail, '9s · ESE (120°) · 2.0 ft total');
+  assert.equal(allZero.heroClass, 'condition-value dir-in');
+  // A pipeline that writes the missing direction as null.
+  const nullDir = await chocWith(withPipe({ swell_band: Object.assign({}, FRESH_BAND, { dir_deg: null }) }));
+  assert.equal(nullDir.detail, '9s · ESE (120°) · 2.0 ft total');
+});
