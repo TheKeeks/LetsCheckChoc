@@ -7,7 +7,9 @@ Only needed when CORS proxy is unavailable.
 Exits 1 without touching data/buoy.json when every NDBC file fails, so the
 workflow skips its commit step and GitHub emails the owner. When only some
 files fail, the missing sections are carried over from the previous
-buoy.json and listed in `stale_sections`.
+buoy.json and listed in `stale_sections`; a carried spectrum more than
+SPECTRAL_CARRY_MAX_AGE old is published as null instead. A missing
+direction (no swdir) is null, never 0°.
 """
 
 import json
@@ -31,6 +33,10 @@ OUTPUT = Path(__file__).resolve().parent.parent / "data" / "buoy.json"
 # Sections of buoy.json that come straight from NDBC files. A run that
 # can't refresh one keeps the previous value and names it in stale_sections.
 DATA_SECTIONS = ("buoy", "spectral_summary", "spectral_bins")
+# The site shows the spectrum as the current swell (the swell card's 8 s+
+# band is computed from it) under the fresh buoy.time, so a carried-over
+# spectral section older than this is published as null instead.
+SPECTRAL_CARRY_MAX_AGE = timedelta(hours=6)
 # build_spectral_bins() argument order.
 SPECTRAL_FILES = ("data_spec", "swdir", "swdir2", "swr1", "swr2")
 
@@ -89,6 +95,14 @@ def ndbc_row_time(text):
             dt = _row_datetime(line)
             return dt.strftime("%Y-%m-%d %H:%M UTC") if dt else None
     return None
+
+
+def _utc_time(s):
+    """datetime of a "YYYY-MM-DD HH:MM UTC" string (buoy.time's format), or None."""
+    try:
+        return datetime.strptime(s, "%Y-%m-%d %H:%M UTC").replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
 
 
 def ndbc_rows(text, header_lines, since=None):
@@ -188,6 +202,8 @@ def parse_spectral_summary(text):
             return None
 
     return {
+        # Row time, as buoy.time: a carried-over summary keeps it (see main()).
+        "time": _row_datetime(lines[2]).strftime("%Y-%m-%d %H:%M UTC"),
         "significant_wave_height_m": sf(5),
         "swell_height_m": sf(6),
         "swell_period": sf(7),
@@ -227,13 +243,22 @@ def parse_spectral_file(text, has_sep_freq=False):
     return {"freqs": freqs, "values": values} if freqs else None
 
 
+def _valid_dir(d):
+    """True for a measured direction: not None (swdir missing) and not
+    NDBC's 999.0 missing-value code. A missing direction must never read
+    as 0°: that is north, far outside Choc's swell window."""
+    return d is not None and d < 999
+
+
 def compute_primary_swell_dir(bins, min_period=SWELL_BAND_MIN_PERIOD):
     """Energy-weighted circular mean of dir1, restricted to swell band (>=8s).
-    Falls back to all positive-energy bins if the swell band is empty."""
+    Falls back to all positive-energy bins if the swell band is empty.
+    None when those bins have no measured direction (never 0°, north)."""
     if not bins:
         return None
     swell = [b for b in bins if b["period"] >= min_period and b["energy"] > 0]
     pool = swell if swell else [b for b in bins if b["energy"] > 0]
+    pool = [b for b in pool if _valid_dir(b.get("dir1"))]
     if not pool:
         return None
     sx = sy = wsum = 0.0
@@ -299,6 +324,13 @@ def compute_tm10(bins):
     return round(m_1 / m0, 2) if m0 > 0 else None
 
 
+def _bin_dir(parsed, i):
+    """Direction of bin i from a parsed swdir/swdir2 file, or None when the
+    file failed or NDBC has no value for that bin."""
+    v = parsed["values"][i] if parsed and i < len(parsed["values"]) else None
+    return v if _valid_dir(v) else None
+
+
 def build_spectral_bins(data_spec_text, swdir_text, swdir2_text, swr1_text, swr2_text):
     """Build spectral bin data from raw NDBC spectral files."""
     energy = parse_spectral_file(data_spec_text, has_sep_freq=True)
@@ -315,8 +347,8 @@ def build_spectral_bins(data_spec_text, swdir_text, swdir2_text, swr1_text, swr2
             "freq": freq,
             "period": round(1.0 / freq, 3) if freq > 0 else 0,
             "energy": energy["values"][i] if i < len(energy["values"]) else 0,
-            "dir1": dir1["values"][i] if dir1 and i < len(dir1["values"]) else 0,
-            "dir2": dir2["values"][i] if dir2 and i < len(dir2["values"]) else 0,
+            "dir1": _bin_dir(dir1, i),
+            "dir2": _bin_dir(dir2, i),
             "r1": r1["values"][i] if r1 and i < len(r1["values"]) else 0.5,
             "r2": r2["values"][i] if r2 and i < len(r2["values"]) else 0.25,
         })
@@ -390,7 +422,8 @@ def _verif_buoy(obs, spec, bins):
     swd = spec.get("swell_direction")
     if bins and spec:
         # Same override as buoy.json: the energy-weighted >=8 s direction
-        # beats the 22.5° compass text in .spec.
+        # beats the 22.5° compass text in .spec, which stays when the bins
+        # have no direction (swdir missing for that hour).
         derived = compute_primary_swell_dir(bins)
         if derived is not None:
             swd = derived
@@ -446,11 +479,13 @@ def append_verification_rows(stdmet_text, spec_text, spectral_texts, now=None):
     spectral = {ext: ndbc_rows(spectral_texts.get(ext), 1, since - VERIF_MATCH) for ext in SPECTRAL_FILES}
 
     # Hold back observations the spectral files haven't caught up with yet
-    # (data_spec is hourly and often an hour behind), so a later run logs
+    # (data_spec is hourly and often an hour behind; swdir, which gives the
+    # row its swell direction, updates on its own), so a later run logs
     # them complete instead of this one logging them half-empty. A file
     # that failed, or has fallen far behind, is not waited for.
     horizon = newest
-    for times, slack in ((spec, timedelta(0)), (spectral["data_spec"], VERIF_MATCH)):
+    for times, slack in ((spec, timedelta(0)), (spectral["data_spec"], VERIF_MATCH),
+                         (spectral["swdir"], VERIF_MATCH)):
         if times and newest - max(times) <= VERIF_SOURCE_MAX_LAG:
             horizon = min(horizon, max(times) + slack)
 
@@ -509,9 +544,10 @@ def load_previous_output():
         return {}
 
 
-def main():
+def main(now=None):
     print(f"Fetching NDBC buoy {BUOY_ID} data...")
-    fetch_time = datetime.now(timezone.utc).isoformat()
+    now = now or datetime.now(timezone.utc)
+    fetch_time = now.isoformat()
 
     # Fetch standard meteorological data
     print(f"  Fetching {BUOY_ID}.txt (stdmet)...")
@@ -562,7 +598,22 @@ def main():
             sections[k] = prev.get(k)
         if "spectral_bins" in stale:
             spectral_obs_time = prev.get("spectral_obs_time")
-        print(f"::warning title=NDBC 44097 partial outage::Kept the previous {', '.join(stale)} in data/buoy.json")
+        # Each run's output is the next run's "previous", so without a limit
+        # a spectrum would stay frozen for as long as the outage lasts. Past
+        # SPECTRAL_CARRY_MAX_AGE (or with no time to tell) it goes null.
+        for k, t in (("spectral_summary", (sections["spectral_summary"] or {}).get("time")),
+                     ("spectral_bins", spectral_obs_time)):
+            obs = _utc_time(t)
+            if k in stale and (obs is None or now - obs > SPECTRAL_CARRY_MAX_AGE):
+                sections[k] = None
+        kept = [k for k in stale if sections[k] is not None]
+        if kept:
+            print(f"::warning title=NDBC 44097 partial outage::Kept the previous {', '.join(kept)} in data/buoy.json")
+        if len(kept) < len(stale):
+            print(f"::warning title=NDBC 44097 partial outage::No recent {', '.join(k for k in stale if k not in kept)} "
+                  "to keep; published null in data/buoy.json")
+    if not sections["spectral_bins"]:
+        spectral_obs_time = None
 
     # Build output
     output = {
@@ -575,7 +626,8 @@ def main():
         "spectral_summary": sections["spectral_summary"],
         "spectral_bins": sections["spectral_bins"],
         # data_spec row time ("YYYY-MM-DD HH:MM UTC"). The spectrum is hourly
-        # and can trail buoy.time, or be much older when carried over.
+        # and can trail buoy.time, or be up to SPECTRAL_CARRY_MAX_AGE old
+        # when carried over. null whenever spectral_bins is.
         "spectral_obs_time": spectral_obs_time,
         "swell_band": compute_swell_band(sections["spectral_bins"]),
         "stale_sections": stale,
@@ -612,7 +664,7 @@ def main():
 
     # Nowcast verification rows (best-effort; never fails the pipeline).
     try:
-        append_verification_rows(stdmet_text, spec_text, spectral_texts)
+        append_verification_rows(stdmet_text, spec_text, spectral_texts, now=now)
     except Exception as e:
         print(f"  Verification: unexpected error: {e}")
 

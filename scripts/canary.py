@@ -11,8 +11,8 @@ answer holds real data, not just HTTP 200:
   - CO-OPS 8510719 tide predictions (hi/lo 240 h, 6-min 168 h): a non-empty
     predictions[] and no "error" (NOAA reports outages with HTTP 200)
   - NDBC 44097 .txt and .data_spec: newest row under 3 h old
-  - data/buoy.json in the checkout: the pipeline ran under 6 h ago (GitHub's
-    cron drops scheduled runs)
+  - data/buoy.json in the checkout: the pipeline ran under 12 h ago (GitHub's
+    cron drops scheduled runs, so 6–8.5 h gaps are routine)
 
 On failure it opens, or updates, ONE GitHub issue labelled `data-canary`
 with a table of results; when everything passes again it comments and
@@ -70,7 +70,10 @@ CREW_TZ = ZoneInfo("America/New_York")  # CO-OPS begin_date is the crew's local 
 HOURS = 168                 # forecast_days=7
 MAX_MISSING = 8             # nulls tolerated per series (a model's horizon can end early)
 NDBC_MAX_AGE = timedelta(hours=3)
-BUOY_JSON_MAX_AGE = timedelta(hours=6)
+# update-buoy is scheduled every 2 h, but GitHub drops most runs: gaps of
+# 6–8.5 h between bot commits are normal (the crew's buoy card already turns
+# red at 6 h). Only a gap past this is an outage worth an issue.
+BUOY_JSON_MAX_AGE = timedelta(hours=12)
 RETRY_DELAY_S = 30          # failing checks are retried once, to ride out blips
 TIMEOUT_S = 20
 
@@ -175,8 +178,13 @@ def check_buoy_json(body, now):
     ran = datetime.fromisoformat(data["fetch_time"])
     age = now - ran
     detail = f"pipeline last ran {_age(age)} ago; buoy obs {(data.get('buoy') or {}).get('time')}"
-    if data.get("stale_sections"):
-        detail += f"; carried over: {', '.join(data['stale_sections'])}"
+    stale = data.get("stale_sections") or []
+    # The pipeline nulls a carried spectrum once it is too old to keep.
+    carried = [k for k in stale if data.get(k) is not None]
+    if carried:
+        detail += f"; carried over: {', '.join(carried)}"
+    if len(carried) < len(stale):
+        detail += f"; missing: {', '.join(k for k in stale if k not in carried)}"
     return age <= BUOY_JSON_MAX_AGE, detail
 
 
