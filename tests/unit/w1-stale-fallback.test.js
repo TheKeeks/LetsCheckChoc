@@ -128,22 +128,22 @@ test('saved copies past the cap are not used; a cold marine failure says so plai
 });
 
 test('Open-Meteo unreachable with a chosen model: the choice survives the blip', async () => {
-  const { app, choc, down } = scene({ storage: { local: { 'lcc-forecast-model': 'ecmwf_wam' } } });
+  const { app, choc, down } = scene({ storage: { local: { 'lcc-forecast-model': 'dwd_gwam' } } });
   down.marine = noAnswer;   // the model call and the best_match retry both fail
   await runLoad(app, 'loadAllData', choc);
-  assert.equal(app.localStorage.getItem('lcc-forecast-model'), 'ecmwf_wam');
+  assert.equal(app.localStorage.getItem('lcc-forecast-model'), 'dwd_gwam');
   assert.equal(app.get('STATE').dataHealth.marine.origin, 'failed');
 });
 
 test('blip on the chosen model, best_match answers: choice kept, footer names best_match', async () => {
   const marine = readFixtureJSON('open-meteo/marine.json');
   const app = loadApp({
-    storage: { local: { 'lcc-forecast-model': 'ecmwf_wam' } },
-    fetch: fixtureFetch({ overrides: [[/marine-api.*models=ecmwf_wam/, 'network-error'], [MARINE, { status: 200, json: marine }]] })
+    storage: { local: { 'lcc-forecast-model': 'dwd_gwam' } },
+    fetch: fixtureFetch({ overrides: [[/marine-api.*models=dwd_gwam/, 'network-error'], [MARINE, { status: 200, json: marine }]] })
   });
   const choc = prepareScene(app);
   await runLoad(app, 'loadAllData', choc);
-  assert.equal(app.localStorage.getItem('lcc-forecast-model'), 'ecmwf_wam', 'choice kept');
+  assert.equal(app.localStorage.getItem('lcc-forecast-model'), 'dwd_gwam', 'choice kept');
   assert.match(app.dom.byId('footer-forecast').innerHTML, /^Open-Meteo Marine · Auto \(Open-Meteo best_match/);
   assert.equal(app.get('STATE').dataHealth.marine.origin, 'live');
 });
@@ -153,13 +153,13 @@ test('a model that answers with no data for the spot is forgotten', async () => 
   const empty = JSON.parse(JSON.stringify(marine));
   for (const k of Object.keys(empty.hourly)) if (k !== 'time') empty.hourly[k] = empty.hourly[k].map(() => null);
   const app = loadApp({
-    storage: { local: { 'lcc-forecast-model': 'ecmwf_wam' } },
-    fetch: fixtureFetch({ overrides: [[/marine-api.*models=ecmwf_wam/, { status: 200, json: empty }], [MARINE, { status: 200, json: marine }]] })
+    storage: { local: { 'lcc-forecast-model': 'dwd_gwam' } },
+    fetch: fixtureFetch({ overrides: [[/marine-api.*models=dwd_gwam/, { status: 200, json: empty }], [MARINE, { status: 200, json: marine }]] })
   });
   const choc = prepareScene(app);
   await runLoad(app, 'loadAllData', choc);
   assert.equal(app.localStorage.getItem('lcc-forecast-model'), null);
-  assert.equal(app.localStorage.getItem(app.call('marineCacheKey', 41.089152, -71.72105, 'ecmwf_wam')), null,
+  assert.equal(app.localStorage.getItem(app.call('marineCacheKey', 41.089152, -71.72105, 'dwd_gwam')), null,
     'the empty answer is not saved as a fallback copy');
   assert.equal(app.get('STATE').forecastChart.times.length, 168);
 });

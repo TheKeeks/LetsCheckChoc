@@ -36,8 +36,12 @@ test('module-map grep anchors still exist in app.js / kiosk.js', () => {
 test('files and directories CLAUDE.md names exist', () => {
   const tokens = [...claudeMd().matchAll(/`([\w./-]+\.(?:js|py|md|json|yml|rules|html|css|jpg)|[\w-]+\/(?:[\w./-]*\/)?)`/g)].map(m => m[1]);
   assert.ok(tokens.length >= 15);
+  // Gitignored paths (e.g. tests/e2e/artifacts/) are generated output that a
+  // fresh checkout — and CI's unit job — doesn't have yet.
+  const ignored = read('.gitignore').split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#') && s.endsWith('/'));
   for (const t of tokens) {
     if (t.startsWith('/opt/') || t.includes('<')) continue;   // environment paths
+    if (ignored.some(dir => t.startsWith(dir))) continue;
     assert.ok(fs.existsSync(path.join(REPO_ROOT, t)), `CLAUDE.md references missing path: ${t}`);
   }
 });
