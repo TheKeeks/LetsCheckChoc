@@ -3117,6 +3117,13 @@ function resetScrubberToNow() {
 
 let _nowPulseRAF = null;
 let _nowPulsePrev = null; // last drawn {x, y} for dirty-rect clearing
+// Each frame makes the browser re-composite the whole overlay, so the
+// ring animates at ~10 fps (it is a 3 px, 1.6 s fade; 60 fps bought
+// nothing visible) and the loop stops while the chart is hidden or
+// scrolled off-screen (audit C36).
+const NOW_PULSE_FRAME_MS = 100;
+let _nowPulseInView = true;   // IntersectionObserver verdict; true until it reports
+let _nowPulseIO = null;
 
 function _ensureNowOverlay(container) {
   let overlay = el('forecast-now-overlay');
@@ -3196,11 +3203,37 @@ function startNowPulse() {
     _drawNowPulseFrame(true); // single static marker, no animation loop
     return;
   }
-  const tick = () => {
-    _drawNowPulseFrame(false);
+  _watchNowPulseViewport();
+  let last = -Infinity;
+  const tick = (ts) => {
+    // Hidden (another tab, a kiosk panel without the chart) or scrolled
+    // away: end the loop instead of spinning. switchTab, the observer
+    // below, visibilitychange and every full chart draw restart it.
+    const container = el('forecast-chart-container');
+    if (!container || container.offsetWidth === 0 || !_nowPulseInView) {
+      _nowPulseRAF = null;
+      return;
+    }
+    if (ts - last >= NOW_PULSE_FRAME_MS) {
+      last = ts;
+      _drawNowPulseFrame(false);
+    }
     _nowPulseRAF = requestAnimationFrame(tick);
   };
   _nowPulseRAF = requestAnimationFrame(tick);
+}
+
+// Pause the pulse while the chart is scrolled off-screen (long phone
+// pages) and resume when it comes back. Created once, on first start.
+function _watchNowPulseViewport() {
+  if (_nowPulseIO || typeof IntersectionObserver !== 'function') return;
+  const container = el('forecast-chart-container');
+  if (!container) return;
+  _nowPulseIO = new IntersectionObserver(entries => {
+    _nowPulseInView = entries[entries.length - 1].isIntersecting;
+    if (_nowPulseInView && STATE.forecastChart && !document.hidden) startNowPulse();
+  });
+  _nowPulseIO.observe(container);
 }
 
 function stopNowPulse() {
@@ -4554,6 +4587,8 @@ function switchTab(tab) {
   if (vF) vF.style.display = tab === 'forecast' ? '' : 'none';
   if (vR) vR.style.display = tab === 'regression' ? '' : 'none';
   if (vS) vS.style.display = tab === 'surflog' ? '' : 'none';
+  // The now-pulse stops itself while the forecast view is hidden.
+  if (tab === 'forecast' && STATE.forecastChart) startNowPulse();
   if (tab === 'regression') {
     renderRegressionTab();
   }
