@@ -17,9 +17,13 @@ const readRepo = rel => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 const BUOYS_TEXT = readRepo('data/buoys-east-coast.json');
 const TIDES_TEXT = readRepo('data/tide-stations.json');
 const RELOAD_KEY = 'lcc-kiosk-last-reload';
+// The kiosk page's own URL in the vm (location.pathname + search). Choc TV
+// loads as ./?kiosk=1, so that, not 'index.html', is where its HTML lives.
+const DOC_URL = '/?kiosk=1';
 
-// A switchable network: the kiosk page probe, the four code files and the
-// two static catalogs. Everything else is offline.
+// A switchable network: the kiosk page probe, the four code files (the
+// page's HTML at DOC_URL only) and the two static catalogs. Everything
+// else is offline.
 function makeNet() {
   const net = {
     calls: [],
@@ -35,8 +39,9 @@ function makeNet() {
       if (net.probe === 'down') throw new TypeError('Failed to fetch');
       return { status: 200, body: net.probe === 'ok' ? net.files['index.html'] : '<h1>Sign in to Wi-Fi</h1>' };
     }
-    if (Object.prototype.hasOwnProperty.call(net.files, url)) {
-      return net.failFiles.has(url) ? { status: 503, body: '' } : { status: 200, body: net.files[url] };
+    const file = url === DOC_URL ? 'index.html' : url === 'index.html' ? null : url;
+    if (file && Object.prototype.hasOwnProperty.call(net.files, file)) {
+      return net.failFiles.has(file) ? { status: 503, body: '' } : { status: 200, body: net.files[file] };
     }
     if (url === 'data/buoys-east-coast.json' && net.buoys === 'ok') return { status: 200, body: BUOYS_TEXT };
     if (url === 'data/tide-stations.json' && net.tides === 'ok') return { status: 200, body: TIDES_TEXT };
@@ -229,14 +234,16 @@ test('code signature: force-cache baseline, no-cache polls, reload only on a rea
   await app.clock.flush();
   const sig0 = app.run('KIOSK.codeSig');
   assert.match(sig0, /^[0-9a-f]{8}-[0-9a-z]+$/);
-  const codeCalls = mode => net.calls.filter(c => c.cache === mode && /\.(html|js|css)$/.test(c.url)).map(c => c.url).sort();
-  assert.deepEqual(codeCalls('force-cache'), ['app.js', 'index.html', 'kiosk.js', 'styles-kiosk.css'],
+  const codeCalls = mode => net.calls.filter(c => c.cache === mode && (c.url === DOC_URL || /\.(html|js|css)$/.test(c.url))).map(c => c.url).sort();
+  // The page's own URL, not 'index.html': nothing ever loads index.html by
+  // name, so force-cache there returned whatever copy an old poll stored.
+  assert.deepEqual(codeCalls('force-cache'), [DOC_URL, 'app.js', 'kiosk.js', 'styles-kiosk.css'],
     'the baseline reads the bytes this page ran, not a deploy that landed after it loaded');
 
   // Unchanged code (a data-only bot deploy): no reload.
   app.call('kioskRefreshTick');
   await app.clock.flush();
-  assert.deepEqual(codeCalls('no-cache'), ['app.js', 'index.html', 'kiosk.js', 'styles-kiosk.css']);
+  assert.deepEqual(codeCalls('no-cache'), [DOC_URL, 'app.js', 'kiosk.js', 'styles-kiosk.css']);
   assert.equal(probes(net), 0);
 
   // A failed poll never counts as a change.

@@ -1007,12 +1007,13 @@ function kioskFreshness(nowMs, loadDoneAt, asOf, refreshMs) {
   };
 }
 
-// When the data on screen was fetched. app.js publishes STATE.dataAsOf
-// (oldest fetch time among the marine / wind / tide data it rendered,
-// null when none rendered) after every load. Builds without it get the
-// same answer from the forecast cache timestamps, which hold the true
-// fetch time and which a failed refresh leaves untouched; only with no
-// readable cache does this fall back to lastLoadCompletedAt.
+// How old the swell + wind forecast on the cards is. app.js publishes it
+// as STATE.dataAsOf after every load (recordDataHealth: null when no
+// forecast is on screen; saved tide predictions, astronomical and valid
+// for days, never age it). Builds without it get the same answer from the
+// marine / wind cache timestamps, which hold the true fetch time and which
+// a failed refresh leaves untouched; only with no readable cache does this
+// fall back to lastLoadCompletedAt.
 function kioskDataAsOf() {
   if (STATE.dataAsOf !== undefined) return STATE.dataAsOf;
   const done = STATE.lastLoadCompletedAt || 0;
@@ -1031,11 +1032,9 @@ function kioskDataAsOf() {
       const fLon = choc && !useBuoy ? CONFIG.chocomount.forecastLon : b.lon;
       const dLat = choc ? CONFIG.chocomount.lat : b.lat;
       const dLon = choc ? CONFIG.chocomount.lon : b.lon;
-      const stn = STATE.nearestTideStation;
       ts = [
         readCacheTs(marineCacheKey(fLat, fLon, getForecastModel())),
-        fd.wind ? readCacheTs(windCacheKey(dLat, dLon)) : null,
-        fd.tideHiLo && stn ? readCacheTs(tideHiLoCacheKey(stn.id, 10)) : null
+        fd.wind ? readCacheTs(windCacheKey(dLat, dLon)) : null
       ].filter(Number.isFinite);
     }
     asOf = ts.length ? Math.min(...ts) : (done || null);
@@ -1196,7 +1195,10 @@ async function kioskCodeSig(cacheMode) {
   const timer = setTimeout(() => ctl.abort(), 20000);
   try {
     const texts = await Promise.all(KIOSK_CODE_FILES.map(async f => {
-      const r = await fetch(f, { cache: cacheMode, signal: ctl.signal });
+      // The page loads as ./?kiosk=1, never as index.html: sign the
+      // document's own URL so the force-cache baseline is the copy it ran.
+      const url = f === 'index.html' ? location.pathname + location.search : f;
+      const r = await fetch(url, { cache: cacheMode, signal: ctl.signal });
       if (!r.ok) throw new Error(f + ' HTTP ' + r.status);
       return r.text();
     }));
