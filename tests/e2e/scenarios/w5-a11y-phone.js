@@ -73,14 +73,18 @@ module.exports = {
     });
 
     // ── nothing pushed sideways out of view at 390 px ──
-    // The page must not scroll sideways, and nothing in the forecast chart
-    // or Model-vs-Buoy panels may poke past a parent that clips it (the
-    // verification fieldset used to be 36 px wider than its panel,
-    // cutting off the table and the chart axes).
+    // The page must not scroll sideways, and nothing in the forecast chart,
+    // Wave Spectra or Model-vs-Buoy panels may poke past a parent that
+    // clips it (the verification fieldset used to be 36 px wider than its
+    // panel, cutting off the table and the chart axes). The page check
+    // compares with clientWidth: under isMobile Chromium widens innerWidth
+    // to the content, so `scrollWidth > innerWidth` never fired (a 417 px
+    // Wave Spectra table slipped through at 390).
     const clipped = () => ctx.state(() => {
       const out = [];
-      if (document.documentElement.scrollWidth > innerWidth) out.push(`page scrollWidth ${document.documentElement.scrollWidth}`);
-      for (const e of document.querySelectorAll('#panel-forecast *, #panel-verification *')) {
+      const de = document.documentElement;
+      if (de.scrollWidth > de.clientWidth) out.push(`page scrollWidth ${de.scrollWidth} > ${de.clientWidth}`);
+      for (const e of document.querySelectorAll('#panel-forecast *, #panel-spectral-row *, #panel-verification *')) {
         const p = e.parentElement;
         if (!e.offsetWidth || !p) continue;
         const ox = getComputedStyle(p).overflowX;
@@ -104,6 +108,58 @@ module.exports = {
     }
     assert.ok(totals.forecast + totals.regression + totals.surflog > 10, 'the audit actually found grey-token text to check');
     ctx.metric('greyTextChecked', totals);
+
+    // ── data-age cues (review ux#2) ──
+    // The lines that say the numbers are old must be as readable as the
+    // numbers. They used --orange / --red-m, 1.97 and 2.73 : 1 on silver,
+    // which the grey-token audit above never looks at. The swell card is
+    // stale for real at fixture time (obs 8:30, now 11:00); the other
+    // states are forced by class so each colour is checked without
+    // waiting hours or breaking a fetch.
+    await ctx.state(() => switchTab('forecast'));
+    await page.waitForTimeout(300);
+    const cues = await ctx.state(() => {
+      const parse = c => (c.match(/[\d.]+/g) || []).map(Number);
+      const lum = ([r, g, b]) => [r, g, b].map(v => v / 255).map(c => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)))
+        .reduce((s, c, i) => s + c * [0.2126, 0.7152, 0.0722][i], 0);
+      const bgOf = e => {
+        for (let n = e; n && n.nodeType === 1; n = n.parentElement) {
+          const c = parse(getComputedStyle(n).backgroundColor);
+          if (c.length >= 3 && (c.length < 4 || c[3] === 1)) return c;
+        }
+        return [255, 255, 255];
+      };
+      const ratio = e => {
+        const fg = getComputedStyle(e).color, bg = bgOf(e);
+        const [hi, lo] = [lum(parse(fg)), lum(bg)].sort((a, b) => b - a);
+        return { fg, bg: `rgb(${bg.join(',')})`, ratio: Math.round((hi + 0.05) / (lo + 0.05) * 100) / 100 };
+      };
+      const card = document.getElementById('card-swell');
+      const extra = card.querySelector('.condition-extra');
+      const hdr = document.getElementById('header-update-time');
+      const ind = document.getElementById('forecast-cache-indicator');
+      const out = { cardIsStale: card.classList.contains('is-stale'), text: extra.textContent };
+      out['swell card, obs > 2 h'] = ratio(extra);
+      card.classList.replace('is-stale', 'is-old');
+      out['swell card, obs > 6 h'] = ratio(extra);
+      card.classList.replace('is-old', 'is-stale');
+      hdr.classList.add('is-stale');
+      out['header, refresh failed'] = ratio(hdr);
+      hdr.classList.remove('is-stale');
+      const display = ind.style.display;
+      ind.style.display = '';
+      ind.classList.add('is-stale');
+      out['chart cache note, refresh failed'] = ratio(ind);
+      ind.classList.remove('is-stale');
+      ind.style.display = display;
+      return out;
+    });
+    log('data-age cues', JSON.stringify(cues));
+    assert.ok(cues.cardIsStale, `the fixture's 2h30m-old buoy obs marks the swell card stale ("${cues.text}")`);
+    for (const [name, c] of Object.entries(cues)) {
+      if (!c || typeof c !== 'object') continue;
+      assert.ok(c.ratio >= 4.5, `${name}: ${c.fg} on ${c.bg} = ${c.ratio} : 1, under AA 4.5 : 1`);
+    }
 
     // ── rating sliders are labelled ──
     const labels = await ctx.state(() => ['sl-size', 'sl-wind-quality', 'sl-ride-quality']

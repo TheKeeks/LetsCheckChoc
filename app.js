@@ -3368,9 +3368,9 @@ function applyScrubberToHour(idx) {
   document.querySelectorAll('.scrub-badge').forEach(b => b.remove());
 
   // ── "Reset to now" link visibility (lives inside the detail bar) ──
-  // visibility, not display: its space stays reserved, so showing it on
-  // the first scrub doesn't re-wrap the detail bar and resize the chart
-  // container (which costs a full redraw + listener re-wire, audit C45).
+  // At rest style.css also drops it from layout (.scrub-active is off),
+  // so a phone's sticky bar stays two lines; the re-wrap on the first
+  // scrub is harmless because the drag state survives a re-wire (C45).
   const resetBtn = el('forecast-reset-now');
   if (resetBtn) resetBtn.style.visibility = isScrubberAtNow() ? 'hidden' : 'visible';
 
@@ -4015,11 +4015,13 @@ function renderSpectralSummary(spectralRaw, buoyParsed) {
   // NDBC's own swell / wind-sea split (SwH / WWH). The pipeline's buoy,
   // 44097, reports no separation frequency, so NDBC cuts at a fixed 10 s
   // and 8-9 s swell lands under wind waves; the swell card's 8 s+ band is
-  // the number to read for Choc.
-  const split = source === 'pipeline' ? ' 10 s' : '';
+  // the number to read for Choc. The labels name the cut and stay short
+  // (a longer "(NDBC 10 s split)" pushed the table off 390 px phones and
+  // Choc TV); the panel's "What is this?" says why.
+  const pipe = source === 'pipeline';
   const rows = [
-    { label: `Swell (NDBC${split} split)`, ht: fmtHtCell(summary.swellHt, t.swellHt), period: fmtPeriodCell(summary.swellPeriod, t.swellPeriod), dir: fmtDir(summary.swellDir) },
-    { label: `Wind Waves (NDBC${split} split)`, ht: fmtHtCell(summary.windHt, t.windHt), period: fmtPeriodCell(summary.windPeriod, t.windPeriod), dir: fmtDir(summary.windDir) },
+    { label: pipe ? 'Swell 10 s+' : 'Swell', ht: fmtHtCell(summary.swellHt, t.swellHt), period: fmtPeriodCell(summary.swellPeriod, t.swellPeriod), dir: fmtDir(summary.swellDir) },
+    { label: pipe ? 'Wind waves &lt;10 s' : 'Wind waves', ht: fmtHtCell(summary.windHt, t.windHt), period: fmtPeriodCell(summary.windPeriod, t.windPeriod), dir: fmtDir(summary.windDir) },
     { label: 'Significant Hs', ht: hsCell, period: '—', dir: '—' }
   ];
 
@@ -7823,6 +7825,26 @@ const VERIF_GET = {
   }
 };
 
+// The getters above switch definition row by row, but one average over
+// both kinds of row isn't a model score: the buoy's DPD runs ~1 s above
+// its Tm-1,0 for the same sea, so as new rows pile up the period "typical
+// miss" would drift from about −0.7 s to +0.5 s with no change in the
+// model. Period and direction are therefore scored on the new-format rows
+// once a day of them is logged, and on the older rows alone (labelled as
+// such) until then. The charts keep every row.
+const VERIF_MIN_NEW_ROWS = 24;   // one day of hourly rows
+
+function _verifRowHasTm10(r) {
+  return !!(r.buoy && r.buoy.tm10 != null);
+}
+
+// → { rows, isNew }: the rows one statistic is scored on.
+function _verifScoringRows(rows, isNewRow) {
+  const fresh = rows.filter(isNewRow);
+  if (fresh.length >= VERIF_MIN_NEW_ROWS || fresh.length === rows.length) return { rows: fresh, isNew: true };
+  return { rows: rows.filter(r => !isNewRow(r)), isNew: false };
+}
+
 const VERIF_SERIES_STYLE = [
   { key: 'obs', label: 'Buoy — actually measured', dash: null, width: 2 },
   { key: 'mb', label: 'Model’s claim at the buoy', dash: [6, 4], width: 1.5 },
@@ -7962,22 +7984,24 @@ function _verifRender() {
     document.querySelectorAll('#panel-verification .verif-chart-block').forEach(b => { b.style.display = rows.length ? '' : 'none'; });
     if (!rows.length) return;
   } else {
-    const metric = (label, g, digits, unit) => {
-      const mb = verifStats(rows, g.obs, g.mb, g.circular);
-      const mc = verifStats(rows, g.obs, g.mc, g.circular);
+    const metric = (label, g, digits, unit, rs = rows) => {
+      const mb = verifStats(rs, g.obs, g.mb, g.circular);
+      const mc = verifStats(rs, g.obs, g.mc, g.circular);
       return `<tr><td>${label}</td>` +
         `<td>${_verifFmt(mb.bias, digits, unit)}</td><td>${mb.mae == null ? '—' : mb.mae.toFixed(digits) + unit}</td>` +
         `<td>${_verifFmt(mc.bias, digits, unit)}</td><td>${mc.mae == null ? '—' : mc.mae.toFixed(digits) + unit}</td>` +
         `<td>${mb.n}</td></tr>`;
     };
+    const per = _verifScoringRows(rows, _verifRowHasTm10);
+    const dir = _verifScoringRows(rows, _verifRowHasWvd);
     statsBox.innerHTML =
       '<table class="verif-table"><thead><tr><th></th>' +
       '<th colspan="2">How accurate is the model?<br><span class="verif-th-sub">its claim at the buoy vs what the buoy measured</span></th>' +
       '<th colspan="2">How different is the Choc forecast point?<br><span class="verif-th-sub">its claim at the Choc point vs the buoy</span></th><th rowspan="2">readings</th></tr>' +
       '<tr><th></th><th>typical miss</th><th>typical size</th><th>typical miss</th><th>typical size</th></tr></thead><tbody>' +
       metric('Height', VERIF_GET.height, 1, ' ft') +
-      metric('Period', VERIF_GET.period, 1, ' s') +
-      metric('Direction', VERIF_GET.dir, 0, '°') +
+      metric(per.isNew ? 'Period' : 'Period (buoy peak)', VERIF_GET.period, 1, ' s', per.rows) +
+      metric(dir.isNew ? 'Direction' : 'Direction (swell ≥ 8 s)', VERIF_GET.dir, 0, '°', dir.rows) +
       '</tbody></table>' +
       '<p class="verif-table-note sl-hint"><strong>Typical miss</strong> (bias): which way the model is usually wrong — ' +
       '<strong>+</strong> means it claims more than the buoy measures, <strong>−</strong> means less. ' +
@@ -7998,6 +8022,7 @@ function _verifRender() {
     'Technically: typical miss = bias = mean(model − buoy); typical size = MAE. Height: total Hs on both sides. ' +
     'Period: buoy energy period Tm-1,0 from its spectrum (its dominant period DPD on rows logged before Tm-1,0 was recorded) vs the model’s mean wave period. ' +
     'Direction: buoy MWD vs the model’s mean wave direction; on older rows without it, the buoy’s ≥ 8 s swell direction vs the model swell partition, only at hours when that partition is ≥ 8 s. ' +
+    `The table never averages the two kinds of row together: period and direction are scored on the newer rows once ${VERIF_MIN_NEW_ROWS} of them are logged, and until then on the older rows alone, labelled “buoy peak” and “swell ≥ 8 s”. The charts show every row. ` +
     'NDBC’s own swell split (SwH/SwP) counts only ≥ 10 s energy at this buoy, so it is not compared with the model’s swell partition.');
 }
 

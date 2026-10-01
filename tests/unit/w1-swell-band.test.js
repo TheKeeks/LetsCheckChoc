@@ -67,11 +67,14 @@ test('Choc swell card: 8 s+ band height, its period and direction; WVHT as the t
   assert.match(app.dom.byId('val-swell-arrival').textContent, /reaches Choc ~11:48 AM$/);
 });
 
+// The labels name NDBC's 10 s cut in a few characters: the longer
+// "(NDBC 10 s split)" labels pushed the table off phones and Choc TV
+// (review ux#1); the panel's help text carries the explanation.
 test('spectral table labels NDBC\'s split for what it is', async () => {
   const app = loadApp({ fetch: fixtureFetch() });
   const choc = prepareScene(app);
   await runLoad(app, 'loadAllData', choc);
   const table = app.dom.byId('spectral-summary-table').children.find(c => c.tagName === 'TABLE');
-  assert.match(table.innerHTML, /<td>Swell \(NDBC 10 s split\)<\/td><td class="num-cell">1\.0/);
-  assert.match(table.innerHTML, /<td>Wind Waves \(NDBC 10 s split\)<\/td>/);
+  assert.match(table.innerHTML, /<td>Swell 10 s\+<\/td><td class="num-cell">1\.0/);
+  assert.match(table.innerHTML, /<td>Wind waves &lt;10 s<\/td>/);
 });

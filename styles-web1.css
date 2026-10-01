@@ -534,6 +534,19 @@ body[data-era="web1"]:not(.kiosk) {
 body[data-era="web1"]:not(.kiosk) #panel-compass .rose-readout {
   color: var(--ink3);
 }
+/* Data-age cues (old buoy obs, failed refresh) are the lines that say the
+   numbers are stale, yet --orange / --red-m read 1.97 / 2.73 : 1 on
+   silver. Darker amber and red here; the global tokens stay as they are
+   (they also colour borders, dots and chart cues) and Choc TV keeps its
+   own palette. */
+body[data-era="web1"]:not(.kiosk) .condition-card.is-stale .condition-extra,
+body[data-era="web1"]:not(.kiosk) .forecast-cache-indicator.is-stale {
+  color: #6b4000;   /* 4.9 : 1 on #c0c0c0 */
+}
+body[data-era="web1"]:not(.kiosk) .condition-card.is-old .condition-extra,
+body[data-era="web1"]:not(.kiosk) .header-meta.is-stale {
+  color: #8b1a1a;   /* 5.1 : 1 */
+}
 
 /* The ⓘ source and ? help badges are tap targets: at least 24 × 24 px
    (WCAG 2.5.8; they were 18 px). The ? shifts left to clear the bigger ⓘ

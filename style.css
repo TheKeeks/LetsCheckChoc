@@ -951,6 +951,11 @@ summary:focus-visible {
   text-decoration: underline;
 }
 .forecast-reset-btn:hover { color: #800080; }
+/* At rest it takes no space either: a hidden-but-reserved button cost a
+   phone's sticky detail bar a third line (80 px instead of 54) on every
+   visit. applyScrubberToHour sets .scrub-active off-now; the drag itself
+   survives the re-wrap that follows (gesture state is module-level). */
+.forecast-detail-bar:not(.scrub-active) .forecast-reset-btn { display: none; }
 
 /* ── Panel row (compass + spectrum side by side) ─ */
 .panel-row {
@@ -1341,6 +1346,13 @@ summary:focus-visible {
   color: var(--ink2);
   border-bottom: 1px solid var(--border-l);
   white-space: nowrap;
+}
+
+/* Row labels may wrap so the numbers and the Direction column keep their
+   width: a nowrap label pushed the table past a 390 px phone and cut the
+   direction off Choc TV's spectral panel. */
+.spectral-summary-tbl td:first-child {
+  white-space: normal;
 }
 
 .spectral-summary-tbl tr:last-child td {
