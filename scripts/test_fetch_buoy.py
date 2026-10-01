@@ -30,6 +30,7 @@ REPO_ROOT = SCRIPTS_DIR.parent
 FIXTURES = REPO_ROOT / "tests" / "fixtures"
 NDBC_EXTS = ("txt", "spec", "data_spec", "swdir", "swdir2", "swr1", "swr2")
 UTC = timezone.utc
+NOW = datetime(2026, 10, 1, 15, 0, tzinfo=UTC)   # fixture instant (11:00 EDT)
 
 
 def ndbc_fixture(ext, buoy="44097"):
@@ -147,9 +148,11 @@ class ParserBaseline(unittest.TestCase):
         self.assertEqual(bins[0]["period"], 40.0)
         d = self.fb.compute_primary_swell_dir(bins)
         self.assertTrue(90 < d < 180, d)
-        # Only the energy file is required; missing directional files default.
+        # Only the energy file is required; missing directional files default,
+        # except the directions: unknown is None, never 0° (north).
         only_energy = self.fb.build_spectral_bins(ndbc_fixture("data_spec"), None, None, None, None)
         self.assertEqual(only_energy[0]["r1"], 0.5)
+        self.assertTrue(all(b["dir1"] is None and b["dir2"] is None for b in only_energy))
         self.assertIsNone(self.fb.build_spectral_bins(None, None, None, None, None))
 
 
@@ -204,15 +207,16 @@ class PipelineOutage(unittest.TestCase):
         # Last good files: the pipeline snapshot (obs 12:30 UTC, 98 bins).
         self.prev = json.loads((FIXTURES / "pipeline" / "buoy.json").read_text())
         self.prev["spectral_obs_time"] = "2026-10-01 12:00 UTC"
+        self.prev["spectral_summary"]["time"] = "2026-10-01 12:30 UTC"
         (self.tmp / "buoy.json").write_text(json.dumps(self.prev, indent=2))
         shutil.copy(FIXTURES / "pipeline" / "verification.json", self.tmp / "verification.json")
         self.fb = load_fetch_buoy(self.tmp)
         self.fb.fetch_model_series = model_series_stub()
 
-    def run_main(self):
+    def run_main(self, now=NOW):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            self.fb.main()
+            self.fb.main(now=now)
         return json.loads((self.tmp / "buoy.json").read_text()), out.getvalue()
 
     def assert_exit_1_and_files_untouched(self, fetch_text):
@@ -242,8 +246,47 @@ class PipelineOutage(unittest.TestCase):
         self.assertEqual(out["spectral_bins"], self.prev["spectral_bins"])
         self.assertEqual(out["stale_sections"], ["spectral_summary", "spectral_bins"])
         self.assertEqual(out["spectral_obs_time"], "2026-10-01 12:00 UTC", "the carried spectrum keeps its own time")
+        self.assertEqual(out["spectral_summary"]["time"], "2026-10-01 12:30 UTC", "and so does the .spec summary")
         self.assertEqual(out["swell_band"], self.fb.compute_swell_band(self.prev["spectral_bins"]))
         self.assertIn("::warning", log)
+
+    def test_carried_spectrum_expires_after_6_hours(self):
+        # The spectral files keep failing. Each run's output is the next
+        # run's previous file, so only the spectrum's own time ends the
+        # carry-over: past 6 h it is null again, as before carry-over, and
+        # the swell card falls back to the fresh .txt reading.
+        self.fb.fetch_text = fixture_fetch_text(exts=("txt",))
+        out, _ = self.run_main(now=datetime(2026, 10, 1, 17, 59, tzinfo=UTC))
+        self.assertEqual(out["spectral_bins"], self.prev["spectral_bins"], "data_spec row 5 h 59 min old: kept")
+
+        out, log = self.run_main(now=datetime(2026, 10, 1, 18, 1, tzinfo=UTC))
+        self.assertIsNone(out["spectral_bins"], "6 h 1 min old: not shown as the current swell")
+        self.assertIsNone(out["swell_band"])
+        self.assertIsNone(out["spectral_obs_time"])
+        self.assertEqual(out["spectral_summary"], self.prev["spectral_summary"], ".spec row 12:30, 5.5 h old: kept")
+        self.assertEqual(out["stale_sections"], ["spectral_summary", "spectral_bins"])
+        self.assertIn("Kept the previous spectral_summary", log)
+        self.assertIn("No recent spectral_bins to keep; published null", log)
+
+        out, _ = self.run_main(now=datetime(2026, 10, 1, 18, 31, tzinfo=UTC))
+        self.assertIsNone(out["spectral_summary"])
+        self.assertIsNone(out["spectral_bins"])
+        self.assertEqual(out["stale_sections"], ["spectral_summary", "spectral_bins"])
+        self.assertEqual(out["buoy"]["time"], "2026-10-01 14:00 UTC", "stdmet stays fresh throughout")
+
+        # NDBC recovers: everything is fresh again.
+        self.fb.fetch_text = fixture_fetch_text()
+        out, _ = self.run_main(now=datetime(2026, 10, 1, 20, 0, tzinfo=UTC))
+        self.assertEqual((out["stale_sections"], len(out["spectral_bins"])), ([], 98))
+
+    def test_a_carried_spectrum_with_no_time_is_not_trusted(self):
+        # A buoy.json written before spectra were timed: their age is unknown.
+        del self.prev["spectral_obs_time"], self.prev["spectral_summary"]["time"]
+        (self.tmp / "buoy.json").write_text(json.dumps(self.prev))
+        self.fb.fetch_text = fixture_fetch_text(exts=("txt",))
+        out, _ = self.run_main()
+        self.assertEqual((out["spectral_summary"], out["spectral_bins"], out["swell_band"]), (None, None, None))
+        self.assertEqual(out["stale_sections"], ["spectral_summary", "spectral_bins"])
 
     def test_stdmet_outage_carries_the_previous_obs_over(self):
         self.fb.fetch_text = fixture_fetch_text(exts=tuple(e for e in NDBC_EXTS if e != "txt"))
@@ -268,12 +311,33 @@ class PipelineOutage(unittest.TestCase):
         out, _ = self.run_main()
         self.assertEqual(out["stale_sections"], [])
         self.assertEqual(out["spectral_obs_time"], "2026-10-01 13:00 UTC", "data_spec row, an hour behind stdmet")
+        self.assertEqual(out["spectral_summary"]["time"], "2026-10-01 13:30 UTC", ".spec row")
         # Existing keys keep their meaning (audit C14: new data goes under new keys).
         self.assertEqual(out["spectral_summary"]["swell_height_m"], 0.3)
         self.assertEqual(set(out["swell_band"]), {"hs_m", "peak_period_s", "dir_deg", "min_period_s"})
         self.assertEqual(out["swell_band"]["min_period_s"], 8)
         self.assertGreater(out["swell_band"]["hs_m"], out["spectral_summary"]["swell_height_m"])
         self.assertTrue(115 <= out["swell_band"]["dir_deg"] <= 158, out["swell_band"])
+
+    def test_swdir_outage_leaves_the_swell_direction_unknown_not_north(self):
+        # Only the direction file fails (a timeout, or an error page served
+        # with HTTP 200). The spectrum's energy is still good but its
+        # direction is unknown: 0° would put the swell card's hero swell at
+        # N, out of Choc's window, while the real swell is SE.
+        healthy = self.fb.compute_swell_band(self.fb.build_spectral_bins(
+            *(ndbc_fixture(e) for e in self.fb.SPECTRAL_FILES)))
+        for swdir in (None, HTML_503):
+            with self.subTest(swdir="failed" if swdir is None else "HTML page"):
+                shutil.copy(FIXTURES / "pipeline" / "verification.json", self.tmp / "verification.json")
+                self.fb.fetch_text = fixture_fetch_text(text_for=lambda e: swdir if e == "swdir" else ndbc_fixture(e))
+                out, _ = self.run_main()
+                self.assertEqual(out["stale_sections"], [], "the energy spectrum is fresh")
+                self.assertEqual(len(out["spectral_bins"]), 98)
+                self.assertTrue(all(b["dir1"] is None for b in out["spectral_bins"]))
+                self.assertEqual(out["swell_band"], dict(healthy, dir_deg=None), "height and period still stand")
+                self.assertEqual(out["spectral_summary"]["swell_direction"], 135, ".spec's own SwD (SE), not 0")
+                row = json.loads((self.tmp / "verification.json").read_text())["rows"][-1]
+                self.assertEqual((row["t"], row["buoy"]["swd"]), ("2026-10-01T13:00Z", 135))
 
 
 # ── Audit C14 / C15: swell band and like-for-like periods ───────────────
@@ -324,6 +388,25 @@ class SpectralBand(unittest.TestCase):
         self.assertIsNone(self.fb.compute_swell_band(None))
         self.assertIsNone(self.fb.compute_swell_band([]))
 
+    def test_missing_directions_are_skipped_not_read_as_north(self):
+        # NDBC writes 999.0 for a bin with no direction (999° would average
+        # as 279°), and a failed swdir leaves dir1 None. Neither counts.
+        bins = synthetic_bins({0.10: 2.0, 0.12: 1.0, 0.20: 3.0}, {0.10: 120.0, 0.12: 999.0, 0.20: 300.0})
+        self.assertEqual(self.fb.compute_swell_band(bins)["dir_deg"], 120.0)
+        self.assertEqual(self.fb.compute_primary_swell_dir(bins), 120.0)
+        for b in bins:
+            b["dir1"] = None
+        band = self.fb.compute_swell_band(bins)
+        self.assertEqual((band["hs_m"], band["peak_period_s"], band["dir_deg"]), (0.69, 10.0, None))
+        self.assertIsNone(self.fb.compute_primary_swell_dir(bins))
+        # A swell band with energy but no direction doesn't borrow the wind sea's.
+        self.assertIsNone(self.fb.compute_primary_swell_dir(synthetic_bins({0.10: 2.0, 0.20: 3.0},
+                                                                            {0.10: 999.0, 0.20: 300.0})))
+        # The 999 code never reaches buoy.json's bins (the app would draw it).
+        swdir = ndbc_fixture("swdir").replace(" 232.0 (0.025)", " 999.0 (0.025)", 1)
+        bins = self.fb.build_spectral_bins(ndbc_fixture("data_spec"), swdir, None, None, None)
+        self.assertEqual((bins[0]["dir1"], bins[1]["dir1"]), (None, 68.0))
+
     def test_real_event_where_ndbc_swh_missed_the_swell(self):
         # 44097 on 2026-09-23 19:00 UTC (.spec: WVHT 3.1 m, SwH 0.6 m @ 10.0 s,
         # WWH 3.1 m @ 8.7 s ESE). The swell card said 2 ft; the 8 s+ band
@@ -352,7 +435,6 @@ class SpectralBand(unittest.TestCase):
 
 # ── Audit C15: verification rows, back-filled across dropped cron runs ──
 
-NOW = datetime(2026, 10, 1, 15, 0, tzinfo=UTC)
 FRESH_HOURS = ["2026-09-30T23:00Z"] + [f"2026-10-01T{h:02d}:00Z" for h in range(14)]
 
 
@@ -437,6 +519,36 @@ class VerificationRows(unittest.TestCase):
         self.assertEqual(list(rows)[-1], "2026-10-01T13:00Z", ".spec (13:30) still paces the log")
         self.assertIsNotNone(rows["2026-10-01T09:00Z"]["buoy"]["tm10"])
         self.assertIsNone(rows["2026-10-01T10:00Z"]["buoy"]["tm10"], "no data_spec row within 30 min")
+
+    def test_rows_wait_for_a_lagging_swdir_instead_of_logging_north(self):
+        # NDBC updates each file on its own: swdir an hour behind data_spec.
+        # Rows are never revisited, so the 13:00 row waits for its direction.
+        lag = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+        self.append(text_for=lambda e: ndbc_as_of(e, lag) if e == "swdir" else ndbc_fixture(e))
+        self.assertEqual(self.rows()[-1]["t"], "2026-10-01T12:00Z")
+        self.append()
+        rows = self.rows()
+        self.assertEqual([r["t"] for r in rows], FRESH_HOURS)
+        self.assertTrue(115 <= rows[-1]["buoy"]["swd"] <= 158, rows[-1]["buoy"])
+
+    def test_dead_swdir_logs_the_spec_direction_not_north(self):
+        self.append(exts=tuple(e for e in NDBC_EXTS if e != "swdir"))
+        rows = self.rows()
+        self.assertEqual([r["t"] for r in rows], FRESH_HOURS, "a failed swdir is not waited for")
+        spec_swd = {dt.strftime("%Y-%m-%dT%H:%MZ"): self.fb.parse_spectral_summary(t)["swell_direction"]
+                    for dt, t in self.fb.ndbc_rows(ndbc_fixture("spec"), 2).items()}
+        self.assertEqual([r["buoy"]["swd"] for r in rows], [spec_swd[r["t"]] for r in rows], ".spec SwD, never 0")
+        self.assertNotIn(0, [r["buoy"]["swd"] for r in rows])
+
+        # Everything that comes from the energy spectrum is unaffected.
+        other = Path(tempfile.mkdtemp(prefix="lcc-verif-"))
+        self.addCleanup(shutil.rmtree, other, ignore_errors=True)
+        healthy = load_fetch_buoy(other)
+        healthy.fetch_model_series = model_series_stub()
+        self.append(fb=healthy)
+        energy_keys = ("hs", "tm10", "swh8", "swp8")
+        self.assertEqual([{k: r["buoy"][k] for k in energy_keys} for r in rows],
+                         [{k: r["buoy"][k] for k in energy_keys} for r in self.rows(healthy)])
 
     def test_failed_spectral_files_do_not_hold_the_log_back(self):
         self.append(exts=("txt",))

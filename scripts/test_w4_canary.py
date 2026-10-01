@@ -126,15 +126,31 @@ class Checks(unittest.TestCase):
         self.assertEqual(canary.check_ndbc_fresh("<html><body>503</body></html>", NOW),
                          (False, "no data rows (error page?)"))
 
-    def test_buoy_json_pipeline_under_6_hours(self):
+    def test_buoy_json_pipeline_under_12_hours(self):
         body = fx("pipeline/buoy.json")   # fetch_time 13:15:38 UTC
+        ran = datetime.fromisoformat(json.loads(body)["fetch_time"])
         self.assertTrue(canary.check_buoy_json(body, NOW)[0])
-        ok, detail = canary.check_buoy_json(body, datetime(2026, 10, 1, 19, 20, tzinfo=UTC))
-        self.assertFalse(ok, "GitHub dropped the update-buoy runs")
-        self.assertIn("pipeline last ran 6.1 h ago; buoy obs 2026-10-01 12:30 UTC", detail)
-        stale = json.loads(body)
+        # GitHub runs the 2-hourly update-buoy only ~4 times a day. These are
+        # the buoy.json ages the canary met on main from 09-20 to 10-01 (each
+        # opened and closed an issue under a 6 h limit) and the worst gap, 8.5 h.
+        for hours in (6.0, 6.1, 6.7, 7.2, 7.7, 8.5, 12.0):
+            ok, detail = canary.check_buoy_json(body, ran + timedelta(hours=hours))
+            self.assertTrue(ok, f"a normal {hours} h cron gap is not an outage: {detail}")
+        ok, detail = canary.check_buoy_json(body, datetime(2026, 10, 2, 1, 20, tzinfo=UTC))
+        self.assertFalse(ok, "GitHub dropped or failed the update-buoy runs for half a day")
+        self.assertIn("pipeline last ran 12.1 h ago; buoy obs 2026-10-01 12:30 UTC", detail)
+
+    def test_buoy_json_detail_names_carried_and_missing_sections(self):
+        stale = json.loads(fx("pipeline/buoy.json"))
         stale["stale_sections"] = ["spectral_bins"]
-        self.assertIn("carried over: spectral_bins", canary.check_buoy_json(json.dumps(stale), NOW)[1])
+        ok, detail = canary.check_buoy_json(json.dumps(stale), NOW)
+        self.assertTrue(ok)
+        self.assertIn("carried over: spectral_bins", detail)
+        # Past 6 h the pipeline nulls a carried spectrum instead of keeping it.
+        stale["stale_sections"] = ["spectral_summary", "spectral_bins"]
+        stale["spectral_bins"] = None
+        detail = canary.check_buoy_json(json.dumps(stale), NOW)[1]
+        self.assertIn("; carried over: spectral_summary; missing: spectral_bins", detail)
 
 
 class Probes(unittest.TestCase):
