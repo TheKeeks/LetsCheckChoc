@@ -39,7 +39,7 @@ node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 
 | Path | What |
 |---|---|
-| `index.html` | The single page. Loads Google Fonts, Leaflet 1.9.4 (unpkg) and the Firebase 9.23.0 compat SDK (gstatic), then `firebase-config.js`, `app.js`, `kiosk.js` in that order |
+| `index.html` | The single page. Loads Google Fonts (non-blocking), Leaflet 1.9.4 (vendored in `vendor/leaflet/`) and the Firebase 9.23.0 compat SDK (gstatic), then `firebase-config.js`, `app.js`, `kiosk.js` in that order |
 | `app.js` | About 8.8k-line global-scope monolith with all forecast, chart, surf-log and regression logic |
 | `kiosk.js` | Choc TV. A no-op unless `?kiosk=1`. Wraps some app.js globals at load time |
 | `firebase-config.js` | Firebase init and auth. Globals: `fbAuth`, `fbFirestore`, `fbStorage`, `window._fbUserId`, `window._fbAuthReady` |
@@ -94,15 +94,18 @@ each one. Line numbers drift with every edit, so do not cite them in docs.
   It paints from `lcc-cache-*` first (stale-while-revalidate), then fetches
   Open-Meteo marine (Choc forecast point 41.089152, -71.72105), Open-Meteo wind
   (beach point), CO-OPS 8510719 hi/lo (240 h) and 6-min (168 h), and CO-OPS
-  8510560 water temp. NDBC goes through `CONFIG.api.ndbcProxies`. All three
-  proxies are dead (corsproxy 403, allorigins 522 after ~20 s, codetabs 503).
-  Chocomount then falls back to `data/buoy.json`.
+  8510560 water temp. Chocomount's buoy and spectra come from `data/buoy.json`.
+  `CONFIG.api.ndbcProxies` is empty because the free relays are dead, so other
+  buoys show "no live data". A failed fetch falls back to the last good saved
+  copy (forecast up to 24 h old, tides up to 4 days). `STATE.dataAsOf` and
+  `STATE.dataHealth` record the real age of the data, and kiosk.js reads them.
 - **Pipeline:** `.github/workflows/update-buoy.yml` runs every 2 h (GitHub drops
   many runs). `scripts/fetch_buoy.py` writes `data/buoy.json` and appends to
   `data/verification.json`, and the bot commits both straight to `main`.
 - **Firebase:** anonymous auth by default, Google sign-in optional. Surf logs
   live in Firestore `surf_logs`, photos in Storage `surf-photos/raw/<uid>/…`.
-  `loadSurfLog` waits on `window._fbAuthReady`.
+  `loadSurfLog` waits on `window._fbAuthReady`. It runs in the background,
+  so the forecast never waits on it.
 
 ## Tests
 
