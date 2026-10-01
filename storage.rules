@@ -1,9 +1,21 @@
 // Cloud Storage Security Rules
-// Paste these into Firebase Console → Storage → Rules
+// Paste these into Firebase Console → Storage → Rules.
+// Nothing deploys this file: a change here does nothing until it is pasted.
+// tests/rules/rules.test.js runs it in the Storage emulator.
 
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+
+    // Crew allowlist (audit C28) — DISABLED TEMPLATE. When firestore.rules
+    // gets its crew() allowlist, add the same function here and use it in
+    // place of `request.auth != null` below:
+    //
+    // function crew() {
+    //   return request.auth != null
+    //     && request.auth.token.email_verified == true
+    //     && request.auth.token.email in ['owner@example.com', 'friend@example.com'];
+    // }
 
     // Approved gallery photos readable by all authenticated users
     match /gallery/{filename} {
@@ -13,13 +25,19 @@ service firebase.storage {
     }
 
     // surf-photos: any authenticated user can read session photos (community log)
-    // only the uploader can write their own photos
+    // only the uploader can write their own photos, at the path
+    // saveLogEntryToFirebase() builds (<uid>/<YYYY>/<MM>/<ms>_<i>.jpg), and
+    // only as a real image type. No SVG (it can carry script) and nothing
+    // that is not an image; iPhone uploads arrive as HEIC/HEIF (audit C29).
     match /surf-photos/raw/{userId}/{year}/{month}/{filename} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null
+      allow create, update: if request.auth != null
                     && request.auth.uid == userId
                     && request.resource.size < 10 * 1024 * 1024
-                    && request.resource.contentType.matches('image/.*');
+                    && request.resource.contentType.matches('image/(jpeg|png|webp|heic|heif|gif)')
+                    && year.matches('20[0-9][0-9]')
+                    && month.matches('0[1-9]|1[0-2]')
+                    && filename.matches('[0-9]+_[0-9]+[.]jpg');
     }
   }
 }

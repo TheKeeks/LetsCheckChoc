@@ -22,10 +22,13 @@ small crew. Choc TV (`?kiosk=1`) runs full-screen on an iPad at the house.
 npm test              # node:test unit suite (tests/unit, TZ=America/New_York) + legacy test-gate.js
 npm run test:e2e      # Playwright scenarios (tests/e2e/scenarios), fully offline
 npm run test:py       # python unittest for scripts/ (fetch_buoy.py)
+npm run test:rules    # Firestore/Storage rules in the Firebase emulators (tests/rules, needs Java 21)
 node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 ```
 
-- Unit and Python tests need **no npm install**.
+- Unit and Python tests need **no npm install**. `test:rules` needs
+  `npm i --no-save firebase-tools@15.32.1 @firebase/rules-unit-testing@5.0.2 firebase@12.19.0`
+  first (CI: `.github/workflows/rules.yml`).
 - e2e needs Playwright 1.56.x. A web session has it globally, with Chromium in
   `/opt/pw-browsers` (the runner sets `PLAYWRIGHT_BROWSERS_PATH` to it). Never
   run `playwright install` in a web session. CI runs
@@ -145,7 +148,8 @@ each one. Line numbers drift with every edit, so do not cite them in docs.
   functions, so keep them `function` declarations.
 - `firestore.rules` / `storage.rules` are **pasted into the Firebase console by
   hand**. Nothing deploys the repo copy, so a rules change does nothing until
-  the owner pastes it. Say so in the PR.
+  the owner pastes it. Say so in the PR. Only an entry's owner may write it:
+  never re-save another crew member's entry (`saveLogEntryToFirebase` refuses).
 - Tide and wind lookups can fail (CO-OPS answers HTTP 200 with
   `{"error":{"message":"No Predictions data was found..."}}`). Missing data must
   stay null, never 0: a made-up 0 ft tide poisons the training data.

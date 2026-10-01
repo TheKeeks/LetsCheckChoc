@@ -184,6 +184,21 @@ function formatDayShort(date) {
 
 function el(id) { return document.getElementById(id); }
 
+// Escape text for an innerHTML string (element content or a quoted
+// attribute). Anything that came from Firestore, an import or another crew
+// member (notes, displayName, ids, condition values) goes through this:
+// the community log is rendered for everyone (audit C27).
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// A photo URL safe to put in a src="" attribute: http(s), blob: or an image
+// data: URI only, escaped for the attribute. Anything else becomes ''.
+function safeUrl(u) {
+  const s = String(u == null ? '' : u).trim();
+  return /^(https?:|blob:|data:image\/)/i.test(s) ? escHtml(s) : '';
+}
+
 // Apply HiDPI / DPR sizing to a canvas. Sets backing-store dimensions to
 // cssW * dpr × cssH * dpr while keeping the on-screen CSS size unchanged,
 // then scales the 2D context so existing draw code can keep using CSS-pixel
@@ -4230,15 +4245,29 @@ function updateAuthUI(user) {
   updateStorageNote();
 }
 
-async function migrateAnonDataToUser() {
-  var entriesToMigrate = STATE.surfLog ? STATE.surfLog.slice() : [];
+// Called by firebase-config.js when an anonymous session becomes a Google
+// one. Moves only the sessions logged under the anonymous uid being left
+// (`prevAnonUid`) or never synced (no userId). STATE.surfLog can also hold
+// the community log mirrored from an earlier Google session on this device;
+// re-saving those would stamp them with this account's uid (audit C26).
+async function migrateAnonDataToUser(prevAnonUid) {
+  var entriesToMigrate = (STATE.surfLog || []).filter(function(e) {
+    return e && (!e.userId || (!!prevAnonUid && e.userId === prevAnonUid));
+  });
   if (entriesToMigrate.length > 0) {
     var count = 0;
     for (var i = 0; i < entriesToMigrate.length; i++) {
+      var entry = entriesToMigrate[i];
+      var prevOwner = entry.userId;
+      // Unowned: saveLogEntryToFirebase stamps the new uid once the write
+      // lands. An entry the anonymous uid already synced stays its doc in
+      // Firestore (the rules refuse a change of owner), so restore on failure.
+      entry.userId = '';
       try {
-        await saveLogEntryToFirebase(entriesToMigrate[i]);
+        await saveLogEntryToFirebase(entry);
         count++;
       } catch(e) {
+        entry.userId = prevOwner;
         console.warn('Migration failed for entry:', e);
       }
     }
@@ -4270,6 +4299,7 @@ async function loadSurfLog() {
     try {
       const raw = localStorage.getItem('lcc_surfLog');
       STATE.surfLog = raw ? JSON.parse(raw) : [];
+      STATE.surfLog.forEach(e => { if (e) _dropFabricatedTide(e.conditions); });
     } catch (e2) { STATE.surfLog = []; }
   }
 }
@@ -4351,6 +4381,8 @@ function photoUrl(p) {
 async function retryFailedPhotoUploads() {
   if (!window._fbUserId || window._fbUserIsAnon) return;
   const candidates = (STATE.surfLog || []).filter(function(e) {
+    // Only this account's entries: saveLogEntryToFirebase refuses others'.
+    if (e.userId && e.userId !== window._fbUserId) return false;
     return Array.isArray(e.photos) && e.photos.some(function(p) {
       return p && p._uploadFailed && typeof p._localDataURI === 'string';
     });
@@ -4389,6 +4421,13 @@ async function saveLogEntryToFirebase(entry) {
   if (!window._fbUserId) {
     throw new Error('Not authenticated — cannot sync to cloud');
   }
+  // Only the owner may write an entry. STATE.surfLog also holds other crew
+  // members' entries; the payload below stamps userId with OUR uid, so
+  // saving one of theirs would take it over (audit C26). firestore.rules
+  // refuses that too; refusing here keeps local state honest.
+  if (entry.userId && entry.userId !== window._fbUserId) {
+    throw new Error('Not your entry (owner ' + entry.userId + ') — not saved to cloud');
+  }
   const d = new Date(entry.timestamp);
   const YYYY = d.getFullYear();
   const MM = String(d.getMonth() + 1).padStart(2, '0');
@@ -4420,7 +4459,9 @@ async function saveLogEntryToFirebase(entry) {
         const path = 'surf-photos/raw/' + window._fbUserId + '/' + YYYY + '/' + MM + '/' + ts + '_' + i + '.jpg';
         const ref = fbStorage.ref(path);
         const file = _slPhotoFiles && _slPhotoFiles[i] ? _slPhotoFiles[i] : null;
-        if (file) {
+        // storage.rules only accepts these image types; anything else (or a
+        // File with no type) goes up as the resized JPEG instead.
+        if (file && /^image\/(jpeg|png|webp|heic|heif|gif)$/.test(file.type || '')) {
           await ref.put(file);
         } else {
           const res = await fetch(p);
@@ -4463,6 +4504,8 @@ async function saveLogEntryToFirebase(entry) {
     payload.repairedFields = entry.repairedFields;
   }
   await fbFirestore.collection('surf_logs').doc(entry.id).set(payload);
+  // An entry logged before sign-in finished had no owner; it is ours now.
+  if (!entry.userId) entry.userId = window._fbUserId;
 }
 
 async function loadLogsFromFirebase() {
@@ -4496,7 +4539,7 @@ async function loadLogsFromFirebase() {
       photos: (d.photos || []).filter(function(p) { return p && (p.url || typeof p === 'string' || p._uploadFailed); }),
       ratings: d.ratings,
       notes: d.notes || '',
-      conditions: d.conditions || null,
+      conditions: _dropFabricatedTide(d.conditions || null),
       userId: d.userId || '',
       displayName: d.displayName || ''
     };
@@ -4872,19 +4915,22 @@ async function _fetchNDBCHistoricalConditionsCore(dateStr, preFetchedTide) {
   const conditions = {
     swell: {
       height: Math.round((swellRow.waveHeight || 0) * 10) / 10,
-      direction: Math.round(swellRow.direction || 0),
+      // Missing MWD stays null (flagged incomplete), not 0° = due north,
+      // which the Wave model would read as out-of-window swell (audit C16).
+      direction: Number.isFinite(swellRow.direction) ? Math.round(swellRow.direction) : null,
       period: Math.round((swellRow.period || 0) * 10) / 10,
       lagHours: Math.round(ndbcLagHours * 10) / 10
     },
     wind: haveWind
       ? { speed: Math.round(wSpd), direction: Math.round(wDir) }
       : { speed: null, direction: null },
-    tide: {
+    // null when CO-OPS had no predictions (see parseTideAtTime)
+    tide: tideInfo ? {
       height: Math.round(tideInfo.height * 10) / 10,
       rate: Math.round(tideInfo.rate * 100) / 100,
       stage: tideInfo.stage,
       timeToNearest: tideInfo.timeToNearest
-    }
+    } : null
   };
 
   if (ndbcLagHours > 0) {
@@ -5063,9 +5109,15 @@ function _tideStageFromRate(rate, height, predictions) {
 // in ft/hr. `stage` is derived from `rate` ('rising' / 'falling' /
 // 'slack-high' / 'slack-low'). `timeToNearest` is hours to the nearest
 // hi/lo extremum, kept for UI display.
+//
+// Returns null when there are no predictions: a failed fetch, an HTTP error,
+// or CO-OPS's HTTP 200 {"error":{"message":"No Predictions data was
+// found..."}} outage body. Missing tide must stay missing — a made-up 0 ft
+// "rising" looks exactly like Choc's favourite low incoming tide and would
+// train the Ride model on fiction (audit C11).
 function parseTideAtTime(tideData, dateStr) {
   const preds = _normalizeTidePredictions(tideData);
-  if (!preds.length) return { height: 0, rate: 0, stage: 'rising', timeToNearest: 0 };
+  if (!preds.length) return null;
   const sessionTime = new Date(dateStr);
   const heightRaw = tideHeightAt(preds, sessionTime);
   const height = heightRaw == null ? 0 : heightRaw;
@@ -5073,6 +5125,22 @@ function parseTideAtTime(tideData, dateStr) {
   const stage = _tideStageFromRate(rate, height, preds);
   const timeToNearest = _timeToNearestExtremum(preds, sessionTime);
   return { height, rate, stage, timeToNearest };
+}
+
+// The tide the old parseTideAtTime made up during a CO-OPS outage:
+// { height: 0, rate: 0, stage: 'rising', timeToNearest: 0 }. Real data can
+// never say 'rising' at 0 ft/hr (_tideStageFromRate calls |rate| < 0.1
+// slack), so this signature is exact.
+function _isFabricatedTide(t) {
+  return !!t && t.stage === 'rising' && t.rate === 0;
+}
+
+// Read-time repair for sessions saved during an outage: their tide becomes
+// null (shown as unavailable, skipped by the Ride model) until a Lookup or
+// Backfill re-fetches it while CO-OPS is up.
+function _dropFabricatedTide(cond) {
+  if (cond && _isFabricatedTide(cond.tide)) cond.tide = null;
+  return cond;
 }
 
 // Estimate swell travel lag from buoy to Chocomount.
@@ -5152,7 +5220,8 @@ async function lookupOpenMeteoArchive(lat, lon, dateStr) {
 
   const swell = {
     height: Math.round(swH * 10) / 10,
-    direction: Math.round(swD || 0),
+    // Missing direction stays null (flagged incomplete), not 0° (audit C16).
+    direction: Number.isFinite(swD) ? Math.round(swD) : null,
     period: Math.round((swP || 0) * 10) / 10,
     lagHours
   };
@@ -5217,12 +5286,13 @@ async function lookupHistoricalConditions(lat, lon, dateStr) {
     const conditions = {
       swell: archiveResult.swell,
       wind: openMeteoWind || { speed: null, direction: null },
-      tide: {
+      // null when CO-OPS had no predictions; extractRideFeatures skips it
+      tide: tideInfo ? {
         height: Math.round(tideInfo.height * 10) / 10,
         rate: Math.round(tideInfo.rate * 100) / 100,
         stage: tideInfo.stage,
         timeToNearest: tideInfo.timeToNearest
-      },
+      } : null,
       source: 'openmeteo-archive'
     };
     if (archiveResult._lagHours > 0) {
@@ -5273,6 +5343,8 @@ function _windAtHour(wind, dateStr) {
 
 // "2.4ft rising at +0.6 ft/hr (2.4h to next)" — falls back gracefully when
 // rate is missing (sessions logged before the hourly-interpolation backfill).
+// Plain text (stage etc. come from stored entries): escHtml() it before
+// putting it in innerHTML.
 function _formatTideReadout(tide) {
   if (!tide) return '—';
   const h = (typeof tide.height === 'number') ? tide.height.toFixed(1) : (tide.height ?? '?');
@@ -5288,7 +5360,8 @@ function _formatTideReadout(tide) {
 function renderConditionsDisplay(cond) {
   const display = el('sl-conditions-display');
   if (!display || !cond) return;
-  const dl = (l,v) => '<span class="sl-cond-label">'+l+'</span> <span class="sl-cond-val">'+v+'</span>';
+  // Values can come from a stored or imported entry: escape them (audit C27).
+  const dl = (l,v) => '<span class="sl-cond-label">'+escHtml(l)+'</span> <span class="sl-cond-val">'+escHtml(v)+'</span>';
   const lagNote = cond.swell.lagHours ? ' ('+cond.swell.lagHours+'h buoy lag)' : '';
   let h = '<div class="sl-cond-row">';
   h += dl('Swell'+lagNote+':', cond.swell.height+'ft '+cond.swell.period+'s '+directionLabel(cond.swell.direction)+' ('+cond.swell.direction+'\u00b0)');
@@ -5299,10 +5372,12 @@ function renderConditionsDisplay(cond) {
     ? _w.speed + ' mph ' + directionLabel(_w.direction) + ' (' + _w.direction + '\u00b0)'
     : '\u2014';
   h += dl('Wind:', _windText);
-  h += dl('Tide:', _formatTideReadout(cond.tide));
+  // No tide = CO-OPS had no predictions for that time (or a legacy entry).
+  // Say so rather than show a number: the Ride model skips this session.
+  h += dl('Tide:', cond.tide ? _formatTideReadout(cond.tide) : 'Tide unavailable (NOAA CO-OPS down) \u2014 re-Lookup later');
   h += '</div>';
   if (cond.swellLagHours > 0) {
-    h += `<div class="sl-cond-row"><span class="sl-hint">Using swell from ~${cond.swellLagHours}h ago at buoy (travel time estimate)</span></div>`;
+    h += `<div class="sl-cond-row"><span class="sl-hint">Using swell from ~${escHtml(cond.swellLagHours)}h ago at buoy (travel time estimate)</span></div>`;
   }
   if (cond.source) {
     let srcLabel;
@@ -5312,7 +5387,7 @@ function renderConditionsDisplay(cond) {
     else if (cond.source === 'ndbc')                      srcLabel = 'NDBC buoy 44097 (measured)';
     else                                                  srcLabel = 'Open-Meteo marine API';
     h += '<div class="sl-cond-row"><span class="sl-hint">Source: ' + srcLabel + '</span></div>';
-    if (cond.note) h += '<div class="sl-cond-row"><span class="sl-hint">' + cond.note + '</span></div>';
+    if (cond.note) h += '<div class="sl-cond-row"><span class="sl-hint">' + escHtml(cond.note) + '</span></div>';
   }
   display.innerHTML = h;
 }
@@ -5603,19 +5678,31 @@ function importJSON(ev) {
     try {
       const data = JSON.parse(e.target.result);
       if (!Array.isArray(data)) throw new Error('Not an array');
-      let imported = 0;
+      let imported = 0, skipped = 0, unsynced = 0;
+      // A rating is a 0–10 number, or null for a blank slider (flagged
+      // incomplete later); anything else is not something the form wrote.
+      const okRating = v => v == null || (typeof v === 'number' && isFinite(v) && v >= 0 && v <= 10);
       for (const entry of data) {
-        if (!entry.timestamp || !entry.ratings) continue;
+        if (!entry || !entry.timestamp || !entry.ratings || typeof entry.ratings !== 'object') continue;
+        // An export holds the whole community log. Someone else's entry is
+        // theirs: importing it would re-save it under our uid (audit C26).
+        if (entry.userId && entry.userId !== window._fbUserId) { skipped++; continue; }
+        if (!['size', 'windQuality', 'rideQuality'].every(k => okRating(entry.ratings[k]))) { skipped++; continue; }
         if (!entry.id) entry.id = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
         if (!STATE.surfLog.find(x => x.id === entry.id)) {
           STATE.surfLog.push(entry);
-          await saveLogEntryToFirebase(entry);
           imported++;
+          // One failed sync (offline, rules) must not abort the rest; the
+          // entry stays in the local log like any unsynced save.
+          try { await saveLogEntryToFirebase(entry); }
+          catch (err) { unsynced++; console.warn('Import: Firestore save failed for', entry.id, err); }
         }
       }
       STATE.surfLog.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
       saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
-      alert('Imported ' + imported + ' entries.');
+      alert('Imported ' + imported + ' entries.' +
+        (skipped ? ' Skipped ' + skipped + ' (owned by another account — sign in as its owner — or invalid ratings).' : '') +
+        (unsynced ? ' ' + unsynced + ' saved locally only — sync failed.' : ''));
     } catch (err) { alert('Invalid JSON: ' + err.message); }
   };
   reader.readAsText(file); ev.target.value = '';
@@ -5625,26 +5712,31 @@ function importJSON(ev) {
 // SURF LOG — Backfill (re-fetch all sessions from Open-Meteo archive)
 // ════════════════════════════════════════════════
 //
-// Replaces each logged session's `cond.swell` AND `cond.tide` blocks with
-// reanalysis data. Subjective ratings (size, wind quality, ride quality),
-// notes, and photos are untouched. The wind block is preserved per entry
-// (wind source unchanged); the tide block is REWRITTEN because we are
-// migrating from the old hilo-extremum lookup (cond.tide.height was the
-// next hi/lo value) to the new hourly-interpolated lookup (cond.tide.height
-// is the actual water level at session time, and cond.tide.rate is added).
-// NDBC stdmet is the fallback when archive returns no data.
+// Replaces each of the signed-in user's sessions' `cond.swell` AND
+// `cond.tide` blocks with reanalysis data. Subjective ratings (size, wind
+// quality, ride quality), notes, and photos are untouched. The tide block is
+// REWRITTEN because we are migrating from the old hilo-extremum lookup
+// (cond.tide.height was the next hi/lo value) to the new hourly-interpolated
+// lookup (cond.tide.height is the actual water level at session time, and
+// cond.tide.rate is added) — but only when CO-OPS answered; an outage keeps
+// the stored tide. NDBC stdmet is the fallback when archive returns no data.
 async function backfillAllSessionsFromArchive() {
-  if (!Array.isArray(STATE.surfLog) || STATE.surfLog.length === 0) {
-    alert('No sessions to backfill.');
+  // Only the signed-in user's own sessions. STATE.surfLog also holds the
+  // community log, and re-saving another crew member's entry would stamp it
+  // with this account's uid and take it over (audit C26).
+  const uid = window._fbUserId;
+  const mine = Array.isArray(STATE.surfLog) ? STATE.surfLog.filter(e => uid && e.userId === uid) : [];
+  if (mine.length === 0) {
+    alert('No sessions of yours to backfill.');
     return;
   }
   const proceed = confirm(
     'This will re-fetch conditions for all your logged sessions from Open-Meteo archive: ' +
     'swell + wind from the archive reanalysis, plus tide data from CO-OPS using hourly ' +
     'predictions (interpolated water level at session time, with signed ft/hr rate). ' +
-    'Sessions where the wind fetch fails will be stored with null wind (skipped by the ' +
-    'Conditions model). Your subjective ratings (size, wind quality, ride quality) will ' +
-    'not be touched. Proceed?'
+    'If the wind or tide fetch fails for a session, its stored wind/tide is kept. Only ' +
+    'your own sessions are updated. Your subjective ratings (size, wind quality, ride ' +
+    'quality) will not be touched. Proceed?'
   );
   if (!proceed) return;
 
@@ -5656,7 +5748,7 @@ async function backfillAllSessionsFromArchive() {
   if (progress) progress.style.display = '';
   if (bar) bar.style.width = '0%';
 
-  const entries = STATE.surfLog.slice();
+  const entries = mine.slice();
   const total = entries.length;
   let processed = 0, archive = 0, ndbcOnly = 0, ndbcWithWind = 0, failed = 0;
   let tideRising = 0, tideFalling = 0, tideSlack = 0;
@@ -5692,19 +5784,20 @@ async function backfillAllSessionsFromArchive() {
         else delete newCond.originalLoggedTime;
         if (result.note) newCond.note = result.note; else delete newCond.note;
 
-        // Wind: ALWAYS overwrite — earlier backfills stored failed fetches
-        // as { speed: 0, direction: 0 }, biasing the Conditions model with
-        // fake calm-offshore datapoints. Re-running uses the same archive
-        // source the live forecast uses; failed fetches now land as
-        // { speed: null, direction: null } and the extractor skips them.
-        // Tide: ALWAYS overwrite with the freshly-computed block — we are
-        // migrating from hilo-nearest-extremum to hourly-interpolated
-        // height plus a new signed ft/hr `rate` field, so any tide values
-        // already on the entry are stale by definition.
-        if (result.wind) newCond.wind = result.wind;
-        else if (oldCond.wind) newCond.wind = oldCond.wind;
-        if (result.tide) newCond.tide = result.tide;
-        else if (oldCond.tide) newCond.tide = oldCond.tide;
+        // Wind and tide: take the fresh value whenever the fetch returned a
+        // real one (the archive wind and the hourly-interpolated tide with
+        // its signed ft/hr `rate` replace older formats). When a fetch FAILED
+        // (CO-OPS outage, archive down) keep what the entry already had
+        // rather than overwrite good data with nothing (audit C11). Stored
+        // values that were themselves fabricated by an earlier outage — wind
+        // { speed: 0, direction: 0 }, tide 'rising' at 0 ft/hr — become null
+        // so the models skip them instead of training on them.
+        if (result.wind && result.wind.speed != null) newCond.wind = result.wind;
+        else if (oldCond.wind && oldCond.wind.speed != null && !(oldCond.wind.speed === 0 && oldCond.wind.direction === 0)) newCond.wind = oldCond.wind;
+        else newCond.wind = { speed: null, direction: null };
+        if (result.tide && typeof result.tide.height === 'number') newCond.tide = result.tide;
+        else if (oldCond.tide && !_isFabricatedTide(oldCond.tide)) newCond.tide = oldCond.tide;
+        else newCond.tide = null;
 
         entry.conditions = newCond;
         try {
@@ -5774,21 +5867,11 @@ function ratingBadge(val) {
   return '<span class="sl-rating-badge '+cls+'">'+v+'</span>';
 }
 
+// One predicate (audit C44): an entry is incomplete when getIncompleteFields
+// finds anything. It drives the "needs review" banner AND _modelRows, so a
+// flagged entry really is excluded from the models.
 function isLogEntryIncomplete(entry) {
-  if (!entry || typeof entry !== 'object') return true;
-  const r = entry.ratings;
-  if (!r || typeof r !== 'object') return true;
-  for (const k of ['size', 'rideQuality', 'windQuality']) {
-    const v = r[k];
-    if (typeof v !== 'number' || !isFinite(v) || v < 0 || v > 10) return true;
-  }
-  const c = entry.conditions;
-  if (!c || typeof c !== 'object') return true;
-  const s = c.swell;
-  if (!s) return true;
-  if (s.size === 0 && s.period === 0) return true;
-  if (s.size > 0 && (s.direction === undefined || s.direction === null || s.direction === 0)) return true;
-  return false;
+  return getIncompleteFields(entry).length > 0;
 }
 
 function getIncompleteFields(entry) {
@@ -5809,11 +5892,13 @@ function getIncompleteFields(entry) {
     return fields;
   }
   const s = c.swell;
+  // Swell objects store `height`; `size` is only on legacy entries.
+  const sh = s ? (s.height ?? s.size) : undefined;
   if (!s) {
     fields.push('swell');
-  } else if (s.size === 0 && s.period === 0) {
+  } else if (sh === 0 && s.period === 0) {
     fields.push('swell');
-  } else if (s.size > 0 && (s.direction === undefined || s.direction === null || s.direction === 0)) {
+  } else if (sh > 0 && (s.direction === undefined || s.direction === null || s.direction === 0)) {
     fields.push('swell');
   }
   return fields;
@@ -5857,16 +5942,20 @@ function renderSurfLogTable() {
     const dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'});
     const timeStr = d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
     const avg = ((entry.ratings.size+entry.ratings.windQuality+entry.ratings.rideQuality)/3).toFixed(1);
-    const validPhotos = (entry.photos||[]).map(p=>photoUrl(p)).filter(Boolean).slice(0,3);
+    // Every entry field below can be written by any crew member (or an
+    // import), and the community log renders for everyone: escape it all
+    // (audit C27). Notes are escaped AFTER slicing so an entity is never cut.
+    const validPhotos = (entry.photos||[]).map(p=>safeUrl(photoUrl(p))).filter(Boolean).slice(0,3);
     const photoHtml = validPhotos.length > 0
       ? '<div class="sl-row-photos">'+validPhotos.map(url=>'<img src="'+url+'" alt="" onerror="this.style.display=\'none\'">').join('')+'</div>'
       : '<span style="color:var(--ink4)">\u2014</span>';
-    const notes = (entry.notes||'').slice(0,30) + ((entry.notes||'').length>30?'...':'');
+    const notesRaw = String(entry.notes||'');
+    const notes = escHtml(notesRaw.slice(0,30)) + (notesRaw.length>30?'...':'');
     const isOwn = entry.userId === window._fbUserId;
-    const attribution = (!isOwn && entry.displayName) ? '<br><span style="color:var(--ink4);font-size:0.6rem">'+entry.displayName+'</span>' : '';
+    const attribution = (!isOwn && entry.displayName) ? '<br><span style="color:var(--ink4);font-size:0.6rem">'+escHtml(entry.displayName)+'</span>' : '';
     const incompletePill = isIncomplete(entry) ? '<br><span class="sl-incomplete-pill">\u26a0 incomplete</span>' : '';
     const actionHtml = isOwn
-      ? '<button class="sl-btn sl-btn-sm sl-edit-btn" data-id="'+entry.id+'">Edit</button> <button class="sl-btn sl-btn-sm sl-btn-danger sl-delete-btn" data-id="'+entry.id+'">Del</button>'
+      ? '<button class="sl-btn sl-btn-sm sl-edit-btn" data-id="'+escHtml(entry.id)+'">Edit</button> <button class="sl-btn sl-btn-sm sl-btn-danger sl-delete-btn" data-id="'+escHtml(entry.id)+'">Del</button>'
       : '<span style="color:var(--ink4);font-size:0.65rem">community</span>';
     tr.innerHTML = '<td style="white-space:nowrap">'+dateStr+'<br><span style="color:var(--ink4);font-size:0.65rem">'+timeStr+'</span>'+attribution+incompletePill+'</td>'
       +'<td>'+photoHtml+'</td>'
@@ -5915,10 +6004,12 @@ function toggleEntryDetail(entry, tr) {
   const c = entry.conditions;
   let h = '<td colspan="8"><div class="sl-detail-content">';
   if (c) {
-    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Swell</span>'+c.swell.height+'ft '+c.swell.period+'s '+directionLabel(c.swell.direction)+' ('+c.swell.direction+'\u00b0)';
-    if (c.swell.secondary) h += '<br>2nd: '+c.swell.secondary.height+'ft '+c.swell.secondary.period+'s '+directionLabel(c.swell.secondary.direction);
-    h += '</div><div class="sl-cond-group"><span class="sl-cond-group-title">Wind</span>'+c.wind.speed+' mph '+directionLabel(c.wind.direction)+' ('+c.wind.direction+'\u00b0)</div>';
-    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Tide</span>'+_formatTideReadout(c.tide)+'</div>';
+    // Stored values from any crew member's entry: escape them (audit C27).
+    const sw = c.swell || {}, w = c.wind || {}, e = escHtml;
+    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Swell</span>'+e(sw.height)+'ft '+e(sw.period)+'s '+directionLabel(sw.direction)+' ('+e(sw.direction)+'\u00b0)';
+    if (sw.secondary) h += '<br>2nd: '+e(sw.secondary.height)+'ft '+e(sw.secondary.period)+'s '+directionLabel(sw.secondary.direction);
+    h += '</div><div class="sl-cond-group"><span class="sl-cond-group-title">Wind</span>'+e(w.speed)+' mph '+directionLabel(w.direction)+' ('+e(w.direction)+'\u00b0)</div>';
+    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Tide</span>'+e(_formatTideReadout(c.tide))+'</div>';
   } else { h += '<div style="grid-column:1/-1;color:var(--ink4)">No conditions recorded</div>'; }
   h += '</div></td>';
   dr.innerHTML = h; tr.after(dr);
@@ -6107,9 +6198,28 @@ function _trainOnArrays(X, y) {
   return { weights, stats };
 }
 
+// The single gate between logged sessions and the models (audit C16).
+// trainModel, leaveOneOutRMSE, _runLOOForSanity and every Regression-tab
+// builder use it, so the live model, the tab's R²/RMSE and the banner's
+// "excluded from your model" all agree. A row is kept only when the entry
+// is complete (isLogEntryIncomplete: ratings 0–10, real swell), the
+// extractor returns finite numbers, and the target is a 0–10 number — one
+// null or "7" rating can otherwise flip weights or blank a model.
+function _modelRows(entries, featureExtractor, targetFn) {
+  const X = [], y = [], kept = [];
+  for (const e of entries || []) {
+    if (isLogEntryIncomplete(e)) continue;
+    const f = featureExtractor(e.conditions);
+    if (!f || !f.every(Number.isFinite)) continue;
+    const t = targetFn(e);
+    if (typeof t !== 'number' || !isFinite(t) || t < 0 || t > 10) continue;
+    X.push(f); y.push(t); kept.push(e);
+  }
+  return { X, y, kept };
+}
+
 function trainModel(entries, featureExtractor, targetFn) {
-  const X = [], y = [];
-  entries.forEach(e => { const f = featureExtractor(e.conditions); if(f){ X.push(f); y.push(targetFn(e)); }});
+  const { X, y } = _modelRows(entries, featureExtractor, targetFn);
   if (!X.length) return null;
   const nF = X[0].length;
   const minSamples = Math.max(2 * nF, 12);
@@ -6120,8 +6230,7 @@ function trainModel(entries, featureExtractor, targetFn) {
 // Train on all samples except `holdoutIdx`, predict the held-out target,
 // repeat for every sample, return RMSE across held-out predictions.
 function leaveOneOutRMSE(entries, featureExtractor, targetFn) {
-  const X = [], y = [];
-  entries.forEach(e => { const f = featureExtractor(e.conditions); if(f){ X.push(f); y.push(targetFn(e)); }});
+  const { X, y } = _modelRows(entries, featureExtractor, targetFn);
   if (!X.length) return null;
   const nF = X[0].length;
   const minSamples = Math.max(2 * nF, 12);
@@ -6204,8 +6313,7 @@ function _logRetrainSummary() {
 // inverse transform) by checking pred range / mean / std against actuals,
 // and flags models that don't beat "predict the mean" baseline.
 function _runLOOForSanity(entries, featureExtractor, targetFn) {
-  const X = [], y = [];
-  entries.forEach(e => { const f = featureExtractor(e.conditions); if (f) { X.push(f); y.push(targetFn(e)); } });
+  const { X, y } = _modelRows(entries, featureExtractor, targetFn);
   if (!X.length) return null;
   const nF = X[0].length;
   const minSamples = Math.max(2 * nF, 12);
@@ -6542,14 +6650,18 @@ function buildForecastConditions(marine, wind, tideHiLo, tidePred, hi) {
   const secP=marine.hourly.secondary_swell_wave_period?.[hi]??0;
   const wSpd=wind.hourly.wind_speed_10m?.[hi]??0, wDir=wind.hourly.wind_direction_10m?.[hi]??0;
   const targetTime = marine.hourly.time?.[hi];
-  let tideInfo = { height: 0, rate: 0, stage: 'rising', timeToNearest: 0 };
+  // No tide data (CO-OPS down) → tide: null, never a made-up 0 ft 'rising':
+  // the Ride prediction then shows '—' instead of rating fictional water
+  // (audit C11).
+  let tideInfo = null;
   if (targetTime && tidePred && tidePred.length) {
     tideInfo = parseTideAtTime({ predictions: tidePred }, targetTime);
-    if (tideHiLo && tideHiLo.length) {
+    if (tideInfo && tideHiLo && tideHiLo.length) {
       const hi2 = parseTideAtTime({ predictions: tideHiLo }, targetTime);
-      tideInfo.timeToNearest = hi2.timeToNearest;
+      if (hi2) tideInfo.timeToNearest = hi2.timeToNearest;
     }
-  } else if (targetTime && tideHiLo && tideHiLo.length) {
+  }
+  if (!tideInfo && targetTime && tideHiLo && tideHiLo.length) {
     tideInfo = parseTideAtTime({ predictions: tideHiLo }, targetTime);
   }
   return { swell:{height:swH,direction:swD,period:swP,secondary:secH>0.3?{height:secH,direction:secD,period:secP}:undefined},
@@ -6611,13 +6723,13 @@ function renderPersonalMatchCards() {
   let h = '<div class="pm-cards-row">';
   matches.slice(0,7).forEach(m => {
     const dl = new Date(m.day).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-    const thumb = m.entry.photos?.[0] ? photoUrl(m.entry.photos[0]) : '';
+    const thumb = m.entry.photos?.[0] ? safeUrl(photoUrl(m.entry.photos[0])) : '';
     const imgH = thumb ? '<img class="pm-card-img" src="'+thumb+'" alt="" onerror="this.style.display=\'none\'">' : '<div class="pm-card-img" style="display:flex;align-items:center;justify-content:center;color:var(--ink4);font-family:var(--mono);font-size:0.7rem">No photo</div>';
     const waveLine = '<span class="pm-score-wave">Wave: '+(m.waveRating?m.waveRating.toFixed(1):'--')+'</span>';
     const rideLine = '<span class="pm-score-ride">Ride: '+(m.rideRating?m.rideRating.toFixed(1):'--')+'</span>';
     const condLine = '<span class="pm-score-cond">Cond: '+(m.condRating?m.condRating.toFixed(1):'--')+'</span>';
     const matchLine = '<span class="pm-match-wave">W '+m.waveMatch+'%</span> <span class="pm-match-ride">R '+m.rideMatch+'%</span> <span class="pm-match-cond">C '+m.condMatch+'%</span>';
-    h += '<div class="pm-card" data-day="'+m.day+'" data-eid="'+m.entry.id+'" data-hi="'+m.hourIdx+'">'+imgH+'<div class="pm-card-body"><div class="pm-card-date">'+dl+'</div><div class="pm-card-scores">'+waveLine+' '+rideLine+' '+condLine+'</div><div class="pm-card-match">'+matchLine+'</div></div></div>';
+    h += '<div class="pm-card" data-day="'+escHtml(m.day)+'" data-eid="'+escHtml(m.entry.id)+'" data-hi="'+m.hourIdx+'">'+imgH+'<div class="pm-card-body"><div class="pm-card-date">'+dl+'</div><div class="pm-card-scores">'+waveLine+' '+rideLine+' '+condLine+'</div><div class="pm-card-match">'+matchLine+'</div></div></div>';
   });
   h += '</div>'; container.innerHTML = h;
   container.querySelectorAll('.pm-card').forEach(c => c.addEventListener('click', () => {
@@ -6647,7 +6759,7 @@ function openMatchModal(entry, forecastDay, hi) {
   el('modal-title').textContent = new Date(entry.timestamp).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   const ce = el('modal-conditions');
   if (ce && entry.conditions) {
-    const c=entry.conditions, dl=(l,v)=>'<span class="mc-label">'+l+'</span><span class="mc-val">'+v+'</span>';
+    const c=entry.conditions, dl=(l,v)=>'<span class="mc-label">'+l+'</span><span class="mc-val">'+escHtml(v)+'</span>';
     const tideStr = c.tide ? (c.tide.height+'ft '+c.tide.stage + (typeof c.tide.rate === 'number' ? ' ('+(c.tide.rate>=0?'+':'')+c.tide.rate.toFixed(2)+' ft/hr)' : '')) : '—';
     ce.innerHTML = [dl('Swell',c.swell.height+'ft '+c.swell.period+'s '+directionLabel(c.swell.direction)), dl('Wind',c.wind.speed+'mph '+directionLabel(c.wind.direction)), dl('Tide',tideStr), fc?dl('Fcst Wind',Math.round(fc.wind.speed)+'mph '+directionLabel(fc.wind.direction)):''].join('');
   }
@@ -7472,13 +7584,11 @@ function _regBuildFeatureMini(sub, featureIdx) {
   const uid = window._fbUserId;
   const all = STATE.surfLog.filter(e => e.conditions?.swell);
   const points = [];
-  for (const e of all) {
-    const f = cfg.extractor(e.conditions);
-    const t = cfg.targetFn(e);
-    if (!f || typeof t !== 'number' || !isFinite(t)) continue;
+  const mr = _modelRows(all, cfg.extractor, cfg.targetFn);
+  mr.kept.forEach((e, i) => {
     const isOwn = uid && e.userId === uid;
-    points.push({ entry: e, x: f[featureIdx], y: t, isOwn: !!isOwn });
-  }
+    points.push({ entry: e, x: mr.X[i][featureIdx], y: mr.y[i], isOwn: !!isOwn });
+  });
   if (!points.length) {
     const empty = document.createElement('div');
     empty.className = 'reg-feature-mini-empty sl-hint';
@@ -7652,15 +7762,8 @@ function _regUserScopedFeatureSeries(sub) {
   const cfg = REG_SUBMODELS[sub];
   const uid = window._fbUserId;
   const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
-  const out = [];
-  for (const e of userScoped) {
-    if (!e.conditions?.swell) continue;
-    const f = cfg.extractor(e.conditions);
-    const t = cfg.targetFn(e);
-    if (!f || typeof t !== 'number' || !isFinite(t)) continue;
-    out.push({ f, t });
-  }
-  return out;
+  const mr = _modelRows(userScoped.filter(e => e.conditions?.swell), cfg.extractor, cfg.targetFn);
+  return mr.X.map((f, i) => ({ f, t: mr.y[i] }));
 }
 
 function _regFmtFeatureValue(name, v) {
@@ -8104,13 +8207,10 @@ function _regComputeLOOData(sub) {
   const uid = window._fbUserId;
   const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
   const entries = userScoped.filter(e => e.conditions?.swell);
-  const rows = [];
-  for (const e of entries) {
-    const f = cfg.extractor(e.conditions);
-    const t = cfg.targetFn(e);
-    if (!f || typeof t !== 'number' || !isFinite(t)) continue;
-    rows.push({ entry: e, features: f, target: t });
-  }
+  // Same rows as leaveOneOutRMSE (via _modelRows), so these per-session
+  // predictions reconcile with STATE.surfLog*Validation.
+  const mr = _modelRows(entries, cfg.extractor, cfg.targetFn);
+  const rows = mr.kept.map((e, i) => ({ entry: e, features: mr.X[i], target: mr.y[i] }));
   if (!rows.length) return { rows: [], r2: null, rmse: null, baselineRMSE: null, n: 0 };
   const X = rows.map(r => r.features);
   const y = rows.map(r => r.target);
@@ -8380,22 +8480,26 @@ let _regDrilldownState = { entry: null, sub: 'wave', photoIdx: 0 };
 function _regFmtConditionsBlock(cond) {
   if (!cond) return '<div class="reg-drill-empty sl-hint">No conditions recorded</div>';
   const s = cond.swell || {}, w = cond.wind || {}, t = cond.tide || {};
-  const swellH = (s.height != null ? s.height.toFixed(1) : '—') + 'ft';
-  const swellP = (s.period != null ? s.period.toFixed(1) : '—') + 's';
+  // typeof checks, not != null: a stored string must not throw on toFixed
+  // and take the whole drill-down with it.
+  const swellH = (typeof s.height === 'number' ? s.height.toFixed(1) : '—') + 'ft';
+  const swellP = (typeof s.period === 'number' ? s.period.toFixed(1) : '—') + 's';
   const swellD = (s.direction != null ? directionLabel(s.direction) + ' (' + Math.round(s.direction) + '°)' : '—');
   const secLine = s.secondary
     ? '<div class="reg-drill-line"><span class="reg-drill-key">Secondary:</span> ' +
-      (s.secondary.height != null ? s.secondary.height.toFixed(1) + 'ft' : '—') + ' @ ' +
-      (s.secondary.period != null ? s.secondary.period.toFixed(1) + 's' : '—') + ' · ' +
+      (typeof s.secondary.height === 'number' ? s.secondary.height.toFixed(1) + 'ft' : '—') + ' @ ' +
+      (typeof s.secondary.period === 'number' ? s.secondary.period.toFixed(1) + 's' : '—') + ' · ' +
       (s.secondary.direction != null ? directionLabel(s.secondary.direction) : '—') + '</div>'
     : '';
   const windLine = (w.speed != null ? Math.round(w.speed) : '—') + 'mph · ' +
     (w.direction != null ? directionLabel(w.direction) : '—') +
     (w.direction != null ? ' (' + Math.round(w.direction) + '°)' : '');
-  const tideLine = (t.height != null ? (t.height >= 0 ? '+' : '') + t.height.toFixed(1) + 'ft' : '—') +
-    ' · ' + (t.stage || '—') +
+  // stage / timeToNearest are stored values from any crew member's entry:
+  // escape them (audit C27). The numbers go through toFixed()/Math.round().
+  const tideLine = (typeof t.height === 'number' ? (t.height >= 0 ? '+' : '') + t.height.toFixed(1) + 'ft' : '—') +
+    ' · ' + escHtml(t.stage || '—') +
     (typeof t.rate === 'number' ? ' · ' + (t.rate >= 0 ? '+' : '') + t.rate.toFixed(2) + ' ft/hr' : '') +
-    (t.timeToNearest != null ? ' · time to nearest: ' + t.timeToNearest + 'h' : '');
+    (t.timeToNearest != null ? ' · time to nearest: ' + escHtml(t.timeToNearest) + 'h' : '');
   let sourceLabel;
   if (cond.source === 'openmeteo-archive')              sourceLabel = 'Open-Meteo archive (reanalysis)';
   else if (cond.source === 'ndbc-stdmet+openmeteo-wind') sourceLabel = 'NDBC buoy 44097 swell + Open-Meteo archive wind';
@@ -8619,7 +8723,9 @@ function openRegressionDrilldown(entry, sub) {
   const dt = new Date(entry.timestamp);
   const dtStr = dt.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }) +
     ' · ' + formatTime(dt);
-  const photos = (entry.photos || []).map(p => photoUrl(p) || p).filter(Boolean);
+  // Community entries land here too (feature-mini scatter): escape every
+  // stored field and allow only http(s)/blob/data:image photo URLs (C27).
+  const photos = (entry.photos || []).map(p => safeUrl(photoUrl(p) || p)).filter(Boolean);
   const photoBlock = photos.length
     ? '<div class="reg-drill-photo-wrap">' +
       '<img class="reg-drill-photo" src="' + photos[0] + '" alt="Session photo" onerror="this.style.display=\'none\'">' +
@@ -8627,10 +8733,10 @@ function openRegressionDrilldown(entry, sub) {
       '</div>'
     : '';
   const communityBadge = !isOwn ? '<span class="reg-drill-badge">from community log</span>' : '';
-  const loggedBy = isOwn ? 'you' : (entry.displayName || 'Anonymous');
+  const loggedBy = isOwn ? 'you' : escHtml(entry.displayName || 'Anonymous');
   const notesBlock = entry.notes
     ? '<div class="reg-drill-section"><div class="reg-drill-section-heading">Notes</div><div class="reg-drill-notes">' +
-      entry.notes.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) + '</div></div>'
+      escHtml(entry.notes) + '</div></div>'
     : '';
 
   panel.setAttribute('data-w1-title', 'Session detail · ' + dtStr);

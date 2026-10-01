@@ -1,17 +1,94 @@
 // Firestore Security Rules
-// Paste these into Firebase Console → Firestore Database → Rules
+// Paste these into Firebase Console → Firestore Database → Rules.
+// Nothing deploys this file: a change here does nothing until it is pasted.
+// tests/rules/rules.test.js runs it in the Firestore emulator
+// (npm run test:rules, and .github/workflows/rules.yml).
 
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // surf_logs: any authenticated user can read all entries (community log)
-    // only the owner can create, update, or delete their own entries
+    function signedIn() { return request.auth != null; }
+
+    // ── Crew allowlist (audit C28) — DISABLED TEMPLATE ──────────────
+    // Today any signed-in account (including the automatic anonymous one)
+    // can read and write. To limit the log to the crew, fill in the crew's
+    // Google emails, uncomment crew(), and replace signedIn() with crew()
+    // in the four allow lines below (and the same in storage.rules). Test
+    // with every crew member after pasting: a typo locks that person out.
+    //
+    // function crew() {
+    //   return request.auth != null
+    //     && request.auth.token.email_verified == true
+    //     && request.auth.token.email in [
+    //          'owner@example.com',
+    //          'friend@example.com'
+    //        ];
+    // }
+
+    // A rating is a 0–10 number (the form's sliders), or null/missing on
+    // older entries whose slider was left blank.
+    function okRating(v) {
+      return v == null || ((v is int || v is float) && v >= 0 && v <= 10);
+    }
+    function okRatings(r) {
+      return r == null || (r is map
+        && okRating(r.get('size', null))
+        && okRating(r.get('windQuality', null))
+        && okRating(r.get('rideQuality', null)));
+    }
+
+    // The exact shape saveLogEntryToFirebase() writes (app.js). The size
+    // caps are generous; they stop junk, not real sessions.
+    function okEntry(d, docId) {
+      return d.keys().hasOnly(['id', 'userId', 'displayName', 'timestamp', 'photos', 'ratings',
+                               'notes', 'conditions', 'createdAt', 'repairedAt', 'repairedFields'])
+        && d.id == docId
+        && d.userId == request.auth.uid
+        // serverTimestamp(): a client cannot back- or future-date its rows
+        // to push the crew's sessions out of the newest-200 load window.
+        && d.createdAt == request.time
+        && (!('repairedAt' in d) || d.repairedAt == request.time)
+        && (!('repairedFields' in d) || (d.repairedFields is list && d.repairedFields.size() <= 20))
+        && (!('displayName' in d) || (d.displayName is string && d.displayName.size() <= 200));
+    }
+    // Field checks a new doc must pass. On update a field may also stay
+    // exactly as stored, so a legacy doc (e.g. a string rating) can still be
+    // backfilled or repaired without first being rewritten by hand.
+    function okTimestamp(d) { return d.timestamp is string && d.timestamp.size() <= 40; }
+    function okNotes(d)     { return !('notes' in d) || (d.notes is string && d.notes.size() <= 10000); }
+    function okPhotos(d)    { return !('photos' in d) || (d.photos is list && d.photos.size() <= 50); }
+    function okConditions(d) { return !('conditions' in d) || d.conditions == null || d.conditions is map; }
+    function unchanged(f) {
+      return (f in resource.data) && (f in request.resource.data)
+        && request.resource.data[f] == resource.data[f];
+    }
+
+    // surf_logs: every signed-in user can read every entry (community log).
+    // Only the owner may write: create must claim the writer's own uid;
+    // update needs BOTH the stored and the incoming owner to be the writer
+    // (no taking over someone else's doc, no handing yours to someone else);
+    // delete needs the stored owner to be the writer (audit C26).
     match /surf_logs/{docId} {
-      allow create, update: if request.auth != null
-                            && request.resource.data.userId == request.auth.uid;
-      allow read: if request.auth != null;
-      allow delete: if request.auth != null
+      allow read: if signedIn();
+      allow create: if signedIn()
+                    && request.resource.data.userId == request.auth.uid
+                    && okEntry(request.resource.data, docId)
+                    && okTimestamp(request.resource.data)
+                    && okRatings(request.resource.data.get('ratings', null))
+                    && okNotes(request.resource.data)
+                    && okPhotos(request.resource.data)
+                    && okConditions(request.resource.data);
+      allow update: if signedIn()
+                    && resource.data.userId == request.auth.uid
+                    && request.resource.data.userId == request.auth.uid
+                    && okEntry(request.resource.data, docId)
+                    && (okTimestamp(request.resource.data) || unchanged('timestamp'))
+                    && (okRatings(request.resource.data.get('ratings', null)) || unchanged('ratings'))
+                    && (okNotes(request.resource.data) || unchanged('notes'))
+                    && (okPhotos(request.resource.data) || unchanged('photos'))
+                    && (okConditions(request.resource.data) || unchanged('conditions'));
+      allow delete: if signedIn()
                     && resource.data.userId == request.auth.uid;
     }
   }
