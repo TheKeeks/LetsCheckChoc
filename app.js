@@ -7224,9 +7224,30 @@ function verifStats(rows, getObs, getModel, circular) {
   return n ? { n, bias: sum / n, mae: sumAbs / n } : { n: 0, bias: null, mae: null };
 }
 
-// Row accessors shared by the stats table and the charts. Period and
-// direction prefer the buoy's spectral swell partition (same concept
-// as the model's swell_wave_*) and fall back to the stdmet values.
+// Row accessors shared by the stats table and the charts. Each pairs
+// like with like (audit C15): NDBC's swell split at 44097 is a fixed
+// 0.1 Hz cut (SwP is always ≥ 10 s) while the model's swell_wave_* is
+// its own partition (median 5.6 s at the buoy), so SwP vs swell period
+// measured the two definitions, not the forecast (a fake −5.8 s bias).
+//   Period: buoy energy period Tm-1,0 (tm10, from the spectrum) vs the
+//     model's mean wave period, which MFWAM computes the same way. Rows
+//     logged before the pipeline recorded tm10 use the buoy's DPD.
+//   Direction: rows carrying the model's total-sea direction (wvd)
+//     compare it with the buoy's MWD. Older rows compare the buoy's
+//     ≥ 8 s direction with the model's swell partition only where that
+//     partition is itself ≥ 8 s; otherwise they describe different trains.
+const VERIF_SWELL_MIN_S = 8;
+
+function _verifRowHasWvd(r) {
+  return !!((r.mb && r.mb.wvd != null) || (r.mc && r.mc.wvd != null));
+}
+
+function _verifModelDir(m, r) {
+  if (!m) return null;
+  if (_verifRowHasWvd(r)) return m.wvd;
+  return m.swp != null && m.swp >= VERIF_SWELL_MIN_S ? m.swd : null;
+}
+
 const VERIF_GET = {
   height: {
     obs: r => r.buoy && r.buoy.hs,
@@ -7234,14 +7255,14 @@ const VERIF_GET = {
     mc: r => r.mc && r.mc.hs
   },
   period: {
-    obs: r => r.buoy && (r.buoy.swp != null ? r.buoy.swp : r.buoy.dpd),
-    mb: r => r.mb && r.mb.swp,
-    mc: r => r.mc && r.mc.swp
+    obs: r => r.buoy && (r.buoy.tm10 != null ? r.buoy.tm10 : r.buoy.dpd),
+    mb: r => r.mb && r.mb.wvp,
+    mc: r => r.mc && r.mc.wvp
   },
   dir: {
-    obs: r => r.buoy && (r.buoy.swd != null ? r.buoy.swd : r.buoy.mwd),
-    mb: r => r.mb && r.mb.swd,
-    mc: r => r.mc && r.mc.swd,
+    obs: r => r.buoy && (_verifRowHasWvd(r) ? r.buoy.mwd : r.buoy.swd),
+    mb: r => _verifModelDir(r.mb, r),
+    mc: r => _verifModelDir(r.mc, r),
     circular: true,
     // Compass names read better than raw degrees for the axis.
     fmtY: v => directionLabel(((v % 360) + 360) % 360)
@@ -7292,7 +7313,7 @@ function drawVerifChart(canvasId, rows, getters) {
   lo -= span * 0.12; hi += span * 0.12;
   const yFor = v => padT + (1 - (v - lo) / (hi - lo)) * plotH;
 
-  // Grid: three horizontal lines + a tick at each UTC midnight.
+  // Grid: three horizontal lines + a tick at each local midnight.
   ctx.strokeStyle = FC_RETRO.grid;
   ctx.lineWidth = 1;
   for (let g = 0; g <= 2; g++) {
@@ -7310,7 +7331,12 @@ function drawVerifChart(canvasId, rows, getters) {
   const dayMs = 86400e3;
   const labelEvery = Math.max(1, Math.ceil((tRange / dayMs) / 7));
   let dayN = 0;
-  for (let d = Math.ceil(t0 / dayMs) * dayMs; d <= t1; d += dayMs, dayN++) {
+  // Step calendar days from the first local midnight at/after t0, so each
+  // tick sits on the start of the day its local-date label names (UTC
+  // midnight put "9/29" at 8 PM on 9/29) and 23/25 h DST days stay aligned.
+  const tick = new Date(t0);
+  if (tick.getHours() || tick.getMinutes() || tick.getSeconds() || tick.getMilliseconds()) tick.setHours(24, 0, 0, 0);
+  for (let d = tick.getTime(); d <= t1; tick.setDate(tick.getDate() + 1), d = tick.getTime(), dayN++) {
     const x = xFor(d);
     ctx.strokeStyle = FC_RETRO.daySep;
     ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
@@ -7413,9 +7439,12 @@ function _verifRender() {
   }
 
   setFooter('footer-verification',
-    'Measured: NDBC buoy 44097 (Block Island). Claimed: Open-Meteo best_match for the same hour, at the buoy’s own coordinates and at the Choc forecast point. ' +
-    'Logged every 2 h by the update-buoy pipeline. Gaps in a line are buoy outages (never interpolated); a direction line that jumps edges crossed north. ' +
-    'Technically: typical miss = bias = mean(model − buoy); typical size = MAE. Period/direction compare swell partitions (SwP/SwD vs swell_wave_*), falling back to DPD/MWD.');
+    'Measured: NDBC buoy 44097 (Block Island). Claimed: Open-Meteo best_match (MeteoFrance MFWAM) for the same hour, at the buoy’s own coordinates and at the Choc forecast point. ' +
+    'Logged every 2 h by the update-buoy pipeline. Gaps in a line are missing readings (buoy outages or skipped pipeline runs; never interpolated); a direction line that jumps edges crossed north. ' +
+    'Technically: typical miss = bias = mean(model − buoy); typical size = MAE. Height: total Hs on both sides. ' +
+    'Period: buoy energy period Tm-1,0 from its spectrum (its dominant period DPD on rows logged before Tm-1,0 was recorded) vs the model’s mean wave period. ' +
+    'Direction: buoy MWD vs the model’s mean wave direction; on older rows without it, the buoy’s ≥ 8 s swell direction vs the model swell partition, only at hours when that partition is ≥ 8 s. ' +
+    'NDBC’s own swell split (SwH/SwP) counts only ≥ 10 s energy at this buoy, so it is not compared with the model’s swell partition.');
 }
 
 function renderVerificationPanel() {
