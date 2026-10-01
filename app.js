@@ -535,18 +535,19 @@ async function fetchWithProxies(rawUrl, timeout = 10000) {
 }
 
 // ── API: Open-Meteo Marine ───────────────────────
-// List of Open-Meteo Marine API models verified against the live docs at
-// https://open-meteo.com/en/docs/marine-weather-api (only those that
-// expose swell_wave_* variables are user-selectable).
+// Open-Meteo Marine models that return a usable swell partition at the
+// Choc forecast point, probed live with fetchMarineForecast's exact query
+// (audit C21, 2026-10-01). Auto (best_match) is MeteoFrance MFWAM there.
+// Left out on purpose: gfs_wave025/016 (not model ids; HTTP 400 — the
+// NOAA ids are ncep_*), dwd_ewam (HTTP 400, no data this far west),
+// ecmwf_wam/ecmwf_wam025 (total sea only, swell_* all null) and
+// era5_ocean (all null). Stale stored ids fall back to Auto in
+// getForecastModel.
 const FORECAST_MODELS = [
   { value: 'meteofrance_wave', label: 'MeteoFrance MFWAM (0.08°)' },
-  { value: 'dwd_ewam',         label: 'DWD EWAM (0.05°)' },
-  { value: 'dwd_gwam',         label: 'DWD GWAM (0.25°)' },
-  { value: 'ecmwf_wam',        label: 'ECMWF WAM (~9 km)' },
-  { value: 'ecmwf_wam025',     label: 'ECMWF WAM (0.25°)' },
-  { value: 'gfs_wave025',      label: 'GFS Wave (NOAA, 0.25°)' },
-  { value: 'gfs_wave016',      label: 'GFS Wave (NOAA, 0.16°)' },
-  { value: 'era5_ocean',       label: 'ERA5-Ocean (0.5°)' }
+  { value: 'ncep_gfswave025',  label: 'NOAA GFS-Wave (0.25°)' },
+  { value: 'ncep_gfswave016',  label: 'NOAA GFS-Wave (0.16°)' },
+  { value: 'dwd_gwam',         label: 'DWD GWAM (0.25°, no secondary swell)' }
 ];
 
 async function fetchMarineForecast(lat, lon, model) {
@@ -6986,7 +6987,7 @@ function setForecastModel(v) {
 }
 
 function describeForecastModel(v) {
-  if (!v) return 'Auto (Open-Meteo best_match — typically resolves to GFS Wave for this region)';
+  if (!v) return 'Auto (Open-Meteo best_match = MeteoFrance MFWAM 0.08° at Choc)';
   const m = FORECAST_MODELS.find(x => x.value === v);
   return m ? `${v} · ${m.label}` : v;
 }
