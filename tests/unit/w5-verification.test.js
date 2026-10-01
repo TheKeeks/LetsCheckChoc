@@ -73,6 +73,71 @@ test('the footer describes the pairs it actually compares', () => {
   assert.doesNotMatch(footer, /compare swell partitions/);
 });
 
+// Review ux#4: the getters switch definition row by row (DPD → Tm-1,0 for
+// period, ≥ 8 s swell → MWD for direction), but the table averaged both
+// kinds of row into one number, so the period "typical miss" drifted from
+// −0.7 s towards +0.5 s as new rows arrived, with no change in the model.
+// Each statistic must rest on one definition: the new rows once a day of
+// them (24) is logged, the older rows alone (and said so) before that.
+const OLD_ROWS = readFixtureJSON('pipeline/verification.json').rows;
+
+// n hourly new-format rows after the fixture's last row. The model's mean
+// period is 0.7 s above the buoy's Tm-1,0 (and 1.3 s below its DPD); its
+// mean direction is 4° right of the buoy's MWD.
+function newRows(n) {
+  const t0 = Date.parse(OLD_ROWS.at(-1).t);
+  return Array.from({ length: n }, (_, i) => ({
+    t: new Date(t0 + (i + 1) * 3600e3).toISOString().slice(0, 16) + 'Z',
+    buoy: { hs: 2, dpd: 9, tm10: 7, mwd: 130, swd: 140 },
+    mb: { hs: 2.2, wvp: 7.7, wvd: 134, swp: 9, swd: 160 },
+    mc: { hs: 1.9, wvp: 7.5, wvd: 128, swp: 9, swd: 160 }
+  }));
+}
+
+// Renders the panel for `rows` → { Height: [mbMiss, mbSize, mcMiss, mcSize, n], ... }.
+function renderTable(rows) {
+  const app = loadApp();
+  app.set('_verifDoc', { rows });
+  app.call('_verifRender');
+  const html = app.dom.byId('verif-stats').innerHTML;
+  const out = {};
+  for (const tr of html.split('<tr>').slice(1)) {
+    const cells = [...tr.matchAll(/<td>([^<]*)<\/td>/g)].map(m => m[1]);
+    if (cells.length === 6) out[cells[0]] = cells.slice(1);
+  }
+  return { app, table: out, footer: app.dom.byId('footer-verification').textContent };
+}
+
+test('verification table: old rows only → period and direction say which definition they score', () => {
+  const app = loadApp();
+  const oldOnly = renderTable(OLD_ROWS).table;
+  assert.deepEqual(Object.keys(oldOnly), ['Height', 'Period (buoy peak)', 'Direction (swell ≥ 8 s)']);
+  // A handful of new rows doesn't sneak into the old-definition numbers.
+  const mixed = renderTable(OLD_ROWS.concat(newRows(10))).table;
+  assert.deepEqual(Object.keys(mixed), ['Height', 'Period (buoy peak)', 'Direction (swell ≥ 8 s)']);
+  assert.deepEqual(mixed['Period (buoy peak)'], oldOnly['Period (buoy peak)'], 'period scored on the old rows alone');
+  assert.equal(mixed['Period (buoy peak)'][4], String(OLD_ROWS.length));
+  assert.deepEqual(mixed['Direction (swell ≥ 8 s)'], oldOnly['Direction (swell ≥ 8 s)']);
+  assert.equal(mixed.Height[4], String(OLD_ROWS.length + 10), 'height has one definition and uses every row');
+  const p = stats(app, OLD_ROWS, 'period', 'mb');
+  assert.equal(mixed['Period (buoy peak)'][0], `${p.bias >= 0 ? '+' : ''}${p.bias.toFixed(1)} s`);
+});
+
+test('verification table: a day of new rows → period and direction score them alone', () => {
+  const { table, footer } = renderTable(OLD_ROWS.concat(newRows(24)));
+  assert.deepEqual(Object.keys(table), ['Height', 'Period', 'Direction']);
+  // Like for like: the model runs +0.7 s / +4° at the buoy and
+  // +0.5 s / −2° at the Choc point, over the 24 new rows only.
+  assert.deepEqual(table.Period, ['+0.7 s', '0.7 s', '+0.5 s', '0.5 s', '24']);
+  assert.deepEqual(table.Direction, ['+4°', '4°', '-2°', '2°', '24']);
+  assert.equal(table.Height[4], String(OLD_ROWS.length + 24));
+  assert.match(footer, /never averages the two kinds of row/);
+  // A fresh log with only new rows needs no warm-up.
+  const fresh = renderTable(newRows(5)).table;
+  assert.deepEqual(Object.keys(fresh), ['Height', 'Period', 'Direction']);
+  assert.equal(fresh.Period[4], '5');
+});
+
 // Rows every 2 h across the 2026-11-01 fall-back, drawn on a 360x120 canvas.
 function dayTicks(tz) {
   const app = loadApp({ tz });

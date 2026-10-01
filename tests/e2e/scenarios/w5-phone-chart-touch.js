@@ -3,10 +3,11 @@
 // drag scrubs. Before the fix, touchstart jumped the scrubber to the
 // finger and touchmove blocked scrolling unconditionally, so the page
 // barely moved and a random future hour stuck for the session. The first
-// scrub also revealed "Reset to now" (display toggle), re-wrapping the
-// detail bar; that and the hour's own text re-wrapping resize the chart
-// container, so a ResizeObserver redraw re-wires the listeners mid-drag
-// and the gesture state has to survive it.
+// scrub reveals "Reset to now", re-wrapping the detail bar; that and the
+// hour's own text re-wrapping resize the chart container, so a
+// ResizeObserver redraw re-wires the listeners mid-drag and the gesture
+// state has to survive it. At rest the button takes no space (review
+// ux#3): reserving it kept the sticky bar at three lines on every visit.
 //
 // Real touch input goes through CDP Input.dispatchTouchEvent, so the
 // browser's own touch-action / scroll handling is exercised.
@@ -24,9 +25,22 @@ module.exports = {
     await ctx.waitForLoad();
     await page.waitForTimeout(800);   // let post-load redraws settle
 
-    // No sideways page scroll at phone width.
-    const widths = await ctx.state(() => ({ doc: document.documentElement.scrollWidth, body: document.body.scrollWidth, vw: innerWidth }));
+    // No sideways page scroll at phone width. Compare with the layout
+    // width (clientWidth), not innerWidth: under isMobile Chromium grows
+    // innerWidth to the content, so `scrollWidth <= innerWidth` always held.
+    const widths = await ctx.state(() => ({ doc: document.documentElement.scrollWidth, body: document.body.scrollWidth, vw: document.documentElement.clientWidth }));
     assert.ok(widths.doc <= widths.vw && widths.body <= widths.vw, `horizontal overflow at 390 px: ${JSON.stringify(widths)}`);
+
+    // At rest the readout gets the bar's whole width (no hidden button
+    // holding ~60 px at the right edge).
+    const rest = await ctx.state(() => {
+      const bar = document.getElementById('forecast-detail-bar');
+      const row = document.getElementById('forecast-detail-row');
+      return { barH: bar.offsetHeight, rowW: row.offsetWidth, barW: bar.clientWidth, resetW: document.getElementById('forecast-reset-now').offsetWidth };
+    });
+    log('detail bar at rest', JSON.stringify(rest));
+    assert.equal(rest.resetW, 0, `Reset to now holds ${rest.resetW} px of the bar at rest`);
+    ctx.metric('detailBarRestH', rest.barH);
 
     const touchAction = await ctx.state(() => getComputedStyle(document.getElementById('forecast-canvas-swell')).touchAction);
     assert.equal(touchAction, 'pan-y pinch-zoom');
@@ -61,6 +75,10 @@ module.exports = {
     }
     const snap = () => ctx.state(() => ({
       y: Math.round(scrollY),
+      // Viewport top of the swell canvas: what the finger is over. scrollY
+      // alone isn't enough, because scroll anchoring shifts it when the
+      // detail bar re-wraps above the canvas while the canvas stays put.
+      canvasTop: Math.round(document.getElementById('forecast-canvas-swell').getBoundingClientRect().top),
       idx: STATE.scrubberIdx,
       stored: sessionStorage.getItem('lcc-scrubber-hour'),
       reset: getComputedStyle(document.getElementById('forecast-reset-now')).visibility,
@@ -81,7 +99,7 @@ module.exports = {
     assert.equal(a.idx, b.idx, 'scrubbed hour unchanged by a scroll');
     assert.equal(a.stored, null, 'nothing persisted to sessionStorage');
     assert.equal(a.reset, 'hidden');
-    assert.ok(a.resetW > 0, 'the hidden Reset to now keeps its space (no layout shift when it appears)');
+    assert.equal(a.resetW, 0, 'the hidden Reset to now takes no space at rest (the bar keeps its width for the readout)');
 
     // ── (b) horizontal drag: scrubs to the finger, page stays put, no re-wire ──
     await parkSwellCanvas();
@@ -98,10 +116,10 @@ module.exports = {
     log('horizontal drag', JSON.stringify(b2), '->', JSON.stringify(a2), 'expect idx', expectIdx);
     assert.ok(Math.abs(a2.idx - expectIdx) <= 1, `scrubbed to ${a2.idx}, finger at ${expectIdx}`);
     assert.ok(a2.idx > b2.idx + 24, 'the drag moved the scrubber forward');
-    assert.ok(Math.abs(a2.y - b2.y) < 20, `page moved ${a2.y - b2.y} px during a horizontal drag`);
+    assert.ok(Math.abs(a2.canvasTop - b2.canvasTop) < 20, `chart moved ${a2.canvasTop - b2.canvasTop} px under the finger during a horizontal drag`);
     assert.ok(a2.stored, 'an intentional scrub persists');
     assert.equal(a2.reset, 'visible', 'Reset to now is shown off-now');
-    assert.equal(a2.resetW, b2.resetW, 'and takes the same space it reserved while hidden');
+    assert.ok(a2.resetW > 0, 'and laid out once off-now');
     ctx.metric('rewiresDuringDrag', a2.rewires - b2.rewires);
     await ctx.screenshot('after-horizontal-drag');
 

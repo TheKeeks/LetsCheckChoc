@@ -40,7 +40,8 @@ module.exports = {
     assert.equal(s.health.marine.asOf, firstAsOf, 'saved copy keeps its original time');
     assert.equal(s.health.wind.origin, 'live');
     assert.equal(s.dataAsOf, firstAsOf, 'as-of = oldest input on screen');
-    assert.equal(s.headerColor, 'rgb(168, 90, 74)', 'header in red');
+    // Dark red on the Win95 silver (5.1 : 1); --red-m was 2.73 : 1 (review ux#2).
+    assert.equal(s.headerColor, 'rgb(139, 26, 26)', 'header in red');
     assert.ok(s.indicatorShown);
     assert.equal(s.indicator, 'Saved forecast from 11:00 AM · refresh failed');
     assert.equal(s.unavailable, false, 'no "forecast unavailable" note: there is a forecast');

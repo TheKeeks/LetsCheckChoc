@@ -44,7 +44,8 @@ module.exports = {
     assert.equal(s.detail, '9s · SE (124°) · 2.0 ft total');
     assert.match(s.extra, /^Buoy obs 8:30 AM \(2h 30m ago\) · reaches Choc ~11:48 AM$/);
     assert.ok(s.stale, 'amber: obs older than 2 h');
-    assert.equal(s.extraColor, 'rgb(184, 122, 46)', 'obs line rendered amber');
+    // Dark amber on the Win95 silver (4.9 : 1); --orange was 1.97 : 1 (review ux#2).
+    assert.equal(s.extraColor, 'rgb(107, 64, 0)', 'obs line rendered amber');
     assert.equal(s.health.buoy.origin, 'pipeline');
     assert.equal(s.health.marine.origin, 'live');
     assert.ok(Math.abs(s.dataAsOf - Date.parse('2026-10-01T11:00:00-04:00')) < 60000);
