@@ -5,7 +5,8 @@
    the color doing its job on an emissive screen. Numbers are 14-segment
    (DSEG14, one step more detailed than 7-seg); legends are crisp sans.
    Direction arrows are large filled glyphs with the reading printed on
-   the arrow itself. Red appears only as the chart alert color. No
+   the arrow itself. Red appears only as the alert color (the chart's
+   now-marker, and the dead-data pilot light and banner). No
    night dim — green on black is already night-friendly.
    Every rule is scoped to body.kiosk — inert for normal visitors.
    ════════════════════════════════════════════════════════════════════ */
@@ -308,6 +309,26 @@ body.kiosk .np-swell-dir {
   justify-content: center;
   flex-shrink: 0;
 }
+/* Out-of-window train (kioskSwellRowHTML): Montauk or Block Island blocks
+   it before the reef, so it is dimmed and tagged under the reading. */
+body.kiosk .np-swell.np-out { position: relative; }
+body.kiosk .np-out .np-seg,
+body.kiosk .np-out .np-unit { color: var(--np-green-dim); }
+body.kiosk .np-out .np-bigarrow svg { fill: var(--np-green-dim); }
+body.kiosk .np-out-tag {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--np-green-dim);
+  border-radius: 2px;
+  font-family: var(--np-sans);
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  color: var(--np-green);
+}
 body.kiosk .np-secondary .np-bigarrow { width: 72px; height: 72px; }
 body.kiosk .np-secondary .np-ao-num { font-size: 14px; }
 body.kiosk .np-secondary .np-ao-cap { font-size: 8px; }
@@ -586,6 +607,31 @@ body.kiosk #kiosk-pilot {
   background: var(--np-green);
 }
 body.kiosk #kiosk-status-updated { color: var(--np-green-dim); }
+/* Freshness (kiosk.js kioskShowFreshness). Stale: refreshes are failing
+   and the readings are older than they look, so the age goes bold and the
+   pilot light goes hollow. Dead: over 3 h old or no data at all, so the
+   alert colour takes the pilot and the age, and the banner comes up. */
+body.kiosk #kiosk-status.np-stale #kiosk-status-updated { color: var(--np-green); font-weight: bold; }
+body.kiosk #kiosk-status.np-stale #kiosk-pilot { background: transparent; box-shadow: inset 0 0 0 2px var(--np-green); }
+body.kiosk #kiosk-status.np-dead #kiosk-status-updated { color: var(--np-red); font-weight: bold; }
+body.kiosk #kiosk-status.np-dead #kiosk-pilot { background: var(--np-red); }
+body.kiosk #kiosk-stale-banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 48px; /* rides on top of the status strip */
+  z-index: 905;
+  padding: 14px 16px;
+  background: var(--np-bg);
+  border-top: 2px solid var(--np-red);
+  color: var(--np-red);
+  font-family: var(--np-sans);
+  font-weight: 800;
+  font-size: 28px;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-transform: uppercase;
+}
 body.kiosk #kiosk-paused { color: var(--np-green); font-weight: bold; }
 body.kiosk #kiosk-next,
 body.kiosk #kiosk-info {
