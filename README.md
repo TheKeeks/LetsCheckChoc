@@ -127,6 +127,11 @@ radar scope's coastline outline with the swell-window cone
   reloads itself if no load completes within 10 min, picks up deploys on
   its refresh tick, and reloads nightly around 03:30 (each reload only
   after a successful network probe)
+- Updating from a build older than October 2026, which can't update
+  itself: relaunch once by hand. Triple-click and enter the passcode to
+  end Guided Access, swipe Choc TV away in the app switcher, reopen it
+  from the home screen and start Guided Access again. ⓘ SOURCES shows
+  "Choc TV build …" once the new code is running
 - Debug params (seconds): `&kioskRotate=`, `&kioskPause=`,
   `&kioskRefresh=`, `&kioskRadarStep=` (radar seconds-per-hour,
   default 1) — e.g. `?kiosk=1&kioskRotate=5` for quick cycling
