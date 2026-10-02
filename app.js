@@ -84,6 +84,13 @@ const STATE = {
   surfLogCondWeights: null,
   surfLogCondStats: null,
   surfLogCondValidation: null,
+  // Same Wave/Ride models trained on the NDBC 44097 swell set (cond.buoy).
+  surfLogWaveWeightsBuoy: null,
+  surfLogWaveStatsBuoy: null,
+  surfLogWaveValidationBuoy: null,
+  surfLogRideWeightsBuoy: null,
+  surfLogRideStatsBuoy: null,
+  surfLogRideValidationBuoy: null,
   surfLogEditId: null,
   surfLogEditRepairCandidates: [],
   activeTab: 'forecast',
@@ -465,7 +472,7 @@ async function fetchTextWithProxies(rawUrl, timeout = 15000) {
 }
 
 // Proxy chain for the NDBC stdmet historical archive. Used only by
-// fetchNDBCHistoricalYear. Returns the response body as text (NDBC's
+// fetchNDBCRowsForTime. Returns the response body as text (NDBC's
 // view_text_file.php endpoint serves plain text, so no decompression needed),
 // or null if every proxy failed. Per-attempt logging stays in place so the
 // next time a proxy rots we can tell from the console which one and how.
@@ -4647,7 +4654,7 @@ function getRideDesc(val) {
 // SURF LOG — NDBC Historical Buoy Data
 // ════════════════════════════════════════════════
 
-// Cache parsed NDBC yearly stdmet data so we don't re-download for multiple entries
+// Cache parsed NDBC stdmet files (yearly, monthly, realtime) so we don't re-download for multiple entries
 const _ndbcYearCache = {};
 
 // STOPGAP — proxy-chained fetch of NDBC stdmet historical archive.
@@ -4664,27 +4671,52 @@ const _ndbcYearCache = {};
 //   - Proxies (in order): corsproxy.io, allorigins, codetabs — see CONFIG.api.ndbcProxies.
 //   - Parser format expectations (_parseNDBCHistoricalText):
 //       header = line 0 (strip leading '#'), units = line 1 (skipped), data = line 2+
-//       columns read: YY/YYYY, MM, DD, hh, mm, WVHT, DPD, MWD, WSPD, WDIR, GST
-//       sentinels: WVHT/DPD/WSPD/GST >= 99 → null; MWD/WDIR >= 999 → null
+//       columns read: YY/YYYY, MM, DD, hh, mm, WVHT, DPD, APD, MWD, WSPD, WDIR, GST
+//       sentinels: WVHT/DPD/APD/WSPD/GST >= 99 → null; MWD/WDIR >= 999 → null;
+//       realtime2's "MM" parses to NaN → null
 //
 // The Cloud Function migration will replace fetchWithProxies entirely with
 // a server-side fetch from *.cloudfunctions.net, eliminating CORS, proxy
 // rot, HTML-error-page failures, and most network-firewall blocking.
-// TODO(cloud-fn): current-year-month observations live at
-//   https://www.ndbc.noaa.gov/data/stdmet/{Mon}/{buoy}.txt
-// — not the historical archive. Out of scope here; user's logged sessions
-// are all historical years.
-async function fetchNDBCHistoricalYear(buoyId, year) {
-  const cacheKey = buoyId + '-' + year;
+const NDBC_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// Fetch-and-parse one NDBC text URL, cached. Returns [] (not a throw) when
+// every proxy fails or the file doesn't exist, so callers can fall through.
+async function _fetchNDBCRowsCached(cacheKey, url) {
   if (_ndbcYearCache[cacheKey]) return _ndbcYearCache[cacheKey];
-
-  const url = 'https://www.ndbc.noaa.gov/view_text_file.php?filename=' + buoyId + 'h' + year + '.txt.gz&dir=data/historical/stdmet/';
   const text = await fetchWithProxies(url, 10000);
-  if (!text) throw new Error('NDBC historical fetch failed: all proxies failed');
-
-  const rows = _parseNDBCHistoricalText(text);
-  _ndbcYearCache[cacheKey] = rows;
+  const rows = text ? _parseNDBCHistoricalText(text) : [];
+  if (rows.length) _ndbcYearCache[cacheKey] = rows;
   return rows;
+}
+
+function _ndbcRowsCover(rows, ms) {
+  return rows.some(r => Math.abs(r.t.getTime() - ms) <= NDBC_MAX_GAP_MS && r.waveHeight != null);
+}
+
+// Rows from whichever NDBC product covers `ms`: yearly archive (finished
+// years) → monthly QC file (current year; older months are gzipped with a
+// month code 1-9/a-c, the latest month is plain text) → realtime2 (last
+// 45 days). Returns [] when nothing covers the time.
+async function fetchNDBCRowsForTime(buoyId, ms) {
+  const d = new Date(ms);
+  const year = d.getUTCFullYear();
+  const m = d.getUTCMonth();
+  const sources = [
+    ['y-' + buoyId + '-' + year,
+      'https://www.ndbc.noaa.gov/view_text_file.php?filename=' + buoyId + 'h' + year + '.txt.gz&dir=data/historical/stdmet/'],
+    ['mz-' + buoyId + '-' + year + '-' + m,
+      'https://www.ndbc.noaa.gov/view_text_file.php?filename=' + buoyId + (m + 1).toString(16) + year + '.txt.gz&dir=data/stdmet/' + NDBC_MONTH_ABBR[m] + '/'],
+    ['mt-' + buoyId + '-' + year + '-' + m,
+      'https://www.ndbc.noaa.gov/data/stdmet/' + NDBC_MONTH_ABBR[m] + '/' + buoyId + '.txt'],
+    ['rt-' + buoyId,
+      CONFIG.api.ndbcBase + buoyId + '.txt']
+  ];
+  for (const [key, url] of sources) {
+    const rows = await _fetchNDBCRowsCached(key, url);
+    if (_ndbcRowsCover(rows, ms)) return rows;
+  }
+  return [];
 }
 
 function _parseNDBCHistoricalText(text) {
@@ -4702,12 +4734,18 @@ function _parseNDBCHistoricalText(text) {
       if (yr < 100) yr += 2000;
       const t = new Date(Date.UTC(yr, parseInt(obj.MM) - 1, parseInt(obj.DD), parseInt(obj.hh), parseInt(obj.mm || '0')));
       const wvht = parseFloat(obj.WVHT); const dpd = parseFloat(obj.DPD);
+      const apd = parseFloat(obj.APD);
       const mwd = parseFloat(obj.MWD);   const wspd = parseFloat(obj.WSPD);
       const wdir = parseFloat(obj.WDIR); const gst = parseFloat(obj.GST);
       rows.push({
         t,
+        // WVHT is significant height of the WHOLE sea state (swell + wind
+        // sea), not a swell partition. DPD is the period of peak energy,
+        // APD the average period. Not interchangeable with Open-Meteo's
+        // swell_wave_height / swell_wave_period (swell-only, mean period).
         waveHeight: (isNaN(wvht) || wvht >= 99) ? null : wvht * 3.28084,  // m → ft
         period:     (isNaN(dpd)  || dpd  >= 99) ? null : dpd,
+        avgPeriod:  (isNaN(apd)  || apd  >= 99) ? null : apd,
         direction:  (isNaN(mwd)  || mwd  >= 999) ? null : mwd,
         windSpeed:  (isNaN(wspd) || wspd >= 99) ? null : wspd * 2.237,    // m/s → mph
         windDir:    (isNaN(wdir) || wdir >= 999) ? null : wdir,
@@ -4718,13 +4756,18 @@ function _parseNDBCHistoricalText(text) {
   return rows;
 }
 
-function _findNearestNDBCRow(rows, targetMs, requireWave) {
+// A buoy reading more than this far from the wanted time describes a
+// different sea state; return nothing rather than a stale row.
+const NDBC_MAX_GAP_MS = 90 * 60000;
+
+function _findNearestNDBCRow(rows, targetMs, requireWave, maxGapMs) {
   let best = null, bestDiff = Infinity;
   for (const row of rows) {
     if (requireWave && row.waveHeight === null) continue;
     const diff = Math.abs(row.t.getTime() - targetMs);
     if (diff < bestDiff) { bestDiff = diff; best = row; }
   }
+  if (maxGapMs != null && bestDiff > maxGapMs) return null;
   return best;
 }
 
@@ -4732,20 +4775,17 @@ function _findNearestNDBCRow(rows, targetMs, requireWave) {
 // Run from DevTools: await window._llcDiagnoseHistoricalFetch()
 window._llcDiagnoseHistoricalFetch = async function() {
   const entries = (STATE.surfLog || []).slice();
-  const buoyId = CONFIG.chocomount.buoyId;
   const results = [];
   for (const e of entries) {
     const ts = e.timestamp;
     try {
-      const year = new Date(ts).getUTCFullYear();
-      const rows = await fetchNDBCHistoricalYear(buoyId, year);
-      const swell = _findNearestNDBCRow(rows, new Date(ts).getTime(), true);
+      const reading = await fetchBuoyReading(sessionTimeMs(ts));
       results.push({
         id: e.id,
         timestamp: ts,
-        ok: !!swell,
-        rows: rows.length,
-        waveHeightFt: swell ? Math.round(swell.waveHeight * 10) / 10 : null
+        ok: !!reading,
+        observedAt: reading ? reading.observedAt : null,
+        waveHeightFt: reading ? reading.height : null
       });
     } catch (err) {
       results.push({ id: e.id, timestamp: ts, ok: false, error: err.message });
@@ -4829,71 +4869,33 @@ window._llcGeneratePostBackfillReport = function() {
   return md;
 };
 
-// NDBC stdmet historical lookup — fallback for Chocomount only when the
-// Open-Meteo archive returns no data. Returns conditions data without
-// touching the DOM (display rendering is the caller's job). Optional
-// `preFetchedTide` lets the caller share a tide response already fetched
-// in the archive code path.
-async function _fetchNDBCHistoricalConditionsCore(dateStr, preFetchedTide) {
-  const sessionMs = new Date(dateStr).getTime();
-  const buoyId = CONFIG.chocomount.buoyId;
-  const year = new Date(dateStr).getUTCFullYear();
-
-  const [rows, tide] = await Promise.all([
-    fetchNDBCHistoricalYear(buoyId, year),
-    preFetchedTide !== undefined ? Promise.resolve(preFetchedTide) : fetchHistoricalTide(dateStr)
-  ]);
-
-  if (!rows || rows.length === 0) return null;
-
-  // Compute swell travel lag using buoy period observations in the window [T-5h, T-2h]
-  const windowStart = sessionMs - 5 * 3600000;
-  const windowEnd   = sessionMs - 2 * 3600000;
-  const lagPeriods = rows.filter(function(r) {
-    return r.t.getTime() >= windowStart && r.t.getTime() <= windowEnd && r.period > 0;
-  }).map(function(r) { return r.period; });
-  const avgPeriod = lagPeriods.length > 0 ? lagPeriods.reduce(function(s, p) { return s + p; }, 0) / lagPeriods.length : 0;
-  const ndbcLagHours = avgPeriod > 0 ? CONFIG.chocomount.buoyDistanceMiles / (SWELL_SPEED_KTS_PER_PERIOD * avgPeriod) : 0;
-  const laggedMs = ndbcLagHours > 0 ? sessionMs - ndbcLagHours * 3600000 : sessionMs;
-
-  const swellRow = _findNearestNDBCRow(rows, laggedMs, true);
-  const windRow  = _findNearestNDBCRow(rows.filter(function(r) { return r.windSpeed !== null; }), sessionMs, false);
-
-  if (!swellRow) return null;
-
-  const tideInfo = parseTideAtTime(tide, dateStr);
-  // If no NDBC row carried wind data near session time, store nulls so the
-  // Conditions extractor skips this session instead of treating a fabricated
-  // 0 mph / 0° entry as a real datapoint.
-  const haveWind = windRow && windRow.windSpeed != null && windRow.windDir != null;
-  const wSpd = haveWind ? windRow.windSpeed : null;
-  const wDir = haveWind ? windRow.windDir  : null;
-
-  const conditions = {
-    swell: {
-      height: Math.round((swellRow.waveHeight || 0) * 10) / 10,
-      direction: Math.round(swellRow.direction || 0),
-      period: Math.round((swellRow.period || 0) * 10) / 10,
-      lagHours: Math.round(ndbcLagHours * 10) / 10
-    },
-    wind: haveWind
-      ? { speed: Math.round(wSpd), direction: Math.round(wDir) }
-      : { speed: null, direction: null },
-    tide: {
-      height: Math.round(tideInfo.height * 10) / 10,
-      rate: Math.round(tideInfo.rate * 100) / 100,
-      stage: tideInfo.stage,
-      timeToNearest: tideInfo.timeToNearest
-    }
+// Buoy 44097 reading for a session: what the buoy measured when the swell
+// that reached the beach at session time passed it. Stored in cond.buoy,
+// never in cond.swell, because the quantities differ from Open-Meteo's
+// (see _parseNDBCHistoricalText): height is the whole sea state's
+// significant height, period is the peak (DPD), and the buoy sits in open
+// ocean 42 nmi offshore, upstream of the sheltering by Montauk and Block
+// Island. No wind: 44097 carries no anemometer.
+async function fetchBuoyReading(sessionMs) {
+  const c = CONFIG.chocomount;
+  const rows = await fetchNDBCRowsForTime(c.buoyId, sessionMs);
+  if (!rows.length) return null;
+  const samples = rows
+    .filter(r => r.waveHeight != null)
+    .map(r => ({ ms: r.t.getTime(), period: r.period, direction: r.direction }));
+  const lag = _swellLagHoursFromSamples(samples, sessionMs, c.buoyLat, c.buoyLon);
+  const row = _findNearestNDBCRow(rows, sessionMs - lag * 3600000, true, NDBC_MAX_GAP_MS);
+  if (!row) return null;
+  const r1 = v => (v == null ? null : Math.round(v * 10) / 10);
+  return {
+    height: r1(row.waveHeight),
+    period: r1(row.period),
+    avgPeriod: r1(row.avgPeriod),
+    direction: row.direction != null ? Math.round(row.direction) : null,
+    lagHours: r1(lag),
+    observedAt: row.t.toISOString(),
+    station: c.buoyId
   };
-
-  if (ndbcLagHours > 0) {
-    conditions.swellLagHours = Math.round(ndbcLagHours * 10) / 10;
-    conditions.originalLoggedTime = dateStr;
-    conditions.calculatedFromBuoyTime = new Date(laggedMs).toISOString();
-  }
-
-  return conditions;
 }
 
 // ════════════════════════════════════════════════
@@ -4904,80 +4906,157 @@ function fmtDate(d) { return d.toISOString().split('T')[0]; }
 
 function angularDist(a, b) { let d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
 
-// Wave group velocity approximation: speed (knots) ≈ SWELL_SPEED_KTS_PER_PERIOD × period (seconds)
-// This is the standard surf forecaster rule (deep-water group velocity ~1.5 × period).
-const SWELL_SPEED_KTS_PER_PERIOD = 1.5;
-
-// Estimate swell travel lag from buoy to Chocomount.
-// Algorithm: average primary swell period in the window [T-5h, T-2h] to represent
-// the swell arriving at session time T; then lag = distance / (SWELL_SPEED_KTS_PER_PERIOD × avgPeriod).
-function getSwellLagHours(marineData, dateStr) {
-  if (!marineData?.hourly?.time) return 0;
-  const times = marineData.hourly.time;
-  const periods = marineData.hourly.swell_wave_period || marineData.hourly.wave_period || [];
-  const T = new Date(dateStr).getTime();
-  const windowStart = T - 5 * 3600000;
-  const windowEnd = T - 2 * 3600000;
-  let sum = 0, count = 0;
-  for (let i = 0; i < times.length; i++) {
-    const t = new Date(times[i]).getTime();
-    if (t >= windowStart && t <= windowEnd && periods[i] > 0) { sum += periods[i]; count++; }
-  }
-  const avgPeriod = count > 0 ? sum / count : 0;
-  if (avgPeriod <= 0) return 0;
-  const speedKts = SWELL_SPEED_KTS_PER_PERIOD * avgPeriod;
-  return CONFIG.chocomount.buoyDistanceMiles / speedKts;
+// ── Session time ─────────────────────────────────
+// Session timestamps are naive wall-clock strings from a datetime-local
+// input ("2025-10-18T17:43") meaning Chocomount local time. Parse them as
+// America/New_York rather than as whatever zone the viewing device is in.
+// Strings that carry Z or an offset are parsed as-is.
+const SESSION_TZ = 'America/New_York';
+let _sessionTzFmt = null;
+function _tzOffsetMs(utcMs) {
+  _sessionTzFmt = _sessionTzFmt || new Intl.DateTimeFormat('en-US', {
+    timeZone: SESSION_TZ, hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  const p = {};
+  _sessionTzFmt.formatToParts(new Date(utcMs)).forEach(x => { p[x.type] = x.value; });
+  const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
+  return asUTC - Math.floor(utcMs / 1000) * 1000;
+}
+function sessionTimeMs(ts) {
+  if (ts instanceof Date) return ts.getTime();
+  if (typeof ts === 'number') return ts;
+  if (typeof ts !== 'string') return NaN;
+  const s = ts.trim();
+  if (/(Z|[+-]\d\d:?\d\d)$/.test(s)) return new Date(s).getTime();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return new Date(s).getTime();
+  const wall = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+  // Second pass settles sessions that sit next to a DST switch.
+  return wall - _tzOffsetMs(wall - _tzOffsetMs(wall));
+}
+function _sessionLocalYMD(ms) {
+  const p = {};
+  new Intl.DateTimeFormat('en-US', { timeZone: SESSION_TZ, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .formatToParts(new Date(ms)).forEach(x => { p[x.type] = x.value; });
+  return p.year + p.month + p.day;
 }
 
-// Wind history for surf-log scoring. Always uses Open-Meteo's archive
-// (reanalysis) endpoint regardless of session age — the forecast endpoint
-// returns the FORECAST that was made for past hours, not what actually
-// happened, which corrupts the regression's training labels.
-async function fetchHistoricalWind(dateStr) {
-  const target = new Date(dateStr);
-  const dayBefore = new Date(target); dayBefore.setDate(dayBefore.getDate() - 1);
-  const p = new URLSearchParams({
+// ── Swell travel time ────────────────────────────
+// Deep-water group velocity Cg = g·T/4π m/s ≈ 1.52·T knots. Distance is the
+// component of the source→beach vector along the swell's direction of
+// travel, in nautical miles to match knots, measured from the point the
+// data actually describes (the buoy for NDBC, the grid point for
+// Open-Meteo). Shoaling in the last few miles of Block Island Sound is
+// ignored; it slows swell by minutes, not hours.
+const EARTH_RADIUS_NMI = 3440.065;
+function _gcDistanceNmi(lat1, lon1, lat2, lon2) {
+  const toR = Math.PI / 180;
+  const dLat = (lat2 - lat1) * toR, dLon = (lon2 - lon1) * toR;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * toR) * Math.cos(lat2 * toR) * Math.sin(dLon / 2) ** 2;
+  return 2 * EARTH_RADIUS_NMI * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+function _gcBearingDeg(lat1, lon1, lat2, lon2) {
+  const toR = Math.PI / 180;
+  const dLon = (lon2 - lon1) * toR;
+  const y = Math.sin(dLon) * Math.cos(lat2 * toR);
+  const x = Math.cos(lat1 * toR) * Math.sin(lat2 * toR) - Math.sin(lat1 * toR) * Math.cos(lat2 * toR) * Math.cos(dLon);
+  return (Math.atan2(y, x) / toR + 360) % 360;
+}
+function swellGroupVelocityKts(periodS) {
+  return 9.80665 * periodS / (4 * Math.PI) * 1.943844;
+}
+function swellPathNmi(srcLat, srcLon, dirFromDeg) {
+  const c = CONFIG.chocomount;
+  const dist = _gcDistanceNmi(srcLat, srcLon, c.lat, c.lon);
+  if (dirFromDeg == null || !isFinite(dirFromDeg)) return dist;
+  const travelToward = (dirFromDeg + 180) % 360;
+  const bearing = _gcBearingDeg(srcLat, srcLon, c.lat, c.lon);
+  return Math.max(0, dist * Math.cos((bearing - travelToward) * Math.PI / 180));
+}
+function swellTravelHours(srcLat, srcLon, periodS, dirFromDeg) {
+  if (!(periodS > 0)) return 0;
+  return swellPathNmi(srcLat, srcLon, dirFromDeg) / swellGroupVelocityKts(periodS);
+}
+
+// Lag from {ms, period, direction} samples at the source point. The swell
+// at the beach at session time left the source `lag` hours earlier, and lag
+// depends on that earlier swell's period, so estimate from the session-time
+// samples, re-sample at T − lag, and estimate again. Period is averaged over
+// ±1h to damp the bin-to-bin jumps in buoy DPD.
+function _swellLagHoursFromSamples(samples, sessionMs, srcLat, srcLon) {
+  let lag = 0;
+  for (let pass = 0; pass < 2; pass++) {
+    const target = sessionMs - lag * 3600000;
+    const near = samples.filter(s => Math.abs(s.ms - target) <= 3600000 && s.period > 0);
+    if (!near.length) break;
+    const period = near.reduce((a, s) => a + s.period, 0) / near.length;
+    let closest = near[0];
+    for (const s of near) if (Math.abs(s.ms - target) < Math.abs(closest.ms - target)) closest = s;
+    lag = swellTravelHours(srcLat, srcLon, period, closest.direction);
+  }
+  return lag;
+}
+
+// Open-Meteo hourly series are requested in GMT so their naive time strings
+// can be read as UTC on any device.
+const OM_MAX_GAP_MS = 90 * 60000;
+function _omTimeMs(t) { return Date.parse(t + 'Z'); }
+function _nearestHourIdx(times, targetMs, maxGapMs) {
+  let best = -1, bestD = Infinity;
+  for (let i = 0; i < times.length; i++) {
+    const d = Math.abs(_omTimeMs(times[i]) - targetMs);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return bestD <= maxGapMs ? best : -1;
+}
+function _omDateRange(sessionMs) {
+  return {
+    start_date: fmtDate(new Date(sessionMs - 86400000)),
+    end_date: fmtDate(new Date(sessionMs + 2 * 3600000))
+  };
+}
+
+// Wind history for surf-log scoring, at the Chocomount land point (never
+// the buoy, which is 42 nmi offshore and has no anemometer). Always uses
+// Open-Meteo's archive (reanalysis) endpoint regardless of session age —
+// the forecast endpoint returns the FORECAST that was made for past hours,
+// not what actually happened, which corrupts the regression's training
+// labels. The archive lags real time by a few days, so very recent sessions
+// get null wind until a later lookup.
+async function fetchHistoricalWind(sessionMs) {
+  const p = new URLSearchParams(Object.assign({
     latitude: CHOC_WIND_LAT,
     longitude: CHOC_WIND_LON,
     hourly: 'wind_speed_10m,wind_direction_10m,wind_gusts_10m',
     wind_speed_unit: 'mph',
-    timezone: 'auto',
-    start_date: fmtDate(dayBefore),
-    end_date: fmtDate(target)
-  });
+    timezone: 'GMT'
+  }, _omDateRange(sessionMs)));
   return fetchJSON(CONFIG.api.openMeteoArchive + '?' + p);
 }
 
-// Hourly predictions over a 24h window centered on the session's local date.
+// Hourly station-local predictions from the day before the session through
+// the day after, so the ±30-min rate and the nearest-extremum search never
+// run off the end of the series for early-morning or late-evening sessions.
 // `interval=h` lets us linearly interpolate water level at the exact session
-// time and compute a ±30-min central-difference rate. The previous `hilo`
-// interval returned only 2-4 extrema per day, which forced cond.tide.height
-// to be the next-extremum value rather than the actual water level under the
-// wave at session time.
-async function fetchHistoricalTide(dateStr) {
-  const d = new Date(dateStr);
-  const bd = [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('');
-  const p = new URLSearchParams({ begin_date: bd, range: 24, station: CONFIG.chocomount.tideStation, product: 'predictions', datum: 'MLLW', units: 'english', time_zone: 'lst_ldt', interval: 'h', application: 'letscheckchoc', format: 'json' });
+// time. The station is in Eastern time, so its lst_ldt strings are parsed
+// with sessionTimeMs.
+async function fetchHistoricalTide(sessionMs) {
+  const bd = _sessionLocalYMD(sessionMs - 86400000);
+  const p = new URLSearchParams({ begin_date: bd, range: 72, station: CONFIG.chocomount.tideStation, product: 'predictions', datum: 'MLLW', units: 'english', time_zone: 'lst_ldt', interval: 'h', application: 'letscheckchoc', format: 'json' });
   return fetchJSON(CONFIG.api.coops + '?' + p);
-}
-
-function findNearestHour(times, dateStr) {
-  const t = new Date(dateStr).getTime();
-  let best = 0, bestD = Infinity;
-  for (let i = 0; i < times.length; i++) {
-    const d = Math.abs(new Date(times[i]).getTime() - t);
-    if (d < bestD) { bestD = d; best = i; }
-  }
-  return best;
 }
 
 // Normalize a CO-OPS predictions payload (hourly samples) or a raw array
 // of {t,v[,type]} into a sorted array of {t: Date, v: number} with `type`
 // preserved when present. Accepts either {predictions: [...]} or [...].
-function _normalizeTidePredictions(tideData) {
+// `toMs` parses the station-local time strings; defaults to the device's
+// zone, which is what the live forecast path has always used.
+function _normalizeTidePredictions(tideData, toMs) {
   const raw = Array.isArray(tideData) ? tideData : (tideData?.predictions || []);
   return raw
-    .map(p => ({ t: new Date(p.t), v: parseFloat(p.v), type: p.type }))
+    .map(p => ({ t: toMs ? new Date(toMs(p.t)) : new Date(p.t), v: parseFloat(p.v), type: p.type }))
     .filter(p => !isNaN(p.t.getTime()) && !isNaN(p.v))
     .sort((a, b) => a.t - b.t);
 }
@@ -5063,10 +5142,15 @@ function _tideStageFromRate(rate, height, predictions) {
 // in ft/hr. `stage` is derived from `rate` ('rising' / 'falling' /
 // 'slack-high' / 'slack-low'). `timeToNearest` is hours to the nearest
 // hi/lo extremum, kept for UI display.
-function parseTideAtTime(tideData, dateStr) {
-  const preds = _normalizeTidePredictions(tideData);
-  if (!preds.length) return { height: 0, rate: 0, stage: 'rising', timeToNearest: 0 };
-  const sessionTime = new Date(dateStr);
+//
+// `toMs` (optional) parses the payload's time strings — the historical
+// lookup passes sessionTimeMs so station-local times read as Eastern on any
+// device. Returns null when there are no predictions to interpolate, so a
+// failed tide fetch can't masquerade as a 0 ft reading.
+function parseTideAtTime(tideData, dateStr, toMs) {
+  const preds = _normalizeTidePredictions(tideData, toMs);
+  if (!preds.length) return toMs ? null : { height: 0, rate: 0, stage: 'rising', timeToNearest: 0 };
+  const sessionTime = new Date(typeof dateStr === 'number' ? dateStr : (toMs ? toMs(dateStr) : dateStr));
   const heightRaw = tideHeightAt(preds, sessionTime);
   const height = heightRaw == null ? 0 : heightRaw;
   const rate = tideRateAt(preds, sessionTime);
@@ -5075,32 +5159,12 @@ function parseTideAtTime(tideData, dateStr) {
   return { height, rate, stage, timeToNearest };
 }
 
-// Estimate swell travel lag from buoy to Chocomount.
-// Looks at swell periods 2-5 hours before session, computes average group velocity travel time.
-function estimateSwellLag(marine, sessionDateStr) {
-  if (!marine?.hourly) return 0;
-  const sessionT = new Date(sessionDateStr).getTime();
-  const t5h = sessionT - 5 * 3600000;
-  const t2h = sessionT - 2 * 3600000;
-  const times = marine.hourly.time || [];
-  const periods = marine.hourly.swell_wave_period || marine.hourly.wave_period || [];
-  let sumPeriod = 0, count = 0;
-  for (let i = 0; i < times.length; i++) {
-    const t = new Date(times[i]).getTime();
-    if (t >= t5h && t <= t2h && periods[i] > 0) { sumPeriod += periods[i]; count++; }
-  }
-  if (count === 0) return 0;
-  const avgPeriod = sumPeriod / count;
-  const arrival = swellArrivalTime(avgPeriod, CONFIG.chocomount.buoyDistanceMiles);
-  return arrival ? arrival.minutes : 0;
-}
-
-// Open-Meteo marine archive (reanalysis) lookup — primary historical-
-// conditions source for ALL session ages. Reanalysis is grid-model output
-// rerun after the fact, incorporating actual observations including buoy
-// readings; it's much closer to ground truth than the forecast endpoint,
-// which returns what the model *predicted* for past hours. Coverage starts
-// ~2016 for marine variables.
+// Open-Meteo marine archive (reanalysis) lookup — the Open-Meteo swell set
+// for ALL session ages. Reanalysis is grid-model output rerun after the
+// fact, incorporating actual observations including buoy readings; it's
+// much closer to ground truth than the forecast endpoint, which returns
+// what the model *predicted* for past hours. Coverage starts ~2016 for
+// marine variables.
 //
 // IMPORTANT: this MUST hit the marine archive endpoint
 // (`marine-api.open-meteo.com/v1/marine`), not the atmospheric archive
@@ -5108,72 +5172,75 @@ function estimateSwellLag(marine, sessionDateStr) {
 // silently returns null arrays for secondary_swell_* / wind_wave_* — see
 // INVESTIGATION_BACKFILL_REGRESSIONS.md.
 //
-// Returns a swell-only object: { swell: {...}, _laggedDateStr, _lagHours }
-// or null if the archive has no data for the requested date. Wind and tide
-// remain on their existing sources; only swell is rerouted here.
-async function lookupOpenMeteoArchive(lat, lon, dateStr) {
-  const target = new Date(dateStr);
-  if (isNaN(target.getTime())) return null;
-  const dayBefore = new Date(target); dayBefore.setDate(dayBefore.getDate() - 1);
-  const startDate = fmtDate(dayBefore);
-  const endDate = fmtDate(target);
-
+// (lat, lon) is the grid point being read — for Chocomount the near-shore
+// forecast pair, which Open-Meteo snaps to the 41.125°N 71.708°W cell
+// ~14 nmi from the beach — and the travel-time lag is measured from that
+// cell, not from the buoy.
+//
+// Returns { swell: {...}, _laggedDateStr, _lagHours } or null if the
+// archive has no sample within 90 min of the lagged time.
+async function lookupOpenMeteoArchive(lat, lon, sessionMs) {
+  if (!isFinite(sessionMs)) return null;
   const vars = [
     'wave_height','wave_direction','wave_period',
     'swell_wave_height','swell_wave_direction','swell_wave_period',
     'secondary_swell_wave_height','secondary_swell_wave_direction','secondary_swell_wave_period',
     'wind_wave_height','wind_wave_direction','wind_wave_period'
   ].join(',');
-  const p = new URLSearchParams({
+  const p = new URLSearchParams(Object.assign({
     latitude: Number(lat).toFixed(4),
     longitude: Number(lon).toFixed(4),
-    start_date: startDate,
-    end_date: endDate,
     hourly: vars,
     length_unit: 'imperial',
-    timezone: 'auto'
-  });
+    timezone: 'GMT'
+  }, _omDateRange(sessionMs)));
 
   const data = await fetchJSON(CONFIG.api.openMeteoMarineArchive + '?' + p);
-  if (!data || !data.hourly || !Array.isArray(data.hourly.time) || data.hourly.time.length === 0) return null;
+  const h = data && data.hourly;
+  if (!h || !Array.isArray(h.time) || h.time.length === 0) return null;
 
-  // Apply swell-arrival lag (offshore-forecast-point → beach travel time).
-  const lagHours = getSwellLagHours(data, dateStr);
-  const laggedDateStr = lagHours > 0
-    ? new Date(target.getTime() - lagHours * 3600000).toISOString()
-    : dateStr;
-  const idx = findNearestHour(data.hourly.time, laggedDateStr);
-  if (idx == null || idx < 0) return null;
+  const samples = h.time.map((t, i) => ({
+    ms: _omTimeMs(t),
+    period: h.swell_wave_period?.[i],
+    direction: h.swell_wave_direction?.[i]
+  }));
+  // Open-Meteo snaps to its grid; measure travel from the cell it used.
+  const srcLat = isFinite(data.latitude) ? data.latitude : Number(lat);
+  const srcLon = isFinite(data.longitude) ? data.longitude : Number(lon);
+  const lagHours = _swellLagHoursFromSamples(samples, sessionMs, srcLat, srcLon);
+  const laggedMs = sessionMs - lagHours * 3600000;
+  const idx = _nearestHourIdx(h.time, laggedMs, OM_MAX_GAP_MS);
+  if (idx < 0) return null;
 
-  const swH = data.hourly.swell_wave_height?.[idx];
+  const swH = h.swell_wave_height?.[idx];
   if (swH == null) return null;
-  const swD = data.hourly.swell_wave_direction?.[idx];
-  const swP = data.hourly.swell_wave_period?.[idx];
+  const swD = h.swell_wave_direction?.[idx];
+  const swP = h.swell_wave_period?.[idx];
 
   const swell = {
     height: Math.round(swH * 10) / 10,
     direction: Math.round(swD || 0),
     period: Math.round((swP || 0) * 10) / 10,
-    lagHours
+    lagHours: Math.round(lagHours * 10) / 10
   };
 
-  const secH = data.hourly.secondary_swell_wave_height?.[idx];
+  const secH = h.secondary_swell_wave_height?.[idx];
   if (secH != null && secH > 0.05) {
     swell.secondary = {
       height: Math.round(secH * 10) / 10,
-      direction: Math.round(data.hourly.secondary_swell_wave_direction?.[idx] || 0),
-      period: Math.round((data.hourly.secondary_swell_wave_period?.[idx] || 0) * 10) / 10
+      direction: Math.round(h.secondary_swell_wave_direction?.[idx] || 0),
+      period: Math.round((h.secondary_swell_wave_period?.[idx] || 0) * 10) / 10
     };
   }
-  const wwH = data.hourly.wind_wave_height?.[idx];
+  const wwH = h.wind_wave_height?.[idx];
   if (wwH != null && wwH > 0.05) {
     swell.windWave = {
       height: Math.round(wwH * 10) / 10,
-      direction: Math.round(data.hourly.wind_wave_direction?.[idx] || 0),
-      period: Math.round((data.hourly.wind_wave_period?.[idx] || 0) * 10) / 10
+      direction: Math.round(h.wind_wave_direction?.[idx] || 0),
+      period: Math.round((h.wind_wave_period?.[idx] || 0) * 10) / 10
     };
   }
-  return { swell, _laggedDateStr: laggedDateStr, _lagHours: lagHours };
+  return { swell, _laggedDateStr: new Date(laggedMs).toISOString(), _lagHours: lagHours };
 }
 
 // Coordinates within ~3 mi of the Chocomount beach point or its offshore
@@ -5186,85 +5253,67 @@ function isChocomountSpot(lat, lon) {
   return false;
 }
 
-// Archive-first historical lookup. NDBC stdmet is fallback for Chocomount
-// only when archive returns no data (e.g., dates pre-2016 archive coverage
-// or temporary endpoint failure).
+// Historical conditions for one session. Swell comes from two independent
+// sources, stored side by side and never mixed:
+//   cond.swell — Open-Meteo marine archive at the near-shore grid point
+//                (swell partitions, mean period, per-train direction)
+//   cond.buoy  — NDBC 44097 measurement offshore (Chocomount only; total
+//                significant height, peak + average period, one direction)
+// Either may be null when its source has no data near the session; the
+// regressions pick whichever set is toggled on. Wind is Open-Meteo archive
+// at the Chocomount land point; tide is CO-OPS predictions at 8510719.
+// Returns null only when neither swell source has data.
 async function lookupHistoricalConditions(lat, lon, dateStr) {
-  // Wind and tide come from existing sources regardless of swell source;
-  // fetched in parallel to keep latency similar to the old code path.
-  const [archiveResult, wind, tide] = await Promise.all([
-    lookupOpenMeteoArchive(lat, lon, dateStr).catch(err => {
-      console.warn('Open-Meteo archive failed, will try NDBC fallback', err);
-      return null;
-    }),
-    fetchHistoricalWind(dateStr).catch(err => {
-      console.warn('Historical wind fetch failed:', err);
-      return null;
-    }),
-    fetchHistoricalTide(dateStr).catch(err => {
-      console.warn('Historical tide fetch failed:', err);
-      return null;
-    })
+  const sessionMs = sessionTimeMs(dateStr);
+  if (!isFinite(sessionMs)) return null;
+  const warnNull = label => err => { console.warn(label + ' failed:', err); return null; };
+  const [archiveResult, buoy, wind, tide] = await Promise.all([
+    lookupOpenMeteoArchive(lat, lon, sessionMs).catch(warnNull('Open-Meteo archive')),
+    isChocomountSpot(lat, lon)
+      ? fetchBuoyReading(sessionMs).catch(warnNull('NDBC buoy lookup'))
+      : Promise.resolve(null),
+    fetchHistoricalWind(sessionMs).catch(warnNull('Historical wind fetch')),
+    fetchHistoricalTide(sessionMs).catch(warnNull('Historical tide fetch'))
   ]);
 
-  // Null sentinels when the Open-Meteo Weather wind fetch fails or returns
-  // no value at the session hour — downstream extractCondFeatures skips the
-  // session rather than train on a fake 0 mph / 0° datapoint.
-  const openMeteoWind = _windAtHour(wind, dateStr);
+  const swell = archiveResult && archiveResult.swell && archiveResult.swell.height != null
+    ? archiveResult.swell : null;
+  if (!swell && !buoy) return null;
 
-  if (archiveResult && archiveResult.swell && archiveResult.swell.height != null) {
-    const tideInfo = parseTideAtTime(tide, dateStr);
-    const conditions = {
-      swell: archiveResult.swell,
-      wind: openMeteoWind || { speed: null, direction: null },
-      tide: {
-        height: Math.round(tideInfo.height * 10) / 10,
-        rate: Math.round(tideInfo.rate * 100) / 100,
-        stage: tideInfo.stage,
-        timeToNearest: tideInfo.timeToNearest
-      },
-      source: 'openmeteo-archive'
-    };
-    if (archiveResult._lagHours > 0) {
-      conditions.swellLagHours = Math.round(archiveResult._lagHours * 10) / 10;
-      conditions.originalLoggedTime = dateStr;
-      conditions.calculatedFromBuoyTime = archiveResult._laggedDateStr;
-    }
-    return conditions;
+  // Null sentinels when the wind fetch fails or has no value at the session
+  // hour — extractCondFeatures skips the session rather than train on a
+  // fabricated 0 mph / 0° datapoint. Same for tide.
+  const tideInfo = tide ? parseTideAtTime(tide, sessionMs, sessionTimeMs) : null;
+  const conditions = {
+    swell,
+    buoy: buoy || null,
+    wind: _windAtHour(wind, sessionMs) || { speed: null, direction: null },
+    tide: tideInfo ? {
+      height: Math.round(tideInfo.height * 10) / 10,
+      rate: Math.round(tideInfo.rate * 100) / 100,
+      stage: tideInfo.stage,
+      timeToNearest: tideInfo.timeToNearest
+    } : null,
+    source: swell ? 'openmeteo-archive' : 'ndbc-only',
+    originalLoggedTime: dateStr
+  };
+  if (swell) {
+    conditions.swellLagHours = swell.lagHours;
+    conditions.swellSourceTime = archiveResult._laggedDateStr;
+  } else {
+    conditions.note = 'Open-Meteo archive has no data for this session; only the buoy set is available';
   }
-
-  if (isChocomountSpot(lat, lon)) {
-    try {
-      const ndbc = await _fetchNDBCHistoricalConditionsCore(dateStr, tide);
-      if (ndbc && ndbc.swell && ndbc.swell.height != null) {
-        // Buoy 44097 has no historical anemometer column, so the NDBC core
-        // returns wind={null,null}. Prefer the parallel Open-Meteo Weather
-        // value when available — the dual-source label makes the provenance
-        // explicit, and the Conditions model can train on it.
-        if (openMeteoWind) {
-          ndbc.wind = openMeteoWind;
-          ndbc.source = 'ndbc-stdmet+openmeteo-wind';
-          ndbc.note = 'Open-Meteo marine archive unavailable; NDBC swell + Open-Meteo wind';
-        } else {
-          ndbc.source = 'ndbc-stdmet';
-          ndbc.note = 'Open-Meteo archive unavailable; NDBC measurement used (no secondary swell)';
-        }
-        return ndbc;
-      }
-    } catch (err) {
-      console.warn('NDBC fallback failed', err);
-    }
-  }
-
-  return null;
+  return conditions;
 }
 
-// Extract { speed, direction } at the session hour from an Open-Meteo Weather
-// hourly response. Returns null when the response is missing or the value at
-// the nearest hour is null — callers decide how to represent the absence.
-function _windAtHour(wind, dateStr) {
+// Extract { speed, direction } at the session hour from an Open-Meteo
+// hourly response requested in GMT. Returns null when the response is
+// missing or has no value within 90 min — callers decide how to represent
+// the absence.
+function _windAtHour(wind, sessionMs) {
   if (!wind?.hourly?.time) return null;
-  const wIdx = findNearestHour(wind.hourly.time, dateStr);
+  const wIdx = _nearestHourIdx(wind.hourly.time, sessionMs, OM_MAX_GAP_MS);
+  if (wIdx < 0) return null;
   const s = wind.hourly.wind_speed_10m?.[wIdx];
   const d = wind.hourly.wind_direction_10m?.[wIdx];
   if (s == null || d == null) return null;
@@ -5285,36 +5334,71 @@ function _formatTideReadout(tide) {
   return h + 'ft ' + stage + ' (' + ttn + 'h to next)';
 }
 
+// One-line readouts shared by the edit dialog, the log table and the
+// session modal. The two swell sets measure different things, so each
+// says what it is rather than both reading as "Swell".
+function _fmtSwellLine(s) {
+  if (!s || s.height == null) return '\u2014';
+  return s.height + 'ft ' + (s.period ?? '?') + 's ' + directionLabel(s.direction) + ' (' + s.direction + '\u00b0)';
+}
+function _fmtBuoyLine(b) {
+  if (!b || b.height == null) return '\u2014';
+  return b.height + 'ft total \u00b7 ' + (b.period ?? '?') + 's peak / ' + (b.avgPeriod ?? '?') + 's avg \u00b7 ' +
+    directionLabel(b.direction) + (b.direction != null ? ' (' + b.direction + '\u00b0)' : '');
+}
+function _fmtWindLine(w) {
+  return (w && w.speed != null && w.direction != null)
+    ? w.speed + ' mph ' + directionLabel(w.direction) + ' (' + w.direction + '\u00b0)'
+    : '\u2014';
+}
+function _condSourceLabel(cond) {
+  const src = cond && cond.source;
+  if (!src) return 'unknown (logged before source tracking)';
+  if (src === 'openmeteo-archive') return 'Open-Meteo archive (reanalysis)' + (cond.buoy ? ' + NDBC buoy 44097 (measured)' : '');
+  if (src === 'ndbc-only') return 'NDBC buoy 44097 only (no Open-Meteo archive data)';
+  if (src === 'ndbc-stdmet+openmeteo-wind') return 'NDBC buoy 44097 swell + Open-Meteo archive wind (old format \u2014 re-Lookup)';
+  if (src === 'ndbc-stdmet' || src === 'ndbc') return 'NDBC buoy 44097 (old format \u2014 re-Lookup)';
+  return 'Open-Meteo marine API (old format \u2014 re-Lookup)';
+}
+
+function _conditionsHTML(cond) {
+  const dl = (l,v) => '<span class="sl-cond-label">'+l+'</span> <span class="sl-cond-val">'+v+'</span>';
+  const sw = cond.swell;
+  // Old entries may hold a buoy reading or an unlabeled block in cond.swell.
+  const legacyBuoy = /^ndbc/.test(cond.source || '');
+  const swellLabel = legacyBuoy ? 'Swell (buoy, old format):' : cond.source ? 'Swell (Open-Meteo):' : 'Swell:';
+  let h = '<div class="sl-cond-row">';
+  h += dl(swellLabel, sw ? _fmtSwellLine(sw) : '\u2014 no archive data');
+  if (sw && sw.secondary) h += dl('2nd:', _fmtSwellLine(sw.secondary));
+  h += '</div>';
+  if (cond.buoy) {
+    h += '<div class="sl-cond-row">' + dl('Buoy 44097:', _fmtBuoyLine(cond.buoy)) + '</div>';
+  }
+  h += '<div class="sl-cond-row">';
+  h += dl('Wind:', _fmtWindLine(cond.wind));
+  h += dl('Tide:', _formatTideReadout(cond.tide));
+  h += '</div>';
+  const lagBits = [];
+  if (sw && cond.swellLagHours > 0) {
+    // swellSourceTime marks blocks from the corrected lookup; older blocks
+    // used a flat 50-mile lag from the buoy regardless of where the data was.
+    lagBits.push(cond.swellSourceTime
+      ? 'Open-Meteo swell from ~' + cond.swellLagHours + 'h earlier at its grid cell ~15 nmi offshore'
+      : 'swell from ~' + cond.swellLagHours + 'h earlier (old 50-mile estimate \u2014 re-Lookup to correct)');
+  }
+  if (cond.buoy && cond.buoy.lagHours > 0) lagBits.push('buoy reading from ~' + cond.buoy.lagHours + 'h earlier, 42 nmi offshore');
+  if (lagBits.length) {
+    h += '<div class="sl-cond-row"><span class="sl-hint">' + lagBits.join('; ') + ' (swell travel time to the beach)</span></div>';
+  }
+  h += '<div class="sl-cond-row"><span class="sl-hint">Source: ' + _condSourceLabel(cond) + '</span></div>';
+  if (cond.note) h += '<div class="sl-cond-row"><span class="sl-hint">' + cond.note + '</span></div>';
+  return h;
+}
+
 function renderConditionsDisplay(cond) {
   const display = el('sl-conditions-display');
   if (!display || !cond) return;
-  const dl = (l,v) => '<span class="sl-cond-label">'+l+'</span> <span class="sl-cond-val">'+v+'</span>';
-  const lagNote = cond.swell.lagHours ? ' ('+cond.swell.lagHours+'h buoy lag)' : '';
-  let h = '<div class="sl-cond-row">';
-  h += dl('Swell'+lagNote+':', cond.swell.height+'ft '+cond.swell.period+'s '+directionLabel(cond.swell.direction)+' ('+cond.swell.direction+'\u00b0)');
-  if (cond.swell.secondary) h += dl('2nd:', cond.swell.secondary.height+'ft '+(cond.swell.secondary.period||'')+'s '+directionLabel(cond.swell.secondary.direction));
-  h += '</div><div class="sl-cond-row">';
-  const _w = cond.wind || {};
-  const _windText = (_w.speed != null && _w.direction != null)
-    ? _w.speed + ' mph ' + directionLabel(_w.direction) + ' (' + _w.direction + '\u00b0)'
-    : '\u2014';
-  h += dl('Wind:', _windText);
-  h += dl('Tide:', _formatTideReadout(cond.tide));
-  h += '</div>';
-  if (cond.swellLagHours > 0) {
-    h += `<div class="sl-cond-row"><span class="sl-hint">Using swell from ~${cond.swellLagHours}h ago at buoy (travel time estimate)</span></div>`;
-  }
-  if (cond.source) {
-    let srcLabel;
-    if (cond.source === 'openmeteo-archive')              srcLabel = 'Open-Meteo archive (reanalysis)';
-    else if (cond.source === 'ndbc-stdmet+openmeteo-wind') srcLabel = 'NDBC buoy 44097 swell + Open-Meteo archive wind';
-    else if (cond.source === 'ndbc-stdmet')               srcLabel = 'NDBC buoy 44097 (measured, stdmet historical)';
-    else if (cond.source === 'ndbc')                      srcLabel = 'NDBC buoy 44097 (measured)';
-    else                                                  srcLabel = 'Open-Meteo marine API';
-    h += '<div class="sl-cond-row"><span class="sl-hint">Source: ' + srcLabel + '</span></div>';
-    if (cond.note) h += '<div class="sl-cond-row"><span class="sl-hint">' + cond.note + '</span></div>';
-  }
-  display.innerHTML = h;
+  display.innerHTML = _conditionsHTML(cond);
 }
 
 // ════════════════════════════════════════════════
@@ -5400,21 +5484,26 @@ function initSurfLogForm() {
     if (display) display.innerHTML = '<span class="sl-hint">Looking up conditions from Open-Meteo archive…</span>';
     const lat = CONFIG.chocomount.forecastLat;
     const lon = CONFIG.chocomount.forecastLon;
-    _slConditions = await lookupHistoricalConditions(lat, lon, dt);
+    // When editing, keep what's saved until the owner picks between it and
+    // the new lookup — a re-Lookup must never silently replace data.
+    const saved = STATE.surfLogEditId ? _slConditions : null;
+    const fresh = await lookupHistoricalConditions(lat, lon, dt);
     btn.disabled = false; btn.textContent = 'Lookup Historical Conditions';
-    if (_slConditions) {
-      renderConditionsDisplay(_slConditions);
-      const condDisplay = el('sl-conditions-display');
-      const condWrapper = condDisplay ? condDisplay.parentElement : null;
-      if (condWrapper) {
-        condWrapper.classList.remove('sl-needs-review');
-        const oldWarn = condWrapper.querySelector('.sl-conditions-warning');
-        if (oldWarn) oldWarn.remove();
+    if (!fresh) {
+      if (saved) {
+        renderConditionsDisplay(saved);
+        showToast('Lookup failed — kept the saved conditions.', 'warn');
+      } else if (display) {
+        display.innerHTML = '<span class="sl-hint">Lookup failed. You can enter conditions manually.</span>';
       }
-      if (Array.isArray(STATE.surfLogEditRepairCandidates)) STATE.surfLogEditRepairCandidates = STATE.surfLogEditRepairCandidates.filter(n => n !== 'swell');
-    } else {
-      if (display) display.innerHTML = '<span class="sl-hint">Lookup failed. You can enter conditions manually.</span>';
+      return;
     }
+    const diffs = saved ? _condDiffs(saved, fresh) : [];
+    if (diffs.length) {
+      _renderConditionsChoice(saved, fresh, diffs);
+      return;
+    }
+    _slAcceptConditions(fresh);
   });
   el('sl-save-btn')?.addEventListener('click', async () => {
     // Defensive: re-check the touched-state guard. The :disabled attribute
@@ -5471,6 +5560,75 @@ function initSurfLogForm() {
   ['sl-filter-from','sl-filter-to','sl-filter-rating'].forEach(id => {
     el(id)?.addEventListener('change', () => renderSurfLogTable());
   });
+}
+
+// Accept a conditions block into the form: render it and clear the
+// review flags that a missing or pending block put on the field.
+function _slAcceptConditions(cond) {
+  _slConditions = cond;
+  renderConditionsDisplay(cond);
+  const condDisplay = el('sl-conditions-display');
+  const condWrapper = condDisplay ? condDisplay.parentElement : null;
+  if (condWrapper) {
+    condWrapper.classList.remove('sl-needs-review');
+    const oldWarn = condWrapper.querySelector('.sl-conditions-warning');
+    if (oldWarn) oldWarn.remove();
+  }
+  if (Array.isArray(STATE.surfLogEditRepairCandidates)) {
+    STATE.surfLogEditRepairCandidates = STATE.surfLogEditRepairCandidates.filter(n => n !== 'swell' && n !== 'conditionsChoice');
+  }
+}
+
+// Human-readable list of what differs between two conditions blocks.
+// Small rounding noise is ignored; a set appearing or disappearing counts.
+function _condDiffs(a, b) {
+  const out = [];
+  const num = (label, x, y, tol, unit) => {
+    if (x == null && y == null) return;
+    if (x == null || y == null || Math.abs(x - y) > tol) {
+      out.push(label + ': ' + (x == null ? '\u2014' : x + unit) + ' \u2192 ' + (y == null ? '\u2014' : y + unit));
+    }
+  };
+  const sa = a && a.swell, sb = b && b.swell;
+  num('Open-Meteo swell height', sa?.height, sb?.height, 0.05, 'ft');
+  num('Open-Meteo swell period', sa?.period, sb?.period, 0.05, 's');
+  num('Open-Meteo swell direction', sa?.direction, sb?.direction, 0.5, '\u00b0');
+  num('2nd swell height', sa?.secondary?.height, sb?.secondary?.height, 0.05, 'ft');
+  const ba = a && a.buoy, bb = b && b.buoy;
+  num('Buoy height', ba?.height, bb?.height, 0.05, 'ft');
+  num('Buoy peak period', ba?.period, bb?.period, 0.05, 's');
+  num('Buoy direction', ba?.direction, bb?.direction, 0.5, '\u00b0');
+  num('Wind speed', a?.wind?.speed, b?.wind?.speed, 0.5, ' mph');
+  num('Wind direction', a?.wind?.direction, b?.wind?.direction, 0.5, '\u00b0');
+  num('Tide height', a?.tide?.height, b?.tide?.height, 0.05, 'ft');
+  if ((a?.source || null) !== (b?.source || null)) {
+    out.push('Source: ' + _condSourceLabel(a) + ' \u2192 ' + _condSourceLabel(b));
+  }
+  return out;
+}
+
+// Saved vs new, side by side. Update stays blocked until one is picked.
+function _renderConditionsChoice(saved, fresh, diffs) {
+  const display = el('sl-conditions-display');
+  if (!display) return;
+  const wrapper = display.parentElement;
+  if (wrapper) wrapper.classList.add('sl-needs-review');
+  if (Array.isArray(STATE.surfLogEditRepairCandidates) && !STATE.surfLogEditRepairCandidates.includes('conditionsChoice')) {
+    STATE.surfLogEditRepairCandidates.push('conditionsChoice');
+  }
+  const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  display.innerHTML =
+    '<div class="sl-cond-compare-note">The new lookup differs from what\u2019s saved. Pick one before updating.' +
+      '<ul>' + diffs.map(d => '<li>' + esc(d) + '</li>').join('') + '</ul></div>' +
+    '<div class="sl-cond-compare-cols">' +
+      '<div class="sl-cond-compare-col"><div class="sl-cond-compare-head">Saved</div>' + _conditionsHTML(saved) +
+        '<button type="button" class="sl-btn sl-btn-sm" data-pick="saved">Keep saved</button></div>' +
+      '<div class="sl-cond-compare-col"><div class="sl-cond-compare-head">New lookup</div>' + _conditionsHTML(fresh) +
+        '<button type="button" class="sl-btn sl-btn-sm" data-pick="fresh">Use new</button></div>' +
+    '</div>';
+  display.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => {
+    _slAcceptConditions(b.dataset.pick === 'fresh' ? fresh : saved);
+  }));
 }
 
 function resetSurfLogForm() {
@@ -5622,29 +5780,53 @@ function importJSON(ev) {
 }
 
 // ════════════════════════════════════════════════
-// SURF LOG — Backfill (re-fetch all sessions from Open-Meteo archive)
+// SURF LOG — Backfill (re-fetch every session's conditions)
 // ════════════════════════════════════════════════
 //
-// Replaces each logged session's `cond.swell` AND `cond.tide` blocks with
-// reanalysis data. Subjective ratings (size, wind quality, ride quality),
-// notes, and photos are untouched. The wind block is preserved per entry
-// (wind source unchanged); the tide block is REWRITTEN because we are
-// migrating from the old hilo-extremum lookup (cond.tide.height was the
-// next hi/lo value) to the new hourly-interpolated lookup (cond.tide.height
-// is the actual water level at session time, and cond.tide.rate is added).
-// NDBC stdmet is the fallback when archive returns no data.
+// Two passes. The fetch pass re-runs lookupHistoricalConditions for each of
+// the signed-in owner's sessions and writes nothing. The owner then sees a
+// preview of saved vs new per session and chooses whether to write. Writing
+// first downloads a JSON backup of the whole log, then stores the new
+// conditions with the old block kept under `conditions.previous`. Ratings,
+// notes and photos are never touched.
+//
+// Per-session safeguards: if the Open-Meteo archive returns nothing for a
+// session that already has Open-Meteo swell, the session is skipped (a
+// transient outage must not strip data). A failed wind or tide fetch keeps
+// the saved wind/tide block and says so in the preview.
+let _backfillPlan = null;
+
+function _backfillOwnEntries() {
+  const uid = window._fbUserId;
+  return (STATE.surfLog || []).filter(e => !uid || !e.userId || e.userId === uid);
+}
+
+// Merge a fresh lookup onto an entry's saved conditions. Returns
+// { cond, kept: [labels] } or null when the session should be skipped.
+function _backfillMerge(oldCond, fresh) {
+  oldCond = oldCond || {};
+  const hadOpenMeteo = oldCond.swell && !/^ndbc/.test(oldCond.source || '');
+  if (!fresh.swell && hadOpenMeteo) return null;
+  const kept = [];
+  const cond = Object.assign({}, fresh);
+  const windMissing = !fresh.wind || fresh.wind.speed == null;
+  if (windMissing && oldCond.wind && oldCond.wind.speed != null) { cond.wind = oldCond.wind; kept.push('wind'); }
+  if (!fresh.tide && oldCond.tide) { cond.tide = oldCond.tide; kept.push('tide'); }
+  // One level of history: the block being replaced, without its own previous.
+  const prev = Object.assign({}, oldCond);
+  delete prev.previous;
+  if (Object.keys(prev).length) cond.previous = prev;
+  return { cond, kept };
+}
+
 async function backfillAllSessionsFromArchive() {
-  if (!Array.isArray(STATE.surfLog) || STATE.surfLog.length === 0) {
-    alert('No sessions to backfill.');
-    return;
-  }
+  const entries = _backfillOwnEntries();
+  if (!entries.length) { alert('No sessions to backfill.'); return; }
   const proceed = confirm(
-    'This will re-fetch conditions for all your logged sessions from Open-Meteo archive: ' +
-    'swell + wind from the archive reanalysis, plus tide data from CO-OPS using hourly ' +
-    'predictions (interpolated water level at session time, with signed ft/hr rate). ' +
-    'Sessions where the wind fetch fails will be stored with null wind (skipped by the ' +
-    'Conditions model). Your subjective ratings (size, wind quality, ride quality) will ' +
-    'not be touched. Proceed?'
+    'Re-fetch conditions for your ' + entries.length + ' logged sessions: Open-Meteo archive swell, ' +
+    'NDBC buoy 44097 swell, Open-Meteo archive wind at the beach, and NOAA tide at session time.\n\n' +
+    'Nothing is saved yet — you\'ll see saved vs new for every session first and choose whether to write. ' +
+    'Ratings, notes and photos are never touched. Fetch now?'
   );
   if (!proceed) return;
 
@@ -5652,116 +5834,125 @@ async function backfillAllSessionsFromArchive() {
   const progress = el('sl-backfill-progress');
   const bar = el('sl-backfill-bar-fill');
   const status = el('sl-backfill-status');
-  if (btn) { btn.disabled = true; btn.textContent = 'Backfilling…'; }
+  const preview = el('sl-backfill-preview');
+  if (btn) { btn.disabled = true; btn.textContent = 'Fetching…'; }
   if (progress) progress.style.display = '';
+  if (preview) { preview.style.display = 'none'; preview.innerHTML = ''; }
   if (bar) bar.style.width = '0%';
 
-  const entries = STATE.surfLog.slice();
-  const total = entries.length;
-  let processed = 0, archive = 0, ndbcOnly = 0, ndbcWithWind = 0, failed = 0;
-  let tideRising = 0, tideFalling = 0, tideSlack = 0;
-  const failures = [];
-
-  for (const entry of entries) {
-    processed++;
-    if (status) status.textContent = 'Processing ' + processed + ' / ' + total + '…';
-    if (bar) bar.style.width = ((processed - 1) / total * 100).toFixed(1) + '%';
-
+  const rows = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (status) status.textContent = 'Fetching ' + (i + 1) + ' / ' + entries.length + '… (nothing saved yet)';
+    if (bar) bar.style.width = (i / entries.length * 100).toFixed(1) + '%';
+    let row;
     try {
-      const ts = entry.timestamp;
-      // Logged sessions don't carry their own lat/lon — they are at
-      // Chocomount by construction. Use the offshore forecast pair that
-      // matches the live-forecast query for consistency.
-      const lat = CONFIG.chocomount.forecastLat;
-      const lon = CONFIG.chocomount.forecastLon;
-      const result = await lookupHistoricalConditions(lat, lon, ts);
-      if (!result || !result.swell || result.swell.height == null) {
-        failed++;
-        failures.push({ id: entry.id, ts, reason: 'no swell data returned' });
+      const fresh = await lookupHistoricalConditions(CONFIG.chocomount.forecastLat, CONFIG.chocomount.forecastLon, entry.timestamp);
+      if (!fresh) {
+        row = { entry, status: 'failed', reason: 'no swell from either source' };
       } else {
-        const oldCond = entry.conditions || {};
-        const newCond = Object.assign({}, oldCond, {
-          swell: result.swell,
-          source: result.source
-        });
-        if (result.swellLagHours != null) newCond.swellLagHours = result.swellLagHours;
-        else delete newCond.swellLagHours;
-        if (result.calculatedFromBuoyTime) newCond.calculatedFromBuoyTime = result.calculatedFromBuoyTime;
-        else delete newCond.calculatedFromBuoyTime;
-        if (result.originalLoggedTime) newCond.originalLoggedTime = result.originalLoggedTime;
-        else delete newCond.originalLoggedTime;
-        if (result.note) newCond.note = result.note; else delete newCond.note;
-
-        // Wind: ALWAYS overwrite — earlier backfills stored failed fetches
-        // as { speed: 0, direction: 0 }, biasing the Conditions model with
-        // fake calm-offshore datapoints. Re-running uses the same archive
-        // source the live forecast uses; failed fetches now land as
-        // { speed: null, direction: null } and the extractor skips them.
-        // Tide: ALWAYS overwrite with the freshly-computed block — we are
-        // migrating from hilo-nearest-extremum to hourly-interpolated
-        // height plus a new signed ft/hr `rate` field, so any tide values
-        // already on the entry are stale by definition.
-        if (result.wind) newCond.wind = result.wind;
-        else if (oldCond.wind) newCond.wind = oldCond.wind;
-        if (result.tide) newCond.tide = result.tide;
-        else if (oldCond.tide) newCond.tide = oldCond.tide;
-
-        entry.conditions = newCond;
-        try {
-          await saveLogEntryToFirebase(entry);
-        } catch (e) {
-          console.warn('Backfill: Firestore save failed for', entry.id, e);
-        }
-
-        if (result.source === 'openmeteo-archive') archive++;
-        else if (result.source === 'ndbc-stdmet+openmeteo-wind') ndbcWithWind++;
-        else if (result.source === 'ndbc-stdmet') ndbcOnly++;
-
-        const r = result.tide?.rate;
-        if (typeof r === 'number') {
-          if (Math.abs(r) < 0.1) tideSlack++;
-          else if (r > 0) tideRising++;
-          else tideFalling++;
+        const merged = _backfillMerge(entry.conditions, fresh);
+        if (!merged) {
+          row = { entry, status: 'failed', reason: 'Open-Meteo archive returned nothing; kept saved swell' };
+        } else {
+          const diffs = _condDiffs(entry.conditions || {}, merged.cond);
+          row = { entry, status: diffs.length ? 'changed' : 'same', cond: merged.cond, diffs, kept: merged.kept };
         }
       }
     } catch (err) {
-      failed++;
-      failures.push({ id: entry.id, ts: entry.timestamp, reason: (err && err.message) || String(err) });
-      console.warn('Backfill failed for', entry.id, err);
+      row = { entry, status: 'failed', reason: (err && err.message) || String(err) };
     }
-
-    if (processed < total) await new Promise(r => setTimeout(r, 500));
+    rows.push(row);
+    if (i < entries.length - 1) await new Promise(r => setTimeout(r, 500));
   }
-
   if (bar) bar.style.width = '100%';
+  if (btn) { btn.disabled = false; btn.textContent = 'Re-fetch all session conditions'; }
+
+  _backfillPlan = rows;
+  const changed = rows.filter(r => r.status === 'changed').length;
+  const failed = rows.filter(r => r.status === 'failed').length;
+  if (status) status.textContent = 'Fetched. ' + changed + ' would change · ' +
+    (rows.length - changed - failed) + ' unchanged · ' + failed + ' failed. Nothing saved yet — review below.';
+  _renderBackfillPreview(rows);
+}
+
+function _renderBackfillPreview(rows) {
+  const preview = el('sl-backfill-preview');
+  if (!preview) return;
+  const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const changed = rows.filter(r => r.status === 'changed');
+  const day = e => { const m = String(e.timestamp || '').match(/^\d{4}-\d{2}-\d{2}/); return m ? m[0] : esc(e.timestamp); };
+  let h = '<div class="sl-backfill-preview-actions">';
+  h += changed.length
+    ? '<button type="button" class="sl-btn sl-btn-sm sl-btn-primary" id="sl-backfill-write">Download backup &amp; save ' + changed.length + ' change' + (changed.length === 1 ? '' : 's') + '</button>'
+    : '<span class="sl-hint">Nothing to change.</span>';
+  h += ' <button type="button" class="sl-btn sl-btn-sm" id="sl-backfill-discard">Discard</button></div>';
+  h += '<div class="sl-backfill-table-wrap"><table class="sl-backfill-table"><thead><tr>' +
+    '<th>Session</th><th>Status</th><th>Saved swell</th><th>New Open-Meteo swell</th><th>New buoy 44097</th><th>What changes</th></tr></thead><tbody>';
+  const order = { changed: 0, failed: 1, same: 2 };
+  rows.slice().sort((a, b) => order[a.status] - order[b.status]).forEach(r => {
+    const old = r.entry.conditions || {};
+    const what = r.status === 'failed' ? esc(r.reason)
+      : r.status === 'same' ? '—'
+      : r.diffs.map(esc).join('<br>') + (r.kept.length ? '<br><em>kept saved ' + r.kept.join(' + ') + ' (fetch failed)</em>' : '');
+    h += '<tr class="sl-backfill-' + r.status + '"><td>' + day(r.entry) + '</td><td>' + r.status + '</td>' +
+      '<td>' + _fmtSwellLine(old.swell) + '</td>' +
+      '<td>' + (r.cond ? _fmtSwellLine(r.cond.swell) : '—') + '</td>' +
+      '<td>' + (r.cond ? _fmtBuoyLine(r.cond.buoy) : '—') + '</td>' +
+      '<td>' + what + '</td></tr>';
+  });
+  h += '</tbody></table></div>';
+  preview.innerHTML = h;
+  preview.style.display = '';
+  el('sl-backfill-write')?.addEventListener('click', _writeBackfillPlan);
+  el('sl-backfill-discard')?.addEventListener('click', () => {
+    _backfillPlan = null;
+    preview.style.display = 'none';
+    preview.innerHTML = '';
+    const status = el('sl-backfill-status');
+    if (status) status.textContent = 'Discarded. Nothing was saved.';
+  });
+}
+
+function _downloadSurfLogBackup() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const blob = new Blob([JSON.stringify(STATE.surfLog, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'surflog-backup-before-backfill-' + stamp + '.json';
+  a.click();
+}
+
+async function _writeBackfillPlan() {
+  const plan = _backfillPlan;
+  if (!plan) return;
+  const todo = plan.filter(r => r.status === 'changed');
+  if (!todo.length) return;
+  if (!confirm('Save new conditions for ' + todo.length + ' session' + (todo.length === 1 ? '' : 's') +
+    '? A JSON backup of your whole log downloads first, and each session keeps its old conditions under "previous".')) return;
+  _downloadSurfLogBackup();
+  _backfillPlan = null;
+  const status = el('sl-backfill-status');
+  const writeBtn = el('sl-backfill-write');
+  if (writeBtn) writeBtn.disabled = true;
+  let saved = 0, syncFailed = 0;
+  for (let i = 0; i < todo.length; i++) {
+    const r = todo[i];
+    if (status) status.textContent = 'Saving ' + (i + 1) + ' / ' + todo.length + '…';
+    r.entry.conditions = r.cond;
+    try { await saveLogEntryToFirebase(r.entry); saved++; }
+    catch (e) { syncFailed++; console.warn('Backfill: Firestore save failed for', r.entry.id, e); }
+  }
   saveSurfLog();
   if (typeof slRetrain === 'function') slRetrain();
   if (typeof renderSurfLogTable === 'function') renderSurfLogTable();
-  if (btn) { btn.disabled = false; btn.textContent = 'Re-fetch all session conditions from Open-Meteo archive'; }
-
-  const tideTotal = tideRising + tideFalling + tideSlack;
-  const tideSummary = tideTotal
-    ? '\n\nTide rate distribution across ' + tideTotal + ' sessions: ' +
-      tideRising + ' positive (rising), ' +
-      tideFalling + ' negative (falling), ' +
-      tideSlack + ' near-zero (slack).'
-    : '';
-  const ndbcTotal = ndbcOnly + ndbcWithWind;
-  const summary =
-    processed + ' sessions processed.\n\n' +
-    archive + ' populated with archive data (openmeteo-archive)\n' +
-    ndbcWithWind + ' populated with NDBC swell + Open-Meteo wind (ndbc-stdmet+openmeteo-wind)\n' +
-    ndbcOnly + ' populated with NDBC fallback, no wind (ndbc-stdmet)\n' +
-    failed + ' failed' +
-    tideSummary +
-    (failures.length
-      ? '\n\nFailures:\n' + failures.slice(0, 8).map(f => '• ' + new Date(f.ts).toLocaleDateString() + ' — ' + f.reason).join('\n')
-      : '');
-  if (status) status.textContent = 'Done. ' + archive + ' archive · ' + ndbcTotal + ' NDBC · ' + failed + ' failed.';
-  console.log('Tide rate distribution across ' + tideTotal + ' sessions: ' +
-    tideRising + ' positive (rising), ' + tideFalling + ' negative (falling), ' +
-    tideSlack + ' near-zero (slack).');
-  alert(summary);
+  const preview = el('sl-backfill-preview');
+  if (preview) { preview.style.display = 'none'; preview.innerHTML = ''; }
+  const msg = 'Saved ' + todo.length + ' session' + (todo.length === 1 ? '' : 's') + ' locally' +
+    (syncFailed ? '; ' + syncFailed + ' did not sync to the cloud yet' : ' and to the cloud') +
+    '. Backup downloaded; old values are under conditions.previous.';
+  if (status) status.textContent = msg;
+  showToast(syncFailed ? '⚠ ' + msg : '✓ ' + msg, syncFailed ? 'warn' : 'success');
 }
 
 // ════════════════════════════════════════════════
@@ -5784,10 +5975,12 @@ function isLogEntryIncomplete(entry) {
   }
   const c = entry.conditions;
   if (!c || typeof c !== 'object') return true;
+  // Either swell set counts; sessions before the archive's coverage only
+  // have the buoy. (Swell blocks carry `height`, not `size`.)
   const s = c.swell;
-  if (!s) return true;
-  if (s.size === 0 && s.period === 0) return true;
-  if (s.size > 0 && (s.direction === undefined || s.direction === null || s.direction === 0)) return true;
+  if (!s) return !c.buoy;
+  if (s.height === 0 && s.period === 0) return true;
+  if (s.height > 0 && (s.direction === undefined || s.direction === null || s.direction === 0)) return true;
   return false;
 }
 
@@ -5810,10 +6003,10 @@ function getIncompleteFields(entry) {
   }
   const s = c.swell;
   if (!s) {
+    if (!c.buoy) fields.push('swell');
+  } else if (s.height === 0 && s.period === 0) {
     fields.push('swell');
-  } else if (s.size === 0 && s.period === 0) {
-    fields.push('swell');
-  } else if (s.size > 0 && (s.direction === undefined || s.direction === null || s.direction === 0)) {
+  } else if (s.height > 0 && (s.direction === undefined || s.direction === null || s.direction === 0)) {
     fields.push('swell');
   }
   return fields;
@@ -5915,9 +6108,11 @@ function toggleEntryDetail(entry, tr) {
   const c = entry.conditions;
   let h = '<td colspan="8"><div class="sl-detail-content">';
   if (c) {
-    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Swell</span>'+c.swell.height+'ft '+c.swell.period+'s '+directionLabel(c.swell.direction)+' ('+c.swell.direction+'\u00b0)';
-    if (c.swell.secondary) h += '<br>2nd: '+c.swell.secondary.height+'ft '+c.swell.secondary.period+'s '+directionLabel(c.swell.secondary.direction);
-    h += '</div><div class="sl-cond-group"><span class="sl-cond-group-title">Wind</span>'+c.wind.speed+' mph '+directionLabel(c.wind.direction)+' ('+c.wind.direction+'\u00b0)</div>';
+    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Swell (Open-Meteo)</span>'+_fmtSwellLine(c.swell);
+    if (c.swell && c.swell.secondary) h += '<br>2nd: '+_fmtSwellLine(c.swell.secondary);
+    h += '</div>';
+    if (c.buoy) h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Buoy 44097</span>'+_fmtBuoyLine(c.buoy)+'</div>';
+    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Wind</span>'+_fmtWindLine(c.wind)+'</div>';
     h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Tide</span>'+_formatTideReadout(c.tide)+'</div>';
   } else { h += '<div style="grid-column:1/-1;color:var(--ink4)">No conditions recorded</div>'; }
   h += '</div></td>';
@@ -6014,6 +6209,34 @@ function _effectiveInWindowSwell(cond) {
     : 0;
   const totalHeight = (pri.height || 0) + (sec?.height || 0);
   return { effHeight, effPeriod, totalHeight };
+}
+
+// ── Regression swell source ─────────────────────
+// Two training sets share wind, tide and ratings and differ only in swell:
+//   'openmeteo' — cond.swell, Open-Meteo archive at the near-shore grid cell
+//   'buoy'      — cond.buoy, NDBC 44097 measured 42 nmi offshore
+// The buoy view maps its reading onto the swell shape the extractors read.
+// Its height is the whole sea state and its period the spectral peak, and
+// its direction is offshore (before refraction into the sound), so its
+// weights are not comparable feature-for-feature with the Open-Meteo set.
+function _buoyCondView(cond) {
+  const b = cond && cond.buoy;
+  if (!b || b.height == null) return null;
+  return Object.assign({}, cond, { swell: { height: b.height, period: b.period, direction: b.direction } });
+}
+function condForRegSource(cond, source) {
+  if (!cond) return null;
+  if (source === 'buoy') return _buoyCondView(cond);
+  // Old-format entries stored a buoy reading in cond.swell (the pre-split
+  // NDBC fallback); they don't belong in the Open-Meteo set until re-fetched.
+  if (/^ndbc/.test(cond.source || '')) return null;
+  return cond.swell ? cond : null;
+}
+function _regExtractor(baseExtractor, source) {
+  return cond => {
+    const view = condForRegSource(cond, source);
+    return view ? baseExtractor(view) : null;
+  };
 }
 
 function extractWaveFeatures(cond) {
@@ -6148,17 +6371,26 @@ function slRetrain() {
   // Calibrate to the current user's rating taste rather than mixing community ratings.
   const uid = window._fbUserId;
   const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
-  const entries = userScoped.filter(e => e.conditions?.swell);
-  // Wave model: target = size (pure swell arrival, no peel quality mixed in).
-  const wave = trainModel(entries, extractWaveFeatures, e => e.ratings.size);
-  STATE.surfLogWaveWeights = wave?.weights || null;
-  STATE.surfLogWaveStats = wave?.stats || null;
-  STATE.surfLogWaveValidation = leaveOneOutRMSE(entries, extractWaveFeatures, e => e.ratings.size);
-  // Ride model: target = rideQuality (how cleanly it peeled).
-  const ride = trainModel(entries, extractRideFeatures, e => e.ratings.rideQuality);
-  STATE.surfLogRideWeights = ride?.weights || null;
-  STATE.surfLogRideStats = ride?.stats || null;
-  STATE.surfLogRideValidation = leaveOneOutRMSE(entries, extractRideFeatures, e => e.ratings.rideQuality);
+  const entries = userScoped.filter(e => e.conditions?.swell || e.conditions?.buoy);
+  // Wave and Ride train once per swell set. The unsuffixed keys hold the
+  // Open-Meteo set, which is the only one forecasts can be scored with;
+  // the *Buoy keys hold the NDBC 44097 set for the Regression tab toggle.
+  // Each set sees only the sessions that have that set's swell.
+  for (const [source, sfx] of [['openmeteo', ''], ['buoy', 'Buoy']]) {
+    const wx = _regExtractor(extractWaveFeatures, source);
+    const rx = _regExtractor(extractRideFeatures, source);
+    // Wave model: target = size (pure swell arrival, no peel quality mixed in).
+    const wave = trainModel(entries, wx, e => e.ratings.size);
+    STATE['surfLogWaveWeights' + sfx] = wave?.weights || null;
+    STATE['surfLogWaveStats' + sfx] = wave?.stats || null;
+    STATE['surfLogWaveValidation' + sfx] = leaveOneOutRMSE(entries, wx, e => e.ratings.size);
+    // Ride model: target = rideQuality (how cleanly it peeled).
+    const ride = trainModel(entries, rx, e => e.ratings.rideQuality);
+    STATE['surfLogRideWeights' + sfx] = ride?.weights || null;
+    STATE['surfLogRideStats' + sfx] = ride?.stats || null;
+    STATE['surfLogRideValidation' + sfx] = leaveOneOutRMSE(entries, rx, e => e.ratings.rideQuality);
+    STATE['_lastFitN' + (sfx || 'OpenMeteo')] = entries.filter(e => wx(e.conditions)).length;
+  }
   // Conditions model: target = windQuality
   const cond = trainModel(entries, extractCondFeatures, e => e.ratings.windQuality);
   STATE.surfLogCondWeights = cond?.weights || null;
@@ -6286,7 +6518,7 @@ function _logSanityModel(label, target, featureNames, looOut, weights) {
 function _logRegressionSanity() {
   const uid = window._fbUserId;
   const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
-  const entries = userScoped.filter(e => e.conditions?.swell);
+  const entries = userScoped.filter(e => condForRegSource(e.conditions, 'openmeteo'));
   _logSanityModel('WAVE', 'size', WAVE_FEATURE_NAMES,
     _runLOOForSanity(entries, extractWaveFeatures, e => e.ratings.size),
     STATE.surfLogWaveWeights);
@@ -6303,7 +6535,7 @@ function _logRegressionSanity() {
 function _llcRegressionMetricsReport() {
   const uid = window._fbUserId;
   const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
-  const entries = userScoped.filter(e => e.conditions?.swell);
+  const entries = userScoped.filter(e => condForRegSource(e.conditions, 'openmeteo'));
   const fmt = (v, d = 2) => (v == null || !isFinite(v)) ? '—' : v.toFixed(d);
   const block = (label, target, featureNames, extractor, targetFn, weights, rmse) => {
     const looOut = _runLOOForSanity(entries, extractor, targetFn);
@@ -6357,7 +6589,7 @@ if (typeof window !== 'undefined') {
 function _llcLeakDegSweep() {
   const uid = window._fbUserId;
   const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
-  const entries = userScoped.filter(e => e.conditions?.swell);
+  const entries = userScoped.filter(e => condForRegSource(e.conditions, 'openmeteo'));
 
   const alignParam = (directionDeg, LEAK_DEG) => {
     if (directionDeg == null || !isFinite(directionDeg)) return 0;
@@ -6649,7 +6881,7 @@ function openMatchModal(entry, forecastDay, hi) {
   if (ce && entry.conditions) {
     const c=entry.conditions, dl=(l,v)=>'<span class="mc-label">'+l+'</span><span class="mc-val">'+v+'</span>';
     const tideStr = c.tide ? (c.tide.height+'ft '+c.tide.stage + (typeof c.tide.rate === 'number' ? ' ('+(c.tide.rate>=0?'+':'')+c.tide.rate.toFixed(2)+' ft/hr)' : '')) : '—';
-    ce.innerHTML = [dl('Swell',c.swell.height+'ft '+c.swell.period+'s '+directionLabel(c.swell.direction)), dl('Wind',c.wind.speed+'mph '+directionLabel(c.wind.direction)), dl('Tide',tideStr), fc?dl('Fcst Wind',Math.round(fc.wind.speed)+'mph '+directionLabel(fc.wind.direction)):''].join('');
+    ce.innerHTML = [dl('Swell',_fmtSwellLine(c.swell)), c.buoy?dl('Buoy',_fmtBuoyLine(c.buoy)):'', dl('Wind',_fmtWindLine(c.wind)), dl('Tide',tideStr), fc?dl('Fcst Wind',Math.round(fc.wind.speed)+'mph '+directionLabel(fc.wind.direction)):''].join('');
   }
   el('modal-ratings').innerHTML = ratingBadge(entry.ratings.size)+' Size '+ratingBadge(entry.ratings.windQuality)+' Wind '+ratingBadge(entry.ratings.rideQuality)+' Ride';
   el('modal-notes').textContent = entry.notes || '';
@@ -7088,6 +7320,42 @@ function syncBuoySelectDropdown() {
 // Tab 2 sub-model state — drives §6, §7, §8, §9 below.
 let _regActiveSubmodel = 'wave';
 
+// Which swell set the Wave and Ride views in this tab show: 'openmeteo'
+// (cond.swell) or 'buoy' (cond.buoy). The Conditions model is wind-only and
+// the same in both. Forecast-facing surfaces (prediction widget, threshold
+// lights, day cards) always use the Open-Meteo set — there are no future
+// buoy readings to score a forecast hour with.
+const REG_SWELL_SOURCE_KEY = 'llc-reg-swell-source';
+let _regSwellSource = (() => {
+  try { return localStorage.getItem(REG_SWELL_SOURCE_KEY) === 'buoy' ? 'buoy' : 'openmeteo'; }
+  catch (_) { return 'openmeteo'; }
+})();
+function _regKeySuffix() { return _regSwellSource === 'buoy' ? 'Buoy' : ''; }
+// Run `fn` with the Open-Meteo set active, for surfaces that score
+// forecast hours.
+function _regWithOpenMeteo(fn) {
+  const prev = _regSwellSource;
+  _regSwellSource = 'openmeteo';
+  try { return fn(); } finally { _regSwellSource = prev; }
+}
+function _regWireSwellSourceToggle() {
+  const btns = document.querySelectorAll('.reg-source-tab');
+  btns.forEach(b => {
+    if (!b._wired) {
+      b._wired = true;
+      b.addEventListener('click', () => {
+        const src = b.dataset.source === 'buoy' ? 'buoy' : 'openmeteo';
+        if (src === _regSwellSource) return;
+        _regSwellSource = src;
+        try { localStorage.setItem(REG_SWELL_SOURCE_KEY, src); } catch (_) {}
+        renderRegressionTab();
+      });
+    }
+    b.classList.toggle('active', b.dataset.source === _regSwellSource);
+    b.setAttribute('aria-selected', b.dataset.source === _regSwellSource ? 'true' : 'false');
+  });
+}
+
 // Trim a trailing "now" indicator off the summary so it reads cleanly.
 function _regFmtFitTimestamp(ms) {
   if (!ms) return '—';
@@ -7134,7 +7402,10 @@ function renderRegressionTab() {
     const earliest = range ? _regFmtDate(range.min) : '—';
     const latest = range ? _regFmtDate(range.max) : '—';
     const fitText = _regFmtFitTimestamp(STATE._lastFitAt);
+    const nSet = _regSwellSource === 'buoy' ? STATE._lastFitNBuoy : STATE._lastFitNOpenMeteo;
+    const setLabel = _regSwellSource === 'buoy' ? 'buoy' : 'Open-Meteo';
     box.innerHTML = 'Trained on <strong>' + n + '</strong> session' + (n === 1 ? '' : 's') +
+      ' (Wave/Ride on the ' + setLabel + ' set: <strong>' + (nSet || 0) + '</strong>)' +
       ' · earliest <strong>' + earliest + '</strong>' +
       ' · latest <strong>' + latest + '</strong>' +
       ' · last refit <strong>' + fitText + '</strong>';
@@ -7146,6 +7417,13 @@ function renderRegressionTab() {
   if (thresholds) thresholds.style.display = '';
   if (submodel) submodel.style.display = '';
 
+  _regWireSwellSourceToggle();
+  const srcNote = el('reg-source-note');
+  if (srcNote) {
+    srcNote.textContent = _regSwellSource === 'buoy'
+      ? 'Wave/Ride views use NDBC buoy 44097: total wave height and peak period measured 42 nmi offshore, before Montauk and Block Island shelter the sound. Forecast prediction and threshold lights stay on the Open-Meteo set — there are no future buoy readings.'
+      : 'Wave/Ride views use the Open-Meteo marine archive at its grid cell ~15 nmi offshore: swell-only height, mean period, separate primary and secondary trains.';
+  }
   renderRegressionPredictionWidget();
   renderRegressionPVA();
   renderRegressionThresholds();
@@ -7408,7 +7686,7 @@ function renderVerificationPanel() {
 
 // ── Tab 2 §6: Sub-model selector ──────────────────────────────────────
 function _regWireSubmodelTabs() {
-  const tabs = document.querySelectorAll('.reg-submodel-tab');
+  const tabs = document.querySelectorAll('.reg-submodel-tab[data-submodel]');
   tabs.forEach(t => {
     if (t._wired) return;
     t._wired = true;
@@ -7470,7 +7748,7 @@ function _regBuildFeatureMini(sub, featureIdx) {
 
   // Build all-sessions feature/target arrays
   const uid = window._fbUserId;
-  const all = STATE.surfLog.filter(e => e.conditions?.swell);
+  const all = STATE.surfLog.filter(e => e.conditions);
   const points = [];
   for (const e of all) {
     const f = cfg.extractor(e.conditions);
@@ -7654,7 +7932,7 @@ function _regUserScopedFeatureSeries(sub) {
   const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
   const out = [];
   for (const e of userScoped) {
-    if (!e.conditions?.swell) continue;
+    if (!e.conditions) continue;
     const f = cfg.extractor(e.conditions);
     const t = cfg.targetFn(e);
     if (!f || typeof t !== 'number' || !isFinite(t)) continue;
@@ -8037,26 +8315,26 @@ const REG_SUBMODELS = {
     title: 'Wave model',
     target: 'size',
     targetLabel: 'Size rating',
-    extractor: extractWaveFeatures,
     targetFn: e => e.ratings && e.ratings.size,
     featureNames: WAVE_FEATURE_NAMES,
-    weightsKey: 'surfLogWaveWeights',
-    statsKey: 'surfLogWaveStats',
-    rmseKey: 'surfLogWaveValidation',
-    predict: predictWaveRating
+    get extractor() { return _regExtractor(extractWaveFeatures, _regSwellSource); },
+    get weightsKey() { return 'surfLogWaveWeights' + _regKeySuffix(); },
+    get statsKey() { return 'surfLogWaveStats' + _regKeySuffix(); },
+    get rmseKey() { return 'surfLogWaveValidation' + _regKeySuffix(); },
+    get predict() { return f => _predict(f, STATE[this.weightsKey], STATE[this.statsKey]); }
   },
   ride: {
     label: 'Ride',
     title: 'Ride model',
     target: 'rideQuality',
     targetLabel: 'Ride rating',
-    extractor: extractRideFeatures,
     targetFn: e => e.ratings && e.ratings.rideQuality,
     featureNames: RIDE_FEATURE_NAMES,
-    weightsKey: 'surfLogRideWeights',
-    statsKey: 'surfLogRideStats',
-    rmseKey: 'surfLogRideValidation',
-    predict: predictRideRating
+    get extractor() { return _regExtractor(extractRideFeatures, _regSwellSource); },
+    get weightsKey() { return 'surfLogRideWeights' + _regKeySuffix(); },
+    get statsKey() { return 'surfLogRideStats' + _regKeySuffix(); },
+    get rmseKey() { return 'surfLogRideValidation' + _regKeySuffix(); },
+    get predict() { return f => _predict(f, STATE[this.weightsKey], STATE[this.statsKey]); }
   },
   cond: {
     label: 'Conditions',
@@ -8103,7 +8381,7 @@ function _regComputeLOOData(sub) {
   const cfg = REG_SUBMODELS[sub];
   const uid = window._fbUserId;
   const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
-  const entries = userScoped.filter(e => e.conditions?.swell);
+  const entries = userScoped.filter(e => e.conditions);
   const rows = [];
   for (const e of entries) {
     const f = cfg.extractor(e.conditions);
@@ -8396,14 +8674,13 @@ function _regFmtConditionsBlock(cond) {
     ' · ' + (t.stage || '—') +
     (typeof t.rate === 'number' ? ' · ' + (t.rate >= 0 ? '+' : '') + t.rate.toFixed(2) + ' ft/hr' : '') +
     (t.timeToNearest != null ? ' · time to nearest: ' + t.timeToNearest + 'h' : '');
-  let sourceLabel;
-  if (cond.source === 'openmeteo-archive')              sourceLabel = 'Open-Meteo archive (reanalysis)';
-  else if (cond.source === 'ndbc-stdmet+openmeteo-wind') sourceLabel = 'NDBC buoy 44097 swell + Open-Meteo archive wind';
-  else if (cond.source === 'ndbc-stdmet')               sourceLabel = 'NDBC buoy 44097 (measured, stdmet historical)';
-  else if (cond.source === 'ndbc')                      sourceLabel = 'NDBC buoy 44097 (measured)';
-  else                                                  sourceLabel = 'Open-Meteo marine API';
-  return '<div class="reg-drill-line"><span class="reg-drill-key">Swell:</span> ' + swellH + ' @ ' + swellP + ' · ' + swellD + '</div>' +
-    secLine +
+  const sourceLabel = _condSourceLabel(cond);
+  const buoyLine = cond.buoy
+    ? '<div class="reg-drill-line"><span class="reg-drill-key">Buoy 44097:</span> ' + _fmtBuoyLine(cond.buoy) + '</div>'
+    : '';
+  return '<div class="reg-drill-line"><span class="reg-drill-key">Swell (Open-Meteo):</span> ' +
+      (cond.swell ? swellH + ' @ ' + swellP + ' · ' + swellD : '—') + '</div>' +
+    secLine + buoyLine +
     '<div class="reg-drill-line"><span class="reg-drill-key">Wind:</span> ' + windLine + '</div>' +
     '<div class="reg-drill-line"><span class="reg-drill-key">Tide:</span> ' + tideLine + '</div>' +
     '<div class="reg-drill-line reg-drill-source">Source: ' + sourceLabel + '</div>';
@@ -8412,13 +8689,16 @@ function _regFmtConditionsBlock(cond) {
 function _regFmtRatingsBlock(entry, isOwn) {
   const r = entry.ratings || {};
   const stats = STATE.surfLogWaveStats;
-  // Each predicted rating + residual: actual − predicted.
-  const wf = entry.conditions ? extractWaveFeatures(entry.conditions) : null;
-  const rf = entry.conditions ? extractRideFeatures(entry.conditions) : null;
-  const cf = entry.conditions ? extractCondFeatures(entry.conditions) : null;
-  const wPred = wf ? predictWaveRating(wf) : null;
-  const rPred = rf ? predictRideRating(rf) : null;
-  const cPred = cf ? predictCondRating(cf) : null;
+  // Each predicted rating + residual: actual − predicted, from the swell
+  // set the tab is showing.
+  const predFor = sub => {
+    const cfg = REG_SUBMODELS[sub];
+    const f = entry.conditions ? cfg.extractor(entry.conditions) : null;
+    return f ? cfg.predict(f) : null;
+  };
+  const wPred = predFor('wave');
+  const rPred = predFor('ride');
+  const cPred = predFor('cond');
   const row = (label, actual, pred) => {
     const aStr = (typeof actual === 'number') ? actual.toFixed(1) : '—';
     const pStr = (typeof pred === 'number') ? pred.toFixed(1) : '—';
@@ -8530,7 +8810,11 @@ function _regSetThreshold(sub, v) {
 // Computes the best match score at the scrubbed hour for the given sub-
 // model: pick the past session whose features are closest to the scrubbed-
 // hour features under the current sub-model's match formula.
+// Scores a forecast hour, so always against the Open-Meteo set.
 function _regBestMatchAtScrub(sub) {
+  return _regWithOpenMeteo(() => _regBestMatchAtScrubOM(sub));
+}
+function _regBestMatchAtScrubOM(sub) {
   const cfg = REG_SUBMODELS[sub];
   const marine = STATE._cachedMarine, wind = STATE._cachedWind, tideHiLo = STATE._cachedTideHiLo, tidePred = STATE._cachedTidePred;
   if (!marine?.hourly || !wind?.hourly) return null;
@@ -8547,7 +8831,7 @@ function _regBestMatchAtScrub(sub) {
   const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
   let best = 0;
   for (const e of userScoped) {
-    if (!e.conditions?.swell) continue;
+    if (!e.conditions) continue;
     const ef = cfg.extractor(e.conditions);
     if (!ef) continue;
     const m = _matchPct(ef, ff, weights, stats);

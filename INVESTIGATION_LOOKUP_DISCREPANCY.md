@@ -1,388 +1,150 @@
-# Investigation: Edit-dialog "before" vs. "after Lookup" disagreement
+# Investigation: Lookup "before" vs "after" for the 2025-10-18 session
 
-Session under investigation: **2025-10-18 17:43 ET, Chocomount**.
+Session: **2025-10-18 17:43 ET (21:43 UTC), Chocomount.**
 
-User reported the conditions block changed dramatically when the
-"Lookup Historical Conditions" button was clicked again on an existing
-entry — swell roughly doubled, period jumped ~3 s, direction shifted 24°.
+The edit dialog showed one set of conditions; clicking "Lookup Historical
+Conditions" again showed very different numbers:
 
-## Top-line answer
-
-| Aspect | "Before" (stored on entry) | "After" (re-lookup) |
+| | Before (saved on the entry) | After (re-Lookup, May 2026 code) |
 | --- | --- | --- |
-| Source | **Open-Meteo Marine API** (forecast endpoint, model output) | **NDBC buoy 44097 historical stdmet** (measured) |
-| Code path | `lookupHistoricalConditions` → `fetchHistoricalMarine` (forecast endpoint, `past_days=7`) | `lookupHistoricalConditions` → `lookupNDBCHistoricalConditions` (year archive) |
-| Selected hour | ~15:00 ET (T − 3.66 h) at coastal forecast point (41.089 N, −71.721 W) | 18:56 UTC = 14:56 ET (T − 2.8 h) at buoy 44097 (40.969 N, −71.124 W) |
-| Reported swell | 2.4 ft / 9.1 s / 94° + 0.3 ft / 3.9 s sec. swell | 4.8 ft / 11.8 s / 118°, no secondary |
-| Reported wind | 4 mph @ 260° (Open-Meteo Weather forecast, hour ≈ 17–18 ET) | 0 mph @ 0° (buoy WSPD/WDIR are sentinels in Oct 2025; falls back to 0) |
-| Reported lag | 3.66 h (raw) / "~3.7 h ago" (rounded) | 2.8 h |
-| Source line | **Absent** (stored entry has no `cond.source` field) | "Source: NDBC buoy 44097 (measured)" |
-
-Both numbers describe the same moment in time. They disagree because
-they come from two genuinely different data products. Neither is
-"miscomputed" — the lag math, given each source's own period, is
-applied correctly. The honest interpretation is that the **Open-Meteo
-Marine forecast** (a model run, made public around log time, smoothed
-over a coastal grid cell) **under-predicted the actual swell** that the
-**NDBC buoy** measured offshore. The re-lookup finds the buoy data and
-overwrites the stored model output.
-
----
-
-## 1. Code path that produces the "before" state
-
-`editLogEntry(id)` at `app.js:4709` is the entry point:
-
-- `STATE.surfLog.find(...)` retrieves the stored entry (`app.js:4710`).
-- `_slConditions = e.conditions || null` (`app.js:4751`) — the form does
-  NOT recompute. It uses the entry's stored `conditions` block as-is.
-- `if (_slConditions) renderConditionsDisplay(_slConditions);`
-  (`app.js:4761-4762`) — renders the stored block verbatim.
-
-So the "before" readout is exactly what was persisted on the entry the
-last time the user saved it. No fetch, no recompute.
-
-`renderConditionsDisplay` (`app.js:4511-4531`) builds the display:
-
-- `lagNote` (line 4515) reads `cond.swell.lagHours` (the raw, unrounded
-  lag stored on the entry → "3.66h buoy lag").
-- The footer line "Using swell from ~Xh ago at buoy" (line 4524) reads
-  `cond.swellLagHours` (rounded → "~3.7 h ago").
-- The "Source:" line (lines 4526-4528) is rendered **only when
-  `cond.source` is truthy**.
-
-The session entry's stored `conditions` block has **no `source`
-field** — that's why no source line is displayed. The `source` field
-was added to both `lookupHistoricalConditions` (`app.js:4494`,
-`source: 'openmeteo'`) and `lookupNDBCHistoricalConditions`
-(`app.js:4333`, `source: 'ndbc'`) in commit **`2e666c2`
-("fix(api): repair fetchTextWithProxies to use proxy.wrap()") on
-2026-05-04** (verified via `git blame -L 4494,4495 app.js` and
-`git blame -L 4527,4528 app.js`).
-
-The session was logged on 2025-10-18, ~6.5 months **before** that
-commit. So the persisted `conditions` block was created by an earlier
-version of `lookupHistoricalConditions` that never set `source`. The
-absence of the source line is therefore a *signal* that this entry
-predates the source-tagging refactor — it is **not evidence that
-something was wrong with the stored block**.
-
-### Identifying the original source as Open-Meteo
-
-Even without the source field, the stored block's content is
-distinctively Open-Meteo-shaped:
-
-1. The presence of a **secondary swell** (`0.3 ft @ 3.9 s, E`).
-   Only the Open-Meteo path emits `cond.swell.secondary` (built from
-   `secondary_swell_wave_*` arrays at `app.js:4483-4485`,
-   `app.js:4501`). The NDBC stdmet feed has no secondary partition,
-   so `lookupNDBCHistoricalConditions` cannot produce one.
-2. The unrounded `lagHours` value (3.66 h) in `swell.lagHours`. The
-   Open-Meteo path stores the raw float (`app.js:4491`,
-   `lagHours: lagHours`), while the NDBC path rounds before
-   storing (`app.js:4329`,
-   `lagHours: Math.round(ndbcLagHours * 10) / 10`). A stored
-   `swell.lagHours = 3.66...` with `swellLagHours = 3.7` is the
-   Open-Meteo signature.
-3. The numbers themselves match Open-Meteo Marine for the date.
-   Live fetch of
-   `https://marine-api.open-meteo.com/v1/marine?latitude=41.089152&longitude=-71.721050&...&start_date=2025-10-18&end_date=2025-10-18`
-   returns the displayed values exactly:
-
-   | local hour | swell H ft | swell P s | swell dir | sec H ft | sec P s | sec dir |
-   | --- | --- | --- | --- | --- | --- | --- |
-   | 13:00 | 2.428 | 9.30 | 94 | 0.525 | 2.05 | 53 |
-   | 14:00 | 2.362 | 9.15 | 94 | 0.459 | 2.40 | 53 |
-   | 15:00 | 2.362 | 9.10 | 94 | 0.328 | 3.85 | 91 |
-   | 16:00 | 2.428 | 9.10 | 94 | 0.262 | 5.85 | 129 |
-   | 17:00 | 2.428 | 9.10 | 94 | 0.131 | 7.35 | 167 |
-
-   The "before" readout (2.4 ft / 9.1 s / 94°, secondary
-   0.3 ft / 3.9 s) lines up with the **15:00 ET row** — i.e. the
-   row chosen as session-time minus lag (17:43 ET − 3.66 h ≈ 14:03,
-   nearest hour 14:00, but in practice nearest hour for the lagged
-   timestamp depends on the live model output of the time window
-   used to compute lag at log time, and the model has been re-run
-   since). The directional/period agreement and the existence of
-   the secondary swell are by themselves sufficient to identify
-   the source as Open-Meteo Marine.
-
-**Conclusion:** the "before" state is Open-Meteo Marine data
-(`source: 'openmeteo'` semantically), persisted from the original
-`lookupHistoricalConditions` call when the entry was first logged
-(`diffDays ≤ 5` branch, `fetchHistoricalMarine` hitting
-`marine-api.open-meteo.com/v1/marine?past_days=7&forecast_days=1`).
-The `cond.source` field was simply not part of the schema yet, so
-the source line is omitted at render time.
-
----
-
-## 2. Code path that produces the "after" state
-
-When the user clicks "Lookup Historical Conditions", the click handler
-at `app.js:4608-4624` runs:
-
-```js
-_slConditions = await lookupHistoricalConditions(dt);
-```
-
-`lookupHistoricalConditions(dateStr)` at `app.js:4459-4509`:
-
-```js
-const diffDays = (Date.now() - new Date(dateStr).getTime()) / 86400000;
-if (diffDays > 5 && STATE.isChocomount) {
-  return lookupNDBCHistoricalConditions(dateStr);
-}
-```
-
-Decision tree at this date / lat-lon:
-
-- `dateStr` = "2025-10-18T17:43"; `Date.now()` is early May 2026.
-- `diffDays ≈ 200` → far greater than 5.
-- `STATE.isChocomount = true` — set when the selected buoy is the
-  Chocomount home buoy (`app.js:931`, `STATE.isChocomount = buoy.home === 'chocomount'`).
-- Branch: `lookupNDBCHistoricalConditions("2025-10-18T17:43")`.
-
-`lookupNDBCHistoricalConditions` (`app.js:4273-4349`) does the following:
-
-1. `fetchNDBCHistoricalYear(buoyId='44097', year=2025)` → downloads
-   `view_text_file.php?filename=44097h2025.txt.gz&dir=data/historical/stdmet/`
-   via the proxy chain (`app.js:4192-4203`), then
-   `_parseNDBCHistoricalText` parses it (`app.js:4205-4234`).
-2. Computes the buoy lag using **buoy-observed periods** in the
-   window `[T − 5 h, T − 2 h]` (`app.js:4292-4299`):
-   ```js
-   const ndbcLagHours = avgPeriod > 0
-     ? CONFIG.chocomount.buoyDistanceMiles / (SWELL_SPEED_KTS_PER_PERIOD * avgPeriod)
-     : 0;
-   ```
-   `SWELL_SPEED_KTS_PER_PERIOD = 1.5` (`app.js:4361`),
-   `buoyDistanceMiles = 50` (`app.js:31`).
-3. Picks the **swell** row nearest `sessionMs − ndbcLagHours·3600000`
-   (`app.js:4306`, `_findNearestNDBCRow(rows, laggedMs, true)`).
-4. Picks the **wind** row nearest `sessionMs` (no lag) on rows where
-   `windSpeed !== null` (`app.js:4308`).
-5. Stores `source: 'ndbc'`, the rounded `lagHours`, and
-   `calculatedFromBuoyTime` (`app.js:4324-4340`).
-6. `renderConditionsDisplay` runs and shows the "Source: NDBC buoy
-   44097 (measured)" line because `cond.source = 'ndbc'` is now
-   present.
-
-Verified against the live NDBC archive
-(`/tmp/44097h2025.txt`, 17,510 lines, downloaded direct, header
-`#YY MM DD hh mm WDIR WSPD GST WVHT DPD APD MWD ...`) — rows for
-2025-10-18:
-
-```
-2025 10 18 16 26  999 99.0 99.0  1.42 13.33  8.99 125
-2025 10 18 16 56  999 99.0 99.0  1.28 13.33  8.31 121
-2025 10 18 17 26  999 99.0 99.0  1.41 10.53  8.45 113
-2025 10 18 17 56  999 99.0 99.0  1.40 12.50  8.75 122
-2025 10 18 18 26  999 99.0 99.0  1.31 11.11  8.17 114
-2025 10 18 18 56  999 99.0 99.0  1.45 11.76  8.92 118  ← chosen
-2025 10 18 19 26  999 99.0 99.0  1.48 11.76  8.63 113
-2025 10 18 19 56  999 99.0 99.0  1.57 11.76  9.03 117
-2025 10 18 20 26  999 99.0 99.0  1.58 11.11  8.77 117
-2025 10 18 20 56  999 99.0 99.0  1.45 11.76  8.72 120
-2025 10 18 21 26  999 99.0 99.0  1.35 11.76  8.54 121
-2025 10 18 21 56  999 99.0 99.0  1.33 11.11  8.36 115
-2025 10 18 22 26  999 99.0 99.0  1.33 11.76  8.47 114
-2025 10 18 22 56  999 99.0 99.0  1.41 11.11  8.94 114
-```
-
-Session at 17:43 EDT = **21:43 UTC** (Oct 18 is still EDT;
-DST ended Nov 2). Lag window = `[T − 5 h, T − 2 h]` =
-**[16:43 UTC, 19:43 UTC]**. Buoy rows in the window with `period > 0`:
-
-| t (UTC) | DPD (s) |
-| --- | --- |
-| 16:56 | 13.33 |
-| 17:26 | 10.53 |
-| 17:56 | 12.50 |
-| 18:26 | 11.11 |
-| 18:56 | 11.76 |
-| 19:26 | 11.76 |
-
-Average period = 11.83 s. Lag = 50 / (1.5 × 11.83) = **2.818 h**,
-rounds to **2.8 h** ✓ (matches the displayed "after" lag exactly).
-
-Lagged target = 21:43 UTC − 2:49 = 18:54 UTC. Nearest row =
-**2025-10-18 18:56 UTC**, Δ ≈ 2 minutes. Values:
-
-- WVHT = 1.45 m × 3.28084 = **4.76 ft → rounds to 4.8 ft** ✓
-- DPD = **11.76 s → rounds to 11.8 s** ✓
-- MWD = **118°** ✓ (`directionLabel(118) = "ESE"`)
-
-Wind: every WSPD/WDIR in the entire 18:00–22:00 UTC window is
-the sentinel `99.0 / 999`, parsed to `null` at `app.js:4226-4228`.
-`windRow = _findNearestNDBCRow(rows.filter(r => r.windSpeed !== null), sessionMs, false)`
-on a filtered list with no in-range rows still returns the
-nearest non-null row from the rest of the year — but the fallback
-`wSpd = windRow ? (windRow.windSpeed || 0) : 0` (line 4321)
-collapses `null` (or even very-distant) to 0. The displayed
-"Wind: 0 mph @ 0°" matches this fallback. ✓
-
-So the "after" state is a faithful reading of NDBC 44097's
-2025-10-18 18:56 UTC stdmet record, lagged by group-velocity travel
-time correctly.
-
----
-
-## 3. Why the buoy lag differs (3.66 h vs 2.8 h)
-
-Both lags use the same formula:
-`lag = buoyDistanceMiles / (1.5 × avgPeriod)` with
-`buoyDistanceMiles = 50`. The difference is **which `avgPeriod`** they
-average:
-
-- **Before (Open-Meteo path,** `getSwellLagHours`, `app.js:4366-4382`**):**
-  averages `swell_wave_period` from the **Open-Meteo Marine model
-  output at 41.089°N, −71.721°W** (a coastal grid point a few miles
-  off the beach) over `[T − 5 h, T − 2 h]`. Open-Meteo reports
-  9.1–9.3 s in that window → avg ≈ 9.18 s → lag ≈ 3.63 h. (The
-  stored 3.66 h likely reflects a slightly different model run from
-  October 2025; Open-Meteo's archive can shift slightly with later
-  reanalysis updates.)
-
-- **After (NDBC path):** averages `DPD` from **buoy 44097 stdmet**
-  over the same window. Buoy reports 11.83 s → lag ≈ 2.82 h.
-
-The lag formula itself is identical. The two paths simply pick
-different average periods, because the two data products themselves
-disagree about what the period was (model 9.1 s vs. measured 11.8 s).
-
-**Side note (not a bug, but worth flagging in the report):** the
-Open-Meteo path applies the buoy-distance lag to a **coastal** grid
-cell that is *not* at buoy 44097. The grid cell at
-(41.089°N, −71.721°W) is essentially right next to the beach
-(`forecastLat`/`forecastLon` is also `starLat`/`starLon`,
-`app.js:19-22`). Lagging a coastal-cell forecast by buoy-to-beach
-travel time is conceptually unmotivated — there's no buoy
-upstream of the data point. The NDBC path is the one where the
-lag has a clean physical interpretation.
-
----
-
-## 4. NDBC vs. Open-Meteo for this moment — verified against live data
-
-Both fetched directly from the originating APIs:
-
-- **NDBC 44097 archive** (`/tmp/44097h2025.txt`, downloaded with
-  `curl` from
-  `https://www.ndbc.noaa.gov/view_text_file.php?filename=44097h2025.txt.gz&dir=data/historical/stdmet/`):
-  the row chosen by the app's algorithm — 2025-10-18 18:56 UTC —
-  records 1.45 m / 11.76 s / 118° → **4.76 ft / 11.8 s / 118°**.
-  The "after" readout matches this exactly.
-
-- **Open-Meteo Marine** (live fetch from
-  `https://marine-api.open-meteo.com/v1/marine?latitude=41.089152&longitude=-71.721050&...&start_date=2025-10-18&end_date=2025-10-18`):
-  swell heights of 2.36–2.43 ft, periods 9.10–9.30 s, direction 94°
-  across the afternoon hours, with a small secondary partition
-  (0.3–0.5 ft, 2–6 s, direction shifting from ESE through ESE/SSE).
-  The "before" readout lines up with this.
-
-The two sources genuinely disagree. The likely reason: Open-Meteo
-Marine for U.S. East Coast is a coastal/near-shore wave model that
-tends to **underestimate offshore swell heights and report shorter
-peak periods** than buoy DPD, particularly when long-period swell
-is mixed with short-period wind sea — the model splits the spectrum
-differently than NDBC's continuous-wavelet DPD detector. NDBC's
-DPD reports the dominant peak of the measured spectrum directly.
-
-A 2.4 ft / 9.1 s model output vs. 4.8 ft / 11.8 s buoy measurement
-for the same date is a substantial under-forecast, but not an
-extraordinary one for this region.
-
----
-
-## 5. Is one of them "wrong"?
-
-**The lag computation is correct on both paths.** Each path averages
-its own data's periods and divides distance by group velocity. No
-miscalculation drops one out of the right hour:
-
-- Open-Meteo lag: 50 / (1.5 × 9.18) = 3.63 h (stored as 3.66 h with
-  October 2025 model values).
-- NDBC lag: 50 / (1.5 × 11.83) = 2.82 h. Verified against the
-  current archive.
-
-**However**, the two readouts represent different physical things:
-
-- The NDBC "after" readout is **what buoy 44097 measured 50 mi
-  offshore at 18:56 UTC**, asserted as "what arrived at Chocomount
-  by 21:43 UTC". This is a defensible estimate of arrival
-  conditions if the swell propagates as deep-water linear waves
-  along the bearing from buoy to beach.
-- The Open-Meteo "before" readout is **a coastal model output at
-  41.089°N, −71.721°W at ~15:00 ET**. The lag-back of 3.66 h
-  applied to that grid cell is not physically motivated — the
-  model already represents that location's conditions at that
-  time. The persisted entry effectively assigns an arbitrary
-  earlier hour's coastal-grid output to the session.
-
-So neither is "wrong" in the lookup sense, but the **NDBC reading
-is the more trustworthy of the two for "what the swell actually
-was"**. Open-Meteo's model under-predicted the swell that the buoy
-ultimately measured.
-
----
-
-## 6. Buoy lag for this session, computed correctly
-
-Using the actual NDBC measurements from buoy 44097 in the window
-[16:43 UTC, 19:43 UTC] on 2025-10-18:
-
-- avg period = 11.83 s
-- lag = 50 mi / (1.5 × 11.83 s · kts/s) = 50 / 17.745 kts = **2.82 h**
-
-Rounded: **2.8 h**. This is exactly what the "after" state shows.
-
----
-
-## 7. Summary of findings
-
-1. The "before" state is the entry's stored `conditions` block,
-   originally produced by `lookupHistoricalConditions` →
-   Open-Meteo Marine (forecast endpoint, `past_days=7`). The
-   missing "Source:" line just reflects that the entry predates
-   commit `2e666c2` (2026-05-04), which introduced
-   `cond.source`.
-2. The "after" state is fresh output from
-   `lookupNDBCHistoricalConditions` (NDBC 44097 archive). The
-   routing (`diffDays > 5 && STATE.isChocomount`) sends the
-   re-lookup to the NDBC path; the original log was within 5 days
-   so it went down the Open-Meteo path. **The button silently
-   switches data sources depending on how old the session is at
-   the moment of click.**
-3. Both lag calculations are arithmetically correct given their
-   own input periods. The 0.86 h difference (3.66 h vs. 2.8 h)
-   reflects the two sources reporting different periods (9.1 s
-   vs. 11.8 s), not a bug.
-4. The two sources genuinely report different conditions. The
-   NDBC measurement is the more physically grounded number; the
-   Open-Meteo model output appears to have under-predicted swell
-   height and reported a shorter peak period for this storm.
-5. Saving over the existing entry with the "after" data would
-   replace a model-derived block (Open-Meteo, no `source`)
-   with a measurement-derived block (NDBC, `source: 'ndbc'`).
-   That is the user-visible cause of the dramatic numerical
-   change in the dialog.
-
-## Files / functions referenced
-
-- `app.js:14-32` — `CONFIG.chocomount` (buoy/forecast lat-lon, distance).
-- `app.js:474-528` — Open-Meteo Marine / Weather fetch helpers.
-- `app.js:4192-4234` — NDBC historical archive fetch + parser.
-- `app.js:4273-4349` — `lookupNDBCHistoricalConditions`.
-- `app.js:4366-4382` — `getSwellLagHours` (Open-Meteo path).
-- `app.js:4384-4407` — `fetchHistoricalWind`, `fetchHistoricalMarine`
-  (5-day forecast vs archive split).
-- `app.js:4459-4509` — `lookupHistoricalConditions` (top-level
-  router; calls NDBC for `diffDays > 5 && isChocomount`).
-- `app.js:4511-4531` — `renderConditionsDisplay` (renders source line
-  only if `cond.source` is set).
-- `app.js:4608-4624` — Lookup-button click handler.
-- `app.js:4625-4647` — Save handler (persists `_slConditions` as
-  `entry.conditions`).
-- `app.js:4709-4777` — `editLogEntry` (uses stored `e.conditions`
-  as-is for the "before" readout; no recompute).
+| Swell | 2.4 ft @ 9.1 s, 94° E, + 0.3 ft @ 3.9 s | 4.8 ft @ 11.8 s, 118° ESE, no secondary |
+| Wind | 4 mph W (260°) | 0 mph N (0°) |
+| Tide | 2.4 ft rising | 2.4 ft rising |
+| Lag | 3.66 h ("~3.7 h ago at buoy") | 2.8 h |
+| Source line | none | "NDBC buoy 44097 (measured)" |
+
+> **This report replaces an earlier version** that analysed the May 2026
+> code and made several claims that turned out to be wrong. The corrections
+> are listed at the end. The code has since moved on (archive-first swell,
+> archive wind, hourly tide); the findings below are checked against both
+> and against live data from NDBC, Open-Meteo and NOAA CO-OPS. Raw responses
+> for this session are saved in `test-fixtures/`.
+
+## Short answer
+
+- **Before** was Open-Meteo Marine model output saved when the session was
+  logged (no `cond.source` field existed yet; the secondary swell and the
+  unrounded lag are Open-Meteo signatures).
+- **After** was NDBC buoy 44097. In May 2026 the Lookup button sent any
+  Chocomount session older than 5 days to the buoy archive.
+- They disagree because they **measure different things in different
+  places**, not because one API is broken. Several of the app's own
+  calculations were also wrong, in both readouts.
+
+## What each source actually measures
+
+| | Open-Meteo marine | NDBC 44097 stdmet |
+| --- | --- | --- |
+| Where | Grid cell 41.125 N 71.708 W (Open-Meteo snaps the request to it), **14.7 nmi** from the beach, inside the sound | 40.969 N 71.124 W, **42.2 nmi** offshore, open ocean |
+| Height | `swell_wave_height`: swell partition only | `WVHT`: significant height of the **whole sea state** (swell + wind sea) |
+| Period | `swell_wave_period`: **mean** period of the swell partition | `DPD`: period of **peak** energy (`APD` is the average) |
+| Direction | Per train (primary, secondary, wind wave) | One (`MWD`, at the peak period) |
+| Wind | n/a (wind comes from the weather archive) | **None — 44097 has no anemometer.** Zero wind readings in the whole 2025 file. |
+
+Open-Meteo **at the buoy's own location** for this afternoon gives 4.0–4.2 ft
+total, close to the buoy's 4.0–5.2 ft over the same hours. At the near-shore cell it gives
+2.4 ft. Most of the 2.4 vs 4.8 gap is the sheltering by Montauk and Block
+Island between the buoy and the beach, not model error. Comparing
+Open-Meteo's 9.1 s *mean swell* period with the buoy's 11.8 s *peak* period
+is also apples to oranges: the buoy's average period was 8.6–9.0 s.
+
+## What the app got wrong
+
+1. **Lag distance (all Open-Meteo lookups, and the May backfill).** The
+   Open-Meteo swell was read at the grid cell 14.7 nmi from the beach but
+   lagged as if it came from the buoy 50 miles away. For a 9.1 s swell that
+   pulled data from 3.7 h before the session instead of ~0.9 h. Every
+   session's Open-Meteo swell came from the wrong hour, and was wrongest
+   for short-period swell or a sea state that was building or dropping.
+2. **Lag units.** `buoyDistanceMiles` (50, statute) was divided by a speed
+   in knots. The real buoy→beach distance is 42.2 nautical miles. The
+   rule-of-thumb 1.5·T knots is also replaced by the deep-water group
+   velocity g·T/4π (1.52·T knots).
+3. **Lag direction.** The swell travels along its own heading, not along
+   the buoy→beach line. The path is now the component of that line along
+   the swell's direction of travel: the full 42.2 nmi for ESE swell like
+   this one, 18.6 nmi for swell from due south.
+4. **Fake calm wind.** The buoy path looked for wind on a buoy with no
+   anemometer and saved 0 mph / 0° when it found none. Already fixed on
+   `main` before this work (Open-Meteo archive wind at the beach); the dead
+   buoy-wind lookup is now removed.
+5. **Tide was the next high/low, not the water level.** The saved 2.4 ft
+   was the 20:09 high tide; the water at 17:43 was 1.5 ft and rising.
+   Already fixed on `main` (hourly interpolation); the historical fetch now
+   also covers the day before and after, so evening sessions get a real
+   rate.
+6. **Different quantities in the same field.** The NDBC fallback wrote
+   total height and peak period into `cond.swell`, where the Open-Meteo
+   path writes swell-only height and mean period. The regressions trained
+   on a mix of the two.
+7. **No time limit on "nearest".** If the buoy or archive had a gap, the
+   lookup took the nearest sample however far away (days or months). Now
+   90 minutes maximum, otherwise null.
+8. **Device timezone.** Session times, Open-Meteo hours and tide times were
+   parsed in the viewing device's timezone. Correct only on a device set to
+   Eastern time.
+
+## Corrected numbers for this session
+
+| | Value | Where it comes from |
+| --- | --- | --- |
+| Open-Meteo swell | 2.4 ft @ 9.1 s, 94° E | Grid cell, ~0.9 h before the session (20:50 UTC) |
+| Buoy 44097 | 4.9 ft total, 11.8 s peak / 8.6 s avg, 113° ESE | Row 19:26 UTC, **2.4 h** before the session |
+| Wind | 6 mph WSW (250°) | Open-Meteo archive at the beach |
+| Tide | 1.5 ft rising at +0.51 ft/hr | NOAA 8510719 hourly predictions at 17:43 ET |
+
+**The correctly computed buoy lag is 2.4 h**, not 2.8 h or 3.66 h. The
+averaged buoy peak period near the arrival time is 11.6 s, giving
+Cg = 17.6 kt over 42.2 nmi.
+
+## What changed (this PR)
+
+- One travel-time calculation for both sources (`swellTravelHours`):
+  nautical miles, deep-water group velocity, projected along the swell's
+  heading, measured from the point the data describes. Lag is iterated
+  once so it uses the swell that actually arrives at session time.
+- Every lookup stores **both** swell sets side by side: `cond.swell`
+  (Open-Meteo) and `cond.buoy` (NDBC, with `observedAt`, peak and average
+  period). They are never merged.
+- NDBC coverage for the current year: yearly archive → monthly files →
+  45-day realtime feed. The yearly file only exists for finished years.
+- 90-minute limit on nearest-sample matching; session times parsed as
+  America/New_York; failed tide fetches store null instead of 0 ft.
+- Regression tab: toggle between the Open-Meteo and buoy sets for the Wave
+  and Ride models. Both refit on every save. Forecast prediction and
+  threshold lights always use the Open-Meteo set, because there are no
+  future buoy readings to score a forecast hour with. Old-format entries
+  (buoy reading saved in `cond.swell`) are left out of the Open-Meteo set
+  until re-fetched.
+- Edit dialog: when a re-Lookup differs from what's saved, both are shown
+  side by side and Update stays blocked until one is picked.
+- Backfill: fetches everything first and writes nothing, shows saved vs new
+  per session, then on confirm downloads a JSON backup and saves with the
+  old block under `conditions.previous`. A session whose Open-Meteo swell
+  would disappear in a transient outage is skipped; failed wind/tide
+  fetches keep the saved values.
+
+## Known limits (not fixed)
+
+- **Wind grid cell.** Open-Meteo's archive snaps the Chocomount land point
+  to 41.37 N 72.03 W, on the Connecticut shore ~8 nmi away. Local effects
+  at the beach (sea breeze, Fishers Island terrain) are not resolved.
+- **Buoy direction is offshore.** MWD at 44097 is before refraction into
+  the sound; the swell window (115–158°) is defined at the beach. The buoy
+  set uses the same window as an approximation.
+- **Shoaling.** Deep-water group velocity is assumed the whole way; the
+  last few miles in the sound slow long-period swell by minutes.
+- **Recent sessions.** The weather archive lags real time by a few days, so
+  wind is null for very recent sessions until a later Lookup.
+
+## Corrections to the first version of this report
+
+- It said both lag calculations were arithmetically correct. They used the
+  wrong distance for Open-Meteo and mixed statute miles with knots.
+- It said the correct lag was 2.82 h. It is ~2.4 h.
+- It said Open-Meteo under-predicted the swell. Mostly it describes a
+  sheltered location; at the buoy's location it agrees within ~15%.
+- It compared Open-Meteo's mean swell period with the buoy's peak period
+  as if they were the same quantity.
+- It cited line numbers and routing from the May 2026 code, which `main`
+  had since replaced.

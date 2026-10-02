@@ -1,5 +1,45 @@
 # Changelog
 
+## [Unreleased] — Surf log: corrected swell timing, buoy and Open-Meteo swell stored side by side
+
+Investigation of a session whose conditions jumped from 2.4 ft @ 9.1 s to
+4.8 ft @ 11.8 s on re-Lookup (see INVESTIGATION_LOOKUP_DISCREPANCY.md).
+The two readouts came from different sources measuring different things
+in different places, and the lookup itself had several errors:
+
+- Open-Meteo swell was read at its grid cell 14.7 nmi from the beach but
+  lagged as if it came from the buoy 50 miles out, so every session's swell
+  came from 2–4 h too early. One travel-time function now serves both
+  sources: nautical miles, deep-water group velocity g·T/4π, projected
+  along the swell's heading, measured from the point the data describes
+  (the buoy at 42.2 nmi, or the Open-Meteo cell it actually returned).
+- Each lookup stores both swell sets: `cond.swell` (Open-Meteo archive:
+  swell-only height, mean period, per-train direction) and `cond.buoy`
+  (NDBC 44097: total height, peak and average period, observation time).
+  The NDBC fallback no longer writes buoy numbers into `cond.swell`.
+- NDBC coverage for current-year sessions: yearly archive, then monthly
+  files, then the 45-day realtime feed.
+- Nearest-sample matching refuses data more than 90 min away; session
+  times are read as Eastern time on any device; a failed tide fetch is
+  stored as null instead of 0 ft; the tide window spans the day before and
+  after so evening sessions get a real rate. The buoy-wind lookup (44097
+  has no anemometer) is removed.
+- Regression tab: toggle between the Open-Meteo and buoy swell sets for the
+  Wave and Ride models; both refit on every save. Forecast prediction and
+  threshold lights stay on the Open-Meteo set. Old-format entries with buoy
+  numbers in `cond.swell` are left out of the Open-Meteo set until
+  re-fetched.
+- Edit dialog: a re-Lookup that differs from the saved conditions shows both
+  side by side; Update is blocked until one is picked.
+- Backfill: fetches all sessions first and writes nothing, previews saved vs
+  new per session, then on confirm downloads a JSON backup and saves with the
+  old block under `conditions.previous`. Only the signed-in owner's sessions.
+- The incomplete-entry check read `swell.size` (never set) instead of
+  `swell.height`, so empty swell blocks were never flagged; fixed, and a
+  session with only the buoy set counts as complete.
+- New `node test-lookup.js` replays the real 2025-10-18 responses saved in
+  `test-fixtures/`.
+
 ## [Unreleased] — Day cards degrade gracefully when NOAA tide predictions are down
 
 Diagnosis of "swell data isn't loading": Open-Meteo swell is fine
