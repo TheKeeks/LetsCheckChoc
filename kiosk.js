@@ -11,7 +11,8 @@
 // existing initGate 'no' branch does both once sessionStorage is
 // seeded), rotates four full-screen panels (day summaries ×2, radar
 // loop with the swell chart, spectra), auto-refreshes data every
-// 15 minutes, and holds a screen wake lock.
+// 15 minutes, holds a screen wake lock, and reloads itself (behind
+// guards) when a deploy lands, nightly at 03:30, or when boot stalls.
 // ════════════════════════════════════════════════════════════════════
 'use strict';
 
@@ -36,7 +37,20 @@ const KIOSK = {
   rotateTimer: null,
   resumeTimer: null,
   wakeLock: null,
-  lastDaysRender: 0         // lastLoadCompletedAt value the day panels reflect
+  lastDaysRender: 0,        // lastLoadCompletedAt value the day panels reflect
+  nightlyHour: 3,           // nightly code/memory refresh, local time (03:30)
+  nightlyMinute: 30,
+  bootAt: 0,                // kioskInit time (self-heal clocks start here)
+  nightlyAt: 0,             // next nightly reload attempt (epoch ms)
+  watchdogNextTry: 0,       // next boot-watchdog probe (epoch ms)
+  staticNextTry: 0,         // next static-catalog re-fetch (epoch ms)
+  staticBusy: false,
+  kickLoad: false,          // a catalog arrived late → reload the data once
+  codeSig: null,            // signature of the code this page booted with
+  codeBusy: false,
+  reloadBusy: false,
+  lastReloadAt: null,       // in-memory twin of the persisted reload stamp
+  asOfMemo: { at: -1, asOf: null }
 };
 
 // ── "Night Passage" chart palette ────────────────
@@ -179,8 +193,10 @@ function kioskDaySummary(dayOffset) {
     : (dl.sunrise && dl.sunset ? [{ start: dl.sunrise.getTime(), end: dl.sunset.getTime() }] : []);
 
   const lag = kioskSwellLagMs();
-  const pri = { hts: [], pers: [], x: 0, y: 0, n: 0 };
-  const sec = { hts: [], pers: [], x: 0, y: 0, n: 0 };
+  // e = in-window energy, Σ alignment(dir)·H² (app.js _alignmentScore:
+  // 1 inside 115–158°, fading to 0 over 30° outside).
+  const pri = { hts: [], pers: [], x: 0, y: 0, n: 0, e: 0 };
+  const sec = { hts: [], pers: [], x: 0, y: 0, n: 0, e: 0 };
   if (mh && dl.sunrise && dl.sunset) {
     for (const w of sampleWindows) {
       const a = Math.max(w.start, dl.sunrise.getTime());
@@ -191,13 +207,13 @@ function kioskDaySummary(dayOffset) {
         const h = (mh.swell_wave_height || mh.wave_height || [])[i];
         const p = (mh.swell_wave_period || mh.wave_period || [])[i];
         const d = (mh.swell_wave_direction || [])[i];
-        if (h != null) pri.hts.push(h);
+        if (h != null) { pri.hts.push(h); pri.e += _alignmentScore(d) * h * h; }
         if (p != null && Number.isFinite(p)) pri.pers.push(p);
         if (d != null) { pri.x += Math.cos(d * Math.PI / 180); pri.y += Math.sin(d * Math.PI / 180); pri.n++; }
         const sh = (mh.secondary_swell_wave_height || [])[i];
         const sp = (mh.secondary_swell_wave_period || [])[i];
         const sd = (mh.secondary_swell_wave_direction || [])[i];
-        if (sh != null) sec.hts.push(sh);
+        if (sh != null) { sec.hts.push(sh); sec.e += _alignmentScore(sd) * sh * sh; }
         if (sp != null && Number.isFinite(sp)) sec.pers.push(sp);
         if (sd != null) { sec.x += Math.cos(sd * Math.PI / 180); sec.y += Math.sin(sd * Math.PI / 180); sec.n++; }
       }
@@ -209,22 +225,35 @@ function kioskDaySummary(dayOffset) {
     const max = Math.max(...s.hts);
     if (minShow != null && max < minShow) return null; // no real secondary → blank
     const min = Math.min(...s.hts);
+    const dir = s.n ? (Math.atan2(s.y / s.n, s.x / s.n) * 180 / Math.PI + 360) % 360 : null;
     return {
       min: Math.round(min),
       max: Math.round(max),
       period: s.pers.length ? Math.ceil(s.pers.reduce((a, b) => a + b, 0) / s.pers.length) : null,
-      dir: s.n ? (Math.atan2(s.y / s.n, s.x / s.n) * 180 / Math.PI + 360) % 360 : null
+      dir,
+      cls: swellDirClass(dir) // 'dir-in' | 'dir-edge' | 'dir-out' ('' off Choc)
     };
   };
+
+  // Hero = the train that actually reaches the reef. Per the spec, when
+  // the model's primary is out of the window and the secondary is in, the
+  // secondary is the de facto primary at Choc. Decided once per DAY by
+  // in-window energy, so the hero is always one real train, never an
+  // hourly blend of two.
+  let primary = band(pri, null);
+  // Owner call: secondary shows whenever the model reports one, no
+  // matter how small — only truly absent data leaves the slot empty.
+  let secondary = band(sec, null);
+  if (STATE.isChocomount && primary && secondary && sec.e > pri.e) {
+    [primary, secondary] = [secondary, primary];
+  }
 
   return {
     label: dayOffset === 0 ? 'TODAY'
       : dayOffset === 1 ? 'TOMORROW'
       : day.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase(),
-    primary: band(pri, null),
-    // Owner call: secondary shows whenever the model reports one, no
-    // matter how small — only truly absent data leaves the slot empty.
-    secondary: band(sec, null),
+    primary,
+    secondary,
     tidesDown,
     lows: lows.map(lo => ({ t: lo.t, wind: kioskWindAt(lo.t) })),
     sun: {
@@ -298,12 +327,16 @@ function kioskWindHTML(wind) {
 }
 
 // One inline phrase — "3-5 FT @ 13 S" — with the direction arrow
-// (reading printed on it) riding to the right as the co-hero.
+// (reading printed on it) riding to the right as the co-hero. A train
+// arriving from outside the swell window is dimmed and tagged OUT OF
+// WINDOW: Montauk or Block Island blocks it before it reaches the reef.
 function kioskSwellRowHTML(sw, cls) {
   if (!sw) return '';
   const range = sw.min === sw.max ? String(sw.max) : `${sw.min}-${sw.max}`;
   const primary = cls === 'np-primary';
-  return `<div class="np-swell ${cls}">` +
+  const out = sw.cls === 'dir-out';
+  return `<div class="np-swell ${cls}${out ? ' np-out' : ''}">` +
+    (out ? '<span class="np-out-tag">OUT OF WINDOW</span>' : '') +
     `<div class="np-swell-line">` +
       kioskSegHTML(range, primary ? 'np-seg-lg' : 'np-seg-md') +
       `<span class="np-unit">FT</span>` +
@@ -699,9 +732,17 @@ function kioskRadarPaint() {
 
 // Continuous sweep animation — runs only while the radar panel is up
 // (mirrors the chart's always-on now-pulse rAF loop; the browser parks
-// rAF automatically when the display sleeps or the tab hides).
+// rAF automatically when the display sleeps or the tab hides). Each paint
+// redraws the whole full-screen scope, and the radar is up ~74% of the
+// time, so frames are capped at ~20 fps (one paint per >= 48 ms): the
+// sweep still moves under 2° a frame, at a third of the 60 fps cost.
+const KIOSK_RADAR_FRAME_MS = 48;
 function kioskRadarLoop(ts) {
   if (document.body.dataset.kioskPanel !== 'radar') { KIOSK_RADAR.raf = null; return; }
+  if (KIOSK_RADAR.lastT && ts - KIOSK_RADAR.lastT < KIOSK_RADAR_FRAME_MS) {
+    KIOSK_RADAR.raf = requestAnimationFrame(kioskRadarLoop);
+    return;
+  }
   const dt = KIOSK_RADAR.lastT ? Math.min(200, ts - KIOSK_RADAR.lastT) : 16;
   KIOSK_RADAR.lastT = ts;
   KIOSK_RADAR.sweep = (KIOSK_RADAR.sweep + dt * 0.036) % 360; // 10 s / rev
@@ -772,9 +813,38 @@ function kioskInfoHTML(panel) {
       live('footer-spectral-summary') + live('footer-compass');
   }
   return '<h3>Day summaries</h3>' +
-    '<p>Swell is the min–max over the incoming-tide windows (each low to the next high at Silver Eel) clipped to daylight, sampled from the offshore forecast point with a 1 h swell-travel lag (2 h when the buoy-coords toggle is on). Period is the window mean rounded up. Swell arrows point where the swell is going, with the FROM compass label printed on them; wind shows as a heading dial whose rim pointer marks where the wind is blowing toward, with speed and FROM label in the middle. Winds are read at each low tide and at sunrise / noon / sunset; the moon is percent of full. If NOAA’s tide predictions are unavailable, the swell range falls back to all daylight hours and the card says so.</p>' +
+    '<p>Swell is the min–max over the incoming-tide windows (each low to the next high at Silver Eel) clipped to daylight, sampled from the offshore forecast point with a 1 h swell-travel lag (2 h when the buoy-coords toggle is on). Period is the window mean rounded up. The big reading is whichever of the model’s two swell trains carries more energy inside the 115–158° window that day, so a train Montauk or Block Island blocks only headlines when nothing reaches the window; a train arriving from outside the window is dimmed and marked OUT OF WINDOW. Swell arrows point where the swell is going, with the FROM compass label printed on them; wind shows as a heading dial whose rim pointer marks where the wind is blowing toward, with speed and FROM label in the middle. Winds are read at each low tide and at sunrise / noon / sunset; the moon is percent of full. If NOAA’s tide predictions are unavailable, the swell range falls back to all daylight hours and the card says so.</p>' +
     '<h3>Sources</h3>' +
     '<p>Swell &amp; wind: Open-Meteo Marine and Weather (best_match model). Tides and lows: NOAA CO-OPS predictions, Silver Eel Pond station 8510719. Sunrise and sunset: computed solar position. Moon: computed from the synodic month.</p>';
+}
+
+// Footer on every card: per-source data health (when app.js publishes
+// STATE.dataHealth) and the code signature this kiosk booted with, so the
+// owner can tell from a photo of the screen whether a deploy has landed.
+function kioskInfoStatusHTML() {
+  const h = STATE.dataHealth;
+  const parts = [];
+  if (h && typeof h === 'object') {
+    const src = (label, s, key) => {
+      if (!s || typeof s !== 'object') return;
+      const origin = /^[a-z-]+$/.test(String(s.origin)) ? s.origin : '?';
+      const t = s[key];
+      parts.push(`${label} ${origin}${Number.isFinite(t) ? ' (' + formatAgo(new Date(t)) + ')' : ''}`);
+    };
+    src('Swell:', h.marine, 'asOf');
+    src('Wind:', h.wind, 'asOf');
+    src('Tides:', h.tides, 'asOf');
+    src('Buoy:', h.buoy, 'obsMs');
+  }
+  const health = parts.length ? '<p class="np-info-live">Data: ' + parts.join(' · ') + '</p>' : '';
+  const build = KIOSK.codeSig ? KIOSK.codeSig.slice(0, 7) : '—';
+  const since = KIOSK.bootAt ? ' · running since ' + formatTime(new Date(KIOSK.bootAt)) : '';
+  return health + `<p class="np-info-live">Choc TV build ${build}${since}</p>`;
+}
+
+function kioskInfoOpen() {
+  const ov = el('kiosk-info-overlay');
+  return !!ov && ov.style.display !== 'none';
 }
 
 function kioskToggleInfo(force) {
@@ -782,7 +852,7 @@ function kioskToggleInfo(force) {
   if (!ov) return;
   const show = force != null ? force : ov.style.display === 'none';
   if (show) {
-    el('kiosk-info-card').innerHTML = kioskInfoHTML(document.body.dataset.kioskPanel);
+    el('kiosk-info-card').innerHTML = kioskInfoHTML(document.body.dataset.kioskPanel) + kioskInfoStatusHTML();
     ov.style.display = '';
   } else {
     ov.style.display = 'none';
@@ -888,6 +958,7 @@ function kioskResume() {
 
 function kioskRefreshTick() {
   if (document.hidden) return;
+  kioskCheckCode(); // a deploy landed? (reloads only behind the guards)
   if (typeof isDataLoadInFlight === 'function' && isDataLoadInFlight()) return;
   // loadAllData, not selectBuoy — no map/header churn, and its SWR cache
   // path + the load-generation guard handle everything else.
@@ -905,6 +976,125 @@ async function kioskAcquireWakeLock() {
   }
 }
 
+// ── Data freshness (status strip) ────────────────
+// lastLoadCompletedAt only says a load FINISHED: fetchJSON swallows
+// errors, so a refresh where every fetch failed still stamped it and the
+// strip read "updated just now" over hours-old cards. The strip shows the
+// age of the data itself and turns stale / dead when refreshes fail.
+const KIOSK_DEAD_MS = 3 * 3600e3;
+
+// Pure status decision. loadDoneAt = STATE.lastLoadCompletedAt (a load has
+// finished, good or bad); asOf = epoch ms of the oldest forecast input on
+// screen, or null when a finished load left nothing to show.
+//   stale: older than two missed refreshes plus 10 min of slack
+//   dead:  older than 3 h (or no data at all: level 'nodata')
+// → { level: 'loading'|'fresh'|'stale'|'dead'|'nodata', ageMs, text, banner }
+function kioskFreshness(nowMs, loadDoneAt, asOf, refreshMs) {
+  if (!loadDoneAt) return { level: 'loading', ageMs: null, text: 'loading…', banner: '' };
+  if (asOf == null || !Number.isFinite(asOf)) {
+    return { level: 'nodata', ageMs: null, text: 'NO DATA', banner: 'NO FORECAST DATA — RETRYING' };
+  }
+  const ageMs = Math.max(0, nowMs - asOf);
+  const level = ageMs > KIOSK_DEAD_MS ? 'dead'
+    : ageMs > 2 * refreshMs + 10 * 60e3 ? 'stale' : 'fresh';
+  const h = Math.floor(ageMs / 3600e3);
+  return {
+    level,
+    ageMs,
+    text: `updated ${formatAgo(new Date(Date.now() - ageMs))}`,
+    banner: level !== 'dead' ? ''
+      : `FORECAST ${h >= 48 ? Math.floor(h / 24) + ' DAYS' : h + ' H'} OLD — NOT UPDATING`
+  };
+}
+
+// How old the swell + wind forecast on the cards is. app.js publishes it
+// as STATE.dataAsOf after every load (recordDataHealth: null when no
+// forecast is on screen; saved tide predictions, astronomical and valid
+// for days, never age it). Builds without it get the same answer from the
+// marine / wind cache timestamps, which hold the true fetch time and which
+// a failed refresh leaves untouched; only with no readable cache does this
+// fall back to lastLoadCompletedAt.
+function kioskDataAsOf() {
+  if (STATE.dataAsOf !== undefined) return STATE.dataAsOf;
+  const done = STATE.lastLoadCompletedAt || 0;
+  // Cache timestamps only move during a load: derive once per load.
+  if (KIOSK.asOfMemo.at === done) return KIOSK.asOfMemo.asOf;
+  const fd = STATE.forecastData;
+  const b = STATE.selectedBuoy;
+  let asOf = null;
+  if (fd && fd.marine) {
+    let ts = [];
+    if (b) {
+      // Same coordinates _loadAllDataImpl keys its caches by.
+      const choc = b.home === 'chocomount';
+      const useBuoy = choc && typeof getForecastUseBuoyCoords === 'function' && getForecastUseBuoyCoords();
+      const fLat = choc && !useBuoy ? CONFIG.chocomount.forecastLat : b.lat;
+      const fLon = choc && !useBuoy ? CONFIG.chocomount.forecastLon : b.lon;
+      const dLat = choc ? CONFIG.chocomount.lat : b.lat;
+      const dLon = choc ? CONFIG.chocomount.lon : b.lon;
+      ts = [
+        readCacheTs(marineCacheKey(fLat, fLon, getForecastModel())),
+        fd.wind ? readCacheTs(windCacheKey(dLat, dLon)) : null
+      ].filter(Number.isFinite);
+    }
+    asOf = ts.length ? Math.min(...ts) : (done || null);
+  }
+  KIOSK.asOfMemo = { at: done, asOf };
+  return asOf;
+}
+
+// Paint a kioskFreshness() result: strip text, stale/dead classes (pilot
+// light + text), and the full-width banner readable across the room.
+function kioskShowFreshness(f) {
+  const upd = el('kiosk-status-updated');
+  if (upd) upd.textContent = f.text;
+  const strip = el('kiosk-status');
+  if (strip) {
+    strip.classList.toggle('np-stale', f.level === 'stale');
+    strip.classList.toggle('np-dead', f.level === 'dead' || f.level === 'nodata');
+  }
+  const banner = el('kiosk-stale-banner');
+  if (banner) {
+    banner.textContent = f.banner;
+    banner.style.display = f.banner ? '' : 'none';
+  }
+}
+
+// ── Self-heal and code refresh ───────────────────
+// Choc TV runs for weeks under Guided Access, out of reach of the reload
+// button. Three things reload the page by themselves: a boot that never
+// produced a load, a deploy that changed the code, and a nightly 03:30
+// refresh. Every reload goes through kioskTryReload's guards.
+const KIOSK_STATIC_FIRST_MS = 12 * 1000;   // after initApp's own 10 s attempt
+const KIOSK_STATIC_RETRY_MS = 15 * 1000;
+const KIOSK_BOOT_WATCHDOG_MS = 10 * 60 * 1000;
+const KIOSK_RELOAD_MIN_GAP_MS = 30 * 60 * 1000;
+const KIOSK_RELOAD_KEY = 'lcc-kiosk-last-reload';
+const KIOSK_CODE_FILES = ['index.html', 'app.js', 'kiosk.js', 'styles-kiosk.css'];
+
+// initApp fetches the two static catalogs once, with no retry: a Wi-Fi
+// blip during boot left Choc TV on "loading…" forever (no buoy list) or
+// on NO TIDE DATA forever (no station list). Re-fetch whichever list is
+// still empty; a station list that arrives late re-runs the data load.
+function kioskEnsureStatic() {
+  const needB = !STATE.buoys || !STATE.buoys.length;
+  const needT = !STATE.tideStations || !STATE.tideStations.length;
+  if ((!needB && !needT) || KIOSK.staticBusy) return;
+  const now = Date.now();
+  if (now < KIOSK.bootAt + KIOSK_STATIC_FIRST_MS || now < KIOSK.staticNextTry) return;
+  KIOSK.staticBusy = true;
+  KIOSK.staticNextTry = now + KIOSK_STATIC_RETRY_MS;
+  Promise.all([
+    needB ? fetchJSON('data/buoys-east-coast.json') : null,
+    needT ? fetchJSON('data/tide-stations.json') : null
+  ]).then(([b, t]) => {
+    if (Array.isArray(b) && b.length && !(STATE.buoys && STATE.buoys.length)) STATE.buoys = b;
+    if (Array.isArray(t) && t.length && !(STATE.tideStations && STATE.tideStations.length)) {
+      STATE.tideStations = t;
+      KIOSK.kickLoad = true;
+    }
+  }).finally(() => { KIOSK.staticBusy = false; });
+}
 
 // Kiosk boot watchdog: the normal boot selects Chocomount at the tail of
 // initApp, AFTER the surf-log/Firebase await — on a flaky network that
@@ -913,13 +1103,171 @@ async function kioskAcquireWakeLock() {
 // selected, select Chocomount directly. If initApp's own selectBuoy
 // fires later, the load-generation guard makes the duplicate harmless.
 function kioskEnsureSelected() {
-  if (STATE.selectedBuoy || (STATE.pinLat != null && STATE.pinLon != null)) return;
+  kioskEnsureStatic();
+  if (STATE.selectedBuoy || (STATE.pinLat != null && STATE.pinLon != null)) {
+    // A catalog arrived after the last load started: load once more.
+    if (KIOSK.kickLoad && STATE.selectedBuoy && !isDataLoadInFlight()) {
+      KIOSK.kickLoad = false;
+      loadAllData(STATE.selectedBuoy);
+    }
+    return;
+  }
   if (!STATE.buoys || !STATE.buoys.length) return;
   const choc = STATE.buoys.find(b => b.home === 'chocomount');
-  if (choc) selectBuoy(choc);
+  if (choc) {
+    KIOSK.kickLoad = false; // this load already has every catalog in hand
+    selectBuoy(choc);
+  }
+}
+
+// Pure reload guard: never within 30 min of the last reload (no reload
+// loop, even while CDN edges serve mixed versions), and never under a
+// reader's hand (rotation paused or the SOURCES card open).
+function kioskShouldReload({ now, lastReloadAt, paused, infoOpen }) {
+  if (paused || infoOpen) return false;
+  if (lastReloadAt == null || !Number.isFinite(lastReloadAt)) return true;
+  const since = now - lastReloadAt;
+  return since < 0 || since >= KIOSK_RELOAD_MIN_GAP_MS; // a stamp from the future is ignored
+}
+
+function kioskLastReloadAt() {
+  let stored = 0;
+  try { stored = Number(localStorage.getItem(KIOSK_RELOAD_KEY)) || 0; } catch (_) { /* private mode */ }
+  return Math.max(stored, KIOSK.lastReloadAt || 0) || null;
+}
+
+// Is the site reachable right now? Without a service worker, reloading
+// while offline would strand the appliance on Safari's error page, so a
+// reload only follows a no-store fetch of the kiosk page itself.
+async function kioskProbe() {
+  if (navigator.onLine === false) return false;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 15000);
+  try {
+    const r = await fetch('./?kiosk=1&probe=' + Date.now(), { cache: 'no-store', signal: ctl.signal });
+    return r.ok && /kiosk\.js/.test(await r.text());
+  } catch (_) {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// → 'reloaded' | 'blocked' (guards) | 'offline' (probe failed) | 'busy'
+async function kioskTryReload(reason) {
+  if (KIOSK.reloadBusy) return 'busy';
+  const allowed = () => kioskShouldReload({
+    now: Date.now(),
+    lastReloadAt: kioskLastReloadAt(),
+    paused: KIOSK.state === 'paused',
+    infoOpen: kioskInfoOpen()
+  });
+  if (!allowed()) return 'blocked';
+  KIOSK.reloadBusy = true;
+  try {
+    if (!(await kioskProbe())) return 'offline';
+    if (!allowed()) return 'blocked'; // a touch landed during the probe
+    KIOSK.lastReloadAt = Date.now();
+    try { localStorage.setItem(KIOSK_RELOAD_KEY, String(KIOSK.lastReloadAt)); } catch (_) { /* private mode */ }
+    console.info('Choc TV reloading:', reason);
+    location.reload();
+    return 'reloaded';
+  } finally {
+    KIOSK.reloadBusy = false;
+  }
+}
+
+// Cheap content signature: 32-bit FNV-1a over the text, plus its length.
+function kioskHashText(s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(16).padStart(8, '0') + '-' + s.length.toString(36);
+}
+
+// Signature of the files that make up Choc TV; null if any fetch fails.
+// The boot baseline reads with 'force-cache' (the bytes this page just
+// ran, not a deploy that landed seconds after it loaded). Polls use
+// 'no-cache', which revalidates with the server AND refreshes the HTTP
+// cache, so the reload that follows a change runs the new files instead
+// of a copy still fresh under Pages' max-age=600.
+async function kioskCodeSig(cacheMode) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 20000);
+  try {
+    const texts = await Promise.all(KIOSK_CODE_FILES.map(async f => {
+      // The page loads as ./?kiosk=1, never as index.html: sign the
+      // document's own URL so the force-cache baseline is the copy it ran.
+      const url = f === 'index.html' ? location.pathname + location.search : f;
+      const r = await fetch(url, { cache: cacheMode, signal: ctl.signal });
+      if (!r.ok) throw new Error(f + ' HTTP ' + r.status);
+      return r.text();
+    }));
+    return kioskHashText(texts.join('\n'));
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Boot: take the baseline. Refresh ticks: reload when the deployed code
+// differs. Pages' ETag / Last-Modified change on every 2-hourly data
+// commit, so only the content can say whether the code changed.
+async function kioskCheckCode() {
+  if (KIOSK.codeBusy) return;
+  KIOSK.codeBusy = true;
+  try {
+    if (!KIOSK.codeSig) {
+      KIOSK.codeSig = await kioskCodeSig('force-cache');
+      return;
+    }
+    const sig = await kioskCodeSig('no-cache');
+    if (sig && sig !== KIOSK.codeSig) {
+      await kioskTryReload(`code changed ${KIOSK.codeSig.slice(0, 7)} → ${sig.slice(0, 7)}`);
+    }
+  } finally {
+    KIOSK.codeBusy = false;
+  }
+}
+
+// Epoch ms of the next local hour:minute strictly after fromMs (DST-safe:
+// the wall-clock time is set on the calendar day, not added as ms).
+function kioskNextLocalTime(hour, minute, fromMs) {
+  const d = new Date(fromMs);
+  d.setHours(hour, minute, 0, 0);
+  if (d.getTime() <= fromMs) {
+    d.setDate(d.getDate() + 1);
+    d.setHours(hour, minute, 0, 0);
+  }
+  return d.getTime();
+}
+
+// 1 Hz, from kioskStatusTick.
+function kioskSelfHealTick() {
+  if (!KIOSK.bootAt) return;
+  const now = Date.now();
+  // Boot watchdog: no load has completed in 10 min (a CDN script or a
+  // catalog failed in a way the retries above can't mend) → start over,
+  // once the site answers. Data AGE never triggers a reload: that would
+  // wipe the in-memory forecast during an API outage.
+  if (!STATE.lastLoadCompletedAt && now - KIOSK.bootAt >= KIOSK_BOOT_WATCHDOG_MS &&
+      now >= KIOSK.watchdogNextTry) {
+    KIOSK.watchdogNextTry = now + 60 * 1000;
+    kioskTryReload('boot watchdog: no data load completed');
+  }
+  // Nightly: picks up any deploy the signature check missed and starts
+  // each day from a clean page. Retried every 15 min until the guards and
+  // the probe let it through.
+  if (KIOSK.nightlyAt && now >= KIOSK.nightlyAt) {
+    KIOSK.nightlyAt = now + 15 * 60 * 1000;
+    kioskTryReload('nightly');
+  }
 }
 
 function kioskStatusTick() {
+  // First, so a throw below (e.g. selectBuoy with Leaflet missing) can
+  // never starve the watchdog that exists to mend exactly that.
+  kioskSelfHealTick();
   kioskEnsureSelected();
   const clock = el('kiosk-status-clock');
   if (clock) {
@@ -935,12 +1283,8 @@ function kioskStatusTick() {
     const b = STATE.selectedBuoy;
     buoyEl.textContent = b.home === 'chocomount' ? `Choc · ndbc ${b.id}` : `${b.name} · ndbc ${b.id}`;
   }
-  const upd = el('kiosk-status-updated');
-  if (upd) {
-    upd.textContent = STATE.lastLoadCompletedAt
-      ? `updated ${formatAgo(new Date(STATE.lastLoadCompletedAt))}`
-      : 'loading…';
-  }
+  const done = STATE.lastLoadCompletedAt;
+  kioskShowFreshness(kioskFreshness(Date.now(), done, done ? kioskDataAsOf() : null, KIOSK.refreshMs));
   // Fresh data while a day panel is up → re-render its readings.
   if (STATE.lastLoadCompletedAt && STATE.lastLoadCompletedAt !== KIOSK.lastDaysRender) {
     kioskRenderDays();
@@ -985,6 +1329,14 @@ function kioskBuildChrome() {
     '<span id="kiosk-status-clock"></span>';
   document.body.appendChild(strip);
 
+  // Full-width alert above the strip when the readings are hours old or
+  // missing (kioskShowFreshness), sized to read from across the room.
+  const banner = document.createElement('div');
+  banner.id = 'kiosk-stale-banner';
+  banner.setAttribute('role', 'alert');
+  banner.style.display = 'none';
+  document.body.appendChild(banner);
+
   // NEXT skips straight to the following panel without pausing rotation.
   el('kiosk-next').addEventListener('click', () => {
     if (KIOSK.state === 'paused') kioskResume();
@@ -1002,6 +1354,10 @@ function kioskBuildChrome() {
 }
 
 function kioskInit() {
+  KIOSK.bootAt = Date.now();
+  // First nightly reload: the next 03:30 at least an hour after boot, so
+  // a kiosk started at 03:00 isn't restarted half an hour later.
+  KIOSK.nightlyAt = kioskNextLocalTime(KIOSK.nightlyHour, KIOSK.nightlyMinute, KIOSK.bootAt + 3600e3);
   kioskReadOverrides();
   kioskBuildChrome();
   kioskShowPanel(KIOSK.panels[KIOSK.idx]);
@@ -1014,6 +1370,7 @@ function kioskInit() {
   setInterval(kioskRefreshTick, KIOSK.refreshMs);
   kioskStatusTick();
   kioskAcquireWakeLock();
+  kioskCheckCode(); // boot code signature (the baseline for deploy checks)
 
   // iOS throttles timers while locked/backgrounded: on return, re-grab the
   // wake lock and catch up if the data went stale.

@@ -39,11 +39,19 @@ const CONFIG = {
     // wind_wave_*), so historical swell must hit this marine archive.
     openMeteoMarineArchive: 'https://marine-api.open-meteo.com/v1/marine',
     coops: 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter',
-    ndbcProxies: [
-      { name: 'corsproxy.io', wrap: function(url) { return 'https://corsproxy.io/?' + encodeURIComponent(url); } },
-      { name: 'allorigins',   wrap: function(url) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url); } },
-      { name: 'codetabs',     wrap: function(url) { return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url); } }
-    ],
+    // CORS relays for www.ndbc.noaa.gov, which sends no CORS headers, so a
+    // browser can't read it directly. Empty on purpose: the free relays we
+    // used are dead (corsproxy.io 403 "keyless_legacy_url", allorigins 522
+    // after ~20 s, codetabs 503), and walking them cost every load ~15 s
+    // before the chart and ~34 s before the spectra. Chocomount reads the
+    // pipeline's data/buoy.json instead (scripts/fetch_buoy.py, every 2 h);
+    // other buoys show an honest "no live data" state.
+    // To re-add a WORKING relay you control (e.g. a Cloudflare Worker that
+    // fetches the NDBC URL and adds Access-Control-Allow-Origin: *):
+    //   { name: 'worker', wrap: function(url) { return 'https://<your-worker>.workers.dev/?url=' + encodeURIComponent(url); } }
+    // It is then tried for non-Choc buoys (off the chart's critical path)
+    // and by the surf log's NDBC-history fallback.
+    ndbcProxies: [],
     ndbcBase: 'https://www.ndbc.noaa.gov/data/realtime2/'
   },
   map: {
@@ -184,6 +192,21 @@ function formatDayShort(date) {
 
 function el(id) { return document.getElementById(id); }
 
+// Escape text for an innerHTML string (element content or a quoted
+// attribute). Anything that came from Firestore, an import or another crew
+// member (notes, displayName, ids, condition values) goes through this:
+// the community log is rendered for everyone (audit C27).
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// A photo URL safe to put in a src="" attribute: http(s), blob: or an image
+// data: URI only, escaped for the attribute. Anything else becomes ''.
+function safeUrl(u) {
+  const s = String(u == null ? '' : u).trim();
+  return /^(https?:|blob:|data:image\/)/i.test(s) ? escHtml(s) : '';
+}
+
 // Apply HiDPI / DPR sizing to a canvas. Sets backing-store dimensions to
 // cssW * dpr × cssH * dpr while keeping the on-screen CSS size unchanged,
 // then scales the 2D context so existing draw code can keep using CSS-pixel
@@ -253,58 +276,87 @@ function setFooter(id, text, url, urlLabel) {
 }
 
 // ── Daylight calculator (solar position) ─────────
+// NOAA Solar Calculator equations (Meeus, "Astronomical Algorithms"):
+// the sun's declination and the equation of time (minutes) at Julian
+// day `jd`. Good to well under a minute of time for this century.
+function _solarPosition(jd) {
+  const T = (jd - 2451545) / 36525;                        // Julian centuries since J2000
+  const L0 = (280.46646 + T * (36000.76983 + T * 0.0003032)) % 360;
+  const M = 357.52911 + T * (35999.05029 - 0.0001537 * T);
+  const e = 0.016708634 - T * (0.000042037 + 0.0000001267 * T);
+  const Mr = degToRad(M), L0r = degToRad(L0);
+  const C = Math.sin(Mr) * (1.914602 - T * (0.004817 + 0.000014 * T)) +
+    Math.sin(2 * Mr) * (0.019993 - 0.000101 * T) + Math.sin(3 * Mr) * 0.000289;
+  const omega = degToRad(125.04 - 1934.136 * T);
+  const lambda = degToRad(L0 + C - 0.00569 - 0.00478 * Math.sin(omega));
+  const eps0 = 23 + (26 + (21.448 - T * (46.815 + T * (0.00059 - T * 0.001813))) / 60) / 60;
+  const eps = degToRad(eps0 + 0.00256 * Math.cos(omega));
+  const y = Math.tan(eps / 2) * Math.tan(eps / 2);
+  return {
+    decl: radToDeg(Math.asin(Math.sin(eps) * Math.sin(lambda))),
+    eot: 4 * radToDeg(y * Math.sin(2 * L0r) - 2 * e * Math.sin(Mr) +
+      4 * e * y * Math.sin(Mr) * Math.cos(2 * L0r) -
+      0.5 * y * y * Math.sin(4 * L0r) - 1.25 * e * e * Math.sin(2 * Mr))
+  };
+}
+
+// Sunrise/sunset put the sun's centre at the standard -0.833° altitude
+// (34' of refraction plus the 16' solar semi-diameter), civil twilight at
+// -6°. The old geometric-horizon formula ran 5-9 min late at sunrise and
+// early at sunset at Choc; this matches USNO to about a minute (audit C22).
 function calcDaylight(lat, lon, date) {
   const d = new Date(date);
   d.setHours(12, 0, 0, 0);
-  const dayOfYear = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
-  const declination = 23.45 * Math.sin(degToRad(360/365 * (dayOfYear - 81)));
+  // The viewer's calendar day, as 0h UTC. Events are solved in UTC hours
+  // after it (a summer sunset at Choc lands past 24, i.e. 00:2xZ next day).
+  const day0 = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  const jd0 = day0 / 86400000 + 2440587.5;
   const latRad = degToRad(lat);
-  const declRad = degToRad(declination);
 
-  // Hour angle for sunrise/sunset
-  const cosH = -Math.tan(latRad) * Math.tan(declRad);
-  if (cosH < -1) return { alwaysDay: true };
-  if (cosH > 1)  return { alwaysNight: true };
-  const H = radToDeg(Math.acos(cosH));
-
-  // Civil twilight (sun 6° below)
-  const cosHCivil = (Math.cos(degToRad(96)) - Math.sin(latRad) * Math.sin(declRad)) / (Math.cos(latRad) * Math.cos(declRad));
-  const HCivil = cosHCivil >= -1 && cosHCivil <= 1 ? radToDeg(Math.acos(cosHCivil)) : H + 1;
-
-  // Solar noon in UTC hours
-  // Approximate equation of time
-  const B = degToRad(360/365 * (dayOfYear - 81));
-  const EoT = 9.87 * Math.sin(2*B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B); // minutes
-  const solarNoonUTC = 12 - (lon / 15) - (EoT / 60);
-
-  const sunriseUTC = solarNoonUTC - H / 15;
-  const sunsetUTC = solarNoonUTC + H / 15;
-  const firstLightUTC = solarNoonUTC - HCivil / 15;
-  const lastLightUTC = solarNoonUTC + HCivil / 15;
-
-  function hoursToDate(h) {
-    const nd = new Date(d);
-    nd.setUTCHours(Math.floor(h), Math.round((h % 1) * 60), 0, 0);
-    return nd;
+  function cosHourAngle(alt, decl) {
+    const declRad = degToRad(decl);
+    return (Math.sin(degToRad(alt)) - Math.sin(latRad) * Math.sin(declRad)) /
+      (Math.cos(latRad) * Math.cos(declRad));
+  }
+  // UTC hours of the rising/setting crossing of `alt`. Three passes
+  // re-evaluate the sun at the event itself; null if it never crosses.
+  function eventUTC(alt, rising) {
+    let t = 12 - lon / 15, ok = false;
+    for (let i = 0; i < 3; i++) {
+      const sun = _solarPosition(jd0 + t / 24);
+      const cosH = cosHourAngle(alt, sun.decl);
+      if (cosH < -1 || cosH > 1) break;
+      const H = radToDeg(Math.acos(cosH));
+      t = (720 - 4 * lon - sun.eot + (rising ? -4 : 4) * H) / 60;
+      ok = true;
+    }
+    return ok ? t : null;
   }
 
-  const daylightHours = 2 * H / 15;
+  const noonSun = _solarPosition(jd0 + (12 - lon / 15) / 24);
+  const cosH0 = cosHourAngle(-0.833, noonSun.decl);
+  if (cosH0 < -1) return { alwaysDay: true };
+  if (cosH0 > 1)  return { alwaysNight: true };
+
+  const sunriseUTC = eventUTC(-0.833, true);
+  const sunsetUTC = eventUTC(-0.833, false);
+  if (sunriseUTC == null || sunsetUTC == null) return cosH0 < 0 ? { alwaysDay: true } : { alwaysNight: true };
+  // No civil dusk (high-latitude summer): first/last light 4 min out, as before.
+  const civilRise = eventUTC(-6, true);
+  const civilSet = eventUTC(-6, false);
+  const firstLightUTC = civilRise != null ? civilRise : sunriseUTC - 1 / 15;
+  const lastLightUTC = civilSet != null ? civilSet : sunsetUTC + 1 / 15;
+
+  // Whole minutes, as the cards print them.
+  const hoursToDate = h => new Date(day0 + Math.round(h * 60) * 60000);
 
   return {
     firstLight: hoursToDate(firstLightUTC),
     sunrise: hoursToDate(sunriseUTC),
     sunset: hoursToDate(sunsetUTC),
     lastLight: hoursToDate(lastLightUTC),
-    daylightHours: daylightHours
+    daylightHours: sunsetUTC - sunriseUTC
   };
-}
-
-function isNighttime(hour, daylight) {
-  if (!daylight || daylight.alwaysDay) return false;
-  if (daylight.alwaysNight) return true;
-  const sunriseH = daylight.sunrise.getHours() + daylight.sunrise.getMinutes() / 60;
-  const sunsetH = daylight.sunset.getHours() + daylight.sunset.getMinutes() / 60;
-  return hour < sunriseH || hour > sunsetH;
 }
 
 // ── Swell arrival estimator ──────────────────────
@@ -396,12 +448,18 @@ const PIPELINE_CACHE_KEY = 'lcc-cache-pipeline';
 
 function roundCoord(v) { return Math.round(v * 1000) / 1000; }
 
-function readCache(key, ttlMs) {
+// readCache(key, ttlMs) → the cached data while younger than ttlMs, else
+// null. With { allowStale: true } it returns { data, ts, stale } for a copy
+// of ANY age (stale = past ttlMs), so a failed refresh can fall back to the
+// last good copy and still report when that copy was really fetched.
+function readCache(key, ttlMs, opts) {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
     const { ts, data } = JSON.parse(raw);
-    if (Date.now() - ts < ttlMs) return data;
+    const fresh = Date.now() - ts < ttlMs;
+    if (opts && opts.allowStale) return data == null ? null : { data, ts, stale: !fresh };
+    if (fresh) return data;
   } catch (_) { /* fall through */ }
   return null;
 }
@@ -430,14 +488,38 @@ function marineCacheKey(lat, lon, model) {
 function windCacheKey(lat, lon) {
   return `lcc-cache-wind-${roundCoord(lat)}-${roundCoord(lon)}`;
 }
+// Keyed by the span actually fetched (rangeHours wins, as in
+// fetchTidePredictions), so a call with rangeDays left to its default and
+// a read that passes undefined can never disagree again.
 function tidePredCacheKey(stationId, rangeDays, rangeHours) {
-  return `lcc-cache-tide-${stationId}-d${rangeDays || ''}-h${rangeHours || ''}`;
+  const hours = rangeHours != null ? rangeHours : (rangeDays || 3) * 24;
+  return `lcc-cache-tide-${stationId}-h${hours}`;
 }
 function tideHiLoCacheKey(stationId, rangeDays) {
   return `lcc-cache-hilo-${stationId}-d${rangeDays}`;
 }
 function waterTempCacheKey(stationId) {
   return `lcc-cache-water-${stationId}`;
+}
+
+// Tide spans the forecast chart (and Choc TV's day cards) fetch. The fetch
+// calls and the cache-first reads both use these, so their keys match.
+const CHART_TIDE_SPAN = { hiloDays: 10, predHours: 168 };
+
+// CO-OPS answers an outage with HTTP 200 and {"error": ...}; only a body
+// with predictions is data (and only that may overwrite a good cached copy).
+function tidesUsable(data) {
+  return !!(data && Array.isArray(data.predictions) && data.predictions.length);
+}
+
+// The 6-min tide copies used to be keyed "...-d3-h168" / "...-d3-h", which
+// nothing reads any more; drop them (~70 KB each of a ~5 MB iOS quota).
+function dropLegacyTideCacheKeys() {
+  try {
+    Object.keys(localStorage)
+      .filter(k => /^lcc-cache-tide-.+-d\d*-h\d*$/.test(k))
+      .forEach(k => localStorage.removeItem(k));
+  } catch (_) { /* non-fatal */ }
 }
 
 async function fetchText(url, timeout = 10000) {
@@ -506,18 +588,19 @@ async function fetchWithProxies(rawUrl, timeout = 10000) {
 }
 
 // ── API: Open-Meteo Marine ───────────────────────
-// List of Open-Meteo Marine API models verified against the live docs at
-// https://open-meteo.com/en/docs/marine-weather-api (only those that
-// expose swell_wave_* variables are user-selectable).
+// Open-Meteo Marine models that return a usable swell partition at the
+// Choc forecast point, probed live with fetchMarineForecast's exact query
+// (audit C21, 2026-10-01). Auto (best_match) is MeteoFrance MFWAM there.
+// Left out on purpose: gfs_wave025/016 (not model ids; HTTP 400 — the
+// NOAA ids are ncep_*), dwd_ewam (HTTP 400, no data this far west),
+// ecmwf_wam/ecmwf_wam025 (total sea only, swell_* all null) and
+// era5_ocean (all null). Stale stored ids fall back to Auto in
+// getForecastModel.
 const FORECAST_MODELS = [
   { value: 'meteofrance_wave', label: 'MeteoFrance MFWAM (0.08°)' },
-  { value: 'dwd_ewam',         label: 'DWD EWAM (0.05°)' },
-  { value: 'dwd_gwam',         label: 'DWD GWAM (0.25°)' },
-  { value: 'ecmwf_wam',        label: 'ECMWF WAM (~9 km)' },
-  { value: 'ecmwf_wam025',     label: 'ECMWF WAM (0.25°)' },
-  { value: 'gfs_wave025',      label: 'GFS Wave (NOAA, 0.25°)' },
-  { value: 'gfs_wave016',      label: 'GFS Wave (NOAA, 0.16°)' },
-  { value: 'era5_ocean',       label: 'ERA5-Ocean (0.5°)' }
+  { value: 'ncep_gfswave025',  label: 'NOAA GFS-Wave (0.25°)' },
+  { value: 'ncep_gfswave016',  label: 'NOAA GFS-Wave (0.16°)' },
+  { value: 'dwd_gwam',         label: 'DWD GWAM (0.25°, no secondary swell)' }
 ];
 
 async function fetchMarineForecast(lat, lon, model) {
@@ -544,7 +627,9 @@ async function fetchMarineForecast(lat, lon, model) {
   });
   if (model) params.set('models', model);
   const data = await fetchJSON(`${CONFIG.api.openMeteoMarine}?${params}`);
-  if (data) writeCache(marineCacheKey(lat, lon, model), data);
+  // Only real data may replace the last good copy (an all-null model
+  // response would otherwise wipe the stale fallback).
+  if (marineHasUsableData(data)) writeCache(marineCacheKey(lat, lon, model), data);
   return data;
 }
 
@@ -560,7 +645,7 @@ async function fetchWindForecast(lat, lon) {
     forecast_days: 7
   });
   const data = await fetchJSON(`${CONFIG.api.openMeteoWeather}?${params}`);
-  if (data) writeCache(windCacheKey(lat, lon), data);
+  if (data && data.hourly) writeCache(windCacheKey(lat, lon), data);
   return data;
 }
 
@@ -587,7 +672,7 @@ async function fetchTidePredictions(stationId, rangeDays = 3, rangeHours) {
     format: 'json'
   });
   const data = await fetchJSON(`${CONFIG.api.coops}?${params}`);
-  if (data) writeCache(tidePredCacheKey(stationId, rangeDays, rangeHours), data);
+  if (tidesUsable(data)) writeCache(tidePredCacheKey(stationId, rangeDays, rangeHours), data);
   return data;
 }
 
@@ -611,7 +696,7 @@ async function fetchTideHiLo(stationId, rangeDays = 3) {
     format: 'json'
   });
   const data = await fetchJSON(`${CONFIG.api.coops}?${params}`);
-  if (data) writeCache(tideHiLoCacheKey(stationId, rangeDays), data);
+  if (tidesUsable(data)) writeCache(tideHiLoCacheKey(stationId, rangeDays), data);
   return data;
 }
 
@@ -733,7 +818,7 @@ function parseNDBCSpectral(spectralData) {
     freq: f,
     period: f > 0 ? 1 / f : 0,
     energy: energy.values[i] || 0,
-    dir1: dir1 && dir1.values[i] != null ? dir1.values[i] : 0,
+    dir1: dir1 && dir1.values[i] != null ? dir1.values[i] : null,
     dir2: dir2 && dir2.values[i] != null ? dir2.values[i] : 0,
     r1: r1 && r1.values[i] != null ? r1.values[i] : 0.5,
     r2: r2 && r2.values[i] != null ? r2.values[i] : 0.25
@@ -969,8 +1054,8 @@ function selectBuoy(buoy) {
   STATE.pinLat = lat;
   STATE.pinLon = lon;
 
-  // Move forecast pin near buoy
-  STATE.forecastPin.setLatLng([lat, lon]);
+  // Move forecast pin near buoy (no pin when Leaflet failed to load)
+  STATE.forecastPin?.setLatLng([lat, lon]);
 
   // Update header
   const prefix = STATE.isChocomount ? 'Choc · ' : '';
@@ -1044,12 +1129,13 @@ function renderForecastSet(ctx) {
     tideHiLo, tidePred, tideStn
   } = ctx;
 
-  updateSwellCard(buoyParsed, marine, buoy, pipelineData?.spectral_summary);
+  updateSwellCard(buoyParsed, marine, buoy, pipelineSwellBand(pipelineData, buoy));
   updateWindCard(wind, buoyParsed, isChoc, displayLat, displayLon);
   updateWaterTempCard(buoyParsed, marine, isChoc);
   updateDaylightCard(displayLat, displayLon);
   updateSecondarySwellCard(marine, isChoc, forecastLat, forecastLon);
   updateCoordFooters(buoy, forecastLat, forecastLon, displayLat, displayLon);
+  setForecastUnavailable(!(marine && marine.hourly));
 
   if (marine && marine.hourly) {
     const daylight = calcDaylight(displayLat, displayLon, new Date());
@@ -1094,6 +1180,7 @@ function renderPinForecastSet(ctx) {
   updateDaylightCard(lat, lon);
   updateSecondarySwellCard(marine, false, lat, lon);
   updateCoordFooters(null, lat, lon, lat, lon);
+  setForecastUnavailable(!(marine && marine.hourly));
 
   if (marine && marine.hourly) {
     const daylight = calcDaylight(lat, lon, new Date());
@@ -1112,10 +1199,285 @@ function renderPinForecastSet(ctx) {
   }
 }
 
-function setCacheRefreshIndicator(visible) {
+// visible: the cache-first paint is up while the refresh runs. staleAsOf
+// (epoch ms): the refresh FAILED and the chart shows the last good copy
+// from then, so say so instead of "refreshing…".
+function setCacheRefreshIndicator(visible, staleAsOf) {
   const ind = el('forecast-cache-indicator');
   if (!ind) return;
-  ind.style.display = visible ? '' : 'none';
+  const stale = Number.isFinite(staleAsOf);
+  ind.style.display = visible || stale ? '' : 'none';
+  ind.classList.toggle('is-stale', stale);
+  ind.textContent = stale
+    ? `Saved forecast from ${formatAsOfTime(staleAsOf)} · refresh failed`
+    : 'Cached · refreshing…';
+}
+
+// Explicit empty state for the forecast chart when there is truly no
+// forecast (Open-Meteo failed and no saved copy is young enough), instead
+// of blank canvases under a header claiming "Updated".
+function setForecastUnavailable(on) {
+  const container = el('forecast-chart-container');
+  if (!container) return;
+  container.classList.toggle('is-unavailable', !!on);
+  let note = el('forecast-unavailable-msg');
+  if (!on) {
+    if (note) note.style.display = 'none';
+    return;
+  }
+  if (!note) {
+    note = document.createElement('div');
+    note.id = 'forecast-unavailable-msg';
+    note.className = 'forecast-unavailable-msg';
+    note.setAttribute('role', 'status');
+    container.insertBefore(note, container.firstChild);
+  }
+  note.textContent = "Forecast unavailable: Open-Meteo didn't respond and there's no saved forecast from the last 24 h. Reload to try again.";
+  note.style.display = '';
+}
+
+// "6:12 AM" today, "Wed 6:12 PM" on any other day.
+function formatAsOfTime(ms) {
+  const d = new Date(ms);
+  return d.toDateString() === new Date().toDateString()
+    ? formatTime(d)
+    : `${formatDayShort(d)} ${formatTime(d)}`;
+}
+
+// ── Buoy obs from the pipeline / NDBC ──
+// Obs times arrive as "YYYY-MM-DD HH:mm UTC" (NDBC stdmet rows and the
+// pipeline's buoy.time). → epoch ms, or null.
+function parseBuoyObsTime(s) {
+  const m = typeof s === 'string' && s.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}) UTC$/);
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null;
+}
+
+// Tags a parsed obs with its buoy, its obs time (parsed once) and where it
+// came from ('pipeline' | 'live'), so a cached reading can never paint
+// under another buoy's name and the cards can show its true age.
+function tagBuoyParsed(parsed, buoy, src) {
+  if (!parsed) return null;
+  return Object.assign(parsed, { buoyId: buoy.id, obsMs: parseBuoyObsTime(parsed.time), src });
+}
+
+// The pipeline's data/buoy.json carries one buoy (44097). Use it only for
+// that buoy: before, every spectral buoy showed 44097's numbers.
+function pipelineIsFor(pData, buoy) {
+  return !!(pData && buoy && pData.buoy_id === buoy.id);
+}
+
+function buoyParsedFromPipeline(pData, buoy) {
+  if (!pipelineIsFor(pData, buoy) || !pData.buoy) return null;
+  const b = pData.buoy;
+  return tagBuoyParsed({
+    waveHeight: b.wave_height,
+    dominantPeriod: b.dominant_period,
+    meanDirection: b.mean_wave_direction,
+    waterTemp: b.water_temp,
+    windSpeed: b.wind_speed,
+    windDir: b.wind_direction,
+    windGust: b.wind_gust,
+    time: b.time || 'pipeline data'
+  }, buoy, 'pipeline');
+}
+
+// Pipeline spectral bins for the compass rose / spectrum, or null when the
+// pipeline file isn't this buoy's or has no bins.
+function pipelineSpectralFor(buoy, pData) {
+  if (!pipelineIsFor(pData, buoy)) return null;
+  const bins = pData.spectral_bins;
+  if (!Array.isArray(bins) || !bins.length) return null;
+  return { freqs: bins.map(b => b.freq), bins };
+}
+
+// The swell card's 8 s+ band for this buoy: the pipeline's own swell_band
+// when it provides one, else integrated here from its spectral bins.
+// null when the spectrum is not as new as buoy.time: the card would show
+// it under the obs time's "Current", so it falls back to WVHT / DPD / MWD.
+const SPECTRUM_MAX_LAG_MS = 2 * 60 * 60 * 1000;
+function pipelineSwellBand(pData, buoy) {
+  if (!pipelineIsFor(pData, buoy)) return null;
+  // Carried over from an earlier run (data_spec failed), or well behind
+  // the stdmet row (the hourly spectrum normally trails it by < 1 h).
+  const carried = Array.isArray(pData.stale_sections) && pData.stale_sections.includes('spectral_bins');
+  const specMs = parseBuoyObsTime(pData.spectral_obs_time);
+  const obsMs = parseBuoyObsTime(pData.buoy && pData.buoy.time);
+  if (carried || (specMs != null && obsMs != null && obsMs - specMs > SPECTRUM_MAX_LAG_MS)) return null;
+  const bins = pData.spectral_bins;
+  const hasDir = binsHaveMeasuredDir(bins);
+  const sb = pData.swell_band;
+  const band = sb && Number.isFinite(sb.hs_m)
+    ? {
+        hsM: sb.hs_m,
+        peakPeriod: Number.isFinite(sb.peak_period_s) ? sb.peak_period_s : null,
+        dir: Number.isFinite(sb.dir_deg) ? sb.dir_deg : null,
+        minPeriod: Number.isFinite(sb.min_period_s) ? sb.min_period_s : SWELL_BAND_MIN_PERIOD_S
+      }
+    : swellBandFromBins(bins, SWELL_BAND_MIN_PERIOD_S);
+  if (band && !hasDir) band.dir = null;
+  return band;
+}
+
+// ── Forecast fetch round (buoy and pin loads) ──
+// How old a saved copy may be and still stand in for a failed refresh: a
+// day-old forecast is still a useful guide (shown as stale), and tide
+// predictions are astronomical, so a 10-day hi/lo saved 4 days ago still
+// covers today through Choc TV's day 5.
+const STALE_FALLBACK_MAX_MS = {
+  forecast: 24 * 60 * 60 * 1000,
+  tide: 4 * 24 * 60 * 60 * 1000
+};
+
+// One source after its fetch: the live response when usable (as of the
+// moment its fetcher saved it under liveKey), else the first usable saved
+// copy among `keys` younger than maxAgeMs (keeping its ORIGINAL fetch
+// time), else nothing.
+// → { data, asOf, origin: 'live' | 'stale-cache' | 'failed', keyIdx }
+function settleSource(live, usable, liveKey, keys, maxAgeMs, roundStart) {
+  if (usable(live)) {
+    // Saved during this round (5 s slack for clock jitter); else the save
+    // failed (quota) and an older copy is sitting there, so use now.
+    const savedAt = readCacheTs(liveKey);
+    const asOf = savedAt != null && savedAt >= roundStart - 5000 ? savedAt : Date.now();
+    return { data: live, asOf, origin: 'live', keyIdx: -1 };
+  }
+  for (let i = 0; i < keys.length; i++) {
+    const hit = readCache(keys[i], maxAgeMs, { allowStale: true });
+    if (hit && !hit.stale && usable(hit.data)) {
+      return { data: hit.data, asOf: hit.ts, origin: 'stale-cache', keyIdx: i };
+    }
+  }
+  return { data: null, asOf: null, origin: 'failed', keyIdx: -1 };
+}
+
+// A saved Open-Meteo copy's `current` block is the conditions when it was
+// fetched (up to 24 h ago), and the cards label it "Current". Rebuild it
+// from the copy's own forecast for this hour (every `current` field is
+// also an hourly series in both queries).
+function currentFromHourly(data) {
+  const i = marineNowIndex(data);
+  if (i < 0 || !data.current) return data;
+  const current = Object.assign({}, data.current, { time: data.hourly.time[i] });
+  for (const k of Object.keys(current)) {
+    const s = data.hourly[k];
+    if (k !== 'time' && Array.isArray(s)) current[k] = s[i] ?? null;
+  }
+  return Object.assign({}, data, { current });
+}
+
+// Fetches marine, wind and the chart's tide spans in parallel, then settles
+// each (live → saved copy → nothing). A network blip on a chosen model
+// shows best_match for this load only; the choice is forgotten only when
+// the model answered with no usable data for the spot.
+// → { marine, marineModel (model of the data returned), wind, hiloRaw,
+//     predRaw, health: { marine, wind, tides } as { asOf, origin } }
+async function fetchForecastRound({ forecastLat, forecastLon, windLat, windLon, tideStn, selectedModel }) {
+  const roundStart = Date.now();
+  let [marine, wind, hiloRaw, predRaw] = await Promise.all([
+    fetchMarineForecast(forecastLat, forecastLon, selectedModel),
+    fetchWindForecast(windLat, windLon),
+    tideStn ? fetchTideHiLo(tideStn.id, CHART_TIDE_SPAN.hiloDays) : Promise.resolve(null),
+    tideStn ? fetchTidePredictions(tideStn.id, undefined, CHART_TIDE_SPAN.predHours) : Promise.resolve(null)
+  ]);
+  let marineModel = selectedModel;
+  let noCoverage = false;
+  if (selectedModel && !marineHasUsableData(marine)) {
+    // fetchJSON returns null for a timeout, HTTP error or offline; a real
+    // body with all-null series means the model doesn't cover this spot.
+    noCoverage = marine != null;
+    showToast(noCoverage
+      ? `Model ${selectedModel} has no data here, falling back to best_match`
+      : `Model ${selectedModel} didn't respond, showing best_match for now`, 'warn');
+    if (noCoverage) setForecastModel('');
+    marineModel = '';
+    marine = await fetchMarineForecast(forecastLat, forecastLon, null);
+  }
+  const maxAge = STALE_FALLBACK_MAX_MS;
+  // Saved copies to fall back on: the user's model first, then best_match.
+  const models = selectedModel && !noCoverage ? [selectedModel, ''] : [''];
+  const m = settleSource(marine, marineHasUsableData, marineCacheKey(forecastLat, forecastLon, marineModel),
+    models.map(mm => marineCacheKey(forecastLat, forecastLon, mm)), maxAge.forecast, roundStart);
+  if (m.origin === 'stale-cache') {
+    marineModel = models[m.keyIdx];
+    m.data = currentFromHourly(m.data);
+  }
+  const windKey = windCacheKey(windLat, windLon);
+  const w = settleSource(wind, d => !!(d && d.hourly), windKey, [windKey], maxAge.forecast, roundStart);
+  if (w.origin === 'stale-cache') w.data = currentFromHourly(w.data);
+  const none = { data: null, asOf: null, origin: 'failed' };
+  const hiloKey = tideStn && tideHiLoCacheKey(tideStn.id, CHART_TIDE_SPAN.hiloDays);
+  const predKey = tideStn && tidePredCacheKey(tideStn.id, undefined, CHART_TIDE_SPAN.predHours);
+  const h = tideStn ? settleSource(hiloRaw, tidesUsable, hiloKey, [hiloKey], maxAge.tide, roundStart) : none;
+  const p = tideStn ? settleSource(predRaw, tidesUsable, predKey, [predKey], maxAge.tide, roundStart) : none;
+  // Tides = hi/lo + 6-min curve: the oldest of whichever rendered.
+  const tideParts = [h, p].filter(s => s.data);
+  const tides = tideParts.length
+    ? {
+        asOf: Math.min(...tideParts.map(s => s.asOf)),
+        origin: tideParts.some(s => s.origin === 'stale-cache') ? 'stale-cache' : 'live'
+      }
+    : { asOf: null, origin: 'failed' };
+  return {
+    marine: m.data, marineModel, wind: w.data, hiloRaw: h.data, predRaw: p.data,
+    health: {
+      marine: { asOf: m.asOf, origin: m.origin },
+      wind: { asOf: w.asOf, origin: w.origin },
+      tides
+    }
+  };
+}
+
+// SHARED CONTRACT with kiosk.js (Choc TV status strip), set after every
+// completed load:
+//   STATE.dataAsOf    epoch ms: how old the swell + wind FORECAST on screen
+//                     is (the older of the two fetch times; a stale fallback
+//                     keeps its original cache time). A load whose marine
+//                     fetch failed leaves the last forecast drawn in
+//                     STATE.forecastData, so that one's age keeps counting;
+//                     null when no forecast is on screen at all. Saved tide
+//                     predictions never age it: they are astronomical and
+//                     stay right within their 4-day cap.
+//   STATE.dataHealth  { marine:{asOf, origin}, wind:{asOf, origin},
+//                     tides:{asOf, origin}, buoy:{obsMs, origin} }; origin is
+//                     'live' | 'cache' | 'stale-cache' | 'pipeline' | 'failed'.
+// STATE.lastLoadCompletedAt stays the "a load finished" signal; these say
+// how old the data on screen really is. The header shows the same truth.
+let _forecastDrawnAsOf = null;   // age of the forecast last drawn by a load
+function recordDataHealth(health, buoyHealth, hasTideStation) {
+  STATE.dataHealth = {
+    marine: health.marine,
+    wind: health.wind,
+    tides: health.tides,
+    buoy: buoyHealth
+  };
+  const forecast = [health.marine, health.wind];
+  if (health.marine.origin !== 'failed') {
+    // renderForecastSet just drew this marine (+ wind) into forecastData.
+    const asOfs = forecast.map(s => s.asOf).filter(Number.isFinite);
+    _forecastDrawnAsOf = asOfs.length ? Math.min(...asOfs) : null;
+  }
+  // Without marine nothing was redrawn: an older forecast still on the
+  // cards keeps its real age (past the 24 h fallback cap); none → null.
+  const fd = STATE.forecastData;
+  STATE.dataAsOf = fd && fd.marine ? _forecastDrawnAsOf : null;
+
+  const anyStale = forecast.some(s => s.origin === 'stale-cache');
+  const hdr = el('header-update-time');
+  if (!hdr) return;
+  let text;
+  if (health.marine.origin === 'failed') {
+    text = 'Forecast unavailable';
+  } else if (anyStale) {
+    text = `Refresh failed · data from ${formatAsOfTime(STATE.dataAsOf)}`;
+  } else {
+    const missing = [];
+    if (health.wind.origin === 'failed') missing.push('wind');
+    if (hasTideStation && health.tides.origin === 'failed') missing.push('tides');
+    text = `Updated ${formatAsOfTime(STATE.dataAsOf)}` + (missing.length ? ` · no ${missing.join(' or ')}` : '') +
+      (hasTideStation && health.tides.origin === 'stale-cache' ? ' · saved tides' : '');
+  }
+  hdr.textContent = text;
+  hdr.classList.toggle('is-stale', health.marine.origin === 'failed' || anyStale);
 }
 
 // ── Load concurrency guard ──────────────────────
@@ -1159,8 +1521,8 @@ async function _loadAllDataImpl(buoy, _gen) {
   const cachedMarine   = readCache(marineCacheKey(forecastLat, forecastLon, selectedModel), CACHE_TTL.marine);
   const cachedWind     = readCache(windCacheKey(displayLat, displayLon), CACHE_TTL.wind);
   const cachedPipeline = isChoc ? readCache(PIPELINE_CACHE_KEY, CACHE_TTL.pipeline) : null;
-  const cachedHiLoRaw  = tideStn ? readCache(tideHiLoCacheKey(tideStn.id, 10), CACHE_TTL.hilo) : null;
-  const cachedPredRaw  = tideStn ? readCache(tidePredCacheKey(tideStn.id, undefined, 168), CACHE_TTL.tide) : null;
+  const cachedHiLoRaw  = tideStn ? readCache(tideHiLoCacheKey(tideStn.id, CHART_TIDE_SPAN.hiloDays), CACHE_TTL.hilo) : null;
+  const cachedPredRaw  = tideStn ? readCache(tidePredCacheKey(tideStn.id, undefined, CHART_TIDE_SPAN.predHours), CACHE_TTL.tide) : null;
   const cachedHiLo = cachedHiLoRaw && cachedHiLoRaw.predictions ? cachedHiLoRaw.predictions : null;
   const cachedPred = cachedPredRaw && cachedPredRaw.predictions ? cachedPredRaw.predictions : null;
 
@@ -1168,19 +1530,12 @@ async function _loadAllDataImpl(buoy, _gen) {
   const canRenderFromCache = !!(cachedMarine && cachedMarine.hourly && cachedWind && tidesCacheReady);
 
   if (canRenderFromCache) {
-    let cachedBuoyParsed = STATE._cachedBuoyParsed || null;
-    if (!cachedBuoyParsed && cachedPipeline && cachedPipeline.buoy) {
-      cachedBuoyParsed = {
-        waveHeight: cachedPipeline.buoy.wave_height,
-        dominantPeriod: cachedPipeline.buoy.dominant_period,
-        meanDirection: cachedPipeline.buoy.mean_wave_direction,
-        waterTemp: cachedPipeline.buoy.water_temp,
-        windSpeed: cachedPipeline.buoy.wind_speed,
-        windDir: cachedPipeline.buoy.wind_direction,
-        windGust: cachedPipeline.buoy.wind_gust,
-        time: cachedPipeline.buoy.time || 'pipeline data'
-      };
-    }
+    // Only this buoy's own reading: another buoy's cached obs (or 44097's
+    // pipeline data) must never paint under this buoy's name.
+    const prevParsed = STATE._cachedBuoyParsed;
+    const cachedBuoyParsed = prevParsed && prevParsed.buoyId === buoy.id
+      ? prevParsed
+      : buoyParsedFromPipeline(cachedPipeline, buoy);
     renderForecastSet({
       buoy, isChoc, selectedModel,
       forecastLat, forecastLon, displayLat, displayLon,
@@ -1191,54 +1546,45 @@ async function _loadAllDataImpl(buoy, _gen) {
     setCacheRefreshIndicator(true);
   } else {
     el('val-swell-height').textContent = '···';
+    // The whole swell card, so the previous buoy's detail and source can't
+    // sit under this buoy's name while the load runs.
+    el('val-swell-detail').textContent = '···';
+    el('val-swell-arrival').style.display = 'none';
+    setFooter('footer-swell', '');
     el('val-wind-speed').textContent = '···';
     el('val-water-temp').textContent = '···';
     el('val-tide').textContent = '···';
     setCacheRefreshIndicator(false);
   }
 
-  // ── Fire all parallel fetches (forecast chart deps) ──
-  let [marine, wind, buoyData, pipelineData, hiloRaw, predRaw] = await Promise.all([
-    fetchMarineForecast(forecastLat, forecastLon, selectedModel),
-    fetchWindForecast(displayLat, displayLon),
-    buoy.spectral ? fetchNDBCStdmet(buoy.id) : Promise.resolve(null),
-    isChoc ? fetchPipelineBuoy() : Promise.resolve(null),
-    tideStn ? fetchTideHiLo(tideStn.id, 10) : Promise.resolve(null),
-    tideStn ? fetchTidePredictions(tideStn.id, undefined, 168) : Promise.resolve(null)
-  ]);
-  if (selectedModel && !marineHasUsableData(marine)) {
-    showToast(`Model ${selectedModel} unavailable, falling back to best_match`, 'warn');
-    setForecastModel('');
-    marine = await fetchMarineForecast(forecastLat, forecastLon, null);
-  }
+  // Live NDBC (non-Choc buoys, and only with a relay in
+  // CONFIG.api.ndbcProxies) starts now but never gates the chart: the
+  // forecast renders on Open-Meteo + CO-OPS and the buoy reading is patched
+  // in when it lands. Choc's buoy comes from the pipeline's data/buoy.json.
+  const liveBuoyP = buoy.spectral && !isChoc ? fetchNDBCStdmet(buoy.id) : Promise.resolve(null);
+  const pipelineP = isChoc ? fetchPipelineBuoy() : Promise.resolve(null);
+
+  // ── Forecast chart deps (live → saved copy → nothing) ──
+  const round = await fetchForecastRound({
+    forecastLat, forecastLon, windLat: displayLat, windLon: displayLon, tideStn, selectedModel
+  });
+  const pipelineData = await pipelineP;
   if (_gen !== _loadGen) return; // superseded by a newer load
 
-  // Parse buoy data (CORS proxy primary, pipeline fallback for Choc)
-  let buoyParsed = parseNDBCStdmet(buoyData);
-  if (!buoyParsed && pipelineData && pipelineData.buoy) {
-    buoyParsed = {
-      waveHeight: pipelineData.buoy.wave_height,
-      dominantPeriod: pipelineData.buoy.dominant_period,
-      meanDirection: pipelineData.buoy.mean_wave_direction,
-      waterTemp: pipelineData.buoy.water_temp,
-      windSpeed: pipelineData.buoy.wind_speed,
-      windDir: pipelineData.buoy.wind_direction,
-      windGust: pipelineData.buoy.wind_gust,
-      time: pipelineData.buoy.time || 'pipeline data'
-    };
-  }
+  let buoyParsed = buoyParsedFromPipeline(pipelineData, buoy);
   STATE._cachedBuoyParsed = buoyParsed;
 
-  const tideHiLoForChart = hiloRaw && hiloRaw.predictions ? hiloRaw.predictions : null;
-  const tidePredForChart = predRaw && predRaw.predictions ? predRaw.predictions : null;
-
-  renderForecastSet({
-    buoy, isChoc, selectedModel,
+  const renderCtx = {
+    buoy, isChoc, selectedModel: round.marineModel,
     forecastLat, forecastLon, displayLat, displayLon,
-    marine, wind, buoyParsed, pipelineData,
-    tideHiLo: tideHiLoForChart, tidePred: tidePredForChart, tideStn
-  });
-  setCacheRefreshIndicator(false);
+    marine: round.marine, wind: round.wind, buoyParsed, pipelineData,
+    tideHiLo: round.hiloRaw ? round.hiloRaw.predictions : null,
+    tidePred: round.predRaw ? round.predRaw.predictions : null,
+    tideStn
+  };
+  renderForecastSet(renderCtx);
+  setCacheRefreshIndicator(false,
+    round.health.marine.origin === 'stale-cache' ? round.health.marine.asOf : undefined);
 
   // ── Tides panel ──
   if (STATE.nearestTideStation) {
@@ -1248,6 +1594,15 @@ async function _loadAllDataImpl(buoy, _gen) {
     el('panel-tides').style.display = 'none';
   }
   if (_gen !== _loadGen) return; // superseded by a newer load
+
+  // ── Live buoy reading (non-Choc, relay configured) ──
+  const liveParsed = tagBuoyParsed(parseNDBCStdmet(await liveBuoyP), buoy, 'live');
+  if (_gen !== _loadGen) return; // superseded by a newer load
+  if (liveParsed) {
+    buoyParsed = liveParsed;
+    STATE._cachedBuoyParsed = buoyParsed;
+    renderForecastSet(Object.assign(renderCtx, { buoyParsed }));
+  }
 
   // ── Spectral data (compass rose + spectrum) ──
   if (buoy.spectral) {
@@ -1260,20 +1615,24 @@ async function _loadAllDataImpl(buoy, _gen) {
     let spectralRaw = null;
     let isStale = false;
 
-    // Try live CORS fetch first
-    try {
-      spectralRaw = await fetchNDBCSpectral(buoy.id);
-      parsed = parseNDBCSpectral(spectralRaw);
-    } catch (err) {
-      console.warn('Spectral CORS fetch failed:', buoy.id, err);
+    // Live NDBC for non-Choc buoys (only with a relay configured; with none
+    // every file comes back null at once). Choc is pipeline-only.
+    if (!isChoc) {
+      try {
+        spectralRaw = await fetchNDBCSpectral(buoy.id);
+        parsed = parseNDBCSpectral(spectralRaw);
+      } catch (err) {
+        console.warn('Spectral CORS fetch failed:', buoy.id, err);
+      }
     }
 
-    // Fallback to pipeline data
+    // Pipeline data, only when it is this buoy's own
     if (!parsed || !parsed.bins || parsed.bins.length === 0) {
       try {
-        const pData = await fetchPipelineBuoy();
-        if (pData && pData.spectral_bins && pData.spectral_bins.length > 0) {
-          parsed = { freqs: pData.spectral_bins.map(b => b.freq), bins: pData.spectral_bins };
+        const pData = pipelineData || await fetchPipelineBuoy();
+        const fromPipeline = pipelineSpectralFor(buoy, pData);
+        if (fromPipeline) {
+          parsed = fromPipeline;
           isStale = true;
           // Use pipeline spectral summary for the summary table
           if (pData.spectral_summary) {
@@ -1322,7 +1681,16 @@ async function _loadAllDataImpl(buoy, _gen) {
       );
     } else {
       console.warn('Spectral parse returned no bins for buoy', buoy.id);
-      showSpectralEmpty(buoy.id);
+      if (!isChoc) {
+        // Nothing of this buoy's own: drop the last buoy's spectrum so a
+        // resize or rose-scale redraw can't repaint it under this name.
+        STATE.lastSpectral = null;
+        STATE.lastBuoyParsed = null;
+      }
+      showSpectralEmpty(buoy.id, isChoc
+        ? `No spectral data for ${buoy.id} in the latest pipeline update.`
+        : `No live spectrum for ${buoy.id}: NDBC doesn't allow browser requests and no relay is set up. ` +
+          `Only Choc's buoy (44097) is fetched, every 2 h, by the pipeline.`);
       el('panel-spectral-summary').style.display = 'none';
     }
   } else {
@@ -1335,9 +1703,13 @@ async function _loadAllDataImpl(buoy, _gen) {
   // ── Tide station map ──
   highlightNearestTideStation(displayLat, displayLon);
 
-  // Update time
+  // Update time: lastLoadCompletedAt = this load finished; dataAsOf and the
+  // header = how old the data on screen really is.
   STATE.lastLoadCompletedAt = Date.now();
-  el('header-update-time').textContent = `Updated ${formatTime(new Date())}`;
+  recordDataHealth(round.health, {
+    obsMs: buoyParsed ? buoyParsed.obsMs : null,
+    origin: buoyParsed ? buoyParsed.src : 'failed'
+  }, !!tideStn);
 }
 
 async function loadPinData(lat, lon) {
@@ -1358,8 +1730,8 @@ async function _loadPinDataImpl(lat, lon, _gen) {
   // ── SWR: paint from cache before any network hits ──
   const cachedMarine  = readCache(marineCacheKey(lat, lon, selectedModel), CACHE_TTL.marine);
   const cachedWind    = readCache(windCacheKey(lat, lon), CACHE_TTL.wind);
-  const cachedHiLoRaw = tideStn ? readCache(tideHiLoCacheKey(tideStn.id, 10), CACHE_TTL.hilo) : null;
-  const cachedPredRaw = tideStn ? readCache(tidePredCacheKey(tideStn.id, undefined, 168), CACHE_TTL.tide) : null;
+  const cachedHiLoRaw = tideStn ? readCache(tideHiLoCacheKey(tideStn.id, CHART_TIDE_SPAN.hiloDays), CACHE_TTL.hilo) : null;
+  const cachedPredRaw = tideStn ? readCache(tidePredCacheKey(tideStn.id, undefined, CHART_TIDE_SPAN.predHours), CACHE_TTL.tide) : null;
   const cachedHiLo = cachedHiLoRaw && cachedHiLoRaw.predictions ? cachedHiLoRaw.predictions : null;
   const cachedPred = cachedPredRaw && cachedPredRaw.predictions ? cachedPredRaw.predictions : null;
 
@@ -1375,35 +1747,30 @@ async function _loadPinDataImpl(lat, lon, _gen) {
     setCacheRefreshIndicator(true);
   } else {
     el('val-swell-height').textContent = '···';
+    el('val-swell-detail').textContent = '···';
+    el('val-swell-arrival').style.display = 'none';
+    setFooter('footer-swell', '');
     el('val-wind-speed').textContent = '···';
     el('val-water-temp').textContent = '···';
     el('val-tide').textContent = '···';
     setCacheRefreshIndicator(false);
   }
 
-  // ── Fire fresh fetches in parallel ──
-  let [marine, wind, hiloRaw, predRaw] = await Promise.all([
-    fetchMarineForecast(lat, lon, selectedModel),
-    fetchWindForecast(lat, lon),
-    tideStn ? fetchTideHiLo(tideStn.id, 10) : Promise.resolve(null),
-    tideStn ? fetchTidePredictions(tideStn.id, undefined, 168) : Promise.resolve(null)
-  ]);
-  if (selectedModel && !marineHasUsableData(marine)) {
-    showToast(`Model ${selectedModel} unavailable, falling back to best_match`, 'warn');
-    setForecastModel('');
-    marine = await fetchMarineForecast(lat, lon, null);
-  }
+  // ── Fire fresh fetches in parallel (live → saved copy → nothing) ──
+  const round = await fetchForecastRound({
+    forecastLat: lat, forecastLon: lon, windLat: lat, windLon: lon, tideStn, selectedModel
+  });
   if (_gen !== _loadGen) return; // superseded by a newer load
 
-  const tideHiLoForChart = hiloRaw && hiloRaw.predictions ? hiloRaw.predictions : null;
-  const tidePredForChart = predRaw && predRaw.predictions ? predRaw.predictions : null;
-
   renderPinForecastSet({
-    selectedModel, lat, lon,
-    marine, wind,
-    tideHiLo: tideHiLoForChart, tidePred: tidePredForChart, tideStn
+    selectedModel: round.marineModel, lat, lon,
+    marine: round.marine, wind: round.wind,
+    tideHiLo: round.hiloRaw ? round.hiloRaw.predictions : null,
+    tidePred: round.predRaw ? round.predRaw.predictions : null,
+    tideStn
   });
-  setCacheRefreshIndicator(false);
+  setCacheRefreshIndicator(false,
+    round.health.marine.origin === 'stale-cache' ? round.health.marine.asOf : undefined);
 
   if (STATE.nearestTideStation) {
     await loadTidesPanel(STATE.nearestTideStation);
@@ -1419,71 +1786,152 @@ async function _loadPinDataImpl(lat, lon, _gen) {
 
   highlightNearestTideStation(lat, lon);
   STATE.lastLoadCompletedAt = Date.now();
-  el('header-update-time').textContent = `Updated ${formatTime(new Date())}`;
+  recordDataHealth(round.health, { obsMs: null, origin: 'failed' }, !!tideStn);
 }
 
 // ════════════════════════════════════════════════
 // UPDATE CONDITION CARDS
 // ════════════════════════════════════════════════
 
-function updateSwellCard(buoyParsed, marine, buoy, spectralSummary) {
+// ── Swell band (hero swell card) ──
+// The card reports the >= 8 s part of the buoy spectrum. NDBC's own SwH at
+// 44097 only counts >= 10 s energy (its separation frequency is missing, so
+// it splits at a fixed 0.10 Hz), which files the 8-9 s swell that
+// CHOCOMOUNT_KNOWLEDGE.md counts among Choc's best days under "wind waves".
+// 8 s matches computePrimarySwellDir's band. NDBC's split stays in the
+// spectral table.
+const SWELL_BAND_MIN_PERIOD_S = 8;
+
+// Hs, peak period and energy-weighted direction of the >= minPeriod part of
+// a spectrum: Hs = 4·sqrt(Σ E·df), each bin's df running between the
+// midpoints to its neighbours (NDBC bands are unevenly spaced).
+// → { hsM, peakPeriod, dir, minPeriod }, or null without bins.
+function swellBandFromBins(bins, minPeriod = SWELL_BAND_MIN_PERIOD_S) {
+  if (!Array.isArray(bins)) return null;
+  const sorted = bins.filter(b => b && b.freq > 0).sort((a, b) => a.freq - b.freq);
+  if (!sorted.length) return null;
+  let m0 = 0, sx = 0, sy = 0, peak = null;
+  for (let i = 0; i < sorted.length; i++) {
+    const b = sorted[i];
+    if (1 / b.freq < minPeriod - 1e-6) continue;
+    const prev = sorted[i - 1], next = sorted[i + 1];
+    const lo = prev ? (prev.freq + b.freq) / 2 : b.freq - (next ? (next.freq - b.freq) / 2 : 0.0025);
+    const hi = next ? (b.freq + next.freq) / 2 : b.freq + (b.freq - lo);
+    const e = b.energy > 0 ? b.energy * (hi - lo) : 0;
+    if (!e) continue;
+    m0 += e;
+    if (!peak || b.energy > peak.energy) peak = b;
+    if (Number.isFinite(b.dir1)) {
+      sx += Math.cos(b.dir1 * Math.PI / 180) * e;
+      sy += Math.sin(b.dir1 * Math.PI / 180) * e;
+    }
+  }
+  return {
+    hsM: 4 * Math.sqrt(m0),
+    peakPeriod: peak ? 1 / peak.freq : null,
+    dir: sx || sy ? (Math.atan2(sy, sx) * 180 / Math.PI + 360) % 360 : null,
+    minPeriod
+  };
+}
+
+// ── Buoy obs age ──
+// The pipeline lands every 2-8 h, so a "current" reading can be most of a
+// tide cycle old. Amber past 2 h, red past 6 h; "Current" only within 90 min.
+const BUOY_OBS_CURRENT_MS = 90 * 60 * 1000;
+const BUOY_OBS_STALE_MS = 2 * 60 * 60 * 1000;
+const BUOY_OBS_OLD_MS = 6 * 60 * 60 * 1000;
+
+// → { ageMs, label: '2h 30m ago', level: 'fresh' | 'stale' | 'old' }, or
+// null when the obs time is unknown.
+function buoyObsAge(obsMs, nowMs = Date.now()) {
+  if (!Number.isFinite(obsMs)) return null;
+  const ageMs = Math.max(0, nowMs - obsMs);
+  return {
+    ageMs,
+    // formatAgo measures from Date.now(); shift so it measures ageMs.
+    label: formatAgo(new Date(Date.now() - ageMs)),
+    level: ageMs > BUOY_OBS_OLD_MS ? 'old' : ageMs > BUOY_OBS_STALE_MS ? 'stale' : 'fresh'
+  };
+}
+
+// The buoy sits ~50 mi out, so what it measured reaches Choc one travel
+// time after the OBSERVATION, not after now. A clock time keeps an old
+// reading from passing for an ETA.
+function buoySwellArrivalText(periodS, obsMs, nowMs = Date.now()) {
+  const arrival = swellArrivalTime(periodS, CONFIG.chocomount.buoyDistanceMiles);
+  if (!arrival) return null;
+  if (!Number.isFinite(obsMs)) return `${arrival.label} buoy-to-Choc travel`;
+  const atMs = obsMs + arrival.minutes * 60 * 1000;
+  return `${atMs > nowMs ? 'reaches' : 'reached'} Choc ~${formatTime(new Date(atMs))}`;
+}
+
+function updateSwellCard(buoyParsed, marine, buoy, swellBand) {
   const isChoc = STATE.isChocomount;
   const card = el('card-swell');
-  card.classList.remove('quality-good', 'quality-fair', 'quality-poor');
+  card.classList.remove('quality-good', 'quality-fair', 'quality-poor', 'is-stale', 'is-old');
+  const label = card.querySelector('.condition-label');
+  const extra = el('val-swell-arrival');
 
   // Prefer buoy data for current swell
   if (buoyParsed && buoyParsed.waveHeight != null) {
     const totalH = buoyParsed.waveHeight;  // WVHT total (ft) — swell + wind waves
-    const d = buoyParsed.meanDirection;
+    const age = buoyObsAge(buoyParsed.obsMs);
 
-    // Use spectral swell-only height when available (consistent with ML model variable)
-    const specSwellM = spectralSummary?.swell_height_m;
-    const swellFt = (specSwellM != null && specSwellM < 90)
-      ? Math.round(specSwellM * 3.28084 * 10) / 10 : null;
-    const displayP = (swellFt != null && spectralSummary?.swell_period != null)
-      ? spectralSummary.swell_period : buoyParsed.dominantPeriod;
+    // Hero number: the 8 s+ band of the spectrum (see SWELL_BAND_MIN_PERIOD_S),
+    // with its own peak period and direction (the buoy's MWD when the band
+    // has none: flat, or no direction file). Total WVHT stays in the detail.
+    const band = swellBand && Number.isFinite(swellBand.hsM) ? swellBand : null;
+    const swellFt = band ? Math.round(band.hsM * 3.28084 * 10) / 10 : null;
+    const d = band && band.dir != null ? Math.round(band.dir) : buoyParsed.meanDirection;
+    const displayP = band ? band.peakPeriod : buoyParsed.dominantPeriod;
 
     // Card accent based on total wave height
     if (totalH >= 3) card.classList.add('quality-good');
     else if (totalH >= 1.5) card.classList.add('quality-fair');
     else card.classList.add('quality-poor');
+    if (age && age.level !== 'fresh') card.classList.add('is-' + age.level);
 
+    if (label) {
+      const what = band ? `Swell ${band.minPeriod}+ sec` : 'Swell';
+      label.textContent = `${what}: ${age && age.ageMs <= BUOY_OBS_CURRENT_MS ? 'Current' : 'Buoy'}`;
+    }
     el('val-swell-height').textContent = swellFt != null
       ? `${swellFt.toFixed(1)} ft swell`
       : `${totalH.toFixed(1)} ft`;
     el('val-swell-height').className = `condition-value ${swellDirClass(d)}`;
     el('val-swell-detail').textContent = `${displayP ? displayP.toFixed(0) + 's' : '—'} · ${directionLabel(d)} (${d != null ? d + '°' : '—'})${swellFt != null ? ' · ' + totalH.toFixed(1) + ' ft total' : ''}`;
 
-    // Swell arrival estimator (Chocomount only)
-    if (isChoc && displayP) {
-      const arrival = swellArrivalTime(displayP, CONFIG.chocomount.buoyDistanceMiles);
-      if (arrival) {
-        el('val-swell-arrival').style.display = '';
-        el('val-swell-arrival').textContent = `Swell arriving from ~${CONFIG.chocomount.buoyDistanceMiles} miles away: ${arrival.label}`;
-      }
-    } else {
-      el('val-swell-arrival').style.display = 'none';
-    }
+    // When the buoy measured it, and (Choc) when that swell reaches the
+    // beach, from the band's period.
+    const parts = [];
+    if (age) parts.push(`Buoy obs ${formatAsOfTime(buoyParsed.obsMs)} (${age.label})`);
+    const arrivalText = isChoc && displayP ? buoySwellArrivalText(displayP, buoyParsed.obsMs) : null;
+    if (arrivalText) parts.push(arrivalText);
+    extra.style.display = parts.length ? '' : 'none';
+    extra.textContent = parts.join(' · ');
 
     const buoyLabel = buoy ? `ndbc ${buoy.id} · ${buoy.name}` : 'ndbc buoy';
+    const obsNote = age ? ` · obs ${formatAsOfTime(buoyParsed.obsMs)}` : '';
     const buoyUrl = buoy ? `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}` : 'https://www.ndbc.noaa.gov/';
-    setFooter('footer-swell', buoyLabel, buoyUrl, 'ndbc station page');
+    setFooter('footer-swell', buoyLabel + obsNote, buoyUrl, 'ndbc station page');
 
   } else if (marine && marine.current) {
-    // Fallback to Open-Meteo current — use swell-only variables for consistency with ML model
+    // No buoy reading: Open-Meteo's model nowcast (swell-only variables)
     const c = marine.current;
     const h = c.swell_wave_height ?? c.wave_height;
     const p = c.swell_wave_period ?? c.wave_period;
     const d = c.swell_wave_direction ?? c.wave_direction;
+    if (label) label.textContent = 'Swell: Current';
     el('val-swell-height').textContent = h != null ? `${h.toFixed(1)} ft` : '—';
     el('val-swell-height').className = 'condition-value';
     el('val-swell-detail').textContent = `${p ? p.toFixed(0) + 's' : '—'} · ${directionLabel(d)}`;
-    el('val-swell-arrival').style.display = 'none';
+    extra.style.display = 'none';
     setFooter('footer-swell', 'Open-Meteo Marine', 'https://open-meteo.com/en/docs/marine-weather-api', 'open-meteo.com');
   } else {
+    if (label) label.textContent = 'Swell: Current';
     el('val-swell-height').textContent = '—';
     el('val-swell-detail').textContent = 'No data available';
-    el('val-swell-arrival').style.display = 'none';
+    extra.style.display = 'none';
     setFooter('footer-swell', 'No data source available');
   }
 }
@@ -1678,7 +2126,7 @@ function highlightNearestTideStation(lat, lon) {
       if (div) div.style.background = '#2c2825';
     }
     // Center tide map on the area
-    STATE.tideMap.setView([lat, lon], 8);
+    STATE.tideMap?.setView([lat, lon], 8);
   }
 }
 
@@ -1910,7 +2358,7 @@ function drawSwellPanel(common, data) {
   ctx.fillStyle = FC_RETRO.plotBg;
   ctx.fillRect(0, 0, cssW, cssH);
 
-  const { heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellDiv, periodMax, obsHsFt } = data;
+  const { heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellDiv, periodMax, obsHsFt, obsMs } = data;
 
   // Dashed horizontal gridlines on the upper region, one per axis division.
   for (let q = 1; q < swellDiv; q++) {
@@ -2144,20 +2592,24 @@ function drawSwellPanel(common, data) {
 
   // Dashed "now" line spanning the height region and the direction
   // sub-panel, drawn before the scrubber dots so markers layer on top.
-  const nowX = _fcDrawNowLine(ctx, common, plotLeft, plotW, top, subBot);
+  _fcDrawNowLine(ctx, common, plotLeft, plotW, top, subBot);
 
-  // Live buoy observation at "now" — white diamond on the swell panel.
-  // The buoy reports TOTAL significant height while the line plots the
-  // swell component, so this reads as "measured sea vs forecast swell"
-  // (approximate by design). Clamped to the axis ceiling.
-  if (nowX != null && obsHsFt != null) {
+  // Buoy observation — white diamond on the swell panel at the time it was
+  // MEASURED (the pipeline lands every 2-8 h, so pinning it to the now line
+  // passed an old reading off as current); skipped when that time is
+  // unknown or over 6 h old. The buoy reports TOTAL significant height while
+  // the line plots the swell component, so this reads as "measured sea vs
+  // forecast swell" (approximate by design). Clamped to the axis ceiling.
+  const obsX = obsHsFt != null && obsMs != null && Date.now() - obsMs <= BUOY_OBS_OLD_MS &&
+    obsMs >= common.t0 && obsMs <= common.tEnd ? xPos(new Date(obsMs)) : null;
+  if (obsX != null) {
     const oy = ySwell(Math.min(obsHsFt, swellMaxY));
     ctx.save();
     ctx.beginPath();
-    ctx.moveTo(nowX, oy - 4);
-    ctx.lineTo(nowX + 4, oy);
-    ctx.lineTo(nowX, oy + 4);
-    ctx.lineTo(nowX - 4, oy);
+    ctx.moveTo(obsX, oy - 4);
+    ctx.lineTo(obsX + 4, oy);
+    ctx.lineTo(obsX, oy + 4);
+    ctx.lineTo(obsX - 4, oy);
     ctx.closePath();
     ctx.fillStyle = FC_RETRO.obsFill;
     ctx.fill();
@@ -2169,7 +2621,7 @@ function drawSwellPanel(common, data) {
       ctx.fillStyle = FC_RETRO.ink2;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText('obs', nowX + 7, oy);
+      ctx.fillText('obs', obsX + 7, oy);
     }
     ctx.restore();
   }
@@ -2690,8 +3142,10 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred, buoy
   // Draw each panel canvas.
   const swellPayload = {
     heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellDiv, periodMax,
-    // Current observed total Hs (feet) from the buoy, for the "obs" marker.
-    obsHsFt: buoyParsed && buoyParsed.waveHeight != null ? buoyParsed.waveHeight : null
+    // Observed total Hs (feet) from the buoy and when it was measured, for
+    // the "obs" marker.
+    obsHsFt: buoyParsed && buoyParsed.waveHeight != null ? buoyParsed.waveHeight : null,
+    obsMs: buoyParsed && Number.isFinite(buoyParsed.obsMs) ? buoyParsed.obsMs : null
   };
   const windPayload  = { windSpeeds, windDirs, windMaxY };
   const tidePayload  = { tidePred, tideHiLo };
@@ -2780,6 +3234,13 @@ function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred, buoy
 // sessionStorage 'lcc-scrubber-hour' (ISO hour string).
 
 let _forecastInteractionAbort = null;
+// Gesture state lives here, not in setupForecastInteraction's closure:
+// a ResizeObserver redraw re-wires the listeners, and a drag must survive
+// that (audit C45). drag = the canvas a mouse drag started on; touch =
+// the touch's start point and its locked direction ('h' scrubs, 'v'
+// scrolls the page).
+const _fcGesture = { drag: null, touchStart: null, touchMode: null };
+const FC_TOUCH_SLOP_PX = 8;
 
 function findHourIndexForTime(targetMs, cs) {
   let best = -1;
@@ -2951,8 +3412,11 @@ function applyScrubberToHour(idx) {
   document.querySelectorAll('.scrub-badge').forEach(b => b.remove());
 
   // ── "Reset to now" link visibility (lives inside the detail bar) ──
+  // At rest style.css also drops it from layout (.scrub-active is off),
+  // so a phone's sticky bar stays two lines; the re-wrap on the first
+  // scrub is harmless because the drag state survives a re-wire (C45).
   const resetBtn = el('forecast-reset-now');
-  if (resetBtn) resetBtn.style.display = isScrubberAtNow() ? 'none' : '';
+  if (resetBtn) resetBtn.style.visibility = isScrubberAtNow() ? 'hidden' : 'visible';
 
   // ── Cross-feature: Tab 2 prediction widget tracks the scrubber too. ──
   if (typeof _regNotifyScrubberMoved === 'function') _regNotifyScrubberMoved();
@@ -3005,13 +3469,11 @@ function setupForecastInteraction(container) {
     el('forecast-canvas-tide')
   ].filter(Boolean);
 
-  let dragging = false;
-  let dragSrc = null;
+  const g = _fcGesture;
 
   for (const cv of canvases) {
     cv.addEventListener('mousedown', (e) => {
-      dragging = true;
-      dragSrc = cv;
+      g.drag = cv;
       cv.style.cursor = 'ew-resize';
       const idx = indexFromClientXOnCanvas(e.clientX, cv);
       setScrubberToIdx(idx, true);
@@ -3019,37 +3481,52 @@ function setupForecastInteraction(container) {
     }, { signal });
 
     cv.addEventListener('mousemove', (e) => {
-      if (!dragging) return;
-      const idx = indexFromClientXOnCanvas(e.clientX, dragSrc || cv);
+      if (!g.drag) return;
+      const idx = indexFromClientXOnCanvas(e.clientX, g.drag);
       setScrubberToIdx(idx, true);
     }, { signal });
 
+    // Touch: the canvases are touch-action: pan-y, so the browser keeps
+    // vertical swipes as page scrolls. Nothing moves on touchstart; once
+    // the finger has travelled FC_TOUCH_SLOP_PX the gesture locks to a
+    // direction, and only a horizontal drag scrubs (and blocks the
+    // default). A plain tap still scrubs via the compatibility mousedown.
     cv.addEventListener('touchstart', (e) => {
-      if (e.touches.length !== 1) return;
-      const idx = indexFromClientXOnCanvas(e.touches[0].clientX, cv);
-      setScrubberToIdx(idx, true);
+      g.touchMode = null;
+      g.touchStart = e.touches.length === 1
+        ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
     }, { passive: true, signal });
 
     cv.addEventListener('touchmove', (e) => {
-      if (e.touches.length !== 1) return;
-      e.preventDefault();
-      const idx = indexFromClientXOnCanvas(e.touches[0].clientX, cv);
-      setScrubberToIdx(idx, true);
+      if (!g.touchStart || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if (!g.touchMode) {
+        const dx = Math.abs(t.clientX - g.touchStart.x);
+        const dy = Math.abs(t.clientY - g.touchStart.y);
+        if (dx < FC_TOUCH_SLOP_PX && dy < FC_TOUCH_SLOP_PX) return;
+        g.touchMode = dx > dy ? 'h' : 'v';
+      }
+      if (g.touchMode !== 'h') return;
+      if (e.cancelable) e.preventDefault();
+      setScrubberToIdx(indexFromClientXOnCanvas(t.clientX, cv), true);
     }, { passive: false, signal });
+
+    const endTouch = () => { g.touchStart = null; g.touchMode = null; };
+    cv.addEventListener('touchend', endTouch, { passive: true, signal });
+    cv.addEventListener('touchcancel', endTouch, { passive: true, signal });
   }
 
   // Even when the cursor strays off a canvas, dragging should still follow
   // until mouseup. Listen to window-level mousemove for that.
   window.addEventListener('mousemove', (e) => {
-    if (!dragging || !dragSrc) return;
-    const idx = indexFromClientXOnCanvas(e.clientX, dragSrc);
+    if (!g.drag) return;
+    const idx = indexFromClientXOnCanvas(e.clientX, g.drag);
     setScrubberToIdx(idx, true);
   }, { signal });
 
   window.addEventListener('mouseup', () => {
-    dragging = false;
-    if (dragSrc) dragSrc.style.cursor = '';
-    dragSrc = null;
+    if (g.drag) g.drag.style.cursor = '';
+    g.drag = null;
   }, { signal });
 }
 
@@ -3087,6 +3564,13 @@ function resetScrubberToNow() {
 
 let _nowPulseRAF = null;
 let _nowPulsePrev = null; // last drawn {x, y} for dirty-rect clearing
+// Each frame makes the browser re-composite the whole overlay, so the
+// ring animates at ~10 fps (it is a 3 px, 1.6 s fade; 60 fps bought
+// nothing visible) and the loop stops while the chart is hidden or
+// scrolled off-screen (audit C36).
+const NOW_PULSE_FRAME_MS = 100;
+let _nowPulseInView = true;   // IntersectionObserver verdict; true until it reports
+let _nowPulseIO = null;
 
 function _ensureNowOverlay(container) {
   let overlay = el('forecast-now-overlay');
@@ -3166,11 +3650,37 @@ function startNowPulse() {
     _drawNowPulseFrame(true); // single static marker, no animation loop
     return;
   }
-  const tick = () => {
-    _drawNowPulseFrame(false);
+  _watchNowPulseViewport();
+  let last = -Infinity;
+  const tick = (ts) => {
+    // Hidden (another tab, a kiosk panel without the chart) or scrolled
+    // away: end the loop instead of spinning. switchTab, the observer
+    // below, visibilitychange and every full chart draw restart it.
+    const container = el('forecast-chart-container');
+    if (!container || container.offsetWidth === 0 || !_nowPulseInView) {
+      _nowPulseRAF = null;
+      return;
+    }
+    if (ts - last >= NOW_PULSE_FRAME_MS) {
+      last = ts;
+      _drawNowPulseFrame(false);
+    }
     _nowPulseRAF = requestAnimationFrame(tick);
   };
   _nowPulseRAF = requestAnimationFrame(tick);
+}
+
+// Pause the pulse while the chart is scrolled off-screen (long phone
+// pages) and resume when it comes back. Created once, on first start.
+function _watchNowPulseViewport() {
+  if (_nowPulseIO || typeof IntersectionObserver !== 'function') return;
+  const container = el('forecast-chart-container');
+  if (!container) return;
+  _nowPulseIO = new IntersectionObserver(entries => {
+    _nowPulseInView = entries[entries.length - 1].isIntersecting;
+    if (_nowPulseInView && STATE.forecastChart && !document.hidden) startNowPulse();
+  });
+  _nowPulseIO.observe(container);
 }
 
 function stopNowPulse() {
@@ -3445,12 +3955,25 @@ function computeSpecTrends(latest, baseline) {
   };
 }
 
+// A bin's dir1 is a measurement only when it is finite and not NDBC's 999
+// sentinel. Without the swdir file, older pipeline runs wrote dir1 = 0 in
+// every bin (newer ones write null): a direction nobody measured, not swell
+// from due north.
+function binHasMeasuredDir(b) {
+  return !!b && Number.isFinite(b.dir1) && b.dir1 < 999;
+}
+function binsHaveMeasuredDir(bins) {
+  return Array.isArray(bins) && bins.some(b => binHasMeasuredDir(b) && b.dir1 !== 0);
+}
+
 // Energy-weighted circular mean of dir1 over bins in the swell band (>=8s).
 // Falls back to all positive-energy bins if the swell band is empty.
+// Bins without a measured direction are left out; none at all gives null.
 function computePrimarySwellDir(bins) {
-  if (!bins || !bins.length) return null;
-  const swell = bins.filter(b => b.period >= 8 && b.energy > 0);
-  const pool = swell.length ? swell : bins.filter(b => b.energy > 0);
+  if (!binsHaveMeasuredDir(bins)) return null;
+  const measured = bins.filter(binHasMeasuredDir);
+  const swell = measured.filter(b => b.period >= 8 && b.energy > 0);
+  const pool = swell.length ? swell : measured.filter(b => b.energy > 0);
   if (!pool.length) return null;
   let sx = 0, sy = 0, wsum = 0;
   for (const b of pool) {
@@ -3546,9 +4069,16 @@ function renderSpectralSummary(spectralRaw, buoyParsed) {
     : '—';
 
   const t = trends || {};
+  // NDBC's own swell / wind-sea split (SwH / WWH). The pipeline's buoy,
+  // 44097, reports no separation frequency, so NDBC cuts at a fixed 10 s
+  // and 8-9 s swell lands under wind waves; the swell card's 8 s+ band is
+  // the number to read for Choc. The labels name the cut and stay short
+  // (a longer "(NDBC 10 s split)" pushed the table off 390 px phones and
+  // Choc TV); the panel's "What is this?" says why.
+  const pipe = source === 'pipeline';
   const rows = [
-    { label: 'Primary Swell', ht: fmtHtCell(summary.swellHt, t.swellHt), period: fmtPeriodCell(summary.swellPeriod, t.swellPeriod), dir: fmtDir(summary.swellDir) },
-    { label: 'Wind Waves', ht: fmtHtCell(summary.windHt, t.windHt), period: fmtPeriodCell(summary.windPeriod, t.windPeriod), dir: fmtDir(summary.windDir) },
+    { label: pipe ? 'Swell 10 s+' : 'Swell', ht: fmtHtCell(summary.swellHt, t.swellHt), period: fmtPeriodCell(summary.swellPeriod, t.swellPeriod), dir: fmtDir(summary.swellDir) },
+    { label: pipe ? 'Wind waves &lt;10 s' : 'Wind waves', ht: fmtHtCell(summary.windHt, t.windHt), period: fmtPeriodCell(summary.windPeriod, t.windPeriod), dir: fmtDir(summary.windDir) },
     { label: 'Significant Hs', ht: hsCell, period: '—', dir: '—' }
   ];
 
@@ -3595,7 +4125,8 @@ function renderSpectralSummary(spectralRaw, buoyParsed) {
 // SPECTRAL EMPTY STATE HELPERS
 // ════════════════════════════════════════════════
 
-function showSpectralEmpty(buoyId) {
+// buoyId: a spectral buoy whose data isn't available; message says why.
+function showSpectralEmpty(buoyId, message) {
   const compassContainer = el('compass-canvas').parentElement;
   const spectrumContainer = el('spectrum-canvas').parentElement;
   el('compass-canvas').style.display = 'none';
@@ -3605,7 +4136,7 @@ function showSpectralEmpty(buoyId) {
   spectrumContainer.querySelectorAll('.spectral-empty-msg').forEach(e => e.remove());
   const msg = document.createElement('div');
   msg.className = 'spectral-empty-msg';
-  msg.textContent = 'Please select a buoy with spectral data (e.g., 44097) to view wave energy.';
+  msg.textContent = message || 'Please select a buoy with spectral data (e.g., 44097) to view wave energy.';
   const msg2 = msg.cloneNode(true);
   compassContainer.appendChild(msg);
   spectrumContainer.appendChild(msg2);
@@ -4230,20 +4761,80 @@ function updateAuthUI(user) {
   updateStorageNote();
 }
 
-async function migrateAnonDataToUser() {
-  var entriesToMigrate = STATE.surfLog ? STATE.surfLog.slice() : [];
+// Called by firebase-config.js just before an anonymous session signs in to
+// a Google account that already exists (a returning crew member on a new
+// device, the home-screen app, after Sign out). That account has its own
+// uid, and firestore.rules refuse an update that changes a doc's owner, so
+// the migration could not move a session the anonymous uid already synced.
+// While we are still that uid, delete its docs (an owner delete is allowed)
+// and keep the entries here, unowned: migrateAnonDataToUser then re-creates
+// them as the Google uid. Resolves with the released entries, so a sign-in
+// that does not complete can put them back (restoreReleasedEntries).
+async function releaseAnonEntries(anonUid) {
+  var released = [];
+  var mine = (STATE.surfLog || []).filter(function(e) { return e && anonUid && e.userId === anonUid; });
+  await Promise.all(mine.map(function(entry) {
+    return fbFirestore.collection('surf_logs').doc(entry.id).delete().then(function() {
+      entry.userId = '';
+      _slUnsyncedIds.add(entry.id);   // only this device holds it now
+      released.push(entry);
+    }, function(e) {
+      // Never synced (no doc to delete), or refused: the migration still
+      // tries it, and says so if it cannot be moved.
+      console.warn('Could not release anonymous entry:', e);
+    });
+  }));
+  if (released.length) saveSurfLog();
+  return released;
+}
+
+// The Google sign-in did not complete, so we are still the anonymous uid:
+// re-create the released sessions under it. One that cannot be saved stays
+// here unowned, and moves with the next sign-in.
+async function restoreReleasedEntries(released) {
+  for (var i = 0; i < released.length; i++) {
+    try {
+      await saveLogEntryToFirebase(released[i]);
+    } catch(e) {
+      console.warn('Could not restore released entry:', e);
+    }
+  }
+  saveSurfLog(); renderSurfLogTable();
+}
+
+// Called by firebase-config.js when an anonymous session becomes a Google
+// one. Moves only the sessions logged under the anonymous uid being left
+// (`prevAnonUid`) or never synced (no userId). STATE.surfLog can also hold
+// the community log mirrored from an earlier Google session on this device;
+// re-saving those would stamp them with this account's uid (audit C26).
+async function migrateAnonDataToUser(prevAnonUid) {
+  var entriesToMigrate = (STATE.surfLog || []).filter(function(e) {
+    return e && (!e.userId || (!!prevAnonUid && e.userId === prevAnonUid));
+  });
   if (entriesToMigrate.length > 0) {
-    var count = 0;
+    var count = 0, failed = 0;
     for (var i = 0; i < entriesToMigrate.length; i++) {
+      var entry = entriesToMigrate[i];
+      var prevOwner = entry.userId;
+      // Unowned: saveLogEntryToFirebase stamps the new uid once the write
+      // lands. signInWithGoogle released the docs the anonymous uid had
+      // synced, so this is a create. One it could not release is still that
+      // uid's doc (the rules refuse a change of owner), so restore on failure.
+      entry.userId = '';
       try {
-        await saveLogEntryToFirebase(entriesToMigrate[i]);
+        await saveLogEntryToFirebase(entry);
         count++;
       } catch(e) {
+        entry.userId = prevOwner;
+        failed++;
         console.warn('Migration failed for entry:', e);
       }
     }
     if (count > 0) {
       showToast(count + ' session' + (count !== 1 ? 's' : '') + ' synced to your account', 'success');
+    }
+    if (failed > 0) {
+      showToast('\u26a0 ' + failed + ' session' + (failed !== 1 ? 's' : '') + ' logged before sign-in could not be moved to your account', 'warn');
     }
   }
   try {
@@ -4270,6 +4861,7 @@ async function loadSurfLog() {
     try {
       const raw = localStorage.getItem('lcc_surfLog');
       STATE.surfLog = raw ? JSON.parse(raw) : [];
+      STATE.surfLog.forEach(e => { if (e) _dropFabricatedTide(e.conditions); });
     } catch (e2) { STATE.surfLog = []; }
   }
 }
@@ -4289,13 +4881,14 @@ async function addLogEntry(entry) {
   saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
   try {
     await saveLogEntryToFirebase(entry);
-    // Re-save after Firebase upload replaces data-URI photos with Storage URLs
-    saveSurfLog();
-    renderSurfLogTable();
   } catch(e) {
     console.warn('Firebase save failed (entry saved locally):', e);
     showToast('\u26a0 Saved locally \u2014 sync failed', 'warn');
   }
+  // Re-save after Firebase upload replaces data-URI photos with Storage URLs.
+  // A log load that landed meanwhile kept this entry (loadLogsFromFirebase).
+  saveSurfLog();
+  renderSurfLogTable();
 }
 
 async function updateLogEntry(id, updates) {
@@ -4351,6 +4944,8 @@ function photoUrl(p) {
 async function retryFailedPhotoUploads() {
   if (!window._fbUserId || window._fbUserIsAnon) return;
   const candidates = (STATE.surfLog || []).filter(function(e) {
+    // Only this account's entries: saveLogEntryToFirebase refuses others'.
+    if (e.userId && e.userId !== window._fbUserId) return false;
     return Array.isArray(e.photos) && e.photos.some(function(p) {
       return p && p._uploadFailed && typeof p._localDataURI === 'string';
     });
@@ -4376,7 +4971,16 @@ async function retryFailedPhotoUploads() {
   }
 }
 
+// Ids of entries (or edits) this device holds that have not reached
+// Firestore yet: a save in flight (a photo still uploading) or one that
+// failed. loadLogsFromFirebase keeps the local copy of these instead of
+// letting a snapshot without them wipe them out (load-path#4).
+const _slUnsyncedIds = new Set();
+// The log query in flight, { uid, snap }; see loadLogsFromFirebase.
+let _slLogQuery = null;
+
 async function saveLogEntryToFirebase(entry) {
+  _slUnsyncedIds.add(entry.id);
   if (!window._fbUserId) {
     await new Promise(function(resolve) {
       let attempts = 0;
@@ -4388,6 +4992,14 @@ async function saveLogEntryToFirebase(entry) {
   }
   if (!window._fbUserId) {
     throw new Error('Not authenticated — cannot sync to cloud');
+  }
+  // Only the owner may write an entry. STATE.surfLog also holds other crew
+  // members' entries; the payload below stamps userId with OUR uid, so
+  // saving one of theirs would take it over (audit C26). firestore.rules
+  // refuses that too; refusing here keeps local state honest.
+  if (entry.userId && entry.userId !== window._fbUserId) {
+    _slUnsyncedIds.delete(entry.id);
+    throw new Error('Not your entry (owner ' + entry.userId + ') — not saved to cloud');
   }
   const d = new Date(entry.timestamp);
   const YYYY = d.getFullYear();
@@ -4420,7 +5032,9 @@ async function saveLogEntryToFirebase(entry) {
         const path = 'surf-photos/raw/' + window._fbUserId + '/' + YYYY + '/' + MM + '/' + ts + '_' + i + '.jpg';
         const ref = fbStorage.ref(path);
         const file = _slPhotoFiles && _slPhotoFiles[i] ? _slPhotoFiles[i] : null;
-        if (file) {
+        // storage.rules only accepts these image types; anything else (or a
+        // File with no type) goes up as the resized JPEG instead.
+        if (file && /^image\/(jpeg|png|webp|heic|heif|gif)$/.test(file.type || '')) {
           await ref.put(file);
         } else {
           const res = await fetch(p);
@@ -4463,6 +5077,9 @@ async function saveLogEntryToFirebase(entry) {
     payload.repairedFields = entry.repairedFields;
   }
   await fbFirestore.collection('surf_logs').doc(entry.id).set(payload);
+  _slUnsyncedIds.delete(entry.id);
+  // An entry logged before sign-in finished had no owner; it is ours now.
+  if (!entry.userId) entry.userId = window._fbUserId;
 }
 
 async function loadLogsFromFirebase() {
@@ -4483,12 +5100,22 @@ async function loadLogsFromFirebase() {
     return;
   }
 
-  // Fetch all entries (community log — all authenticated users see all sessions)
-  const snap = await fbFirestore.collection('surf_logs')
-    .orderBy('createdAt', 'desc')
-    .limit(200)
-    .get();
-  STATE.surfLog = snap.docs.map(function(doc) {
+  // Fetch all entries (community log — all authenticated users see all sessions).
+  // A restored Google session asks for the log twice at once (the auth
+  // handler in firebase-config.js and initApp's loadSurfLog): share one
+  // query, so a second copy cannot land a moment later and re-render the
+  // table under the user's finger (an open row detail would close).
+  const uid = window._fbUserId;
+  if (!_slLogQuery || _slLogQuery.uid !== uid) {
+    const q = _slLogQuery = {
+      uid: uid,
+      snap: fbFirestore.collection('surf_logs').orderBy('createdAt', 'desc').limit(200).get()
+    };
+    const done = function() { if (_slLogQuery === q) _slLogQuery = null; };
+    q.snap.then(done, done);
+  }
+  const snap = await _slLogQuery.snap;
+  const fresh = snap.docs.map(function(doc) {
     const d = doc.data();
     return {
       id: d.id,
@@ -4496,11 +5123,19 @@ async function loadLogsFromFirebase() {
       photos: (d.photos || []).filter(function(p) { return p && (p.url || typeof p === 'string' || p._uploadFailed); }),
       ratings: d.ratings,
       notes: d.notes || '',
-      conditions: d.conditions || null,
+      conditions: _dropFabricatedTide(d.conditions || null),
       userId: d.userId || '',
       displayName: d.displayName || ''
     };
   });
+  // The Surf Log form works before this load lands. Keep what this device
+  // holds that the snapshot lacks or has an older copy of (a session saved
+  // meanwhile, an edit still uploading, a failed sync) rather than dropping
+  // it from the table and the local mirror (load-path#4).
+  const unsynced = (STATE.surfLog || []).filter(function(e) { return e && _slUnsyncedIds.has(e.id); });
+  STATE.surfLog = unsynced.concat(fresh.filter(function(e) {
+    return !unsynced.some(function(u) { return u.id === e.id; });
+  }));
   saveSurfLog();
   slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
 }
@@ -4524,6 +5159,8 @@ function switchTab(tab) {
   if (vF) vF.style.display = tab === 'forecast' ? '' : 'none';
   if (vR) vR.style.display = tab === 'regression' ? '' : 'none';
   if (vS) vS.style.display = tab === 'surflog' ? '' : 'none';
+  // The now-pulse stops itself while the forecast view is hidden.
+  if (tab === 'forecast' && STATE.forecastChart) startNowPulse();
   if (tab === 'regression') {
     renderRegressionTab();
   }
@@ -4872,19 +5509,22 @@ async function _fetchNDBCHistoricalConditionsCore(dateStr, preFetchedTide) {
   const conditions = {
     swell: {
       height: Math.round((swellRow.waveHeight || 0) * 10) / 10,
-      direction: Math.round(swellRow.direction || 0),
+      // Missing MWD stays null (flagged incomplete), not 0° = due north,
+      // which the Wave model would read as out-of-window swell (audit C16).
+      direction: Number.isFinite(swellRow.direction) ? Math.round(swellRow.direction) : null,
       period: Math.round((swellRow.period || 0) * 10) / 10,
       lagHours: Math.round(ndbcLagHours * 10) / 10
     },
     wind: haveWind
       ? { speed: Math.round(wSpd), direction: Math.round(wDir) }
       : { speed: null, direction: null },
-    tide: {
+    // null when CO-OPS had no predictions (see parseTideAtTime)
+    tide: tideInfo ? {
       height: Math.round(tideInfo.height * 10) / 10,
       rate: Math.round(tideInfo.rate * 100) / 100,
       stage: tideInfo.stage,
       timeToNearest: tideInfo.timeToNearest
-    }
+    } : null
   };
 
   if (ndbcLagHours > 0) {
@@ -5063,9 +5703,15 @@ function _tideStageFromRate(rate, height, predictions) {
 // in ft/hr. `stage` is derived from `rate` ('rising' / 'falling' /
 // 'slack-high' / 'slack-low'). `timeToNearest` is hours to the nearest
 // hi/lo extremum, kept for UI display.
+//
+// Returns null when there are no predictions: a failed fetch, an HTTP error,
+// or CO-OPS's HTTP 200 {"error":{"message":"No Predictions data was
+// found..."}} outage body. Missing tide must stay missing — a made-up 0 ft
+// "rising" looks exactly like Choc's favourite low incoming tide and would
+// train the Ride model on fiction (audit C11).
 function parseTideAtTime(tideData, dateStr) {
   const preds = _normalizeTidePredictions(tideData);
-  if (!preds.length) return { height: 0, rate: 0, stage: 'rising', timeToNearest: 0 };
+  if (!preds.length) return null;
   const sessionTime = new Date(dateStr);
   const heightRaw = tideHeightAt(preds, sessionTime);
   const height = heightRaw == null ? 0 : heightRaw;
@@ -5073,6 +5719,22 @@ function parseTideAtTime(tideData, dateStr) {
   const stage = _tideStageFromRate(rate, height, preds);
   const timeToNearest = _timeToNearestExtremum(preds, sessionTime);
   return { height, rate, stage, timeToNearest };
+}
+
+// The tide the old parseTideAtTime made up during a CO-OPS outage:
+// { height: 0, rate: 0, stage: 'rising', timeToNearest: 0 }. Real data can
+// never say 'rising' at 0 ft/hr (_tideStageFromRate calls |rate| < 0.1
+// slack), so this signature is exact.
+function _isFabricatedTide(t) {
+  return !!t && t.stage === 'rising' && t.rate === 0;
+}
+
+// Read-time repair for sessions saved during an outage: their tide becomes
+// null (shown as unavailable, skipped by the Ride model) until a Lookup or
+// Backfill re-fetches it while CO-OPS is up.
+function _dropFabricatedTide(cond) {
+  if (cond && _isFabricatedTide(cond.tide)) cond.tide = null;
+  return cond;
 }
 
 // Estimate swell travel lag from buoy to Chocomount.
@@ -5152,7 +5814,8 @@ async function lookupOpenMeteoArchive(lat, lon, dateStr) {
 
   const swell = {
     height: Math.round(swH * 10) / 10,
-    direction: Math.round(swD || 0),
+    // Missing direction stays null (flagged incomplete), not 0° (audit C16).
+    direction: Number.isFinite(swD) ? Math.round(swD) : null,
     period: Math.round((swP || 0) * 10) / 10,
     lagHours
   };
@@ -5217,12 +5880,13 @@ async function lookupHistoricalConditions(lat, lon, dateStr) {
     const conditions = {
       swell: archiveResult.swell,
       wind: openMeteoWind || { speed: null, direction: null },
-      tide: {
+      // null when CO-OPS had no predictions; extractRideFeatures skips it
+      tide: tideInfo ? {
         height: Math.round(tideInfo.height * 10) / 10,
         rate: Math.round(tideInfo.rate * 100) / 100,
         stage: tideInfo.stage,
         timeToNearest: tideInfo.timeToNearest
-      },
+      } : null,
       source: 'openmeteo-archive'
     };
     if (archiveResult._lagHours > 0) {
@@ -5273,6 +5937,8 @@ function _windAtHour(wind, dateStr) {
 
 // "2.4ft rising at +0.6 ft/hr (2.4h to next)" — falls back gracefully when
 // rate is missing (sessions logged before the hourly-interpolation backfill).
+// Plain text (stage etc. come from stored entries): escHtml() it before
+// putting it in innerHTML.
 function _formatTideReadout(tide) {
   if (!tide) return '—';
   const h = (typeof tide.height === 'number') ? tide.height.toFixed(1) : (tide.height ?? '?');
@@ -5288,7 +5954,8 @@ function _formatTideReadout(tide) {
 function renderConditionsDisplay(cond) {
   const display = el('sl-conditions-display');
   if (!display || !cond) return;
-  const dl = (l,v) => '<span class="sl-cond-label">'+l+'</span> <span class="sl-cond-val">'+v+'</span>';
+  // Values can come from a stored or imported entry: escape them (audit C27).
+  const dl = (l,v) => '<span class="sl-cond-label">'+escHtml(l)+'</span> <span class="sl-cond-val">'+escHtml(v)+'</span>';
   const lagNote = cond.swell.lagHours ? ' ('+cond.swell.lagHours+'h buoy lag)' : '';
   let h = '<div class="sl-cond-row">';
   h += dl('Swell'+lagNote+':', cond.swell.height+'ft '+cond.swell.period+'s '+directionLabel(cond.swell.direction)+' ('+cond.swell.direction+'\u00b0)');
@@ -5299,10 +5966,12 @@ function renderConditionsDisplay(cond) {
     ? _w.speed + ' mph ' + directionLabel(_w.direction) + ' (' + _w.direction + '\u00b0)'
     : '\u2014';
   h += dl('Wind:', _windText);
-  h += dl('Tide:', _formatTideReadout(cond.tide));
+  // No tide = CO-OPS had no predictions for that time (or a legacy entry).
+  // Say so rather than show a number: the Ride model skips this session.
+  h += dl('Tide:', cond.tide ? _formatTideReadout(cond.tide) : 'Tide unavailable (NOAA CO-OPS down) \u2014 re-Lookup later');
   h += '</div>';
   if (cond.swellLagHours > 0) {
-    h += `<div class="sl-cond-row"><span class="sl-hint">Using swell from ~${cond.swellLagHours}h ago at buoy (travel time estimate)</span></div>`;
+    h += `<div class="sl-cond-row"><span class="sl-hint">Using swell from ~${escHtml(cond.swellLagHours)}h ago at buoy (travel time estimate)</span></div>`;
   }
   if (cond.source) {
     let srcLabel;
@@ -5312,7 +5981,7 @@ function renderConditionsDisplay(cond) {
     else if (cond.source === 'ndbc')                      srcLabel = 'NDBC buoy 44097 (measured)';
     else                                                  srcLabel = 'Open-Meteo marine API';
     h += '<div class="sl-cond-row"><span class="sl-hint">Source: ' + srcLabel + '</span></div>';
-    if (cond.note) h += '<div class="sl-cond-row"><span class="sl-hint">' + cond.note + '</span></div>';
+    if (cond.note) h += '<div class="sl-cond-row"><span class="sl-hint">' + escHtml(cond.note) + '</span></div>';
   }
   display.innerHTML = h;
 }
@@ -5603,19 +6272,31 @@ function importJSON(ev) {
     try {
       const data = JSON.parse(e.target.result);
       if (!Array.isArray(data)) throw new Error('Not an array');
-      let imported = 0;
+      let imported = 0, skipped = 0, unsynced = 0;
+      // A rating is a 0–10 number, or null for a blank slider (flagged
+      // incomplete later); anything else is not something the form wrote.
+      const okRating = v => v == null || (typeof v === 'number' && isFinite(v) && v >= 0 && v <= 10);
       for (const entry of data) {
-        if (!entry.timestamp || !entry.ratings) continue;
+        if (!entry || !entry.timestamp || !entry.ratings || typeof entry.ratings !== 'object') continue;
+        // An export holds the whole community log. Someone else's entry is
+        // theirs: importing it would re-save it under our uid (audit C26).
+        if (entry.userId && entry.userId !== window._fbUserId) { skipped++; continue; }
+        if (!['size', 'windQuality', 'rideQuality'].every(k => okRating(entry.ratings[k]))) { skipped++; continue; }
         if (!entry.id) entry.id = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
         if (!STATE.surfLog.find(x => x.id === entry.id)) {
           STATE.surfLog.push(entry);
-          await saveLogEntryToFirebase(entry);
           imported++;
+          // One failed sync (offline, rules) must not abort the rest; the
+          // entry stays in the local log like any unsynced save.
+          try { await saveLogEntryToFirebase(entry); }
+          catch (err) { unsynced++; console.warn('Import: Firestore save failed for', entry.id, err); }
         }
       }
       STATE.surfLog.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
       saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
-      alert('Imported ' + imported + ' entries.');
+      alert('Imported ' + imported + ' entries.' +
+        (skipped ? ' Skipped ' + skipped + ' (owned by another account — sign in as its owner — or invalid ratings).' : '') +
+        (unsynced ? ' ' + unsynced + ' saved locally only — sync failed.' : ''));
     } catch (err) { alert('Invalid JSON: ' + err.message); }
   };
   reader.readAsText(file); ev.target.value = '';
@@ -5625,26 +6306,31 @@ function importJSON(ev) {
 // SURF LOG — Backfill (re-fetch all sessions from Open-Meteo archive)
 // ════════════════════════════════════════════════
 //
-// Replaces each logged session's `cond.swell` AND `cond.tide` blocks with
-// reanalysis data. Subjective ratings (size, wind quality, ride quality),
-// notes, and photos are untouched. The wind block is preserved per entry
-// (wind source unchanged); the tide block is REWRITTEN because we are
-// migrating from the old hilo-extremum lookup (cond.tide.height was the
-// next hi/lo value) to the new hourly-interpolated lookup (cond.tide.height
-// is the actual water level at session time, and cond.tide.rate is added).
-// NDBC stdmet is the fallback when archive returns no data.
+// Replaces each of the signed-in user's sessions' `cond.swell` AND
+// `cond.tide` blocks with reanalysis data. Subjective ratings (size, wind
+// quality, ride quality), notes, and photos are untouched. The tide block is
+// REWRITTEN because we are migrating from the old hilo-extremum lookup
+// (cond.tide.height was the next hi/lo value) to the new hourly-interpolated
+// lookup (cond.tide.height is the actual water level at session time, and
+// cond.tide.rate is added) — but only when CO-OPS answered; an outage keeps
+// the stored tide. NDBC stdmet is the fallback when archive returns no data.
 async function backfillAllSessionsFromArchive() {
-  if (!Array.isArray(STATE.surfLog) || STATE.surfLog.length === 0) {
-    alert('No sessions to backfill.');
+  // Only the signed-in user's own sessions. STATE.surfLog also holds the
+  // community log, and re-saving another crew member's entry would stamp it
+  // with this account's uid and take it over (audit C26).
+  const uid = window._fbUserId;
+  const mine = Array.isArray(STATE.surfLog) ? STATE.surfLog.filter(e => uid && e.userId === uid) : [];
+  if (mine.length === 0) {
+    alert('No sessions of yours to backfill.');
     return;
   }
   const proceed = confirm(
     'This will re-fetch conditions for all your logged sessions from Open-Meteo archive: ' +
     'swell + wind from the archive reanalysis, plus tide data from CO-OPS using hourly ' +
     'predictions (interpolated water level at session time, with signed ft/hr rate). ' +
-    'Sessions where the wind fetch fails will be stored with null wind (skipped by the ' +
-    'Conditions model). Your subjective ratings (size, wind quality, ride quality) will ' +
-    'not be touched. Proceed?'
+    'If the wind or tide fetch fails for a session, its stored wind/tide is kept. Only ' +
+    'your own sessions are updated. Your subjective ratings (size, wind quality, ride ' +
+    'quality) will not be touched. Proceed?'
   );
   if (!proceed) return;
 
@@ -5656,7 +6342,7 @@ async function backfillAllSessionsFromArchive() {
   if (progress) progress.style.display = '';
   if (bar) bar.style.width = '0%';
 
-  const entries = STATE.surfLog.slice();
+  const entries = mine.slice();
   const total = entries.length;
   let processed = 0, archive = 0, ndbcOnly = 0, ndbcWithWind = 0, failed = 0;
   let tideRising = 0, tideFalling = 0, tideSlack = 0;
@@ -5692,19 +6378,20 @@ async function backfillAllSessionsFromArchive() {
         else delete newCond.originalLoggedTime;
         if (result.note) newCond.note = result.note; else delete newCond.note;
 
-        // Wind: ALWAYS overwrite — earlier backfills stored failed fetches
-        // as { speed: 0, direction: 0 }, biasing the Conditions model with
-        // fake calm-offshore datapoints. Re-running uses the same archive
-        // source the live forecast uses; failed fetches now land as
-        // { speed: null, direction: null } and the extractor skips them.
-        // Tide: ALWAYS overwrite with the freshly-computed block — we are
-        // migrating from hilo-nearest-extremum to hourly-interpolated
-        // height plus a new signed ft/hr `rate` field, so any tide values
-        // already on the entry are stale by definition.
-        if (result.wind) newCond.wind = result.wind;
-        else if (oldCond.wind) newCond.wind = oldCond.wind;
-        if (result.tide) newCond.tide = result.tide;
-        else if (oldCond.tide) newCond.tide = oldCond.tide;
+        // Wind and tide: take the fresh value whenever the fetch returned a
+        // real one (the archive wind and the hourly-interpolated tide with
+        // its signed ft/hr `rate` replace older formats). When a fetch FAILED
+        // (CO-OPS outage, archive down) keep what the entry already had
+        // rather than overwrite good data with nothing (audit C11). Stored
+        // values that were themselves fabricated by an earlier outage — wind
+        // { speed: 0, direction: 0 }, tide 'rising' at 0 ft/hr — become null
+        // so the models skip them instead of training on them.
+        if (result.wind && result.wind.speed != null) newCond.wind = result.wind;
+        else if (oldCond.wind && oldCond.wind.speed != null && !(oldCond.wind.speed === 0 && oldCond.wind.direction === 0)) newCond.wind = oldCond.wind;
+        else newCond.wind = { speed: null, direction: null };
+        if (result.tide && typeof result.tide.height === 'number') newCond.tide = result.tide;
+        else if (oldCond.tide && !_isFabricatedTide(oldCond.tide)) newCond.tide = oldCond.tide;
+        else newCond.tide = null;
 
         entry.conditions = newCond;
         try {
@@ -5774,21 +6461,11 @@ function ratingBadge(val) {
   return '<span class="sl-rating-badge '+cls+'">'+v+'</span>';
 }
 
+// One predicate (audit C44): an entry is incomplete when getIncompleteFields
+// finds anything. It drives the "needs review" banner AND _modelRows, so a
+// flagged entry really is excluded from the models.
 function isLogEntryIncomplete(entry) {
-  if (!entry || typeof entry !== 'object') return true;
-  const r = entry.ratings;
-  if (!r || typeof r !== 'object') return true;
-  for (const k of ['size', 'rideQuality', 'windQuality']) {
-    const v = r[k];
-    if (typeof v !== 'number' || !isFinite(v) || v < 0 || v > 10) return true;
-  }
-  const c = entry.conditions;
-  if (!c || typeof c !== 'object') return true;
-  const s = c.swell;
-  if (!s) return true;
-  if (s.size === 0 && s.period === 0) return true;
-  if (s.size > 0 && (s.direction === undefined || s.direction === null || s.direction === 0)) return true;
-  return false;
+  return getIncompleteFields(entry).length > 0;
 }
 
 function getIncompleteFields(entry) {
@@ -5809,11 +6486,13 @@ function getIncompleteFields(entry) {
     return fields;
   }
   const s = c.swell;
+  // Swell objects store `height`; `size` is only on legacy entries.
+  const sh = s ? (s.height ?? s.size) : undefined;
   if (!s) {
     fields.push('swell');
-  } else if (s.size === 0 && s.period === 0) {
+  } else if (sh === 0 && s.period === 0) {
     fields.push('swell');
-  } else if (s.size > 0 && (s.direction === undefined || s.direction === null || s.direction === 0)) {
+  } else if (sh > 0 && (s.direction === undefined || s.direction === null || s.direction === 0)) {
     fields.push('swell');
   }
   return fields;
@@ -5857,16 +6536,20 @@ function renderSurfLogTable() {
     const dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'});
     const timeStr = d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
     const avg = ((entry.ratings.size+entry.ratings.windQuality+entry.ratings.rideQuality)/3).toFixed(1);
-    const validPhotos = (entry.photos||[]).map(p=>photoUrl(p)).filter(Boolean).slice(0,3);
+    // Every entry field below can be written by any crew member (or an
+    // import), and the community log renders for everyone: escape it all
+    // (audit C27). Notes are escaped AFTER slicing so an entity is never cut.
+    const validPhotos = (entry.photos||[]).map(p=>safeUrl(photoUrl(p))).filter(Boolean).slice(0,3);
     const photoHtml = validPhotos.length > 0
       ? '<div class="sl-row-photos">'+validPhotos.map(url=>'<img src="'+url+'" alt="" onerror="this.style.display=\'none\'">').join('')+'</div>'
       : '<span style="color:var(--ink4)">\u2014</span>';
-    const notes = (entry.notes||'').slice(0,30) + ((entry.notes||'').length>30?'...':'');
+    const notesRaw = String(entry.notes||'');
+    const notes = escHtml(notesRaw.slice(0,30)) + (notesRaw.length>30?'...':'');
     const isOwn = entry.userId === window._fbUserId;
-    const attribution = (!isOwn && entry.displayName) ? '<br><span style="color:var(--ink4);font-size:0.6rem">'+entry.displayName+'</span>' : '';
+    const attribution = (!isOwn && entry.displayName) ? '<br><span style="color:var(--ink4);font-size:0.6rem">'+escHtml(entry.displayName)+'</span>' : '';
     const incompletePill = isIncomplete(entry) ? '<br><span class="sl-incomplete-pill">\u26a0 incomplete</span>' : '';
     const actionHtml = isOwn
-      ? '<button class="sl-btn sl-btn-sm sl-edit-btn" data-id="'+entry.id+'">Edit</button> <button class="sl-btn sl-btn-sm sl-btn-danger sl-delete-btn" data-id="'+entry.id+'">Del</button>'
+      ? '<button class="sl-btn sl-btn-sm sl-edit-btn" data-id="'+escHtml(entry.id)+'">Edit</button> <button class="sl-btn sl-btn-sm sl-btn-danger sl-delete-btn" data-id="'+escHtml(entry.id)+'">Del</button>'
       : '<span style="color:var(--ink4);font-size:0.65rem">community</span>';
     tr.innerHTML = '<td style="white-space:nowrap">'+dateStr+'<br><span style="color:var(--ink4);font-size:0.65rem">'+timeStr+'</span>'+attribution+incompletePill+'</td>'
       +'<td>'+photoHtml+'</td>'
@@ -5915,10 +6598,12 @@ function toggleEntryDetail(entry, tr) {
   const c = entry.conditions;
   let h = '<td colspan="8"><div class="sl-detail-content">';
   if (c) {
-    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Swell</span>'+c.swell.height+'ft '+c.swell.period+'s '+directionLabel(c.swell.direction)+' ('+c.swell.direction+'\u00b0)';
-    if (c.swell.secondary) h += '<br>2nd: '+c.swell.secondary.height+'ft '+c.swell.secondary.period+'s '+directionLabel(c.swell.secondary.direction);
-    h += '</div><div class="sl-cond-group"><span class="sl-cond-group-title">Wind</span>'+c.wind.speed+' mph '+directionLabel(c.wind.direction)+' ('+c.wind.direction+'\u00b0)</div>';
-    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Tide</span>'+_formatTideReadout(c.tide)+'</div>';
+    // Stored values from any crew member's entry: escape them (audit C27).
+    const sw = c.swell || {}, w = c.wind || {}, e = escHtml;
+    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Swell</span>'+e(sw.height)+'ft '+e(sw.period)+'s '+directionLabel(sw.direction)+' ('+e(sw.direction)+'\u00b0)';
+    if (sw.secondary) h += '<br>2nd: '+e(sw.secondary.height)+'ft '+e(sw.secondary.period)+'s '+directionLabel(sw.secondary.direction);
+    h += '</div><div class="sl-cond-group"><span class="sl-cond-group-title">Wind</span>'+e(w.speed)+' mph '+directionLabel(w.direction)+' ('+e(w.direction)+'\u00b0)</div>';
+    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Tide</span>'+e(_formatTideReadout(c.tide))+'</div>';
   } else { h += '<div style="grid-column:1/-1;color:var(--ink4)">No conditions recorded</div>'; }
   h += '</div></td>';
   dr.innerHTML = h; tr.after(dr);
@@ -6107,9 +6792,28 @@ function _trainOnArrays(X, y) {
   return { weights, stats };
 }
 
+// The single gate between logged sessions and the models (audit C16).
+// trainModel, leaveOneOutRMSE, _runLOOForSanity and every Regression-tab
+// builder use it, so the live model, the tab's R²/RMSE and the banner's
+// "excluded from your model" all agree. A row is kept only when the entry
+// is complete (isLogEntryIncomplete: ratings 0–10, real swell), the
+// extractor returns finite numbers, and the target is a 0–10 number — one
+// null or "7" rating can otherwise flip weights or blank a model.
+function _modelRows(entries, featureExtractor, targetFn) {
+  const X = [], y = [], kept = [];
+  for (const e of entries || []) {
+    if (isLogEntryIncomplete(e)) continue;
+    const f = featureExtractor(e.conditions);
+    if (!f || !f.every(Number.isFinite)) continue;
+    const t = targetFn(e);
+    if (typeof t !== 'number' || !isFinite(t) || t < 0 || t > 10) continue;
+    X.push(f); y.push(t); kept.push(e);
+  }
+  return { X, y, kept };
+}
+
 function trainModel(entries, featureExtractor, targetFn) {
-  const X = [], y = [];
-  entries.forEach(e => { const f = featureExtractor(e.conditions); if(f){ X.push(f); y.push(targetFn(e)); }});
+  const { X, y } = _modelRows(entries, featureExtractor, targetFn);
   if (!X.length) return null;
   const nF = X[0].length;
   const minSamples = Math.max(2 * nF, 12);
@@ -6120,8 +6824,7 @@ function trainModel(entries, featureExtractor, targetFn) {
 // Train on all samples except `holdoutIdx`, predict the held-out target,
 // repeat for every sample, return RMSE across held-out predictions.
 function leaveOneOutRMSE(entries, featureExtractor, targetFn) {
-  const X = [], y = [];
-  entries.forEach(e => { const f = featureExtractor(e.conditions); if(f){ X.push(f); y.push(targetFn(e)); }});
+  const { X, y } = _modelRows(entries, featureExtractor, targetFn);
   if (!X.length) return null;
   const nF = X[0].length;
   const minSamples = Math.max(2 * nF, 12);
@@ -6204,8 +6907,7 @@ function _logRetrainSummary() {
 // inverse transform) by checking pred range / mean / std against actuals,
 // and flags models that don't beat "predict the mean" baseline.
 function _runLOOForSanity(entries, featureExtractor, targetFn) {
-  const X = [], y = [];
-  entries.forEach(e => { const f = featureExtractor(e.conditions); if (f) { X.push(f); y.push(targetFn(e)); } });
+  const { X, y } = _modelRows(entries, featureExtractor, targetFn);
   if (!X.length) return null;
   const nF = X[0].length;
   const minSamples = Math.max(2 * nF, 12);
@@ -6542,14 +7244,18 @@ function buildForecastConditions(marine, wind, tideHiLo, tidePred, hi) {
   const secP=marine.hourly.secondary_swell_wave_period?.[hi]??0;
   const wSpd=wind.hourly.wind_speed_10m?.[hi]??0, wDir=wind.hourly.wind_direction_10m?.[hi]??0;
   const targetTime = marine.hourly.time?.[hi];
-  let tideInfo = { height: 0, rate: 0, stage: 'rising', timeToNearest: 0 };
+  // No tide data (CO-OPS down) → tide: null, never a made-up 0 ft 'rising':
+  // the Ride prediction then shows '—' instead of rating fictional water
+  // (audit C11).
+  let tideInfo = null;
   if (targetTime && tidePred && tidePred.length) {
     tideInfo = parseTideAtTime({ predictions: tidePred }, targetTime);
-    if (tideHiLo && tideHiLo.length) {
+    if (tideInfo && tideHiLo && tideHiLo.length) {
       const hi2 = parseTideAtTime({ predictions: tideHiLo }, targetTime);
-      tideInfo.timeToNearest = hi2.timeToNearest;
+      if (hi2) tideInfo.timeToNearest = hi2.timeToNearest;
     }
-  } else if (targetTime && tideHiLo && tideHiLo.length) {
+  }
+  if (!tideInfo && targetTime && tideHiLo && tideHiLo.length) {
     tideInfo = parseTideAtTime({ predictions: tideHiLo }, targetTime);
   }
   return { swell:{height:swH,direction:swD,period:swP,secondary:secH>0.3?{height:secH,direction:secD,period:secP}:undefined},
@@ -6611,13 +7317,13 @@ function renderPersonalMatchCards() {
   let h = '<div class="pm-cards-row">';
   matches.slice(0,7).forEach(m => {
     const dl = new Date(m.day).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-    const thumb = m.entry.photos?.[0] ? photoUrl(m.entry.photos[0]) : '';
+    const thumb = m.entry.photos?.[0] ? safeUrl(photoUrl(m.entry.photos[0])) : '';
     const imgH = thumb ? '<img class="pm-card-img" src="'+thumb+'" alt="" onerror="this.style.display=\'none\'">' : '<div class="pm-card-img" style="display:flex;align-items:center;justify-content:center;color:var(--ink4);font-family:var(--mono);font-size:0.7rem">No photo</div>';
     const waveLine = '<span class="pm-score-wave">Wave: '+(m.waveRating?m.waveRating.toFixed(1):'--')+'</span>';
     const rideLine = '<span class="pm-score-ride">Ride: '+(m.rideRating?m.rideRating.toFixed(1):'--')+'</span>';
     const condLine = '<span class="pm-score-cond">Cond: '+(m.condRating?m.condRating.toFixed(1):'--')+'</span>';
     const matchLine = '<span class="pm-match-wave">W '+m.waveMatch+'%</span> <span class="pm-match-ride">R '+m.rideMatch+'%</span> <span class="pm-match-cond">C '+m.condMatch+'%</span>';
-    h += '<div class="pm-card" data-day="'+m.day+'" data-eid="'+m.entry.id+'" data-hi="'+m.hourIdx+'">'+imgH+'<div class="pm-card-body"><div class="pm-card-date">'+dl+'</div><div class="pm-card-scores">'+waveLine+' '+rideLine+' '+condLine+'</div><div class="pm-card-match">'+matchLine+'</div></div></div>';
+    h += '<div class="pm-card" data-day="'+escHtml(m.day)+'" data-eid="'+escHtml(m.entry.id)+'" data-hi="'+m.hourIdx+'">'+imgH+'<div class="pm-card-body"><div class="pm-card-date">'+dl+'</div><div class="pm-card-scores">'+waveLine+' '+rideLine+' '+condLine+'</div><div class="pm-card-match">'+matchLine+'</div></div></div>';
   });
   h += '</div>'; container.innerHTML = h;
   container.querySelectorAll('.pm-card').forEach(c => c.addEventListener('click', () => {
@@ -6647,7 +7353,7 @@ function openMatchModal(entry, forecastDay, hi) {
   el('modal-title').textContent = new Date(entry.timestamp).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   const ce = el('modal-conditions');
   if (ce && entry.conditions) {
-    const c=entry.conditions, dl=(l,v)=>'<span class="mc-label">'+l+'</span><span class="mc-val">'+v+'</span>';
+    const c=entry.conditions, dl=(l,v)=>'<span class="mc-label">'+l+'</span><span class="mc-val">'+escHtml(v)+'</span>';
     const tideStr = c.tide ? (c.tide.height+'ft '+c.tide.stage + (typeof c.tide.rate === 'number' ? ' ('+(c.tide.rate>=0?'+':'')+c.tide.rate.toFixed(2)+' ft/hr)' : '')) : '—';
     ce.innerHTML = [dl('Swell',c.swell.height+'ft '+c.swell.period+'s '+directionLabel(c.swell.direction)), dl('Wind',c.wind.speed+'mph '+directionLabel(c.wind.direction)), dl('Tide',tideStr), fc?dl('Fcst Wind',Math.round(fc.wind.speed)+'mph '+directionLabel(fc.wind.direction)):''].join('');
   }
@@ -6682,16 +7388,29 @@ function initMatchModal() {
 // SECONDARY SWELL CARD (Tab 1)
 // ════════════════════════════════════════════════
 
+// Index of the current hour in an Open-Meteo hourly series. The series is
+// in the spot's local time (timezone=auto) from local midnight, so "now" is
+// shifted by the response's utc_offset_seconds rather than the device's time
+// zone. Clamped to the series ends; -1 without a series.
+function marineNowIndex(marine, nowMs = Date.now()) {
+  const times = marine && marine.hourly && marine.hourly.time;
+  if (!times || !times.length) return -1;
+  const key = new Date(nowMs + (marine.utc_offset_seconds || 0) * 1000).toISOString().slice(0, 13);
+  const i = times.findIndex(t => String(t).slice(0, 13) === key);
+  if (i >= 0) return i;
+  return key < String(times[0]).slice(0, 13) ? 0 : times.length - 1;
+}
+
 function updateSecondarySwellCard(marine, isChoc, forecastLat, forecastLon) {
   const card = el('card-secondary-swell');
   if (!card) return;
-  const cur = marine && marine.current ? marine.current : null;
   const hourly = marine && marine.hourly ? marine.hourly : null;
-  // The "current" block on Open-Meteo Marine doesn't include secondary-swell
-  // fields — pull from the first hourly slot (which is the current hour).
-  const h = hourly && hourly.secondary_swell_wave_height ? hourly.secondary_swell_wave_height[0] : null;
-  const p = hourly && hourly.secondary_swell_wave_period ? hourly.secondary_swell_wave_period[0] : null;
-  const d = hourly && hourly.secondary_swell_wave_direction ? hourly.secondary_swell_wave_direction[0] : null;
+  // Open-Meteo's "current" block has no secondary-swell fields, so read the
+  // hourly slot for the current hour (slot 0 is local midnight).
+  const i = marineNowIndex(marine);
+  const h = hourly && hourly.secondary_swell_wave_height ? hourly.secondary_swell_wave_height[i] : null;
+  const p = hourly && hourly.secondary_swell_wave_period ? hourly.secondary_swell_wave_period[i] : null;
+  const d = hourly && hourly.secondary_swell_wave_direction ? hourly.secondary_swell_wave_direction[i] : null;
   if (h == null || h < 1) {
     card.style.display = 'none';
     return;
@@ -6957,7 +7676,7 @@ function setForecastModel(v) {
 }
 
 function describeForecastModel(v) {
-  if (!v) return 'Auto (Open-Meteo best_match — typically resolves to GFS Wave for this region)';
+  if (!v) return 'Auto (Open-Meteo best_match = MeteoFrance MFWAM 0.08° at Choc)';
   const m = FORECAST_MODELS.find(x => x.value === v);
   return m ? `${v} · ${m.label}` : v;
 }
@@ -7194,9 +7913,30 @@ function verifStats(rows, getObs, getModel, circular) {
   return n ? { n, bias: sum / n, mae: sumAbs / n } : { n: 0, bias: null, mae: null };
 }
 
-// Row accessors shared by the stats table and the charts. Period and
-// direction prefer the buoy's spectral swell partition (same concept
-// as the model's swell_wave_*) and fall back to the stdmet values.
+// Row accessors shared by the stats table and the charts. Each pairs
+// like with like (audit C15): NDBC's swell split at 44097 is a fixed
+// 0.1 Hz cut (SwP is always ≥ 10 s) while the model's swell_wave_* is
+// its own partition (median 5.6 s at the buoy), so SwP vs swell period
+// measured the two definitions, not the forecast (a fake −5.8 s bias).
+//   Period: buoy energy period Tm-1,0 (tm10, from the spectrum) vs the
+//     model's mean wave period, which MFWAM computes the same way. Rows
+//     logged before the pipeline recorded tm10 use the buoy's DPD.
+//   Direction: rows carrying the model's total-sea direction (wvd)
+//     compare it with the buoy's MWD. Older rows compare the buoy's
+//     ≥ 8 s direction with the model's swell partition only where that
+//     partition is itself ≥ 8 s; otherwise they describe different trains.
+const VERIF_SWELL_MIN_S = 8;
+
+function _verifRowHasWvd(r) {
+  return !!((r.mb && r.mb.wvd != null) || (r.mc && r.mc.wvd != null));
+}
+
+function _verifModelDir(m, r) {
+  if (!m) return null;
+  if (_verifRowHasWvd(r)) return m.wvd;
+  return m.swp != null && m.swp >= VERIF_SWELL_MIN_S ? m.swd : null;
+}
+
 const VERIF_GET = {
   height: {
     obs: r => r.buoy && r.buoy.hs,
@@ -7204,19 +7944,39 @@ const VERIF_GET = {
     mc: r => r.mc && r.mc.hs
   },
   period: {
-    obs: r => r.buoy && (r.buoy.swp != null ? r.buoy.swp : r.buoy.dpd),
-    mb: r => r.mb && r.mb.swp,
-    mc: r => r.mc && r.mc.swp
+    obs: r => r.buoy && (r.buoy.tm10 != null ? r.buoy.tm10 : r.buoy.dpd),
+    mb: r => r.mb && r.mb.wvp,
+    mc: r => r.mc && r.mc.wvp
   },
   dir: {
-    obs: r => r.buoy && (r.buoy.swd != null ? r.buoy.swd : r.buoy.mwd),
-    mb: r => r.mb && r.mb.swd,
-    mc: r => r.mc && r.mc.swd,
+    obs: r => r.buoy && (_verifRowHasWvd(r) ? r.buoy.mwd : r.buoy.swd),
+    mb: r => _verifModelDir(r.mb, r),
+    mc: r => _verifModelDir(r.mc, r),
     circular: true,
     // Compass names read better than raw degrees for the axis.
     fmtY: v => directionLabel(((v % 360) + 360) % 360)
   }
 };
+
+// The getters above switch definition row by row, but one average over
+// both kinds of row isn't a model score: the buoy's DPD runs ~1 s above
+// its Tm-1,0 for the same sea, so as new rows pile up the period "typical
+// miss" would drift from about −0.7 s to +0.5 s with no change in the
+// model. Period and direction are therefore scored on the new-format rows
+// once a day of them is logged, and on the older rows alone (labelled as
+// such) until then. The charts keep every row.
+const VERIF_MIN_NEW_ROWS = 24;   // one day of hourly rows
+
+function _verifRowHasTm10(r) {
+  return !!(r.buoy && r.buoy.tm10 != null);
+}
+
+// → { rows, isNew }: the rows one statistic is scored on.
+function _verifScoringRows(rows, isNewRow) {
+  const fresh = rows.filter(isNewRow);
+  if (fresh.length >= VERIF_MIN_NEW_ROWS || fresh.length === rows.length) return { rows: fresh, isNew: true };
+  return { rows: rows.filter(r => !isNewRow(r)), isNew: false };
+}
 
 const VERIF_SERIES_STYLE = [
   { key: 'obs', label: 'Buoy — actually measured', dash: null, width: 2 },
@@ -7262,7 +8022,7 @@ function drawVerifChart(canvasId, rows, getters) {
   lo -= span * 0.12; hi += span * 0.12;
   const yFor = v => padT + (1 - (v - lo) / (hi - lo)) * plotH;
 
-  // Grid: three horizontal lines + a tick at each UTC midnight.
+  // Grid: three horizontal lines + a tick at each local midnight.
   ctx.strokeStyle = FC_RETRO.grid;
   ctx.lineWidth = 1;
   for (let g = 0; g <= 2; g++) {
@@ -7280,7 +8040,12 @@ function drawVerifChart(canvasId, rows, getters) {
   const dayMs = 86400e3;
   const labelEvery = Math.max(1, Math.ceil((tRange / dayMs) / 7));
   let dayN = 0;
-  for (let d = Math.ceil(t0 / dayMs) * dayMs; d <= t1; d += dayMs, dayN++) {
+  // Step calendar days from the first local midnight at/after t0, so each
+  // tick sits on the start of the day its local-date label names (UTC
+  // midnight put "9/29" at 8 PM on 9/29) and 23/25 h DST days stay aligned.
+  const tick = new Date(t0);
+  if (tick.getHours() || tick.getMinutes() || tick.getSeconds() || tick.getMilliseconds()) tick.setHours(24, 0, 0, 0);
+  for (let d = tick.getTime(); d <= t1; tick.setDate(tick.getDate() + 1), d = tick.getTime(), dayN++) {
     const x = xFor(d);
     ctx.strokeStyle = FC_RETRO.daySep;
     ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
@@ -7352,22 +8117,24 @@ function _verifRender() {
     document.querySelectorAll('#panel-verification .verif-chart-block').forEach(b => { b.style.display = rows.length ? '' : 'none'; });
     if (!rows.length) return;
   } else {
-    const metric = (label, g, digits, unit) => {
-      const mb = verifStats(rows, g.obs, g.mb, g.circular);
-      const mc = verifStats(rows, g.obs, g.mc, g.circular);
+    const metric = (label, g, digits, unit, rs = rows) => {
+      const mb = verifStats(rs, g.obs, g.mb, g.circular);
+      const mc = verifStats(rs, g.obs, g.mc, g.circular);
       return `<tr><td>${label}</td>` +
         `<td>${_verifFmt(mb.bias, digits, unit)}</td><td>${mb.mae == null ? '—' : mb.mae.toFixed(digits) + unit}</td>` +
         `<td>${_verifFmt(mc.bias, digits, unit)}</td><td>${mc.mae == null ? '—' : mc.mae.toFixed(digits) + unit}</td>` +
         `<td>${mb.n}</td></tr>`;
     };
+    const per = _verifScoringRows(rows, _verifRowHasTm10);
+    const dir = _verifScoringRows(rows, _verifRowHasWvd);
     statsBox.innerHTML =
       '<table class="verif-table"><thead><tr><th></th>' +
       '<th colspan="2">How accurate is the model?<br><span class="verif-th-sub">its claim at the buoy vs what the buoy measured</span></th>' +
       '<th colspan="2">How different is the Choc forecast point?<br><span class="verif-th-sub">its claim at the Choc point vs the buoy</span></th><th rowspan="2">readings</th></tr>' +
       '<tr><th></th><th>typical miss</th><th>typical size</th><th>typical miss</th><th>typical size</th></tr></thead><tbody>' +
       metric('Height', VERIF_GET.height, 1, ' ft') +
-      metric('Period', VERIF_GET.period, 1, ' s') +
-      metric('Direction', VERIF_GET.dir, 0, '°') +
+      metric(per.isNew ? 'Period' : 'Period (buoy peak)', VERIF_GET.period, 1, ' s', per.rows) +
+      metric(dir.isNew ? 'Direction' : 'Direction (swell ≥ 8 s)', VERIF_GET.dir, 0, '°', dir.rows) +
       '</tbody></table>' +
       '<p class="verif-table-note sl-hint"><strong>Typical miss</strong> (bias): which way the model is usually wrong — ' +
       '<strong>+</strong> means it claims more than the buoy measures, <strong>−</strong> means less. ' +
@@ -7383,9 +8150,13 @@ function _verifRender() {
   }
 
   setFooter('footer-verification',
-    'Measured: NDBC buoy 44097 (Block Island). Claimed: Open-Meteo best_match for the same hour, at the buoy’s own coordinates and at the Choc forecast point. ' +
-    'Logged every 2 h by the update-buoy pipeline. Gaps in a line are buoy outages (never interpolated); a direction line that jumps edges crossed north. ' +
-    'Technically: typical miss = bias = mean(model − buoy); typical size = MAE. Period/direction compare swell partitions (SwP/SwD vs swell_wave_*), falling back to DPD/MWD.');
+    'Measured: NDBC buoy 44097 (Block Island). Claimed: Open-Meteo best_match (MeteoFrance MFWAM) for the same hour, at the buoy’s own coordinates and at the Choc forecast point. ' +
+    'Logged every 2 h by the update-buoy pipeline. Gaps in a line are missing readings (buoy outages or skipped pipeline runs; never interpolated); a direction line that jumps edges crossed north. ' +
+    'Technically: typical miss = bias = mean(model − buoy); typical size = MAE. Height: total Hs on both sides. ' +
+    'Period: buoy energy period Tm-1,0 from its spectrum (its dominant period DPD on rows logged before Tm-1,0 was recorded) vs the model’s mean wave period. ' +
+    'Direction: buoy MWD vs the model’s mean wave direction; on older rows without it, the buoy’s ≥ 8 s swell direction vs the model swell partition, only at hours when that partition is ≥ 8 s. ' +
+    `The table never averages the two kinds of row together: period and direction are scored on the newer rows once ${VERIF_MIN_NEW_ROWS} of them are logged, and until then on the older rows alone, labelled “buoy peak” and “swell ≥ 8 s”. The charts show every row. ` +
+    'NDBC’s own swell split (SwH/SwP) counts only ≥ 10 s energy at this buoy, so it is not compared with the model’s swell partition.');
 }
 
 function renderVerificationPanel() {
@@ -7472,13 +8243,11 @@ function _regBuildFeatureMini(sub, featureIdx) {
   const uid = window._fbUserId;
   const all = STATE.surfLog.filter(e => e.conditions?.swell);
   const points = [];
-  for (const e of all) {
-    const f = cfg.extractor(e.conditions);
-    const t = cfg.targetFn(e);
-    if (!f || typeof t !== 'number' || !isFinite(t)) continue;
+  const mr = _modelRows(all, cfg.extractor, cfg.targetFn);
+  mr.kept.forEach((e, i) => {
     const isOwn = uid && e.userId === uid;
-    points.push({ entry: e, x: f[featureIdx], y: t, isOwn: !!isOwn });
-  }
+    points.push({ entry: e, x: mr.X[i][featureIdx], y: mr.y[i], isOwn: !!isOwn });
+  });
   if (!points.length) {
     const empty = document.createElement('div');
     empty.className = 'reg-feature-mini-empty sl-hint';
@@ -7652,15 +8421,8 @@ function _regUserScopedFeatureSeries(sub) {
   const cfg = REG_SUBMODELS[sub];
   const uid = window._fbUserId;
   const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
-  const out = [];
-  for (const e of userScoped) {
-    if (!e.conditions?.swell) continue;
-    const f = cfg.extractor(e.conditions);
-    const t = cfg.targetFn(e);
-    if (!f || typeof t !== 'number' || !isFinite(t)) continue;
-    out.push({ f, t });
-  }
-  return out;
+  const mr = _modelRows(userScoped.filter(e => e.conditions?.swell), cfg.extractor, cfg.targetFn);
+  return mr.X.map((f, i) => ({ f, t: mr.y[i] }));
 }
 
 function _regFmtFeatureValue(name, v) {
@@ -8104,13 +8866,10 @@ function _regComputeLOOData(sub) {
   const uid = window._fbUserId;
   const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
   const entries = userScoped.filter(e => e.conditions?.swell);
-  const rows = [];
-  for (const e of entries) {
-    const f = cfg.extractor(e.conditions);
-    const t = cfg.targetFn(e);
-    if (!f || typeof t !== 'number' || !isFinite(t)) continue;
-    rows.push({ entry: e, features: f, target: t });
-  }
+  // Same rows as leaveOneOutRMSE (via _modelRows), so these per-session
+  // predictions reconcile with STATE.surfLog*Validation.
+  const mr = _modelRows(entries, cfg.extractor, cfg.targetFn);
+  const rows = mr.kept.map((e, i) => ({ entry: e, features: mr.X[i], target: mr.y[i] }));
   if (!rows.length) return { rows: [], r2: null, rmse: null, baselineRMSE: null, n: 0 };
   const X = rows.map(r => r.features);
   const y = rows.map(r => r.target);
@@ -8380,22 +9139,26 @@ let _regDrilldownState = { entry: null, sub: 'wave', photoIdx: 0 };
 function _regFmtConditionsBlock(cond) {
   if (!cond) return '<div class="reg-drill-empty sl-hint">No conditions recorded</div>';
   const s = cond.swell || {}, w = cond.wind || {}, t = cond.tide || {};
-  const swellH = (s.height != null ? s.height.toFixed(1) : '—') + 'ft';
-  const swellP = (s.period != null ? s.period.toFixed(1) : '—') + 's';
+  // typeof checks, not != null: a stored string must not throw on toFixed
+  // and take the whole drill-down with it.
+  const swellH = (typeof s.height === 'number' ? s.height.toFixed(1) : '—') + 'ft';
+  const swellP = (typeof s.period === 'number' ? s.period.toFixed(1) : '—') + 's';
   const swellD = (s.direction != null ? directionLabel(s.direction) + ' (' + Math.round(s.direction) + '°)' : '—');
   const secLine = s.secondary
     ? '<div class="reg-drill-line"><span class="reg-drill-key">Secondary:</span> ' +
-      (s.secondary.height != null ? s.secondary.height.toFixed(1) + 'ft' : '—') + ' @ ' +
-      (s.secondary.period != null ? s.secondary.period.toFixed(1) + 's' : '—') + ' · ' +
+      (typeof s.secondary.height === 'number' ? s.secondary.height.toFixed(1) + 'ft' : '—') + ' @ ' +
+      (typeof s.secondary.period === 'number' ? s.secondary.period.toFixed(1) + 's' : '—') + ' · ' +
       (s.secondary.direction != null ? directionLabel(s.secondary.direction) : '—') + '</div>'
     : '';
   const windLine = (w.speed != null ? Math.round(w.speed) : '—') + 'mph · ' +
     (w.direction != null ? directionLabel(w.direction) : '—') +
     (w.direction != null ? ' (' + Math.round(w.direction) + '°)' : '');
-  const tideLine = (t.height != null ? (t.height >= 0 ? '+' : '') + t.height.toFixed(1) + 'ft' : '—') +
-    ' · ' + (t.stage || '—') +
+  // stage / timeToNearest are stored values from any crew member's entry:
+  // escape them (audit C27). The numbers go through toFixed()/Math.round().
+  const tideLine = (typeof t.height === 'number' ? (t.height >= 0 ? '+' : '') + t.height.toFixed(1) + 'ft' : '—') +
+    ' · ' + escHtml(t.stage || '—') +
     (typeof t.rate === 'number' ? ' · ' + (t.rate >= 0 ? '+' : '') + t.rate.toFixed(2) + ' ft/hr' : '') +
-    (t.timeToNearest != null ? ' · time to nearest: ' + t.timeToNearest + 'h' : '');
+    (t.timeToNearest != null ? ' · time to nearest: ' + escHtml(t.timeToNearest) + 'h' : '');
   let sourceLabel;
   if (cond.source === 'openmeteo-archive')              sourceLabel = 'Open-Meteo archive (reanalysis)';
   else if (cond.source === 'ndbc-stdmet+openmeteo-wind') sourceLabel = 'NDBC buoy 44097 swell + Open-Meteo archive wind';
@@ -8619,7 +9382,9 @@ function openRegressionDrilldown(entry, sub) {
   const dt = new Date(entry.timestamp);
   const dtStr = dt.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }) +
     ' · ' + formatTime(dt);
-  const photos = (entry.photos || []).map(p => photoUrl(p) || p).filter(Boolean);
+  // Community entries land here too (feature-mini scatter): escape every
+  // stored field and allow only http(s)/blob/data:image photo URLs (C27).
+  const photos = (entry.photos || []).map(p => safeUrl(photoUrl(p) || p)).filter(Boolean);
   const photoBlock = photos.length
     ? '<div class="reg-drill-photo-wrap">' +
       '<img class="reg-drill-photo" src="' + photos[0] + '" alt="Session photo" onerror="this.style.display=\'none\'">' +
@@ -8627,10 +9392,10 @@ function openRegressionDrilldown(entry, sub) {
       '</div>'
     : '';
   const communityBadge = !isOwn ? '<span class="reg-drill-badge">from community log</span>' : '';
-  const loggedBy = isOwn ? 'you' : (entry.displayName || 'Anonymous');
+  const loggedBy = isOwn ? 'you' : escHtml(entry.displayName || 'Anonymous');
   const notesBlock = entry.notes
     ? '<div class="reg-drill-section"><div class="reg-drill-section-heading">Notes</div><div class="reg-drill-notes">' +
-      entry.notes.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) + '</div></div>'
+      escHtml(entry.notes) + '</div></div>'
     : '';
 
   panel.setAttribute('data-w1-title', 'Session detail · ' + dtStr);
@@ -8711,6 +9476,7 @@ function closeRegressionDrilldown() {
 // ════════════════════════════════════════════════
 
 async function initApp() {
+  dropLegacyTideCacheKeys();
   // Load static data files
   const [buoys, tideStations] = await Promise.all([
     fetchJSON('data/buoys-east-coast.json'),
@@ -8720,9 +9486,18 @@ async function initApp() {
   STATE.buoys = buoys || [];
   STATE.tideStations = tideStations || [];
 
-  // Init maps
-  initBuoyMap();
-  initTideMap();
+  // Init maps. They're optional: if Leaflet didn't load, the forecast must
+  // still load, so a map failure never aborts initApp.
+  if (typeof L !== 'undefined') {
+    try {
+      initBuoyMap();
+      initTideMap();
+    } catch (e) {
+      console.warn('Map init failed:', e);
+    }
+  } else {
+    console.warn('Leaflet unavailable: maps disabled');
+  }
 
   // Wire forecast-coords toggle (Choc only behaviour; the wrap is hidden for
   // non-Choc selections via applyChocOnlyVisibility).
@@ -8733,15 +9508,30 @@ async function initApp() {
   // accessibility users.
   initBuoySelectDropdown();
 
-  // Wire surf log
-  await loadSurfLog();
+  // Default: if gate passed (not by boat), load Chocomount now, before the
+  // surf log (whose Firebase wait used to hold the forecast back by 2-15 s).
+  // Choc TV's boot watchdog may already have selected it: don't load twice.
+  if (STATE.boatGatePassed && !STATE.selectedBuoy) {
+    const chocBuoy = STATE.buoys.find(b => b.home === 'chocomount');
+    if (chocBuoy) {
+      selectBuoy(chocBuoy);
+      STATE.buoyMap?.setView([chocBuoy.lat, chocBuoy.lon], 8);
+    }
+  }
+  // If by boat, just show the map, no auto-select
+
+  // Wire surf log. It loads in the background: nothing on the forecast
+  // needs it, and Firebase auth + Firestore can take seconds (or hang).
   initTabBar();
   initSurfLogForm();
   initMatchModal();
   initPanelInfoToggles();
-  slRetrain();
-  // Re-attempt any photo uploads that failed on a prior session.
-  retryFailedPhotoUploads().catch(function(e) { console.warn('Retry pass failed:', e); });
+  loadSurfLog().then(function() {
+    slRetrain();
+    renderSurfLogTable();
+    // Re-attempt any photo uploads that failed on a prior session.
+    retryFailedPhotoUploads().catch(function(e) { console.warn('Retry pass failed:', e); });
+  }).catch(function(e) { console.warn('Surf log load failed:', e); });
 
   // Wire auth buttons
   el('auth-signin-btn')?.addEventListener('click', function() {
@@ -8762,16 +9552,6 @@ async function initApp() {
   // boat-yes path or the open buoy map view), still apply per-tab gating so
   // Tab 1's lineup map and Tab 3's log form stay hidden.
   updateTabBarVisibility();
-
-  // Default: if gate passed (not by boat), load Chocomount
-  if (STATE.boatGatePassed) {
-    const chocBuoy = STATE.buoys.find(b => b.home === 'chocomount');
-    if (chocBuoy) {
-      selectBuoy(chocBuoy);
-      STATE.buoyMap.setView([chocBuoy.lat, chocBuoy.lon], 8);
-    }
-  }
-  // If by boat, just show the map, no auto-select
 }
 
 // ── Start ────────────────────────────────────────

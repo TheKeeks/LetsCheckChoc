@@ -8,6 +8,12 @@ on:
 permissions:
   contents: write
 
+# One run at a time; a queued run waits instead of cancelling one that is
+# mid-push.
+concurrency:
+  group: update-buoy
+  cancel-in-progress: false
+
 jobs:
   update-buoy:
     runs-on: ubuntu-latest
@@ -24,6 +30,8 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
+      # Exits 1 without writing when every NDBC file fails, which skips the
+      # commit below and makes GitHub email the owner.
       - name: Fetch buoy data
         run: python scripts/fetch_buoy.py
 
@@ -36,5 +44,16 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "Update buoy data $(date -u +'%Y-%m-%d %H:%M UTC')"
-            git push
+            # main may have moved since checkout (e.g. the owner merged a
+            # PR): replay the data commit on top of it, with a few retries.
+            for attempt in 1 2 3; do
+              if git pull --rebase origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME"; then
+                exit 0
+              fi
+              git rebase --abort 2>/dev/null || true
+              echo "::warning::Push attempt $attempt failed; retrying"
+              sleep $((attempt * 5))
+            done
+            echo "::error::Could not push the buoy data commit after 3 attempts"
+            exit 1
           fi

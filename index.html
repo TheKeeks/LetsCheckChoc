@@ -7,8 +7,15 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preload" href="fonts/ms_sans_serif.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fonts/ms_sans_serif_bold.woff2" as="font" type="font/woff2" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Google Fonts must not block first paint: a stalled fonts.googleapis.com
+       held the whole page (boat gate included) blank. Loads as print-only,
+       then switches to all media once it arrives; the fallback fonts show
+       meanwhile (and for good if it never does). -->
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"></noscript>
+  <!-- Leaflet 1.9.4, vendored (see vendor/leaflet/README.md) so a CDN outage
+       can't take the maps, or the app, down. -->
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="styles-web1.css">
   <link rel="stylesheet" href="styles-web1-extensions.css">
@@ -143,7 +150,7 @@
         <div class="chart-container chart-container-tall" id="forecast-chart-container">
           <div class="forecast-detail-bar" id="forecast-detail-bar">
             <div class="detail-row" id="forecast-detail-row"></div>
-            <button type="button" id="forecast-reset-now" class="forecast-reset-btn" style="display:none;">Reset to now</button>
+            <button type="button" id="forecast-reset-now" class="forecast-reset-btn" style="visibility:hidden;">Reset to now</button>
           </div>
           <div class="forecast-day-row" id="forecast-day-header" aria-hidden="true"></div>
           <div class="forecast-card forecast-card-swell">
@@ -166,7 +173,7 @@
           <label class="forecast-model-label">
             <span class="forecast-model-label-txt">Model:</span>
             <select id="forecast-model-select" aria-label="Forecast model">
-              <option value="">Auto</option>
+              <option value="">Auto (MFWAM)</option>
             </select>
           </label>
           <label class="forecast-coord-toggle" id="forecast-coord-toggle-wrap" style="display:none;">
@@ -189,8 +196,8 @@
             <summary>What is this?</summary>
             <p>A decomposition of the buoy's raw wave spectrum into three interpretable rows:</p>
             <ul>
-              <li><strong>Primary Swell</strong> — the dominant long-period wave train the spectrum can isolate, typically a distant-storm groundswell.</li>
-              <li><strong>Wind Waves</strong> — the shorter-period train driven by the local wind at the buoy.</li>
+              <li><strong>Swell 10 s+</strong> — NDBC's own swell split. Choc's buoy (44097) reports no split point, so NDBC cuts at a fixed 10 s and counts only energy at 10 s and longer as swell.</li>
+              <li><strong>Wind waves &lt;10 s</strong> — everything shorter, which at this buoy includes real 8–9 s swell. For Choc, read the swell card's 8 s+ band instead.</li>
               <li><strong>Significant Hs</strong> — the total significant wave height of the sea state (mean of the highest one-third of waves); the combined energy of every ripple, chop, and groundswell currently present.</li>
             </ul>
           </details>
@@ -424,11 +431,11 @@
             <canvas id="verif-canvas-height"></canvas>
           </div>
           <div class="verif-chart-block">
-            <div class="verif-chart-label">Swell period — seconds between waves (longer = more powerful, organized swell)</div>
+            <div class="verif-chart-label">Wave period — seconds between waves (buoy energy period vs model mean period)</div>
             <canvas id="verif-canvas-period"></canvas>
           </div>
           <div class="verif-chart-block">
-            <div class="verif-chart-label">Swell direction — where the swell is coming from</div>
+            <div class="verif-chart-label">Wave direction — where the waves come from (older readings: 8 s+ swell only)</div>
             <canvas id="verif-canvas-dir"></canvas>
           </div>
         </fieldset>
@@ -465,19 +472,19 @@
 
           <div class="sl-ratings-row">
             <div class="sl-slider-group w1-untouched" data-rating="size">
-              <label class="sl-label">Size <span class="sl-slider-val" id="sl-size-val">5</span></label>
+              <label class="sl-label" for="sl-size">Size <span class="sl-slider-val" id="sl-size-val">5</span></label>
               <span class="w1-slider-placeholder">Tap to rate</span>
               <input type="range" id="sl-size" class="sl-range w1-untouched" min="0" max="10" value="5">
               <span class="sl-slider-desc" id="sl-size-desc"></span>
             </div>
             <div class="sl-slider-group w1-untouched" data-rating="windQuality">
-              <label class="sl-label">Wind Quality <span class="sl-slider-val" id="sl-wind-val">5</span></label>
+              <label class="sl-label" for="sl-wind-quality">Wind Quality <span class="sl-slider-val" id="sl-wind-val">5</span></label>
               <span class="w1-slider-placeholder">Tap to rate</span>
               <input type="range" id="sl-wind-quality" class="sl-range w1-untouched" min="0" max="10" value="5">
               <span class="sl-slider-desc" id="sl-wind-desc"></span>
             </div>
             <div class="sl-slider-group w1-untouched" data-rating="rideQuality">
-              <label class="sl-label">Ride Quality <span class="sl-slider-val" id="sl-ride-val">5</span></label>
+              <label class="sl-label" for="sl-ride-quality">Ride Quality <span class="sl-slider-val" id="sl-ride-val">5</span></label>
               <span class="w1-slider-placeholder">Tap to rate</span>
               <input type="range" id="sl-ride-quality" class="sl-range w1-untouched" min="0" max="10" value="5">
               <span class="sl-slider-desc" id="sl-ride-desc"></span>
@@ -611,7 +618,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="vendor/leaflet/leaflet.js"></script>
   <script src="firebase-config.js"></script>
   <script src="app.js"></script>
   <script src="kiosk.js"></script>

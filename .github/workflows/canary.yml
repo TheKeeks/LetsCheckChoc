@@ -1,0 +1,37 @@
+name: Upstream Canary
+
+# Every 6 hours, probe each upstream the site depends on (Open-Meteo marine
+# and wind, CO-OPS tides, NDBC 44097, and the bot's data/buoy.json) for
+# real data, not just HTTP 200. A failure opens or updates ONE issue
+# labelled data-canary; recovery comments and closes it. See
+# scripts/canary.py. Uses only the workflow's GITHUB_TOKEN.
+on:
+  schedule:
+    - cron: '37 */6 * * *'  # off the hour, between update-buoy slots
+  workflow_dispatch:  # Manual trigger
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Probe upstreams and update the data-canary issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/canary.py

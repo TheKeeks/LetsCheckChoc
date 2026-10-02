@@ -515,3 +515,48 @@ body[data-era="web1"] {
   letter-spacing: 1px;
   color: var(--w1-navy);
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   Accessibility (audit C48)
+   ─────────────────────────────────────────────────────────────────────
+   style.css's --ink2/3/4 greys were tuned for the old paper theme; on
+   Win95 silver (#c0c0c0) they read at 4.0 / 2.1 / 1.2 : 1, under WCAG
+   AA's 4.5 : 1 for small text. These pass on silver and on the white
+   cards. Choc TV (body.kiosk) keeps its own green-on-black palette.
+   ════════════════════════════════════════════════════════════════════ */
+
+body[data-era="web1"]:not(.kiosk) {
+  --ink2: #303030;   /* 7.3 : 1 on #c0c0c0 */
+  --ink3: #404040;   /* 5.7 : 1 */
+  --ink4: #4a4a4a;   /* 4.9 : 1 */
+}
+/* The rose hover readout hard-codes its grey (3.2 : 1) in styles-retro.css. */
+body[data-era="web1"]:not(.kiosk) #panel-compass .rose-readout {
+  color: var(--ink3);
+}
+/* Data-age cues (old buoy obs, failed refresh) are the lines that say the
+   numbers are stale, yet --orange / --red-m read 1.97 / 2.73 : 1 on
+   silver. Darker amber and red here; the global tokens stay as they are
+   (they also colour borders, dots and chart cues) and Choc TV keeps its
+   own palette. */
+body[data-era="web1"]:not(.kiosk) .condition-card.is-stale .condition-extra,
+body[data-era="web1"]:not(.kiosk) .forecast-cache-indicator.is-stale {
+  color: #6b4000;   /* 4.9 : 1 on #c0c0c0 */
+}
+body[data-era="web1"]:not(.kiosk) .condition-card.is-old .condition-extra,
+body[data-era="web1"]:not(.kiosk) .header-meta.is-stale {
+  color: #8b1a1a;   /* 5.1 : 1 */
+}
+
+/* The ⓘ source and ? help badges are tap targets: at least 24 × 24 px
+   (WCAG 2.5.8; they were 18 px). The ? shifts left to clear the bigger ⓘ
+   and its widened touch area. */
+.panel-info-toggle,
+.widget-help > summary {
+  min-width: 24px;
+  min-height: 24px;
+}
+.panel:has(> .panel-info-toggle) > .widget-help > summary,
+.panel-half:has(> .panel-info-toggle) > .widget-help > summary {
+  right: 38px;
+}

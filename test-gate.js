@@ -24,6 +24,10 @@ function assert(condition, message) {
   if (!condition) throw new Error(message || 'Assertion failed');
 }
 
+// Async tests run after the sync ones, in order, before the summary.
+const asyncTests = [];
+function testAsync(name, fn) { asyncTests.push({ name, fn }); }
+
 console.log('Gate functionality tests\n');
 
 // ── Test 1: app.js parses without syntax errors ──────────
@@ -74,14 +78,27 @@ test('gate shows when no sessionStorage value present', function() {
   assert(shouldShowGate === true, 'gate should be shown when no value saved');
 });
 
-// ── Test 6: ndbcProxies is an array with at least 2 entries ─
-test('CONFIG.api.ndbcProxies is an array with multiple proxies', function() {
-  const code = fs.readFileSync('app.js', 'utf8');
-  assert(code.includes('ndbcProxies: ['), 'should have ndbcProxies array');
-  const match = code.match(/ndbcProxies:\s*\[([\s\S]*?)\]/);
-  assert(match, 'should be able to extract ndbcProxies array');
-  const proxyCount = (match[1].match(/wrap:/g) || []).length;
-  assert(proxyCount >= 2, 'should have at least 2 proxy entries, found ' + proxyCount);
+// ── Test 6: NDBC never blocks the Chocomount forecast ──
+// Behavioural (replaces a check that the source listed >= 2 proxies, which
+// locked the dead proxies in place): with every NDBC relay hanging, Choc's
+// load draws the chart from Open-Meteo + CO-OPS without one proxy request.
+testAsync('Choc forecast renders with no NDBC proxy request, even if relays hang', async function() {
+  const { loadApp, fixtureFetch } = require('./tests/helpers/load-app');
+  const hang = () => new Promise(function() {});
+  const app = loadApp({ fetch: fixtureFetch({ overrides: [
+    [/corsproxy\.io|allorigins\.win|codetabs\.com|ndbc\.noaa\.gov/, hang]
+  ] }) });
+  // The vm DOM has no layout: give the panel canvases a parent to measure.
+  ['tide-canvas', 'compass-canvas', 'spectrum-canvas'].forEach(id => app.dom.byId(id + '-wrap').appendChild(app.dom.byId(id)));
+  app.get('STATE').tideStations = JSON.parse(fs.readFileSync('data/tide-stations.json', 'utf8'));
+  const choc = JSON.parse(fs.readFileSync('data/buoys-east-coast.json', 'utf8')).find(b => b.home === 'chocomount');
+  app.call('loadAllData', choc);
+  await app.clock.tick(1000);
+  const chart = app.get('STATE').forecastChart;
+  assert(chart && chart.times && chart.times.length === 168, 'forecast chart should be drawn within 1 s');
+  assert(app.get('STATE').lastLoadCompletedAt, 'load should complete within 1 s');
+  const proxied = app.fetchLog.filter(r => /corsproxy|allorigins|codetabs|ndbc\.noaa\.gov/.test(r.url));
+  assert(proxied.length === 0, 'expected no NDBC/proxy requests, got ' + proxied.map(r => r.url).join(', '));
 });
 
 // ── Test 7: parseNDBCSpectral only requires dataSpec ────
@@ -125,6 +142,8 @@ function loadSpectralFns() {
     grab('parseSpecSummaryFromText'),
     grab('pickTrendBaseline'),
     grab('computeSpecTrends'),
+    grab('binHasMeasuredDir'),
+    grab('binsHaveMeasuredDir'),
     grab('computePrimarySwellDir'),
     'module.exports = { parseSpectralFile, parseNDBCSpectral, parseSpecRows, parseSpecSummaryFromText, pickTrendBaseline, computeSpecTrends, computePrimarySwellDir };'
   ].join('\n');
@@ -225,11 +244,23 @@ test('computePrimarySwellDir returns energy-weighted swell direction', function(
   assert(fb != null && Math.abs(fb - 200) < 1, 'should fall back to all bins when swell band empty');
 });
 
-// ── Test 8: fetchTextWithProxies exists ─────────────────
-test('fetchTextWithProxies helper function exists', function() {
-  const code = fs.readFileSync('app.js', 'utf8');
-  assert(code.includes('async function fetchTextWithProxies('), 'should define fetchTextWithProxies');
-  assert(code.includes('CONFIG.api.ndbcProxies'), 'should iterate ndbcProxies');
+// ── Test 8: a re-added relay is walked in order ─────────
+// Behavioural (replaces a source grep): CONFIG.api.ndbcProxies is empty
+// today, and a working relay added later is tried after a failing one.
+testAsync('fetchTextWithProxies walks CONFIG.api.ndbcProxies in order', async function() {
+  const { loadApp } = require('./tests/helpers/load-app');
+  const app = loadApp({ fetch: function(url) {
+    if (url.startsWith('https://bad.test/')) return { status: 403, body: 'nope' };
+    if (url.startsWith('https://good.test/')) return { status: 200, body: '#YY MM DD\n#yr mo dy\n2026 10 01\n' };
+    return null;
+  } });
+  assert(app.run('CONFIG.api.ndbcProxies.length') === 0, 'no relay is configured (the free ones are dead)');
+  assert(await app.call('fetchNDBCStdmet', '44097') === null, 'with no relay, NDBC answers null at once');
+  assert(app.fetchLog.length === 0, 'and makes no request');
+  app.run("CONFIG.api.ndbcProxies.push({ name: 'bad', wrap: u => 'https://bad.test/?' + u }, { name: 'good', wrap: u => 'https://good.test/?' + u })");
+  const text = await app.call('fetchTextWithProxies', 'https://www.ndbc.noaa.gov/data/realtime2/44097.txt');
+  assert(text && text.startsWith('#YY'), 'should return the second relay body, got ' + text);
+  assert(app.fetchLog.map(r => r.url.split('/?')[0]).join(',') === 'https://bad.test,https://good.test', 'relays tried in order');
 });
 
 // ── Test 9: Pipeline spectral fallback in orchestration ──
@@ -279,5 +310,17 @@ test('verifStats computes bias/MAE and skips null pairs', function() {
   assert(empty.n === 0 && empty.bias === null, 'empty rows should give n=0, null bias');
 });
 
-console.log('\n' + passed + ' passed, ' + failed + ' failed');
-if (failed > 0) process.exit(1);
+(async function() {
+  for (const t of asyncTests) {
+    try {
+      await t.fn();
+      console.log('  ✓ ' + t.name);
+      passed++;
+    } catch (e) {
+      console.error('  ✗ ' + t.name + ': ' + e.message);
+      failed++;
+    }
+  }
+  console.log('\n' + passed + ' passed, ' + failed + ' failed');
+  if (failed > 0) process.exit(1);
+})();

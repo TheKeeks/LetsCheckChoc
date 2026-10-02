@@ -1,0 +1,5 @@
+node_modules/
+tests/e2e/artifacts/
+__pycache__/
+# Firebase emulator logs (npm run test:rules)
+*-debug.log

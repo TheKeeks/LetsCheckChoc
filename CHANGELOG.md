@@ -1,5 +1,100 @@
 # Changelog
 
+## [Unreleased] — Review follow-ups: one data age, no invented directions, sign-in hand-over, phones fit again
+
+An independent review of the audit branch, with every finding re-checked by a second reviewer, turned up twenty real problems in the new code. All are fixed here, each with a test that fails on the earlier branch code.
+
+Choc TV's status strip and the site header now report one age: the age of the swell and wind forecast on screen. During a NOAA tide outage the kiosk had raised "FORECAST 3 H OLD — NOT UPDATING" over a forecast fetched minutes earlier, because saved tide predictions counted toward the age. Tide predictions are astronomical and stay right for days, so they no longer count; the header just adds "saved tides". If the marine forecast stays down past the 24-hour fallback, the strip keeps counting the real age of the forecast still on the cards instead of flipping back to "updated just now", and with no forecast on screen it shows NO DATA. Cards filled from a saved Open-Meteo copy show that copy's forecast for this hour, not its day-old nowcast. The kiosk's deploy check fingerprints the address it actually loads (./?kiosk=1), so it no longer shows an old build ID or reloads once for nothing.
+
+The buoy pipeline no longer invents measurements. When NDBC's direction file (44097.swdir) fails, directions are left blank instead of 0° (north, out of window), and NDBC's 999 "no value" code is skipped; the browser's spectrum parser and spectral-table direction now do the same, and the swell card falls back to the buoy's mean wave direction. A spectrum carried over from an earlier run expires after 6 hours, and the swell card won't headline a carried-over spectrum, or one more than 2 hours behind the buoy reading, under the fresh observation time. The canary's "pipeline hasn't run" alarm moves from 6 to 12 hours, because GitHub's skipped runs routinely leave 6–8.5-hour gaps and it would have opened and closed an issue several times a week.
+
+Signing in to an existing Google account after logging a session anonymously hands that session over again: the stricter rules refuse an update that changes a doc's owner, so the app now removes the anonymous copy while still anonymous, completes sign-in with the Google approval already given (no second pop-up, which iPhone Safari blocks) and re-creates the session under your account, putting it back if sign-in fails. A session saved while the surf log is still loading no longer vanishes when the load finishes.
+
+On 375–414 px iPhones the Forecast tab no longer slides sideways, and Choc TV shows the whole Direction column again: the spectral rows read "Swell 10 s+" and "Wind waves <10 s" and may wrap. The overflow checks that missed this measured a width that grows with the page; they now measure the screen, at four phone widths and two kiosk sizes. The "data is old" cues are darker amber and red so they pass contrast in sunlight, the hidden "Reset to now" link no longer holds space above the chart on phones, and Model vs Buoy no longer averages old and new buoy definitions into one statistic.
+
+## [Unreleased] — Crew surf log: only your own sessions are ever re-saved, entries render as text, missing tide stays missing
+
+Backfill, signing in with Google after using the app anonymously, and JSON import all re-saved every session in the loaded log, including up to 200 community entries from other crew members. Each re-save was stamped with the uid of whoever clicked, and the Firestore rules allowed it. A single Backfill could move the whole crew's sessions, with their ratings, into one person's model and out of everyone else's. The app now writes only entries that belong to the signed-in account. Backfill and photo retries skip everyone else's entries. Migration moves only the sessions logged under the anonymous account you are leaving. Import skips sessions owned by another account and ratings that are not 0–10 numbers. firestore.rules now enforces the same thing: you can create only as yourself, update only a doc that is yours and stays yours, and delete only your own. Writes must also have the app's shape: no extra fields, ratings 0–10 or blank, a server-set createdAt so rows can't be back- or future-dated, and generous size caps. storage.rules accepts only real image types (JPEG/PNG/WebP/HEIC/HEIF/GIF, no SVG) at the app's own photo path. A crew-only email allowlist is included as a commented-out template for when the crew's emails are supplied.
+
+Notes, display names, photo links and condition values were pasted into the page as raw HTML. One crafted note or name in the community log would have run script for every crew member who opened the Surf Log or the Regression drill-down. They are now escaped everywhere they are shown, and photo links must be http(s) or image data.
+
+During a NOAA CO-OPS outage, a looked-up session was saved with a made-up tide of 0.0 ft "rising". That looks exactly like Choc's favourite low incoming tide, so the Ride model trained on it, the forecast-time Ride prediction rated it, and Backfill could write it over sessions that had real tides. A missing tide is now stored as missing and shown as "Tide unavailable". Backfill keeps the stored tide and wind when a fetch fails. Sessions already saved with the made-up tide load as tide-unavailable and are skipped by the Ride model until they are looked up again.
+
+Training also changed: the "incomplete" check now reads the swell height field the app actually stores. One shared filter now decides which sessions every model and every Regression-tab metric uses. A blank, text or out-of-range rating, or a swell with no direction, is excluded everywhere, so the banner's "excluded from your model" is now true. A blocked Firebase Storage script no longer stops sign-in.
+
+Verified with node unit tests, two Chromium scenarios (hostile entries render as text and no injected handler runs; sign-in works with Storage blocked) and a new Firebase-emulator rules suite (npm run test:rules, and a "Firebase rules" GitHub Actions workflow). Every new test fails on the previous code. The rules only take effect once pasted into the Firebase console.
+
+## [Unreleased] — Forecast loads in under a second and is honest about how old its data is
+
+Every visit used to wait on three free NDBC relays that are dead (corsproxy, allorigins, codetabs). The forecast chart took about 5–18 s to appear and the spectra about 34 s, and Choc TV paid that on every 15-minute refresh. Before Choc was even selected, the page also waited 2–15 s on Firebase sign-in for the surf log. The relay list is now empty. Chocomount's buoy reading and spectra come straight from the pipeline's data/buoy.json, and the surf log loads in the background. In the offline test harness the chart now appears in about 0.3 s, and Choc TV boots with one load instead of two. Leaflet is now served from the repo (vendor/leaflet, unmodified 1.9.4), so a CDN outage no longer stops the forecast from loading. Google Fonts no longer delay first paint.
+
+A failed refresh used to blank the chart, or just its tides or wind, under a header saying "Updated <now>". One network blip also erased the forecast model you had picked. Now a failed source falls back to its last good saved copy: forecasts up to 24 h old, tide predictions up to 4 days. The header says "Refresh failed · data from 6:12 AM", or "Forecast unavailable" with a note in the chart when nothing is saved. CO-OPS' "No Predictions" error can no longer overwrite good saved tides. A model choice is only dropped when that model really has no data for the spot. The cache-first paint on repeat visits had never worked for Choc, because the tide cache was saved under one name and looked up under another. It works now. Every load also records how old its data really is (STATE.dataAsOf / STATE.dataHealth) for Choc TV's status strip.
+
+The swell card used to show the 44097 reading as "Current" with no time, even when the pipeline last ran hours ago. It now shows "Buoy obs 8:30 AM (2h 30m ago)", amber past 2 h and red past 6 h. The arrival line is now a clock time counted from the observation ("reaches Choc ~11:48 AM"). On the chart, the obs marker sits at the time the buoy measured it, not on the now line. The headline number is now the swell from 8 s up, worked out from the buoy spectrum: 1.3 ft today, where NDBC's own swell figure says 1.0 ft. At 44097, NDBC counts only waves of 10 s and up as swell, which files Choc's 8–9 s swell under wind waves. NDBC's split stays in the spectral table, labelled as such. Other spectral buoys no longer show Block Island's spectrum under their own name. They say plainly that no live spectrum is available. The Secondary Swell card now reads the current hour instead of midnight.
+
+Verified with 43 new unit tests (tests/unit/w1-*.test.js) and 4 new browser scenarios (tests/e2e/scenarios/w1-*.js). Each fails on the previous code and passes now. The scenarios cover dead relays, a non-Choc buoy, Open-Meteo down on a reload, and Leaflet plus Firebase both down. The baseline time-to-chart bound was tightened from 45 s to 3 s.
+
+## [Unreleased] — Choc TV: honest freshness, self-healing boot, automatic updates, in-window hero
+
+The kiosk's status strip said "updated just now" after any refresh, including one where every fetch had failed, so a dead feed looked live. Now the strip shows the age of the forecast actually on screen. It reads "NO DATA" when a load finished with nothing to show. When refreshes keep failing it goes stale: the age turns bold and the pilot light goes hollow once the data is older than two missed refreshes plus ten minutes. After three hours it shows the alert state: red pilot light, red age and a full-width "FORECAST 3 H OLD — NOT UPDATING" banner. The age comes from the load path's STATE.dataAsOf when it is present. Otherwise it comes from the forecast cache timestamps, which keep the true fetch time. The SOURCES card also lists each data source's health when the app reports it.
+
+Choc TV now looks after itself. A Wi-Fi blip during boot used to leave it on "loading…" forever, or showing NO TIDE DATA forever. Now it re-fetches whichever station list failed and reloads the forecast once the list arrives. If no forecast has loaded ten minutes after boot (for example because the station lists never arrive), it checks that the site answers and then reloads. It also picks up new code without anyone exiting Guided Access. Every 15 minutes it compares the deployed index.html, app.js, kiosk.js and styles-kiosk.css with the code it booted with, and it reloads every night at about 03:30. Every reload first checks that the site is reachable, happens at most once per 30 minutes, and never happens while someone is using the screen or has the SOURCES card open. The SOURCES card shows the running build's signature. The iPad already on the wall runs the old code, which cannot do any of this, so relaunch Choc TV by hand once after this deploy; the SOURCES card's build line confirms the new code is running.
+
+The day cards no longer lead with swell that Montauk or Block Island blocks. Each day, the big reading goes to whichever of the model's two swell trains carries more energy inside the 115–158° window, per the spec's "the secondary becomes the de facto primary". On the recorded fixtures, Tomorrow and Saturday now lead with the 9 s SE groundswell instead of a 5 s southerly wind swell. A train from outside the window is dimmed and tagged OUT OF WINDOW. The radar sweep is now redrawn about 20 times a second instead of 60, at the same rotation speed, so the iPad does less work.
+
+Verified by new unit tests (tests/unit/w2-kiosk-*.test.js) and browser scenarios (tests/e2e/scenarios/w2-kiosk-*.js): a marine outage on refresh shows the stale and then the dead state, the boot blip recovers, a boot that never loads is reloaded by the watchdog, and a kiosk.js deploy is picked up. Each of these fails on the previous kiosk.js.
+
+## [Unreleased] — Buoy pipeline keeps last-good data, logs every hour, and an upstream canary files an issue
+
+The 2-hourly buoy pipeline used to overwrite data/buoy.json with nulls whenever NDBC failed, including when NDBC returned an error page with HTTP 200. It still finished green and the bot committed the blanks, so the buoy card and compass rose went empty and nobody was told. Now a run where every NDBC file fails exits with an error before writing anything: the commit is skipped and GitHub emails the owner. If only some files fail, the parts that did not refresh are carried over from the last good file and listed in a new `stale_sections` field. A new `spectral_obs_time` says how old the spectrum is, since it can trail the buoy reading by an hour or more.
+
+buoy.json also gains a `swell_band` (height, peak period, direction) computed from the spectrum over periods of 8 s and longer. NDBC's own "swell" at 44097 only counts energy at 10 s and longer, so the 8–10 s SE swell that matters at Choc was being booked as wind-wave. On 2026-09-23 NDBC said 2 ft of swell while the 8 s+ band held 6.6 ft. The existing fields are unchanged. The site's swell card reads `swell_band` when it is present and otherwise computes the same band from the spectrum in the browser.
+
+Model-vs-buoy verification now logs one row per hour and back-fills every hour since the last row, so the runs GitHub's cron drops (about 60% lately) no longer leave gaps. Each row adds like-for-like fields for the app to compare: buoy average period, the spectrum's energy period (Tm-1,0), the 8 s+ band height and period, and the model's mean wave direction. The existing series are unchanged. The update-buoy workflow now runs one at a time and rebases before pushing, so an owner merge landing mid-run no longer breaks it.
+
+A new Upstream Canary workflow runs every 6 hours. It probes Open-Meteo marine and wind, the NOAA tide predictions, NDBC 44097 and the bot's buoy.json with the same requests the page and the pipeline make, and checks each for real, recent data rather than just a 200. When something breaks it opens one GitHub issue labelled data-canary with a table of what failed and what the crew will notice. It comments only when the set of failures changes, and closes the issue when everything recovers.
+
+Verified with offline tests in CI. Python unit tests cover the outage, carry-over, swell-band, back-fill and canary decision logic, including a real 2026-09-23 spectrum. A Node test runs the workflow's real push step against a git remote that moved mid-run. An e2e scenario fails if the canary's URLs ever drift from the page's requests or the pipeline's NDBC downloads. Live dry runs of the pipeline (into scratch copies) and the canary against the real services also passed.
+
+## [Unreleased] — Phone chart scrolls, accurate sunrise/sunset, honest model checks, readable greys
+
+On a phone, a vertical swipe over the forecast chart barely scrolled the page. It also jumped the selected hour to wherever the finger landed, often days ahead, and kept it for the session. Now the browser keeps vertical swipes as page scrolls (and pinch-zoom), and only a drag that starts out sideways moves the hour. A plain tap still picks an hour. The gesture survives the chart redrawing mid-drag, and "Reset to now" keeps its space, so showing it no longer reflows the detail bar. The pulsing "now" dot used to redraw 60 times a second forever, even with the chart hidden. It now animates at about 10 frames a second and stops while the chart is on another tab, scrolled off-screen, or behind a Choc TV day panel. It comes back on the forecast tab and on the kiosk radar.
+
+Sunrise and sunset ignored atmospheric refraction, so they ran 5–9 minutes late and early, and the Daylight card's "11h 31m" was really 11h 45m. calcDaylight now uses the NOAA solar equations and matches the US Naval Observatory to about a minute (06:45 / 18:30 today). The model dropdown offered eight wave models, but six return no swell at Choc (two weren't valid ids, and others are blank or total-sea only). It now lists MeteoFrance MFWAM, NOAA GFS-Wave 0.25° and 0.16°, and DWD GWAM (marked "no secondary swell"). "Auto" now names what it is at Choc: MeteoFrance MFWAM, not GFS.
+
+The Model vs Buoy panel compared the buoy's 10 s-and-longer swell band with the model's own, mostly wind-sea, swell partition. That showed a fake 5.8 s period error and a 27° direction miss. Period now compares the buoy's energy period (its dominant period on older readings) with the model's mean wave period: −0.7 s bias, 1.3 s typical miss. Direction compares like with like: mean wave direction on new readings, and on older ones 8 s+ swell only where the model also has 8 s+ swell. The day marks now sit on local midnight instead of 8 PM, and the footer and chart labels say what is compared. Grey secondary text (2:1 on the silver background) is darkened to pass WCAG AA. The ⓘ/? badges are 24 px tap targets, the rating sliders have labels, and the verification panel no longer runs off the right edge on a 390 px phone.
+
+Verified by node unit tests and Chromium scenarios at iPhone size with real touch input, and on Choc TV. Each new test fails on the previous code. Sunrise/sunset is checked against USNO times under New York, UTC and Los Angeles. The model list is checked against a live Open-Meteo probe.
+
+## [Unreleased] — Test harness, offline fixtures, CI and CLAUDE.md
+
+Nothing checked a change before it went live through Pages. The only
+tests were test-gate.js, which mostly greps source strings. The
+28-test Playwright suite from PR #123 lived in a session scratchpad
+and was lost. The repo now has a test layer that needs no npm install
+and runs the same way in GitHub Actions and in a Claude Code web
+session.
+
+`npm test` loads the real app.js and kiosk.js into a Node sandbox. The
+sandbox has browser stubs, a frozen clock and recorded Open-Meteo,
+CO-OPS and NDBC 44097 responses. On those it checks the buoy parsers,
+daylight times, kiosk day cards and the cache, then runs test-gate.js.
+`npm run test:e2e` drives headless Chromium against the real page. It
+answers every outside host from fixtures, with the three dead NDBC
+proxies emulated as they really fail. Two baseline checks run:
+Chocomount auto-selects and the forecast chart draws (about 5 s with
+fast-failing proxies, 18 s at production proxy timing), and Choc TV
+renders its day cards. `npm run test:py` checks fetch_buoy.py's
+parsers without network access or writes to data/. A new CI workflow
+runs all three on every push and PR and keeps the screenshots as a
+downloadable artifact.
+
+CLAUDE.md now orients future sessions. It covers the iPad-only
+workflow, the commands, a module map keyed on section-banner grep
+anchors, the data flow and the invariants. A unit test keeps its
+commands, anchors and paths in sync with the code. App behaviour is
+unchanged.
+
 ## [Unreleased] — Day cards degrade gracefully when NOAA tide predictions are down
 
 Diagnosis of "swell data isn't loading": Open-Meteo swell is fine
