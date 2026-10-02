@@ -1780,6 +1780,75 @@ summary:focus-visible {
   font-weight: 500;
 }
 
+/* Saved vs new lookup, shown when a re-Lookup disagrees with the entry. */
+.sl-cond-compare-note {
+  margin-bottom: 8px;
+  color: var(--ink2);
+}
+.sl-cond-compare-note ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.sl-cond-compare-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.sl-cond-compare-col {
+  border: 1px solid var(--border-l);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  min-width: 0;
+}
+.sl-cond-compare-head {
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+.sl-cond-compare-col .sl-btn {
+  margin-top: 6px;
+}
+@media (max-width: 600px) {
+  .sl-cond-compare-cols { grid-template-columns: 1fr; }
+}
+
+/* Backfill preview: saved vs new per session, before anything is written. */
+.sl-backfill-preview {
+  padding: 8px 14px 14px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+}
+.sl-backfill-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.sl-backfill-table-wrap {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--border-l);
+}
+.sl-backfill-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 640px;
+}
+.sl-backfill-table th,
+.sl-backfill-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border-l);
+}
+.sl-backfill-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-alt);
+}
+.sl-backfill-failed td { color: #b88400; }
+.sl-backfill-same td { color: var(--ink4); }
+
 .sl-hint {
   color: var(--ink4);
   font-style: italic;
@@ -2992,6 +3061,11 @@ summary:focus-visible {
   color: var(--bg-card);
 }
 .reg-submodel-tab:hover:not(.active) { background: var(--bg-card); }
+.reg-source-tabs {
+  margin: 8px 0 4px;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
 
 .reg-section { margin-top: 18px; }
 .reg-section-heading {

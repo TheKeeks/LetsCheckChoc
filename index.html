@@ -321,8 +321,13 @@
         <div class="reg-header-strip">
           <h3 class="panel-title reg-header-title">Regression Results</h3>
           <div id="regression-sample-summary" class="regression-sample-summary"></div>
+          <div class="reg-submodel-tabs reg-source-tabs" role="tablist" aria-label="Swell data set">
+            <button type="button" class="reg-submodel-tab reg-source-tab active" data-source="openmeteo" role="tab">Open-Meteo swell</button>
+            <button type="button" class="reg-submodel-tab reg-source-tab" data-source="buoy" role="tab">Buoy 44097 swell</button>
+          </div>
+          <div class="regression-source-note" id="reg-source-note"></div>
           <div class="regression-source-note">
-            Model trained on Open-Meteo <code>best_match</code> historical conditions · refits on every session save
+            Wind is Open-Meteo archive at the beach; tide is NOAA predictions at Silver Eel Pond · both sets refit on every session save
           </div>
         </div>
       </section>
@@ -507,7 +512,7 @@
             <div class="sl-conditions-display" id="sl-conditions-display">
               <span class="sl-hint">Click "Lookup" to auto-fill from historical data</span>
             </div>
-            <div class="sl-note">Conditions are loaded from Open-Meteo's archive (reanalysis). Data is typically available within 1–2 days of the session date.</div>
+            <div class="sl-note">Swell is loaded twice: Open-Meteo's archive (reanalysis, near-shore) and NDBC buoy 44097 (measured, 42 nmi offshore). Wind is Open-Meteo's archive at the beach and usually appears a few days after the session.</div>
           </div>
 
           <div class="sl-btn-row">
@@ -565,7 +570,7 @@
           <button class="sl-btn sl-btn-sm" id="sl-import-json-btn">Import JSON</button>
           <input type="file" id="sl-import-json" accept=".json" style="display:none;">
           <button class="sl-btn sl-btn-sm" id="sl-export-csv">Export CSV</button>
-          <button class="sl-btn sl-btn-sm" id="sl-backfill-archive-btn">Re-fetch all session conditions from Open-Meteo archive</button>
+          <button class="sl-btn sl-btn-sm" id="sl-backfill-archive-btn">Re-fetch all session conditions</button>
           <span class="sl-storage-note" id="sl-storage-note"></span>
         </div>
         <div id="sl-backfill-progress" style="display:none; padding:8px 14px; font-family: var(--mono, monospace); font-size: 0.72rem;">
@@ -574,6 +579,7 @@
           </div>
           <div id="sl-backfill-status" style="margin-top:4px; color:#404040;"></div>
         </div>
+        <div id="sl-backfill-preview" class="sl-backfill-preview" style="display:none;"></div>
         </fieldset>
       </section>
 
