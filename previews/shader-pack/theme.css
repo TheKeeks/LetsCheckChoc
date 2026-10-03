@@ -1,0 +1,1072 @@
+/* ════════════════════════════════════════════════════════════════════
+   SHADER PACK — overlay prototype (theme.css)
+   ────────────────────────────────────────────────────────────────────
+   Same world, better light. The web app stays a 1998 Windows program
+   (one Win98 window on the teal desktop, bitmap MS Sans Serif at 11 and
+   22 px only, bevels only on things you can press); Choc TV stays the
+   phosphor instrument. What changes is light, depth and time:
+     web  — gradient title bar, hard window shadow, white client areas,
+            DSEG14 hero readout in an LED well, the lineup photo graded
+            to the hour's sun, night bands, a dark "Choc Night" scheme
+            after last light.
+     TV   — ghost segments, bloom on lit segments only (off / subtle /
+            strong), vh-sized readings, time-aware rows, fades, a
+            compositor sweep with echo persistence.
+   Faces: web = MS Sans Serif + DSEG14; TV = DSEG14 + Orbitron.
+   Motion: nothing loops except the radar sweep (10 s, steps(200)) and
+   the existing now-dot. prefers-reduced-motion stops both.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── Tokens ─────────────────────────────────────────────────────────── */
+body.sp.sp-web {
+  --desk: #008080;
+  --face: #c0c0c0;
+  --hi: #ffffff;        /* bevel outer light */
+  --hi2: #dfdfdf;       /* bevel inner light */
+  --sh: #808080;        /* bevel inner shadow */
+  --dk: #000000;        /* bevel outer shadow */
+  --client: #ffffff;
+  --ink: #000000;
+  --ink2: #3c3c3c;      /* 10.9:1 on white */
+  --ink3: #5f5f5f;      /* 6.4:1 on white — captions */
+  --navy: #000080;
+  --t-a: #000080;
+  --t-b: #1084d0;
+  --sel: #000080;
+  --sel-ink: #ffffff;
+  --tip: #ffffe1;
+  --in: #1b6b3f;        /* in window / offshore: sea-glass green, 6.6:1 */
+  --edge: #8a5b00;      /* edge / cross: ochre, 5.6:1 */
+  --out: #5f5f5f;       /* out / blocked: grey — red stays for alarms */
+  --alert: #c00000;
+  --led-bg: #040806;
+  --led-on: #45ff9a;
+  --led-dim: rgba(69, 255, 154, 0.55);
+  --led-ghost: rgba(69, 255, 154, 0.075);
+  --led-bloom: 0 0 1px rgba(69, 255, 154, 0.9), 0 0 7px rgba(69, 255, 154, 0.38);
+  --desk-shadow: 8px 8px 0 rgba(0, 0, 0, 0.42);
+  --f-ui: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+  --f-seg: "DSEG14", "Courier New", monospace;
+  --raised: inset -1px -1px var(--dk), inset 1px 1px var(--hi), inset -2px -2px var(--sh), inset 2px 2px var(--hi2);
+  --pressed: inset 1px 1px var(--dk), inset -1px -1px var(--hi), inset 2px 2px var(--sh), inset -2px -2px var(--hi2);
+  --sunken: inset 1px 1px var(--sh), inset -1px -1px var(--hi), inset 2px 2px var(--dk), inset -2px -2px var(--hi2);
+  --etched: 0 1px 0 var(--hi);
+}
+/* "Choc Night": a Win98 colour scheme, not a filter. Same geometry. */
+body.sp.sp-web[data-scheme="night"] {
+  --desk: #062a2a;
+  --face: #2b3036;
+  --hi: #5c6570;
+  --hi2: #3d444d;
+  --sh: #15181c;
+  --dk: #000000;
+  --client: #10151c;
+  --ink: #e4ebf3;       /* 15:1 on client */
+  --ink2: #b9c5d3;
+  --ink3: #8d9bab;      /* 6.3:1 on client */
+  --t-a: #00003c;
+  --t-b: #0c4f86;
+  --sel: #2a54b4;
+  --tip: #1d2420;
+  --in: #59e39a;
+  --edge: #e2b65a;
+  --out: #8d9bab;
+  --alert: #ff6b6b;
+  --desk-shadow: 8px 8px 0 rgba(0, 0, 0, 0.6);
+  --etched: 0 1px 0 #39414a;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   WEB
+   ════════════════════════════════════════════════════════════════════ */
+body.sp.sp-web {
+  background: var(--desk);
+  color: var(--ink);
+  font: 11px/1.3 var(--f-ui);
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  min-height: 100vh;
+}
+body.sp.sp-web * { border-radius: 0 !important; }
+body.sp.sp-web button { font-family: var(--f-ui); }
+
+/* ── The window ── */
+body.sp.sp-web #app-window {
+  position: relative;
+  max-width: 100%;
+  margin: 0;
+  padding: 3px 3px 0;
+  background: var(--face);
+  box-shadow: var(--raised);
+  border: 0;
+}
+body.sp.sp-web #app {
+  padding: 0 0 30px;
+  max-width: none;
+  background: var(--face);
+}
+
+/* Title bar: the Win98 gradient the gate dialog already has. */
+body.sp.sp-web #win95-titlebar {
+  position: sticky;
+  top: 0;
+  z-index: 70;
+  height: 28px;
+  margin: 0 -3px;
+  padding: 0 5px 0 7px;
+  gap: 6px;
+  background: linear-gradient(90deg, var(--t-a), var(--t-b));
+  border: 0;
+  box-shadow: inset 0 -3px 0 var(--face);
+  display: flex;
+  align-items: center;
+}
+body.sp.sp-web .win95-titlebar-icon svg { width: 16px; height: 16px; display: block; image-rendering: pixelated; }
+body.sp.sp-web .win95-titlebar-text { font: bold 11px var(--f-ui); color: #fff; letter-spacing: 0; flex: 1; }
+body.sp.sp-web .sp-tb-sub { font-weight: normal; color: #dfe9ff; }
+body.sp.sp-web #win95-titlebar .win95-tb-btn {
+  width: 24px; height: 20px; padding: 0;
+  background: #c0c0c0; color: #000;
+  font: bold 11px var(--f-ui);
+  border: 0;
+  box-shadow: inset -1px -1px #000, inset 1px 1px #fff, inset -2px -2px #808080, inset 2px 2px #dfdfdf;
+  margin-top: -2px;
+}
+body.sp.sp-web #win95-titlebar .win95-tb-btn:active { box-shadow: inset 1px 1px #000, inset -1px -1px #fff, inset 2px 2px #808080, inset -2px -2px #dfdfdf; }
+
+/* Tabs: a Win95 property sheet, labels in surf words. */
+body.sp.sp-web #tab-bar {
+  position: sticky;
+  top: 28px;
+  z-index: 65;
+  display: flex;
+  gap: 0;
+  height: 32px;
+  align-items: flex-end;
+  padding: 0 4px;
+  margin: 0;
+  background: var(--face);
+  border: 0;
+  box-shadow: inset 0 -1px 0 var(--hi);
+}
+body.sp.sp-web #tab-bar .tab-btn {
+  position: relative;
+  height: 27px;
+  min-width: 0;
+  flex: 0 0 auto;
+  padding: 0 16px;
+  margin: 0 -1px 0 0;
+  font: bold 11px var(--f-ui);
+  color: var(--ink);
+  background: var(--face);
+  border: 0;
+  box-shadow: inset 1px 1px var(--hi), inset -1px 0 var(--dk), inset -2px 0 var(--sh), inset 2px 2px var(--hi2);
+  clip-path: polygon(2px 0, calc(100% - 2px) 0, 100% 2px, 100% 100%, 0 100%, 0 2px);
+}
+body.sp.sp-web #tab-bar .tab-btn.active {
+  height: 31px;
+  margin: 0 -2px 0 -2px;
+  padding: 0 18px;
+  z-index: 2;
+  box-shadow: inset 1px 1px var(--hi), inset -1px 0 var(--dk), inset -2px 0 var(--sh), inset 2px 2px var(--hi2), 0 1px 0 var(--face);
+}
+body.sp.sp-web #tab-bar .tab-btn.active::after {
+  content: ""; position: absolute; left: 2px; right: 2px; bottom: -1px; height: 2px; background: var(--face);
+}
+body.sp.sp-web #tab-bar .tab-btn:focus-visible { outline: 1px dotted var(--ink); outline-offset: -5px; }
+
+/* The tab page: one white client area, sections divided by etched rules. */
+body.sp.sp-web #view-forecast,
+body.sp.sp-web #view-regression,
+body.sp.sp-web #view-surflog {
+  padding: 0;
+  margin: 0 0 0;
+  background: var(--client);
+  box-shadow: inset 1px 0 var(--hi), inset -1px 0 var(--dk), inset -2px 0 var(--sh);
+  border: 0;
+  max-width: none;
+}
+body.sp.sp-web .panel,
+body.sp.sp-web .panel-half,
+body.sp.sp-web .panel-row,
+body.sp.sp-web .conditions-row {
+  max-width: none;
+}
+
+/* Status bar: freshness lives where Win98 kept it. */
+body.sp.sp-web .sp-statusbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 80;
+  height: 24px;
+  display: flex;
+  gap: 3px;
+  padding: 3px 3px;
+  background: var(--face);
+  box-shadow: inset 0 1px var(--hi), 0 -1px 0 var(--sh);
+}
+body.sp.sp-web .sp-sb-pane {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 6px;
+  font: 11px var(--f-ui);
+  color: var(--ink);
+  box-shadow: inset 1px 1px var(--sh), inset -1px -1px var(--hi);
+  white-space: nowrap; overflow: hidden;
+}
+body.sp.sp-web .sp-sb-main { flex: 1 1 auto; min-width: 0; }
+body.sp.sp-web .sp-sb-hour { font-weight: bold; min-width: 56px; justify-content: center; }
+body.sp.sp-web .sp-pilot { width: 8px; height: 8px; flex: 0 0 8px; background: #1fbf62; box-shadow: inset -1px -1px rgba(0,0,0,.45), inset 1px 1px rgba(255,255,255,.5); }
+body.sp.sp-web .sp-statusbar.is-busy .sp-pilot { background: transparent; box-shadow: inset 0 0 0 1px #1fbf62; }
+body.sp.sp-web .sp-statusbar.is-stale .sp-pilot { background: var(--alert); }
+body.sp.sp-web .sp-statusbar.is-stale #sp-sb-updated { color: var(--alert); font-weight: bold; }
+body.sp.sp-web #sp-sb-buoy.is-warn { color: var(--edge); font-weight: bold; }
+body.sp.sp-web #sp-sb-buoy.is-old { color: var(--alert); font-weight: bold; }
+
+/* ── Buttons: the only bevels on the page ── */
+body.sp.sp-web .sp-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 34px; min-width: 40px;
+  padding: 0 10px;
+  font: bold 11px var(--f-ui);
+  color: var(--ink);
+  background: var(--face);
+  border: 0;
+  box-shadow: var(--raised);
+  cursor: pointer;
+}
+body.sp.sp-web .sp-btn:active,
+body.sp.sp-web .sp-btn.on { box-shadow: var(--pressed); padding-top: 1px; padding-left: 11px; }
+body.sp.sp-web .sp-btn:disabled { color: var(--sh); text-shadow: 1px 1px var(--hi); cursor: default; }
+body.sp.sp-web .sp-btn-default { box-shadow: inset 0 0 0 1px var(--dk), inset -2px -2px var(--dk), inset 2px 2px var(--hi), inset -3px -3px var(--sh), inset 3px 3px var(--hi2); }
+body.sp.sp-web .sp-px { display: block; fill: currentColor; image-rendering: pixelated; }
+body.sp.sp-web .sp-btn .sp-px { width: 7px; height: 7px; }
+
+/* ── Hour card ───────────────────────────────────────────────────── */
+body.sp.sp-web .sp-hour { background: var(--client); padding: 0 0 8px; }
+body.sp.sp-web .sp-hour-nav {
+  position: sticky;
+  top: 60px;
+  flex-wrap: wrap;
+  z-index: 60;
+  display: flex; align-items: center; gap: 4px;
+  height: 46px;
+  padding: 0 6px;
+  background: var(--face);
+  box-shadow: inset 1px 0 var(--hi), inset -1px 0 var(--dk), inset -2px 0 var(--sh), 0 1px 0 var(--sh), 0 2px 0 var(--hi);
+}
+body.sp.sp-web .sp-pin { display: none; flex: 1 0 100%; order: 9; margin: 0 -6px; padding: 4px 8px 5px; font: 11px var(--f-ui); color: var(--ink); background: var(--client); box-shadow: inset 0 1px 0 var(--sh); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.sp.sp-web .sp-pin span { margin-left: 6px; color: var(--ink2); }
+body.sp.sp-web .sp-pin .sp-tag { margin-left: 3px; color: #fff; }
+body.sp.sp-web.sp-pinned .sp-hour-nav { height: auto; padding-top: 4px; }
+body.sp.sp-web.sp-pinned .sp-pin { display: block; }
+body.sp.sp-web .sp-step { width: 42px; min-width: 42px; height: 38px; padding: 0; }
+body.sp.sp-web .sp-step .sp-px { width: 14px; height: 14px; }
+body.sp.sp-web .sp-when {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  height: 38px;
+  background: var(--client);
+  box-shadow: var(--sunken);
+  padding: 0 4px;
+}
+body.sp.sp-web .sp-when-day { font: bold 22px/1 var(--f-ui); color: var(--ink); white-space: nowrap; }
+body.sp.sp-web .sp-when-tag {
+  font: bold 11px var(--f-ui); color: var(--sel-ink); background: var(--sel); padding: 2px 5px 1px;
+}
+body.sp.sp-web .sp-now { min-height: 26px; height: 26px; padding: 0 8px; }
+body.sp.sp-web .sp-jump { height: 38px; padding: 0 8px; }
+body.sp.sp-web .sp-jump .sp-px { width: 7px; height: 7px; }
+
+/* The LED well: a Win95 "counter" control lit with Choc TV's phosphor.
+   Bloom is a static text-shadow on lit segments only; it never moves. */
+body.sp.sp-web .sp-led-row { padding: 8px 6px 0; }
+body.sp.sp-web .sp-led {
+  position: relative;
+  padding: 9px 12px 10px 14px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0) 38%),
+    radial-gradient(120% 90% at 30% 0%, rgba(69,255,154,0.07), rgba(0,0,0,0) 60%),
+    var(--led-bg);
+  box-shadow: var(--sunken), inset 0 0 0 3px #000, inset 0 6px 14px rgba(0,0,0,0.65);
+  color: var(--led-on);
+  overflow: hidden;
+}
+body.sp.sp-web .sp-led-cap {
+  display: flex; justify-content: space-between;
+  font: bold 11px var(--f-ui);
+  letter-spacing: 1px;
+  color: var(--led-dim);
+}
+body.sp.sp-web .sp-led-main { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+body.sp.sp-web .sp-led-read { display: inline-flex; align-items: baseline; white-space: nowrap; }
+body.sp.sp-web .sp-seg { position: relative; display: inline-block; font-family: var(--f-seg); font-weight: normal; line-height: 1; letter-spacing: 0; }
+body.sp.sp-web .sp-seg-ghost { position: absolute; left: 0; top: 0; color: currentColor; opacity: 0.09; pointer-events: none; }
+body.sp.sp-web .sp-led .sp-seg-ghost { color: var(--led-on); opacity: 0.085; text-shadow: none; }
+body.sp.sp-web .sp-led .sp-seg-lit { text-shadow: var(--led-bloom); }
+body.sp.sp-web .sp-led-xl { font-size: 56px; }
+body.sp.sp-web .sp-led-l { font-size: 34px; }
+body.sp.sp-web .sp-led-u { font: bold 22px/1 var(--f-ui); margin: 0 8px 0 5px; color: var(--led-on); text-shadow: var(--led-bloom); }
+body.sp.sp-web .sp-led-at { font: 22px/1 var(--f-ui); color: var(--led-dim); margin-right: 6px; }
+body.sp.sp-web .sp-arrow { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+body.sp.sp-web .sp-arrow svg { width: 100%; height: 100%; }
+body.sp.sp-web .sp-arrow-lbl { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: bold 11px var(--f-ui); }
+body.sp.sp-web .sp-led-arrow { width: 70px; height: 70px; }
+body.sp.sp-web .sp-led-arrow svg { fill: var(--led-on); filter: drop-shadow(0 0 5px rgba(69,255,154,0.35)); }
+body.sp.sp-web .sp-led-arrow .sp-arrow-lbl { color: #00170a; }
+body.sp.sp-web .sp-led.dir-out .sp-led-read,
+body.sp.sp-web .sp-led.dir-out .sp-led-arrow { opacity: 0.55; }
+
+/* Annunciators printed on the LED glass: only the true one is lit. */
+body.sp.sp-web .sp-ann { display: flex; gap: 14px; margin-top: 6px; font: 22px/1 var(--f-ui); white-space: nowrap; }
+body.sp.sp-web .sp-ann span { color: rgba(69,255,154,0.13); }
+body.sp.sp-web .sp-ann span.on { color: var(--led-on); text-shadow: var(--led-bloom); }
+body.sp.sp-web .sp-led.dir-edge .sp-ann span.on { color: #ffd76a; text-shadow: 0 0 7px rgba(255,215,106,0.4); }
+body.sp.sp-web .sp-led.dir-out .sp-ann span.on { color: #d8e6dd; text-shadow: none; }
+
+/* Three readout cells on white: value, one 22 px word, an 11 px detail. */
+body.sp.sp-web .sp-facts { padding: 6px 6px 0; }
+body.sp.sp-web .sp-cells { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; }
+body.sp.sp-web .sp-cellx {
+  display: grid; align-content: start; gap: 3px;
+  padding: 4px 6px 6px 8px;
+  min-width: 0;
+  box-shadow: inset 1px 0 0 #e1e1e1;
+}
+body.sp.sp-web .sp-cellx:first-child { box-shadow: none; padding-left: 4px; }
+body.sp.sp-web[data-scheme="night"] .sp-cellx { box-shadow: inset 1px 0 0 #242c36; }
+body.sp.sp-web[data-scheme="night"] .sp-cellx:first-child { box-shadow: none; }
+body.sp.sp-web .sp-cx-k { font: bold 11px var(--f-ui); color: var(--ink3); text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+body.sp.sp-web .sp-cx-v { display: flex; align-items: baseline; white-space: nowrap; min-height: 28px; }
+body.sp.sp-web .sp-cx-v .sp-seg { color: var(--ink); }
+body.sp.sp-web .sp-cx-v .sp-u { font: bold 11px var(--f-ui); color: var(--ink2); margin-left: 3px; }
+body.sp.sp-web .sp-cx-none { font: 22px var(--f-ui); color: var(--ink3); }
+body.sp.sp-web .sp-cx-w { display: flex; align-items: center; gap: 5px; font: 22px/1 var(--f-ui); color: var(--ink); white-space: nowrap; min-height: 24px; }
+body.sp.sp-web .sp-cx-w .sp-px-s { width: 11px; height: 7px; }
+body.sp.sp-web .sp-cellx.is-rising .sp-cx-w { color: var(--navy); }
+body.sp.sp-web[data-scheme="night"] .sp-cellx.is-rising .sp-cx-w { color: #9fc0ff; }
+body.sp.sp-web .sp-cx-s { font: 11px var(--f-ui); color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.sp.sp-web .sp-seg-m { font-size: 26px; }
+body.sp.sp-web .sp-seg-s { font-size: 16px; }
+body.sp.sp-web .sp-q { display: inline-block; padding: 1px 5px 2px; color: #fff; }
+body.sp.sp-web .sp-q-off { background: var(--in); }
+body.sp.sp-web .sp-q-cross { background: var(--edge); }
+body.sp.sp-web .sp-q-on { background: #8a3a2e repeating-linear-gradient(135deg, rgba(255,255,255,.2) 0 2px, transparent 2px 6px); }
+body.sp.sp-web[data-scheme="night"] .sp-q { color: #000; }
+body.sp.sp-web .sp-cx-model .sp-cx-v .sp-seg { color: var(--navy); }
+body.sp.sp-web[data-scheme="night"] .sp-cx-model .sp-cx-v .sp-seg { color: #9fc0ff; }
+body.sp.sp-web .sp-mbars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; width: 100%; padding-top: 4px; }
+body.sp.sp-web .sp-mbar { display: block; height: 14px; box-shadow: var(--sunken); background: var(--client); padding: 2px; position: relative; }
+body.sp.sp-web .sp-mbar i { display: block; height: 100%; background: repeating-linear-gradient(90deg, var(--navy) 0 3px, transparent 3px 4px); }
+body.sp.sp-web[data-scheme="night"] .sp-mbar i { background: repeating-linear-gradient(90deg, #6f95e6 0 3px, transparent 3px 4px); }
+body.sp.sp-web .sp-notes { display: grid; gap: 4px; padding: 7px 4px 2px; margin-top: 4px; box-shadow: inset 0 1px 0 #e1e1e1; font: 11px/1.4 var(--f-ui); color: var(--ink2); }
+body.sp.sp-web[data-scheme="night"] .sp-notes { box-shadow: inset 0 1px 0 #242c36; }
+body.sp.sp-web .sp-note b { color: var(--ink); }
+body.sp.sp-web .sp-note .sp-tag { color: #fff; margin-right: 3px; }
+body.sp.sp-web .sp-tag-buoy { background: var(--navy); }
+body.sp.sp-web[data-scheme="night"] .sp-tag-buoy { background: #9fc0ff; color: #000 !important; }
+body.sp.sp-web .sp-deg { display: inline-block; width: 0.32em; height: 0.32em; border: 1px solid currentColor; border-radius: 50% !important; vertical-align: 0.55em; margin: 0 0.15em 0 0.05em; box-sizing: border-box; }
+body.sp.sp-web .sp-tag { display: inline-block; font: bold 11px/1 var(--f-ui); padding: 2px 4px 1px; color: #fff; vertical-align: 1px; }
+body.sp.sp-web .sp-tag-in { background: var(--in); }
+body.sp.sp-web .sp-tag-edge { background: var(--edge); }
+body.sp.sp-web .sp-tag-out { background: var(--out); background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.22) 0 2px, transparent 2px 5px); }
+body.sp.sp-web[data-scheme="night"] .sp-tag { color: #000; }
+/* Ghost segments on white are a hint, not a pattern. */
+body.sp.sp-web .sp-cells .sp-seg-ghost,
+body.sp.sp-web .sp-week .sp-seg-ghost { opacity: 0.055; }
+body.sp.sp-web[data-scheme="night"] .sp-cells .sp-seg-ghost,
+body.sp.sp-web[data-scheme="night"] .sp-week .sp-seg-ghost { opacity: 0.09; }
+body.sp.sp-capfull .sp-statusbar { position: absolute; bottom: 0; }
+
+/* ── Lineup scene: the hero, graded to the hour ──────────────────── */
+body.sp.sp-web #panel-lineup {
+  margin: 0;
+  padding: 0;
+  background: var(--client);
+  border: 0;
+  box-shadow: none;
+}
+body.sp.sp-web #panel-lineup .lineup-frame {
+  position: relative;
+  max-width: none;
+  width: auto;
+  margin: 0 3px;
+  aspect-ratio: 386 / 206;
+  border: 0;
+  background: #0a0c18;
+  box-shadow: var(--sunken);
+  padding: 2px;
+  overflow: hidden;
+}
+body.sp.sp-web #panel-lineup .lineup-img { position: absolute; inset: 2px; width: calc(100% - 4px); height: calc(100% - 4px); object-fit: cover; }
+body.sp.sp-web #panel-lineup .lineup-img.sp-placed { inset: auto; max-width: none; object-fit: fill; }
+body.sp.sp-web #panel-lineup .sp-scene { position: absolute; inset: 2px; overflow: hidden; }
+body.sp.sp-web #panel-lineup .lineup-overlay { inset: 2px; width: calc(100% - 4px); height: calc(100% - 4px); }
+body.sp.sp-web #panel-lineup .lineup-caption { display: none; }
+/* Grades: a static filter on the photo + one overlay. Repaints only when
+   the hour's light phase changes. Light the world, never the data. */
+body.sp.sp-web .sp-grade { position: absolute; inset: 2px; pointer-events: none; mix-blend-mode: soft-light; opacity: 0; isolation: auto; }
+body.sp.sp-web .lineup-frame[data-phase="day"] .lineup-img { filter: saturate(1.1) contrast(1.05); }
+body.sp.sp-web .lineup-frame[data-phase="day"] .sp-grade { opacity: 1; mix-blend-mode: soft-light; background: radial-gradient(90% 90% at 60% 0%, rgba(255,255,240,0.35), rgba(0,0,0,0) 70%); }
+/* Low sun from the east: warm light rakes in from the right, glint on the water. */
+body.sp.sp-web .lineup-frame[data-phase="sunrise"] .lineup-img { filter: saturate(1.22) contrast(1.08) sepia(0.12) brightness(1.0); }
+body.sp.sp-web .lineup-frame[data-phase="sunrise"] .sp-grade { opacity: 1; mix-blend-mode: soft-light; background: radial-gradient(95% 130% at 105% 25%, rgba(255,175,80,1), rgba(255,130,60,0.45) 45%, rgba(30,40,90,0.35) 85%); }
+body.sp.sp-web .lineup-frame[data-phase="sunrise"] .sp-grade::after { content: ""; position: absolute; inset: 0; mix-blend-mode: screen; background: radial-gradient(40% 45% at 82% 78%, rgba(255,210,140,0.45), rgba(0,0,0,0) 70%); }
+body.sp.sp-web .lineup-frame[data-phase="dawn"] .lineup-img { filter: brightness(0.66) saturate(0.75) contrast(1.05); }
+body.sp.sp-web .lineup-frame[data-phase="dawn"] .sp-grade { opacity: 1; mix-blend-mode: screen; background: radial-gradient(110% 110% at 100% 10%, rgba(255,160,170,0.42), rgba(130,120,220,0.22) 50%, rgba(0,0,0,0) 85%); }
+/* Golden hour: the sun drops in the WSW, so the light rakes from the left. */
+body.sp.sp-web .lineup-frame[data-phase="golden"] .lineup-img { filter: saturate(1.3) contrast(1.1) sepia(0.1) brightness(1.0); }
+body.sp.sp-web .lineup-frame[data-phase="golden"] .sp-grade { opacity: 1; mix-blend-mode: soft-light; background: radial-gradient(100% 140% at -5% 35%, rgba(255,165,60,1), rgba(255,120,40,0.5) 45%, rgba(40,30,90,0.4) 90%); }
+body.sp.sp-web .lineup-frame[data-phase="golden"] .sp-grade::after { content: ""; position: absolute; inset: 0; mix-blend-mode: screen; background: radial-gradient(45% 50% at 22% 80%, rgba(255,200,120,0.5), rgba(0,0,0,0) 70%); }
+body.sp.sp-web .lineup-frame[data-phase="dusk"] .lineup-img { filter: brightness(0.8) saturate(1.1) contrast(1.08) hue-rotate(-6deg); }
+body.sp.sp-web .lineup-frame[data-phase="dusk"] .sp-grade { opacity: 1; mix-blend-mode: multiply; background: linear-gradient(180deg, rgba(175,115,190,0.55) 0%, rgba(95,85,175,0.62) 55%, rgba(45,55,135,0.72) 100%); }
+body.sp.sp-web .lineup-frame[data-phase="dusk"] .sp-grade::after { content: ""; position: absolute; inset: 0; mix-blend-mode: screen; background: radial-gradient(85% 120% at -8% 22%, rgba(255,150,60,0.95), rgba(255,100,80,0.45) 34%, rgba(160,60,140,0.18) 58%, rgba(0,0,0,0) 78%), radial-gradient(40% 40% at 20% 82%, rgba(255,140,110,0.3), rgba(0,0,0,0) 70%); }
+/* Night: moonlit, then the scope takes over (Choc TV's reticle). */
+body.sp.sp-web .lineup-frame[data-phase="night"] .lineup-img { filter: grayscale(0.55) brightness(0.42) contrast(1.15); }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-grade { opacity: 1; mix-blend-mode: multiply; background: radial-gradient(75% 85% at 50% 35%, rgba(70,95,170,1), rgba(25,35,90,1) 100%); }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-grade::after { content: ""; position: absolute; inset: 0; mix-blend-mode: screen; background: radial-gradient(35% 30% at 70% 72%, rgba(170,190,230,0.16), rgba(0,0,0,0) 70%); }
+
+/* Overlay: cone, rings (night only), reef heading, arrows. */
+body.sp.sp-web .sp-cone-s0 { stop-color: #ffffff; stop-opacity: 0.30; }
+body.sp.sp-web .sp-cone-s1 { stop-color: #ffffff; stop-opacity: 0.04; }
+body.sp.sp-web .sp-cone-edge { stroke: rgba(255,255,255,0.75); stroke-width: 1; stroke-dasharray: 4 3; }
+body.sp.sp-web .sp-rings { display: none; fill: none; stroke: rgba(69,255,154,0.22); stroke-width: 1; }
+body.sp.sp-web .sp-reef { stroke: rgba(255,255,255,0.7); stroke-width: 1; stroke-dasharray: 2 2; }
+body.sp.sp-web .sp-lineup-dot { fill: #fff; stroke: #000; stroke-width: 1.5; }
+body.sp.sp-web .sp-arw-sh { fill: rgba(0,0,0,0.55); }
+body.sp.sp-web .sp-arw-swell .sp-arw-body { fill: #ffffff; stroke: #000080; stroke-width: 1.5; stroke-linejoin: round; }
+body.sp.sp-web .sp-arw-swell2 .sp-arw-body { fill: #cfe0ff; stroke: #000080; stroke-width: 1; }
+body.sp.sp-web .sp-arw-blocked .sp-arw-sh { fill: none; }
+body.sp.sp-web .sp-arw-blocked .sp-arw-body { fill: rgba(255,255,255,0.10); stroke: rgba(255,255,255,0.75); stroke-width: 1.25; stroke-dasharray: 3 2.5; }
+body.sp.sp-web .sp-arw-wind .sp-arw-sh { fill: rgba(0,0,0,0.45); }
+body.sp.sp-web .sp-arw-wind .sp-arw-body { fill: #ffe98a; stroke: #3a2a00; stroke-width: 1; stroke-dasharray: 0; opacity: 0.95; }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-rings { display: inline; }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-cone-s0 { stop-color: #45ff9a; stop-opacity: 0.22; }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-cone-s1 { stop-color: #45ff9a; stop-opacity: 0.03; }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-cone-edge { stroke: rgba(69,255,154,0.7); }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-reef { stroke: rgba(69,255,154,0.5); }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-lineup-dot { fill: #45ff9a; stroke: #000; }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-arw-swell .sp-arw-body { fill: #45ff9a; stroke: #003a1a; }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-arw-blocked .sp-arw-body { stroke: rgba(69,255,154,0.6); fill: rgba(69,255,154,0.06); }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-arw-wind .sp-arw-body { fill: rgba(69,255,154,0.45); stroke: #002a12; }
+/* Labels: Win95 tooltips, 11 px bitmap, never under 11 px. */
+body.sp.sp-web .sp-pills { position: absolute; inset: 2px; pointer-events: none; }
+body.sp.sp-web .sp-pill {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font: 11px/1 var(--f-ui);
+  color: #000;
+  background: #ffffe1;
+  border: 1px solid #000;
+  padding: 2px 4px 2px;
+  white-space: nowrap;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.35);
+}
+body.sp.sp-web .sp-pill[data-anchor="l"] { transform: translate(0, -50%); }
+body.sp.sp-web .sp-pill[data-anchor="r"] { transform: translate(-100%, -50%); }
+body.sp.sp-web .sp-pill b { font-weight: bold; }
+body.sp.sp-web .sp-pill-blocked { background: #e6e6e6; color: #3c3c3c; border-style: dashed; }
+body.sp.sp-web .sp-pill-wind { background: #ffffe1; }
+body.sp.sp-web .sp-pill-land { background: none; border: 0; box-shadow: none; color: #fff; text-shadow: 1px 1px 0 #000, -1px 0 0 rgba(0,0,0,.6); font-weight: bold; }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-pill { background: #000; color: #45ff9a; border-color: rgba(69,255,154,0.6); box-shadow: none; }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-pill-blocked { color: rgba(69,255,154,0.65); }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-pill-land { background: none; color: rgba(69,255,154,0.75); text-shadow: 1px 1px 0 #000; }
+body.sp.sp-web .sp-lineup-key {
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+  padding: 5px 10px 2px;
+  font: 11px var(--f-ui); color: var(--ink3);
+}
+body.sp.sp-web .sp-lineup-key span { display: inline-flex; align-items: center; gap: 5px; }
+body.sp.sp-web .sp-k { display: inline-block; width: 14px; height: 9px; flex: 0 0 auto; }
+body.sp.sp-web .sp-k-swell { background: #fff; box-shadow: inset 0 0 0 1px #000080; }
+body.sp.sp-web .sp-k-blocked { background: transparent; box-shadow: inset 0 0 0 1px var(--ink3); background-image: repeating-linear-gradient(90deg, var(--ink3) 0 2px, transparent 2px 4px); background-size: 100% 1px; background-repeat: no-repeat; background-position: center; }
+body.sp.sp-web .sp-k-wind { background: #ffe98a; box-shadow: inset 0 0 0 1px #3a2a00; }
+
+/* ── Captions (section heads): bold 11 px on an etched rule ── */
+body.sp.sp-web .sp-caption,
+body.sp.sp-web #panel-forecast .retro-card-title-strip {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  margin: 0;
+  padding: 10px 10px 5px;
+  font: bold 11px var(--f-ui);
+  color: var(--ink);
+  background: none;
+  border: 0;
+  box-shadow: inset 0 -1px 0 var(--sh), 0 1px 0 var(--hi);
+  text-transform: none;
+}
+body.sp.sp-web .sp-caption-note { font-weight: normal; color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── This week at Choc: toolbar toggle buttons ───────────────────── */
+body.sp.sp-web .sp-week-panel { background: var(--client); padding-bottom: 6px; }
+body.sp.sp-web .sp-week {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 128px;
+  gap: 6px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding: 8px 8px 6px;
+  scrollbar-width: none;
+}
+body.sp.sp-web .sp-week::-webkit-scrollbar { display: none; }
+body.sp.sp-web .sp-day {
+  scroll-snap-align: start;
+  display: flex; flex-direction: column; align-items: stretch; gap: 3px;
+  padding: 5px 7px 7px;
+  text-align: left;
+  color: var(--ink);
+  background: var(--face);
+  border: 0;
+  box-shadow: var(--raised);
+  cursor: pointer;
+  min-height: 176px;
+}
+body.sp.sp-web .sp-day:active { box-shadow: var(--pressed); }
+body.sp.sp-web .sp-day.is-sel { box-shadow: var(--pressed); background: #d4d4d4; background-image: linear-gradient(45deg, rgba(255,255,255,.55) 25%, transparent 25%, transparent 75%, rgba(255,255,255,.55) 75%), linear-gradient(45deg, rgba(255,255,255,.55) 25%, transparent 25%, transparent 75%, rgba(255,255,255,.55) 75%); background-size: 2px 2px; background-position: 0 0, 1px 1px; }
+body.sp.sp-web[data-scheme="night"] .sp-day.is-sel { background-color: #1e2329; background-image: linear-gradient(45deg, rgba(255,255,255,.05) 25%, transparent 25%, transparent 75%, rgba(255,255,255,.05) 75%), linear-gradient(45deg, rgba(255,255,255,.05) 25%, transparent 25%, transparent 75%, rgba(255,255,255,.05) 75%); }
+body.sp.sp-web .sp-day-name { display: flex; align-items: baseline; justify-content: space-between; padding: 1px 3px 2px; margin: 0 -2px 2px; }
+body.sp.sp-web .sp-day-name b { font: bold 22px/1 var(--f-ui); }
+body.sp.sp-web .sp-day-name small { font: 11px var(--f-ui); color: var(--ink3); }
+body.sp.sp-web .sp-day.is-sel .sp-day-name { background: var(--sel); color: var(--sel-ink); }
+body.sp.sp-web .sp-day.is-sel .sp-day-name small { color: #c9d3ff; }
+body.sp.sp-web .sp-day-hero { display: flex; align-items: baseline; color: var(--ink); }
+body.sp.sp-web .sp-seg-d { font-size: 34px; color: var(--ink); }
+body.sp.sp-web .sp-seg-ds { font-size: 18px; color: var(--ink); }
+body.sp.sp-web .sp-day-hero .sp-u { font: bold 22px/1 var(--f-ui); margin-left: 4px; }
+body.sp.sp-web .sp-day-per { display: flex; align-items: center; gap: 2px; font: 22px/1 var(--f-ui); color: var(--ink2); }
+body.sp.sp-web .sp-day-per .sp-u { margin-left: 1px; }
+body.sp.sp-web .sp-day-arrow { width: 40px; height: 40px; margin-left: auto; margin-top: -4px; margin-bottom: -6px; }
+body.sp.sp-web .sp-day-arrow svg { fill: var(--navy); }
+body.sp.sp-web[data-scheme="night"] .sp-day-arrow svg { fill: #8fb4ff; }
+body.sp.sp-web .sp-day-arrow .sp-arrow-lbl { color: #fff; font-size: 11px; }
+body.sp.sp-web[data-scheme="night"] .sp-day-arrow .sp-arrow-lbl { color: #00103a; }
+body.sp.sp-web .sp-day.dir-out .sp-day-arrow svg { fill: none; stroke: var(--out); stroke-width: 5; stroke-dasharray: 9 6; }
+body.sp.sp-web .sp-day.dir-out .sp-day-arrow .sp-arrow-lbl { color: var(--out); }
+body.sp.sp-web .sp-day.dir-out .sp-day-hero .sp-seg,
+body.sp.sp-web .sp-day.dir-out .sp-day-hero .sp-u { color: var(--out); }
+body.sp.sp-web .sp-day-win { display: flex; align-items: center; gap: 5px; font: 11px var(--f-ui); color: var(--ink3); margin-top: 1px; }
+body.sp.sp-web .sp-day-low { display: flex; align-items: baseline; gap: 4px; margin-top: 4px; padding-top: 5px; box-shadow: inset 0 1px 0 var(--sh), inset 0 2px 0 var(--hi); }
+body.sp.sp-web .sp-day-low small { font: bold 11px var(--f-ui); color: var(--ink2); }
+body.sp.sp-web .sp-day-low.sp-dim small { font-weight: normal; color: var(--ink3); }
+body.sp.sp-web .sp-day-wind { display: flex; align-items: center; gap: 6px; font: 11px/1.2 var(--f-ui); color: var(--ink2); min-height: 34px; }
+body.sp.sp-web .sp-day-wind b { font-weight: bold; color: var(--ink); }
+body.sp.sp-web .sp-day.is-past { color: var(--ink3); }
+body.sp.sp-web .sp-day-model { font: 11px var(--f-ui); color: var(--ink3); }
+body.sp.sp-web .sp-day-model b { font-weight: bold; color: var(--navy); }
+body.sp.sp-web[data-scheme="night"] .sp-day-model b { color: #9fc0ff; }
+/* Wind dial: the owner's heading dial, ring weight carries the quality. */
+body.sp.sp-web .sp-dial { position: relative; display: inline-flex; width: 34px; height: 34px; flex: 0 0 34px; align-items: center; justify-content: center; }
+body.sp.sp-web .sp-dial svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+body.sp.sp-web .sp-dial-ring { fill: var(--client); stroke: var(--ink3); stroke-width: 4; }
+body.sp.sp-web .sp-dial-ticks line { stroke: var(--ink3); stroke-width: 4; }
+body.sp.sp-web .sp-dial-ptr { fill: var(--ink); }
+body.sp.sp-web .sp-dial-in { position: relative; font: bold 11px var(--f-ui); color: var(--ink); }
+body.sp.sp-web .sp-dial-off .sp-dial-ring { stroke: var(--in); stroke-width: 9; }
+body.sp.sp-web .sp-dial-cross .sp-dial-ring { stroke: var(--edge); stroke-width: 6; }
+body.sp.sp-web .sp-dial-on .sp-dial-ring { stroke: #8a3a2e; stroke-width: 4; stroke-dasharray: 6 5; }
+
+/* ── The chart: the proof, under the answer ──────────────────────── */
+body.sp.sp-web #panel-forecast {
+  margin: 0; padding: 0 0 6px;
+  background: var(--client);
+  border: 0; box-shadow: none;
+}
+body.sp.sp-web #forecast-chart-container { padding: 0 3px; background: transparent; }
+body.sp.sp-web #forecast-detail-bar { display: none !important; }
+body.sp.sp-web #forecast-chart-container .forecast-card {
+  margin: 0 0 4px;
+  padding: 0;
+  background: var(--client);
+  border: 0;
+  box-shadow: none;
+}
+body.sp.sp-web #forecast-chart-container .forecast-card > canvas { border: 0; box-shadow: var(--sunken); padding: 2px; }
+body.sp.sp-web #forecast-chart-container .forecast-card-swell { height: 300px; min-height: 300px; }
+body.sp.sp-web #forecast-chart-container .forecast-card-wind { height: 120px; min-height: 120px; }
+body.sp.sp-web #forecast-chart-container .forecast-card-tide { height: 120px; min-height: 120px; }
+body.sp.sp-web .forecast-section-label {
+  display: flex !important; flex-wrap: wrap; align-items: baseline; gap: 2px 10px;
+  position: static !important;
+  margin: 0; padding: 7px 7px 4px;
+  font: 11px var(--f-ui) !important; color: var(--ink) !important;
+  background: none !important; border: 0 !important; box-shadow: none !important;
+  text-transform: none !important; letter-spacing: 0 !important;
+}
+body.sp.sp-web .forecast-section-label b { font: bold 11px var(--f-ui); }
+body.sp.sp-web .sp-legend { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; color: var(--ink3); }
+body.sp.sp-web .sp-legend .sp-k { margin-left: 6px; }
+body.sp.sp-web .sp-k-in { background: linear-gradient(#5878AA, #3E5F92); box-shadow: inset 0 -2px 0 #14305C; }
+body.sp.sp-web .sp-k-ghost { background: repeating-linear-gradient(135deg, rgba(74,107,154,.55) 0 1px, transparent 1px 4px); box-shadow: inset 0 1px 0 rgba(74,107,154,.6); }
+body.sp.sp-web .sp-k-per { height: 3px; background: #B85A12; }
+body.sp.sp-web .sp-k-obs { width: 9px; height: 9px; background: #fff; box-shadow: inset 0 0 0 1.5px #000; transform: rotate(45deg) scale(0.8); }
+body.sp.sp-web .sp-k-off { background: #245a3b; }
+body.sp.sp-web .sp-k-cross { background: #b8862f; }
+body.sp.sp-web .sp-k-on { background: #d9a39a repeating-linear-gradient(135deg, #8a3a2e 0 1px, transparent 1px 4px); }
+body.sp.sp-web .sp-k-inc { background: rgba(58,125,86,.25); box-shadow: inset 2px 0 0 rgba(43,94,64,.8); }
+body.sp.sp-web[data-scheme="night"] .sp-k-in { background: linear-gradient(#6c98d8, #3d6db0); box-shadow: inset 0 -2px 0 #a9c8f5; }
+body.sp.sp-web[data-scheme="night"] .sp-k-per { background: #ff9a52; }
+body.sp.sp-web[data-scheme="night"] .sp-k-off { background: #3fb47a; }
+body.sp.sp-web[data-scheme="night"] .sp-k-cross { background: #c9a04a; }
+body.sp.sp-web[data-scheme="night"] .sp-k-on { background: #5a3b3a repeating-linear-gradient(135deg, #e08070 0 1px, transparent 1px 4px); }
+body.sp.sp-web[data-scheme="night"] .sp-k-inc { background: rgba(69,255,154,.14); box-shadow: inset 2px 0 0 rgba(69,255,154,.5); }
+/* Day labels: buttons. The selected day wears the Win95 selection. */
+body.sp.sp-web #forecast-chart-container .forecast-day-row {
+  position: relative; height: 26px; margin: 4px 0 2px; padding: 0;
+  background: none; border: 0; box-shadow: none;
+}
+body.sp.sp-web #forecast-chart-container .forecast-day-label {
+  position: absolute; top: 0; height: 24px; transform: none;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0; padding: 0;
+  font: bold 11px var(--f-ui); color: var(--ink);
+  background: none; border: 0; box-shadow: inset -1px 0 0 #e4e4e4;
+  cursor: pointer; white-space: nowrap; overflow: hidden;
+}
+body.sp.sp-web[data-scheme="night"] #forecast-chart-container .forecast-day-label { box-shadow: inset -1px 0 0 #232b35; }
+body.sp.sp-web #forecast-chart-container .forecast-day-label.is-sel { background: var(--sel); color: var(--sel-ink); box-shadow: none; }
+body.sp.sp-web .forecast-crosshair { width: 1px !important; background: var(--ink) !important; opacity: 0.85; }
+body.sp.sp-web[data-scheme="night"] .forecast-crosshair { background: #e4ebf3 !important; }
+
+/* ── More conditions / Sources & settings: Win98 tree disclosures ── */
+body.sp.sp-web .sp-more { background: var(--client); margin: 0; }
+body.sp.sp-web .sp-more > summary {
+  list-style: none;
+  display: flex; align-items: center; gap: 8px;
+  min-height: 44px;
+  padding: 0 10px;
+  font: bold 11px var(--f-ui); color: var(--ink);
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 var(--sh), inset 0 2px 0 var(--hi);
+}
+body.sp.sp-web .sp-more > summary::-webkit-details-marker { display: none; }
+body.sp.sp-web .sp-tw { display: inline-flex; width: 13px; height: 13px; align-items: center; justify-content: center; background: var(--client); box-shadow: inset 0 0 0 1px var(--sh); }
+body.sp.sp-web .sp-tw .sp-px { width: 5px; height: 5px; }
+body.sp.sp-web .sp-more[open] > summary .sp-tw .sp-px { transform: rotate(90deg); }
+body.sp.sp-web .sp-more-body { padding: 0 6px 10px; }
+body.sp.sp-web .sp-more-body .panel,
+body.sp.sp-web .sp-more-body .panel-half,
+body.sp.sp-web .sp-more-body .condition-card {
+  background: var(--client) !important; border: 0 !important; box-shadow: none !important; margin: 0 0 6px !important;
+}
+body.sp.sp-web #page-footer { background: none; border: 0; padding: 8px 4px; font: 11px var(--f-ui); color: var(--ink3); }
+body.sp.sp-web #app-header { background: none !important; border: 0 !important; box-shadow: none !important; padding: 6px 4px !important; }
+
+/* ── Surf Log: 20-second logging ─────────────────────────────────── */
+body.sp.sp-web #view-surflog { padding: 0 0 10px; }
+body.sp.sp-web #view-surflog .panel { margin: 0; padding: 0; background: var(--client); border: 0; box-shadow: none; }
+body.sp.sp-web #view-surflog fieldset.w1-fieldset {
+  min-inline-size: 0;
+  margin: 10px 6px 4px;
+  padding: 6px 8px 10px;
+  border: 0;
+  box-shadow: inset 1px 1px var(--sh), inset -1px -1px var(--hi), inset 2px 2px var(--hi), inset -2px -2px var(--sh);
+  background: var(--client);
+}
+body.sp.sp-web #view-surflog fieldset.w1-fieldset > legend { font: bold 11px var(--f-ui); color: var(--ink); padding: 0 4px; background: var(--client); }
+/* The app's own controls stay in the DOM (and keep their logic) behind ours. */
+body.sp.sp-web #surflog-form > .sl-ratings-row,
+body.sp.sp-web #surflog-form > .sl-btn-row,
+body.sp.sp-web #surflog-form > .sl-field:has(#sl-conditions-display),
+body.sp.sp-web #surflog-form > .sl-field:has(#sl-photo-url) { display: none !important; }
+body.sp.sp-web #surflog-form > .sl-field:has(#sl-datetime),
+body.sp.sp-web #surflog-form > .sl-field:has(#sl-notes) { display: none; }
+body.sp.sp-web fieldset.sp-show-dt #surflog-form > .sl-field:has(#sl-datetime),
+body.sp.sp-web fieldset.sp-show-notes #surflog-form > .sl-field:has(#sl-notes) { display: block; }
+body.sp.sp-web .sp-log { display: grid; gap: 7px; }
+body.sp.sp-web #view-surflog #surflog-form { padding: 0; margin: 0; gap: 0; }
+body.sp.sp-web .sp-log-when { display: grid; gap: 4px; }
+body.sp.sp-web #view-surflog fieldset.w1-fieldset .sl-crowdsource-note { font: 11px/1.35 var(--f-ui) !important; background: var(--tip); border: 1px solid #000; padding: 4px 6px; margin: 0 0 6px; color: #000; }
+body.sp.sp-web .sp-log-row { display: grid; grid-template-columns: 48px 1fr; align-items: center; gap: 6px; }
+body.sp.sp-web .sp-rate-k { font: bold 11px var(--f-ui); color: var(--ink3); text-transform: uppercase; }
+body.sp.sp-web .sp-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+body.sp.sp-web .sp-chip {
+  min-height: 34px; padding: 0 9px;
+  font: 11px var(--f-ui); color: var(--ink);
+  background: var(--face); border: 0; box-shadow: var(--raised); cursor: pointer;
+}
+body.sp.sp-web .sp-chip b { font-weight: bold; }
+body.sp.sp-web .sp-chip.on { box-shadow: var(--pressed); background: var(--sel); color: var(--sel-ink); }
+body.sp.sp-web .sp-log-cond { display: grid; gap: 2px; padding: 2px 0 6px; box-shadow: inset 0 -1px 0 #e3e3e3; }
+body.sp.sp-web .sp-log-cond-v { font: 11px/1.5 var(--f-ui); color: var(--ink); }
+body.sp.sp-web .sp-log-cond-v small { display: block; color: var(--ink3); }
+body.sp.sp-web .sp-rate-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+body.sp.sp-web .sp-rate-desc { font: 11px var(--f-ui); color: var(--ink3); }
+body.sp.sp-web .sp-rate-row { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; }
+body.sp.sp-web .sp-rbtn {
+  height: 38px; padding: 0;
+  font: bold 11px var(--f-ui); color: var(--ink);
+  background: var(--face); border: 0; box-shadow: var(--raised); cursor: pointer;
+}
+body.sp.sp-web .sp-rbtn.lit { background: #9db3d8; }
+body.sp.sp-web .sp-rbtn.on { box-shadow: var(--pressed); background: var(--sel); color: #fff; }
+body.sp.sp-web .sp-log-extra { grid-template-columns: 1fr 1fr; }
+body.sp.sp-web .sp-px-cam { width: 14px; height: 11px; }
+body.sp.sp-web .sp-save { min-height: 44px; font: bold 22px var(--f-ui); width: 100%; }
+body.sp.sp-web .sp-log-hint { font: 11px var(--f-ui); color: var(--ink3); text-align: center; }
+body.sp.sp-web #sl-auth-prompt { display: none !important; }
+body.sp.sp-web .sl-crowdsource-note { font: 11px var(--f-ui); color: var(--ink3); padding: 2px 0 6px; }
+body.sp.sp-web #sl-filters,
+body.sp.sp-web .surflog-table-wrap,
+body.sp.sp-web #sl-incomplete-banner,
+body.sp.sp-web #surflog-empty { display: none !important; }
+body.sp.sp-web .sp-filter { margin-bottom: 6px; }
+body.sp.sp-web .sp-filter .sp-chip { min-height: 30px; }
+body.sp.sp-web .sp-sessions { display: grid; gap: 0; box-shadow: var(--sunken); padding: 2px; background: var(--client); }
+body.sp.sp-web .sp-sess {
+  display: grid; grid-template-columns: 46px 1fr; grid-template-rows: auto auto; column-gap: 8px; row-gap: 4px;
+  padding: 6px 6px 7px;
+  box-shadow: inset 0 -1px 0 #e3e3e3;
+  cursor: pointer;
+}
+body.sp.sp-web[data-scheme="night"] .sp-sess { box-shadow: inset 0 -1px 0 #232b35; }
+body.sp.sp-web .sp-sess:focus { outline: 1px dotted var(--ink); outline-offset: -2px; }
+body.sp.sp-web .sp-sess-ph { grid-row: 1 / span 2; width: 46px; height: 46px; object-fit: cover; box-shadow: var(--sunken); padding: 2px; background: #000; }
+body.sp.sp-web .sp-sess-noph { display: flex; align-items: center; justify-content: center; background: var(--client); }
+body.sp.sp-web .sp-sess-noph .sp-px { width: 16px; height: 16px; opacity: 0.5; }
+body.sp.sp-web .sp-sess-main { min-width: 0; display: grid; gap: 2px; }
+body.sp.sp-web .sp-sess-when { font: 11px var(--f-ui); color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.sp.sp-web .sp-sess-when b { color: var(--ink); }
+body.sp.sp-web .sp-who { color: var(--ink3); }
+body.sp.sp-web .sp-sess.is-own .sp-who { color: var(--navy); font-weight: bold; }
+body.sp.sp-web .sp-sess-cond { font: 11px var(--f-ui); color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.sp.sp-web .sp-warn { color: var(--alert); }
+body.sp.sp-web .sp-sess-r { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
+body.sp.sp-web .sp-rc { display: flex; align-items: baseline; justify-content: space-between; gap: 2px; padding: 3px 5px 2px; font: bold 22px/1 var(--f-ui); color: var(--ink); box-shadow: inset 0 0 0 1px #c6c6c6; }
+body.sp.sp-web .sp-rc small { font: 11px var(--f-ui); color: var(--ink3); }
+body.sp.sp-web .sp-rc-hi { box-shadow: inset 3px 0 0 var(--in), inset 0 0 0 1px #c6c6c6; }
+body.sp.sp-web .sp-rc-mid { box-shadow: inset 3px 0 0 var(--edge), inset 0 0 0 1px #c6c6c6; }
+body.sp.sp-web .sp-rc-lo { box-shadow: inset 3px 0 0 var(--out), inset 0 0 0 1px #c6c6c6; color: var(--ink2); }
+body.sp.sp-web .sp-rc-avg { background: var(--sel); color: #fff; box-shadow: none; }
+body.sp.sp-web .sp-rc-avg small { color: #c9d3ff; }
+body.sp.sp-web .sp-log-more { margin-top: 8px; }
+
+/* ── Boat gate: the joke stays, on the desktop it belongs to ─────── */
+body.sp.sp-web #gate-overlay { background: var(--desk) !important; }
+body.sp.sp-web #gate-card {
+  width: min(360px, calc(100vw - 28px));
+  padding: 3px;
+  background: var(--face);
+  border: 0;
+  box-shadow: var(--raised), var(--desk-shadow);
+}
+body.sp.sp-web #gate-card .w1-titlebar {
+  height: 26px; padding: 0 4px 0 6px;
+  display: flex; align-items: center;
+  background: linear-gradient(90deg, #000080, #1084d0);
+}
+body.sp.sp-web #gate-card .w1-titlebar .title { font: bold 11px var(--f-ui); color: #fff; flex: 1; text-align: left; padding: 0; margin: 0; }
+body.sp.sp-web #gate-card #gate-question { text-align: left; }
+body.sp.sp-web #gate-card .gate-icon.sp-anchor { margin: 2px 0 0 !important; }
+body.sp.sp-web #gate-go-home { font: bold 22px var(--f-ui); color: #000; padding: 10px; }
+body.sp.sp-web #gate-card .ctrls { display: flex; gap: 2px; }
+body.sp.sp-web #gate-card .ctrls button { width: 22px; height: 20px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font: bold 11px var(--f-ui); color: #000; background: #c0c0c0; border: 0; box-shadow: inset -1px -1px #000, inset 1px 1px #fff, inset -2px -2px #808080, inset 2px 2px #dfdfdf; }
+body.sp.sp-web #gate-card .ctrls .sp-px { width: 8px; height: 7px; }
+body.sp.sp-web #gate-card .gate-body { padding: 18px 14px 14px; background: var(--face); }
+body.sp.sp-web #gate-question > div:first-child { gap: 14px; align-items: flex-start !important; }
+body.sp.sp-web .sp-anchor { width: 32px; height: 32px; flex: 0 0 32px; margin: 0 !important; font-size: 0; }
+body.sp.sp-web .sp-anchor .sp-px { width: 32px; height: 32px; }
+body.sp.sp-web #gate-card #gate-question h2 { font: 22px/1.15 var(--f-ui) !important; color: #000; margin: 4px 0 0; letter-spacing: 0; }
+body.sp.sp-web .sp-check { display: flex; align-items: center; gap: 7px; margin: 18px 0 0 46px; font: 11px var(--f-ui); color: #000; cursor: pointer; }
+body.sp.sp-web .sp-check input { position: absolute; opacity: 0; }
+body.sp.sp-web .sp-check-box { width: 13px; height: 13px; background: #fff; box-shadow: inset 1px 1px #808080, inset -1px -1px #fff, inset 2px 2px #000, inset -2px -2px #dfdfdf; display: inline-flex; align-items: center; justify-content: center; }
+body.sp.sp-web .sp-check input:checked + .sp-check-box::after { content: ""; width: 7px; height: 7px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 7' shape-rendering='crispEdges'%3E%3Cpath d='M6 0h1v2H6zM5 1h1v3H5zM4 2h1v3H4zM0 2h1v3H0zM1 3h1v3H1zM2 4h1v3H2zM3 3h1v3H3z'/%3E%3C/svg%3E") no-repeat; }
+body.sp.sp-web #gate-card .gate-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; padding-top: 14px; box-shadow: inset 0 1px 0 #808080, inset 0 2px 0 #fff; border: 0 !important; }
+body.sp.sp-web #gate-card .gate-btn {
+  min-width: 96px; height: 40px;
+  font: 11px var(--f-ui) !important; color: #000;
+  background: #c0c0c0; border: 0 !important;
+  box-shadow: inset -1px -1px #000, inset 1px 1px #fff, inset -2px -2px #808080, inset 2px 2px #dfdfdf !important;
+}
+body.sp.sp-web #gate-card .gate-btn-primary {
+  font-weight: bold !important;
+  box-shadow: inset 0 0 0 1px #000, inset -2px -2px #000, inset 2px 2px #fff, inset -3px -3px #808080, inset 3px 3px #dfdfdf !important;
+  outline: 1px dotted #000; outline-offset: -6px;
+}
+body.sp.sp-web .sp-gohome { display: block; padding: 22px 0; text-align: center; font: bold 22px var(--f-ui); color: #000; }
+
+/* ── Wider glass: the window floats on the teal desktop ──────────── */
+@media (min-width: 700px) {
+  body.sp.sp-web { padding: 22px 24px 54px; }
+  body.sp.sp-web #app-window { max-width: 780px; margin: 0 auto; box-shadow: var(--raised), var(--desk-shadow); }
+  body.sp.sp-web #win95-titlebar { margin: 0; top: 0; }
+  body.sp.sp-web .sp-statusbar { position: sticky; bottom: 0; margin: 0 -3px; }
+  body.sp.sp-web #app { padding-bottom: 0; }
+  body.sp.sp-web .sp-week { grid-auto-flow: row; grid-template-columns: repeat(7, 1fr); grid-auto-columns: auto; overflow: visible; }
+  body.sp.sp-web .sp-day { min-width: 0; padding: 4px 5px 6px; }
+  body.sp.sp-web .sp-day-arrow { width: 32px; height: 32px; }
+  body.sp.sp-web .sp-week .sp-seg-d { font-size: 26px; }
+  body.sp.sp-web .sp-week .sp-seg-ds { font-size: 15px; }
+  body.sp.sp-web .sp-day-hero .sp-u { font-size: 11px; }
+  body.sp.sp-web .sp-day-per { font-size: 11px; }
+  body.sp.sp-web .sp-day-name small { display: none; }
+  body.sp.sp-web .sp-day-low { gap: 3px; }
+  body.sp.sp-web .sp-day-low { flex-wrap: wrap; row-gap: 2px; }
+  body.sp.sp-web .sp-day-low small:first-child { flex: 0 0 100%; }
+  body.sp.sp-web .sp-day-wind { gap: 4px; }
+  body.sp.sp-web .sp-dial { width: 30px; height: 30px; flex-basis: 30px; }
+  body.sp.sp-web .sp-hour-nav { top: 60px; }
+  body.sp.sp-web .sp-hour { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); column-gap: 0; align-items: start; }
+  body.sp.sp-web .sp-led-row { padding: 10px 8px 0 8px; }
+  body.sp.sp-web .sp-facts { padding: 2px 12px 0 6px; }
+  body.sp.sp-web .sp-led-xl { font-size: 64px; }
+}
+@media (min-width: 1100px) {
+  body.sp.sp-web { padding: 20px 40px 20px; height: 100vh; box-sizing: border-box; overflow: hidden; }
+  body.sp.sp-web #app-window { max-width: 1340px; height: calc(100vh - 40px); display: flex; flex-direction: column; padding-bottom: 3px; }
+  body.sp.sp-web #app { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0; scrollbar-color: var(--face) #e3e3e3; }
+  body.sp.sp-web .sp-statusbar { position: static; flex: 0 0 auto; margin: 0; }
+  body.sp.sp-web #view-forecast { display: grid; grid-template-columns: 560px minmax(0, 1fr); grid-template-areas: "nav nav" "hour week" "lineup chart" "more chart" "src chart"; align-items: start; }
+  body.sp.sp-web #view-forecast > .sp-hour-nav { grid-area: nav; }
+  body.sp.sp-web #view-forecast[style*="none"] { display: none !important; }
+  body.sp.sp-web #sp-hour { grid-area: hour; display: block; }
+  body.sp.sp-web #panel-lineup { grid-area: lineup; }
+  body.sp.sp-web .sp-week-panel { grid-area: week; box-shadow: inset 1px 0 0 var(--sh); }
+  body.sp.sp-web #panel-forecast { grid-area: chart; box-shadow: inset 1px 0 0 var(--sh); }
+  body.sp.sp-web #sp-more { grid-area: more; }
+  body.sp.sp-web #sp-sources { grid-area: src; }
+  body.sp.sp-web .sp-hour-nav { position: static; }
+  body.sp.sp-web #tab-bar { position: static; }
+  body.sp.sp-web #win95-titlebar { position: static; }
+  body.sp.sp-web #forecast-chart-container .forecast-card-swell { height: 270px; min-height: 270px; }
+  body.sp.sp-web #forecast-chart-container .forecast-card-wind,
+  body.sp.sp-web #forecast-chart-container .forecast-card-tide { height: 100px; min-height: 100px; }
+  body.sp.sp-web .sp-day { min-height: 0; }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   CHOC TV
+   ════════════════════════════════════════════════════════════════════ */
+body.sp.sp-tv {
+  --np-glow: 0 0 1px rgba(69,255,154,0.85), 0 0 6px rgba(69,255,154,0.28);
+  --np-glow-arrow: drop-shadow(0 0 6px rgba(69,255,154,0.35));
+  --np-ghost: 0.075;
+  --np-hair: #12301f;
+  --tv-xl: clamp(64px, 12.2vh, 180px);
+  --tv-l: clamp(34px, 6vh, 90px);
+  --tv-m: clamp(26px, 4.4vh, 64px);
+  --tv-s: clamp(18px, 2.9vh, 42px);
+  --tv-xs: clamp(15px, 2.3vh, 32px);
+  --tv-legend: clamp(12px, 1.65vh, 22px);
+  --tv-arrow: clamp(76px, 12vh, 170px);
+}
+body.sp.sp-tv[data-fx="off"] { --np-glow: none; --np-glow-arrow: none; }
+body.sp.sp-tv[data-fx="strong"] {
+  --np-glow: 0 0 2px rgba(190,255,220,1), 0 0 10px rgba(69,255,154,0.8), 0 0 28px rgba(69,255,154,0.5), 0 0 64px rgba(69,255,154,0.28);
+  --np-glow-arrow: drop-shadow(0 0 6px rgba(69,255,154,0.75)) drop-shadow(0 0 26px rgba(69,255,154,0.4));
+}
+body.sp.sp-tv.sp-evening { --np-ghost: 0.055; }
+
+/* Ghost segments: every DSEG cell shows its unlit segments. */
+body.sp.sp-tv .np-seg { position: relative; }
+body.sp.sp-tv .np-ghost { position: absolute; left: 0; top: 0; color: var(--np-green); opacity: var(--np-ghost); text-shadow: none; pointer-events: none; }
+body.sp.sp-tv .np-lit { position: relative; }
+body.sp.sp-tv .sp-tv-hero .np-lit,
+body.sp.sp-tv .sp-tv-low .np-lit,
+body.sp.sp-tv .sp-hud .np-lit,
+body.sp.sp-tv #kiosk-status-clock { text-shadow: var(--np-glow); }
+
+/* CRT glass: one fixed layer, still, below the status strip. */
+body.sp.sp-tv .sp-glass {
+  position: fixed; inset: 0; z-index: 800; pointer-events: none;
+  background: radial-gradient(140% 110% at 50% 40%, rgba(0,0,0,0) 60%, rgba(0,0,0,0.42) 100%);
+}
+body.sp.sp-tv[data-fx="off"] .sp-glass { display: none; }
+body.sp.sp-tv .sp-veil { position: fixed; inset: 0; z-index: 940; background: #000; opacity: 0; pointer-events: none; transition: opacity 240ms ease-out; }
+body.sp.sp-tv .sp-veil.on { opacity: 1; transition: opacity 190ms ease-in; }
+
+/* ── Day cards: one answer per card, readable at 4 m ── */
+body.sp.sp-tv:not([data-kiosk-panel="radar"]) #app { padding: 2.2vh 2vw 64px; }
+body.sp.sp-tv .np-days.sp-tv-days { gap: 1.8vw; align-items: stretch; height: 100%; grid-template-rows: 1fr; }
+body.sp.sp-tv .np-days.sp-tv-days.has-tonight { grid-template-rows: auto 1fr; }
+body.sp.sp-tv .sp-tv-tonight {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 2.4vw;
+  padding: 0.6vh 1.4vw;
+  border: 1px solid var(--np-hair);
+}
+body.sp.sp-tv .sp-tv-tonight .np-legend { font-size: var(--tv-legend); color: var(--np-green-dim); }
+body.sp.sp-tv .sp-tv-tonight .sp-tv-tn-k { color: var(--np-green); letter-spacing: 0.24em; }
+body.sp.sp-tv .np-day.sp-tv-card {
+  display: grid;
+  grid-template-rows: auto auto auto auto 1fr;
+  align-items: start;
+  row-gap: 2vh;
+  min-height: 0;
+  padding: 1.8vh 1.6vw 1.6vh;
+  border: 1px solid var(--np-hair);
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgba(69,255,154,0.045), rgba(69,255,154,0) 34%), #000;
+  box-shadow: inset 0 1px 0 rgba(69,255,154,0.16);
+}
+body.sp.sp-tv[data-fx="off"] .np-day.sp-tv-card { background: #000; box-shadow: none; }
+body.sp.sp-tv .sp-tv-card .np-day-title {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: var(--tv-s); letter-spacing: 0.2em; text-align: left;
+  padding-bottom: 1vh; border-bottom: 1px solid var(--np-hair);
+}
+body.sp.sp-tv .sp-tv-date { font-size: var(--tv-legend); color: var(--np-green-dim); letter-spacing: 0.12em; }
+body.sp.sp-tv .sp-tv-hero { display: grid; gap: 0.6vh; }
+body.sp.sp-tv .sp-tv-hero-n { display: flex; align-items: baseline; white-space: nowrap; }
+body.sp.sp-tv .np-seg.sp-tv-xl { font-size: var(--tv-xl); line-height: 0.95; }
+body.sp.sp-tv .sp-tv-ft { font-size: var(--tv-m) !important; margin-left: 0.6vw; font-weight: 600; }
+body.sp.sp-tv .sp-tv-hero-p { display: flex; align-items: center; gap: 0.5vw; white-space: nowrap; }
+body.sp.sp-tv .sp-tv-hero-p .np-at { font-size: var(--tv-s); }
+body.sp.sp-tv .np-seg.sp-tv-l { font-size: var(--tv-l); }
+body.sp.sp-tv .sp-tv-hero-p .np-unit-tight { font-size: var(--tv-s); }
+body.sp.sp-tv .np-bigarrow.sp-tv-arrow { width: var(--tv-arrow); height: var(--tv-arrow); margin-left: auto; }
+body.sp.sp-tv .np-bigarrow.sp-tv-arrow svg { filter: var(--np-glow-arrow); }
+body.sp.sp-tv .sp-tv-arrow .np-ao-num { font-size: clamp(16px, 2.6vh, 36px); }
+body.sp.sp-tv .sp-tv-arrow .np-ao-cap { font-size: clamp(10px, 1.45vh, 20px); }
+body.sp.sp-tv .sp-tv-card.dir-out .sp-tv-hero .np-lit,
+body.sp.sp-tv .sp-tv-card.dir-out .sp-tv-hero .np-unit { color: var(--np-green-dim); text-shadow: none; }
+body.sp.sp-tv .sp-tv-card.dir-out .sp-tv-arrow svg { fill: none; stroke: var(--np-green-dim); stroke-width: 4; stroke-dasharray: 10 7; filter: none; }
+/* Window annunciator under the hero: all three printed, the true one lit. */
+body.sp.sp-tv .sp-tv-ann { display: flex; gap: 1.6vw; margin-top: 0.6vh; font-family: var(--np-sans); font-weight: 600; font-size: var(--tv-legend); letter-spacing: 0.16em; white-space: nowrap; }
+body.sp.sp-tv .sp-tv-ann span { color: rgba(69,255,154,0.16); }
+body.sp.sp-tv .sp-tv-ann span.on { color: var(--np-green); text-shadow: var(--np-glow); }
+body.sp.sp-tv .sp-tv-lows { display: grid; align-content: start; gap: 2.2vh; padding-top: 1.6vh; border-top: 1px solid var(--np-hair); }
+body.sp.sp-tv .sp-tv-low { display: flex; align-items: center; justify-content: space-between; gap: 0.8vw; }
+body.sp.sp-tv .sp-tv-low.is-empty { visibility: hidden; }
+body.sp.sp-tv .sp-tv-low-t { display: grid; gap: 0.4vh; min-width: 0; }
+body.sp.sp-tv .sp-tv-low .np-legend { font-size: var(--tv-legend); letter-spacing: 0.14em; color: var(--np-green-dim); }
+body.sp.sp-tv .sp-tv-low.is-live .np-legend:first-child { color: var(--np-green); }
+body.sp.sp-tv .sp-tv-span { display: flex; align-items: baseline; gap: 0.35vw; white-space: nowrap; }
+body.sp.sp-tv .np-seg.sp-tv-seg-low { font-size: var(--tv-l); }
+body.sp.sp-tv .np-seg.sp-tv-seg-low2 { font-size: var(--tv-s); }
+body.sp.sp-tv .np-seg.sp-tv-seg-dark { font-size: var(--tv-s); }
+body.sp.sp-tv .sp-tv-until { display: flex; align-items: baseline; gap: 0.3vw; white-space: nowrap; }
+body.sp.sp-tv .sp-tv-until .np-unit { font-size: var(--tv-legend); margin: 0 0 0 0.2vw; color: var(--np-green-dim); }
+body.sp.sp-tv .sp-tv-until .np-lit { color: var(--np-green); }
+body.sp.sp-tv .sp-tv-span .np-unit { font-size: var(--tv-s); margin: 0 0 0 0.4vw; }
+body.sp.sp-tv .sp-tv-to { font-family: var(--np-sans); font-size: var(--tv-legend); color: var(--np-green-dim); margin: 0 0.5vw 0 0.2vw; letter-spacing: 0.1em; }
+body.sp.sp-tv .sp-tv-lowat { font-size: clamp(11px, 1.45vh, 20px) !important; }
+body.sp.sp-tv .sp-tv-wind { display: grid; justify-items: center; gap: 0.4vh; flex: 0 0 auto; }
+body.sp.sp-tv .sp-tv-wind .np-dial { width: clamp(56px, 8.5vh, 120px); height: clamp(56px, 8.5vh, 120px); }
+body.sp.sp-tv .sp-tv-wind .np-dial-num { font-size: clamp(16px, 2.6vh, 36px); }
+body.sp.sp-tv .sp-tv-wind .np-dial-cap { font-size: clamp(10px, 1.3vh, 18px); }
+body.sp.sp-tv .sp-tv-q { font-family: var(--np-sans); font-size: clamp(10px, 1.3vh, 18px); letter-spacing: 0.12em; color: var(--np-green-dim); }
+/* Quality by ring weight + word, not by hue. */
+body.sp.sp-tv .sp-q-off .np-dial-ring { stroke: var(--np-green); stroke-width: 6; }
+body.sp.sp-tv .sp-q-off .sp-tv-q { color: var(--np-green); }
+body.sp.sp-tv .sp-q-cross .np-dial-ring { stroke: rgba(69,255,154,0.55); stroke-width: 3; }
+body.sp.sp-tv .sp-q-on .np-dial-ring { stroke: rgba(69,255,154,0.35); stroke-width: 2; stroke-dasharray: 6 6; }
+/* Time-aware: passed windows and dark lows fall back to ghost level. */
+body.sp.sp-tv .sp-tv-low.is-past,
+body.sp.sp-tv .sp-tv-low.is-dark { opacity: 0.4; }
+body.sp.sp-tv .sp-tv-low.is-past .np-lit,
+body.sp.sp-tv .sp-tv-low.is-dark .np-lit { text-shadow: none; }
+body.sp.sp-tv .sp-tv-dark { white-space: nowrap; font-family: var(--np-sans); font-size: var(--tv-legend); letter-spacing: 0.2em; color: var(--np-green-dim); margin-left: 0.8vw; }
+body.sp.sp-tv .sp-tv-low.is-dark { justify-content: flex-start; align-items: baseline; gap: 0.5vw; }
+body.sp.sp-tv .sp-tv-low.is-dark .np-unit { font-size: var(--tv-legend); margin: 0; }
+body.sp.sp-tv .sp-tv-sec { display: flex; align-items: baseline; gap: 0.4vw; flex-wrap: wrap; color: var(--np-green-dim); padding-top: 0.4vh; }
+body.sp.sp-tv .sp-tv-sec.is-empty { visibility: hidden; }
+body.sp.sp-tv .sp-tv-sec .np-legend { font-size: var(--tv-legend); color: var(--np-green-dim); }
+body.sp.sp-tv .sp-tv-sec .np-seg.sp-tv-s { font-size: var(--tv-s); color: var(--np-green-dim); }
+body.sp.sp-tv .sp-tv-sec .np-unit { font-size: var(--tv-legend); color: var(--np-green-dim); margin: 0 0.3vw 0 0.15vw; }
+body.sp.sp-tv .sp-tv-sec .np-out-tag { position: static; font-size: clamp(10px, 1.35vh, 18px); margin-left: 0.4vw; color: var(--np-green-dim); border-color: rgba(69,255,154,0.35); }
+body.sp.sp-tv .sp-tv-foot { align-self: end; display: flex; align-items: center; gap: 0.45vw; padding-top: 1vh; border-top: 1px solid var(--np-hair); color: var(--np-green-dim); }
+body.sp.sp-tv .sp-tv-foot .np-legend { font-size: var(--tv-legend); color: var(--np-green-dim); }
+body.sp.sp-tv .sp-tv-foot .np-seg.sp-tv-xs { font-size: var(--tv-xs); color: var(--np-green-dim); }
+body.sp.sp-tv .sp-tv-foot .np-unit-sm { font-size: clamp(9px, 1.2vh, 16px); }
+body.sp.sp-tv .sp-tv-dash { width: 1vw; height: 1px; background: var(--np-green-dim); margin: 0 0.3vw; }
+body.sp.sp-tv .sp-tv-moon { margin-left: auto; display: flex; align-items: center; gap: 0.5vw; }
+body.sp.sp-tv .sp-moon { width: clamp(20px, 3.2vh, 44px); height: clamp(20px, 3.2vh, 44px); }
+body.sp.sp-tv .sp-moon-dark { fill: rgba(69,255,154,0.08); stroke: rgba(69,255,154,0.3); stroke-width: 1.5; }
+body.sp.sp-tv .sp-moon-lit { fill: rgba(69,255,154,0.7); }
+
+/* ── Status strip: rotation pips, 1 Hz progress, drawn glyphs ── */
+body.sp.sp-tv #kiosk-status { position: fixed; overflow: visible; }
+body.sp.sp-tv .sp-pips { display: flex; gap: 6px; align-items: center; margin-left: 6px; }
+body.sp.sp-tv .sp-pips i { width: 7px; height: 7px; border: 1px solid rgba(69,255,154,0.45); display: block; }
+body.sp.sp-tv .sp-pips i.home { border-radius: 50%; }
+body.sp.sp-tv .sp-pips i.on { background: var(--np-green); border-color: var(--np-green); box-shadow: 0 0 6px rgba(69,255,154,0.6); }
+body.sp.sp-tv .sp-progress { position: absolute; left: 0; right: 0; top: -1px; height: 2px; background: rgba(69,255,154,0.55); transform-origin: 0 50%; transform: scaleX(0); pointer-events: none; }
+@keyframes sp-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+body.sp.sp-tv .sp-i { display: inline-flex; width: 14px; height: 14px; border: 1.5px solid currentColor; border-radius: 50%; align-items: center; justify-content: center; font-style: normal; font-size: 10px; font-weight: 800; margin-right: 6px; vertical-align: -2px; }
+body.sp.sp-tv .sp-next-tri { display: inline-block; width: 0; height: 0; border-left: 7px solid currentColor; border-top: 5px solid transparent; border-bottom: 5px solid transparent; margin-left: 6px; }
+
+/* ── Radar: still scope + compositor sweep + echo layer + HUD ── */
+body.sp.sp-tv #kiosk-radar { position: relative; overflow: hidden; }
+body.sp.sp-tv .sp-sweep {
+  position: absolute; pointer-events: none; z-index: 2;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(69,255,154,0) 0deg, rgba(69,255,154,0) 300deg, rgba(69,255,154,0.05) 330deg, rgba(69,255,154,0.16) 352deg, rgba(150,255,200,0.42) 359.4deg, rgba(200,255,225,0.65) 360deg);
+  will-change: transform;
+}
+body.sp.sp-tv .sp-sweep.run { animation: sp-sweep 10s steps(200) infinite; }
+@keyframes sp-sweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+body.sp.sp-tv.sp-radar-night .sp-sweep { opacity: 0.6; }
+body.sp.sp-tv .sp-echo { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; overflow: visible; }
+body.sp.sp-tv .sp-echo-lit { stroke: #b6ffd6; fill: #b6ffd6; opacity: 0; will-change: opacity; filter: drop-shadow(0 0 6px rgba(69,255,154,0.8)); }
+body.sp.sp-tv .sp-echo-lit .hollow { fill: none; stroke-width: 2; }
+body.sp.sp-tv .sp-sweep.run ~ .sp-echo .sp-echo-lit { animation: sp-echo 10s linear infinite; }
+@keyframes sp-echo { 0% { opacity: 1; } 25% { opacity: 0; } 100% { opacity: 0; } }
+body.sp.sp-tv .sp-echo text { font: 700 clamp(15px, 2.3vh, 30px) "Orbitron", sans-serif; fill: rgba(69,255,154,0.85); text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: #000; stroke-width: 5px; }
+body.sp.sp-tv .sp-echo-t.hero text { fill: #45ff9a; font-size: clamp(18px, 2.9vh, 38px); }
+body.sp.sp-tv .sp-echo-t.dim text { fill: rgba(69,255,154,0.5); }
+body.sp.sp-tv .sp-echo-t.wind text { fill: rgba(69,255,154,0.7); }
+body.sp.sp-tv .sp-hud { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+body.sp.sp-tv .sp-hud-time { position: absolute; right: 1.8vw; top: 2.2vh; display: grid; justify-items: end; gap: 1.2vh; text-align: right; }
+/* The reading sits in a bezel inset on the land, clear of the coast. */
+body.sp.sp-tv .sp-hud-read { position: absolute; left: 1.8vw; top: 2.2vh; padding: 1.4vh 1.4vw 1.6vh; background: rgba(0,0,0,0.88); border: 1px solid var(--np-hair); box-shadow: inset 0 1px 0 rgba(69,255,154,0.14); }
+body.sp.sp-tv .sp-hud .np-legend { font-size: var(--tv-legend); color: var(--np-green-dim); letter-spacing: 0.16em; }
+body.sp.sp-tv .sp-hud-when { display: grid; justify-items: end; gap: 0.4vh; }
+body.sp.sp-tv .sp-hud-clock { display: flex; align-items: baseline; gap: 0.4vw; }
+body.sp.sp-tv .np-seg.sp-hud-seg { font-size: var(--tv-l); }
+body.sp.sp-tv .sp-hud-clock .np-unit { font-size: var(--tv-s); margin: 0; }
+body.sp.sp-tv .sp-hud-off { font: 700 var(--tv-legend) var(--np-sans); letter-spacing: 0.16em; color: var(--np-green-dim); }
+body.sp.sp-tv .sp-hud-off.is-now { color: #eafff2; }
+body.sp.sp-tv .sp-hud-off.is-now::before { content: ""; display: inline-block; width: 0.6em; height: 0.6em; border-radius: 50%; background: #ff5252; margin-right: 0.5em; box-shadow: 0 0 8px rgba(255,82,82,0.7); }
+body.sp.sp-tv .sp-hud-week { display: flex; gap: 4px; }
+body.sp.sp-tv .sp-hud-week i { display: grid; place-items: center; min-width: 5.4vw; height: 3vh; border: 1px solid var(--np-hair); font-style: normal; }
+body.sp.sp-tv .sp-hud-week b { font: 600 clamp(10px, 1.3vh, 18px) var(--np-sans); letter-spacing: 0.12em; color: rgba(69,255,154,0.4); }
+body.sp.sp-tv .sp-hud-week i.on { border-color: var(--np-green); background: rgba(69,255,154,0.1); }
+body.sp.sp-tv .sp-hud-week i.on b { color: var(--np-green); }
+body.sp.sp-tv .sp-hud-week i.past b { color: rgba(69,255,154,0.22); }
+body.sp.sp-tv .sp-hud-read { display: grid; justify-items: start; gap: 0.6vh; }
+body.sp.sp-tv .sp-hud-big { display: flex; align-items: baseline; gap: 0.3vw; }
+body.sp.sp-tv .np-seg.sp-hud-h { font-size: clamp(56px, 10.5vh, 150px); }
+body.sp.sp-tv .np-seg.sp-hud-p { font-size: var(--tv-l); }
+body.sp.sp-tv .sp-hud-big .np-unit,
+body.sp.sp-tv .sp-hud-big .np-at { font-size: var(--tv-s); margin: 0 0.3vw; }
+body.sp.sp-tv .sp-hud-read.is-out .np-lit { color: var(--np-green-dim); text-shadow: none; }
+body.sp.sp-tv.sp-radar-night .sp-hud-week i.on { background: rgba(69,255,154,0.05); }
+/* Chart under the scope: glowing playhead, lit current day. */
+body.sp.sp-tv .forecast-crosshair { width: 2px !important; background: #b6ffd6 !important; box-shadow: 0 0 8px rgba(69,255,154,0.8), 0 0 2px rgba(69,255,154,1); }
+body.sp.sp-tv[data-fx="off"] .forecast-crosshair { box-shadow: none; }
+body.sp.sp-tv #forecast-chart-container .forecast-day-label { font-family: var(--np-sans) !important; font-size: clamp(13px, 1.75vh, 24px) !important; color: rgba(69,255,154,0.45) !important; position: absolute; transform: none; text-align: center; background: none; border: 0; }
+body.sp.sp-tv #forecast-chart-container .forecast-day-label.is-sel { color: var(--np-green) !important; text-shadow: var(--np-glow); }
+body.sp.sp-tv .forecast-reset-btn { display: none !important; }
+body.sp.sp-tv .forecast-detail-bar { display: none !important; }
+body.sp.sp-tv #forecast-chart-container .forecast-section-label { font-size: var(--tv-legend) !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  body.sp.sp-tv .sp-sweep.run,
+  body.sp.sp-tv .sp-sweep.run ~ .sp-echo .sp-echo-lit { animation: none; }
+  body.sp.sp-tv .sp-echo-lit { opacity: 0.6; }
+  body.sp.sp-tv .sp-veil { transition: none; }
+}
+
+/* Night: the lineup legend follows the scope's phosphor. */
+body.sp.sp-web[data-scheme="night"] .sp-k-swell { background: #45ff9a; box-shadow: none; }
+body.sp.sp-web[data-scheme="night"] .sp-k-wind { background: rgba(69,255,154,0.45); box-shadow: none; }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-arw-swell2 .sp-arw-body { fill: rgba(69,255,154,0.55); stroke: #002a12; }
+body.sp.sp-web .lineup-frame[data-phase="night"] .sp-arw-sh { fill: rgba(0,0,0,0.6); }
+
+/* Stale data reads as stale in-world: phosphor decay, no flicker.
+   (kioskShowFreshness puts np-stale / np-dead on the status strip.) */
+body.sp.sp-tv:has(#kiosk-status.np-stale) .np-lit { opacity: 0.72; text-shadow: none !important; }
+body.sp.sp-tv:has(#kiosk-status.np-stale) .np-bigarrow svg { opacity: 0.72; filter: none; }
+body.sp.sp-tv:has(#kiosk-status.np-dead) .np-lit { opacity: 0.42; text-shadow: none !important; }
+body.sp.sp-tv:has(#kiosk-status.np-dead) .np-bigarrow svg { opacity: 0.42; filter: none; }
+body.sp.sp-tv:has(#kiosk-status.np-dead) .sp-sweep { display: none; }
+
+/* The app's source popovers keep their job; the ⓘ glyph the bitmap face
+   lacks becomes a Win95 help button drawn in the face it has. */
+body.sp.sp-web .panel-info-toggle {
+  width: 24px; height: 22px; min-width: 24px; padding: 0;
+  font-size: 0 !important; color: var(--ink);
+  background: var(--face) !important; border: 0 !important; box-shadow: var(--raised) !important;
+}
+body.sp.sp-web .panel-info-toggle::before { content: "?"; font: bold 11px var(--f-ui); }
+body.sp.sp-web .panel-info-toggle:active { box-shadow: var(--pressed) !important; }
