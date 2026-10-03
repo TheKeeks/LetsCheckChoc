@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased] — Try the redesign drafts on your own phone and Choc TV (?preview=)
+
+The look-and-feel audit produced three prototype redesigns (Shader Pack, One Instrument, Chart Room) and, from the owner's pick of One Instrument's layout with Chart Room's colours, two hybrid drafts: Paper (chart paper by day, navy chart after sunset at Choc, best in sun) and Navy (a navy instrument with 14-segment digits by day, black glass at night). Until now they existed only as screenshots. Adding `?preview=draft-paper`, `?preview=draft-navy`, `?preview=one-instrument`, `?preview=chart-room` or `?preview=shader-pack` to the site's address (and `?kiosk=1&preview=…` for Choc TV) now layers that look over the real app with live data. The plain address is unchanged and loads none of it; the crew sees nothing new.
+
+Each look is a stylesheet and script under `previews/<name>/`, written by two small inline loaders in `index.html` exactly where the prototypes were developed (after `styles-kiosk.css` and after `kiosk.js`). Only the five listed names are accepted. An e2e scenario loads every preview on a phone and on Choc TV with no page errors, checks the plain address fetches nothing from `previews/`, and checks an unknown name is ignored.
+
 ## [Unreleased] — Review follow-ups: one data age, no invented directions, sign-in hand-over, phones fit again
 
 An independent review of the audit branch, with every finding re-checked by a second reviewer, turned up twenty real problems in the new code. All are fixed here, each with a test that fails on the earlier branch code.
