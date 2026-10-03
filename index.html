@@ -21,6 +21,13 @@
   <link rel="stylesheet" href="styles-web1-extensions.css">
   <link rel="stylesheet" href="styles-retro.css">
   <link rel="stylesheet" href="styles-kiosk.css">
+  <!-- Design previews: ?preview=draft-paper | draft-navy | shader-pack | one-instrument | chart-room
+       layers that look (previews/<name>/) over today's app, for trying the
+       candidate redesigns on a real phone or Choc TV. No parameter, no change. -->
+  <script>
+    var LCC_PREVIEW = (/[?&]preview=(shader-pack|one-instrument|chart-room|draft-paper|draft-navy)(?:&|$)/.exec(location.search) || [])[1] || null;
+    if (LCC_PREVIEW) document.write('<link rel="stylesheet" href="previews/' + LCC_PREVIEW + '/theme.css">');
+  </script>
   <!-- Choc TV kiosk mode PWA (?kiosk=1): installable via Add to Home Screen -->
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#C0C0C0">
@@ -622,6 +629,9 @@
   <script src="firebase-config.js"></script>
   <script src="app.js"></script>
   <script src="kiosk.js"></script>
+  <script>
+    if (LCC_PREVIEW) document.write('<script src="previews/' + LCC_PREVIEW + '/theme.js"><\/script>');
+  </script>
   <div id="toast-container" class="toast-container"></div>
 </body>
 </html>
