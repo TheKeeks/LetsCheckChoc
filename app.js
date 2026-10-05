@@ -5548,25 +5548,35 @@ function angularDist(a, b) { let d = Math.abs(a - b) % 360; return d > 180 ? 360
 // This is the standard surf forecaster rule (deep-water group velocity ~1.5 × period).
 const SWELL_SPEED_KTS_PER_PERIOD = 1.5;
 
-// Estimate swell travel lag from buoy to Chocomount.
-// Algorithm: average primary swell period in the window [T-5h, T-2h] to represent
-// the swell arriving at session time T; then lag = distance / (SWELL_SPEED_KTS_PER_PERIOD × avgPeriod).
-function getSwellLagHours(marineData, dateStr) {
+// Nautical miles from where the swell was read to the beach. Knots × hours
+// is nautical miles, so the 1.5 kt × period rule needs nmi: the forecast
+// point is ~15.7 nmi out, buoy 44097 ~42 nmi.
+function swellLagDistanceNmi(fromLat, fromLon) {
+  return haversineDistanceMiles(fromLat, fromLon, CONFIG.chocomount.lat, CONFIG.chocomount.lon) * 0.868976;
+}
+
+// Hours for the swell read at (fromLat, fromLon) to reach the reef by
+// session time T: distance / (SWELL_SPEED_KTS_PER_PERIOD × mean period over
+// the 2 h before T). Defaults to the forecast point, where the archive is
+// read. This used to apply the buoy's 50 mi from the forecast point, so each
+// logged session's tide sat next to swell from 4–7 h before the session.
+// Training (lookupOpenMeteoArchive) and prediction (buildForecastConditions)
+// both call this, so a tide is paired with swell the same way on both sides.
+function getSwellLagHours(marineData, dateStr, fromLat = CONFIG.chocomount.forecastLat, fromLon = CONFIG.chocomount.forecastLon) {
   if (!marineData?.hourly?.time) return 0;
   const times = marineData.hourly.time;
   const periods = marineData.hourly.swell_wave_period || marineData.hourly.wave_period || [];
   const T = new Date(dateStr).getTime();
-  const windowStart = T - 5 * 3600000;
-  const windowEnd = T - 2 * 3600000;
+  const windowStart = T - 2 * 3600000;
   let sum = 0, count = 0;
   for (let i = 0; i < times.length; i++) {
     const t = new Date(times[i]).getTime();
-    if (t >= windowStart && t <= windowEnd && periods[i] > 0) { sum += periods[i]; count++; }
+    if (t >= windowStart && t <= T && periods[i] > 0) { sum += periods[i]; count++; }
   }
   const avgPeriod = count > 0 ? sum / count : 0;
   if (avgPeriod <= 0) return 0;
   const speedKts = SWELL_SPEED_KTS_PER_PERIOD * avgPeriod;
-  return CONFIG.chocomount.buoyDistanceMiles / speedKts;
+  return swellLagDistanceNmi(fromLat, fromLon) / speedKts;
 }
 
 // Wind history for surf-log scoring. Always uses Open-Meteo's archive
@@ -5800,7 +5810,8 @@ async function lookupOpenMeteoArchive(lat, lon, dateStr) {
   if (!data || !data.hourly || !Array.isArray(data.hourly.time) || data.hourly.time.length === 0) return null;
 
   // Apply swell-arrival lag (offshore-forecast-point → beach travel time).
-  const lagHours = getSwellLagHours(data, dateStr);
+  // Swell only: the session's tide is read at the session time itself.
+  const lagHours = getSwellLagHours(data, dateStr, lat, lon);
   const laggedDateStr = lagHours > 0
     ? new Date(target.getTime() - lagHours * 3600000).toISOString()
     : dateStr;
@@ -7230,32 +7241,60 @@ function simpleMatchPct(a,b) {
   return Math.round(Math.exp(-Math.sqrt(dist)/a.length)*100);
 }
 
+// Where the live marine forecast is read: the open-water forecast point, or
+// buoy 44097 when "Use buoy coordinates" is on (see _loadAllDataImpl).
+function forecastSwellPoint() {
+  const c = CONFIG.chocomount;
+  return getForecastUseBuoyCoords() ? { lat: c.buoyLat, lon: c.buoyLon } : { lat: c.forecastLat, lon: c.forecastLon };
+}
+
+// True when a tide series actually spans time t. Past either end,
+// tideHeightAt would hold the end value and tideRateAt would read 0 ft/hr:
+// a frozen slack tide that never happens (a saved copy from a CO-OPS outage
+// can end days before the forecast does).
+function _tideSeriesCovers(series, t) {
+  const preds = _normalizeTidePredictions(series);
+  if (!preds.length) return false;
+  const ms = new Date(t).getTime();
+  return ms >= preds[0].t.getTime() && ms <= preds[preds.length - 1].t.getTime();
+}
+
+// Conditions for forecast hour `hi`, paired the way a logged session is
+// paired in training (lookupHistoricalConditions): tide and wind at the hour
+// itself, with no lag (Silver Eel's times are Choc's tide times), and the
+// swell that reaches the reef at that hour, read getSwellLagHours earlier.
 // `tidePred` is the 6-min predictions series (CO-OPS interval=6) and is
 // used for height + rate via interpolation. `tideHiLo` is consulted only
 // for `timeToNearest` (hours to the next labelled extremum) — it has
 // explicit H/L type tags so the readout is exact rather than detected.
 function buildForecastConditions(marine, wind, tideHiLo, tidePred, hi) {
   if (!marine?.hourly||!wind?.hourly) return null;
-  const swH=marine.hourly.swell_wave_height?.[hi]??marine.hourly.wave_height?.[hi]??0;
-  const swD=marine.hourly.swell_wave_direction?.[hi]??marine.hourly.wave_direction?.[hi]??0;
-  const swP=marine.hourly.swell_wave_period?.[hi]??marine.hourly.wave_period?.[hi]??0;
-  const secH=marine.hourly.secondary_swell_wave_height?.[hi]??0;
-  const secD=marine.hourly.secondary_swell_wave_direction?.[hi]??0;
-  const secP=marine.hourly.secondary_swell_wave_period?.[hi]??0;
-  const wSpd=wind.hourly.wind_speed_10m?.[hi]??0, wDir=wind.hourly.wind_direction_10m?.[hi]??0;
   const targetTime = marine.hourly.time?.[hi];
+  let si = hi;
+  if (targetTime) {
+    const p = forecastSwellPoint();
+    const lagH = getSwellLagHours(marine, targetTime, p.lat, p.lon);
+    if (lagH > 0) si = findNearestHour(marine.hourly.time, new Date(new Date(targetTime).getTime() - lagH * 3600000).toISOString());
+  }
+  const swH=marine.hourly.swell_wave_height?.[si]??marine.hourly.wave_height?.[si]??0;
+  const swD=marine.hourly.swell_wave_direction?.[si]??marine.hourly.wave_direction?.[si]??0;
+  const swP=marine.hourly.swell_wave_period?.[si]??marine.hourly.wave_period?.[si]??0;
+  const secH=marine.hourly.secondary_swell_wave_height?.[si]??0;
+  const secD=marine.hourly.secondary_swell_wave_direction?.[si]??0;
+  const secP=marine.hourly.secondary_swell_wave_period?.[si]??0;
+  const wSpd=wind.hourly.wind_speed_10m?.[hi]??0, wDir=wind.hourly.wind_direction_10m?.[hi]??0;
   // No tide data (CO-OPS down) → tide: null, never a made-up 0 ft 'rising':
   // the Ride prediction then shows '—' instead of rating fictional water
-  // (audit C11).
+  // (audit C11). The same goes for an hour past the end of the series.
   let tideInfo = null;
-  if (targetTime && tidePred && tidePred.length) {
+  if (targetTime && tidePred && tidePred.length && _tideSeriesCovers(tidePred, targetTime)) {
     tideInfo = parseTideAtTime({ predictions: tidePred }, targetTime);
     if (tideInfo && tideHiLo && tideHiLo.length) {
       const hi2 = parseTideAtTime({ predictions: tideHiLo }, targetTime);
       if (hi2) tideInfo.timeToNearest = hi2.timeToNearest;
     }
   }
-  if (!tideInfo && targetTime && tideHiLo && tideHiLo.length) {
+  if (!tideInfo && targetTime && tideHiLo && tideHiLo.length && _tideSeriesCovers(tideHiLo, targetTime)) {
     tideInfo = parseTideAtTime({ predictions: tideHiLo }, targetTime);
   }
   return { swell:{height:swH,direction:swD,period:swP,secondary:secH>0.3?{height:secH,direction:secD,period:secP}:undefined},

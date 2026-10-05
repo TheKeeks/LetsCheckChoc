@@ -10,6 +10,7 @@ A field guide to how Chocomount works, for use by anyone building or modifying t
 - Forecast point: 41.089°N, 71.721°W (open water, ~50 mi from buoy). NOT the buoy lat/lon.
 - Wind point: 41.276°N, 71.963°W (the land-side beach point).
 - Tide station: NOAA CO-OPS 8510719 (Silver Eel Pond, Fishers Island), ~1.4 mi from beach.
+- Tide timing: Silver Eel's predicted times are Choc's tide times. No lag or offset, in the model or anywhere else (spot owner, Oct 2026). Only swell gets a travel lag.
 - Water temp station: NOAA CO-OPS 8510560 (Montauk).
 - Group velocity rule: 1.5 knots × period in seconds. A 12-second swell takes ~3-4 hours to arrive after the buoy reads it.
 
