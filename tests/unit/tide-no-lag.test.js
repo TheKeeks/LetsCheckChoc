@@ -3,12 +3,14 @@
 // the beach, so its predicted times ARE Choc's tide times. Only swell gets a
 // travel lag (forecast point or buoy → reef).
 //
-// The tide was already read at the right time everywhere; the first three
-// tests lock that in. What broke the rule was the swell the model paired
-// with that tide: training read it 50 mi/(1.5 kt × period) before the
-// session (the buoy's distance, 4–7 h) from the forecast point ~16 nmi out,
-// while prediction read it at the forecast hour itself. A forecast hour past
-// the end of a saved tide series also got a frozen 0 ft/hr tide.
+// The tide was already read at the right time; the first three tests lock in
+// how the model and Choc TV read it off the CO-OPS series (the fixture
+// router doesn't check the request's time_zone). What broke the rule was the
+// swell the model paired with that tide: training read it 50 mi/(1.5 kt ×
+// period) before the session (the buoy's distance: 4–7 h for the usual
+// 5–8 s swell) from the forecast point ~16 nmi out, while prediction read it
+// at the forecast hour itself. A forecast hour past the end of the saved
+// 6-min tide copy also got a frozen 0 ft/hr tide.
 'use strict';
 
 const test = require('node:test');
@@ -89,6 +91,7 @@ test('Choc TV: each day\'s lows are Silver Eel\'s low times to the minute', () =
 
 test('the model pairs a tide with the same swell in training and in prediction', async () => {
   const app = loadApp({ fetch: fixtureFetch({ overrides: [ARCHIVE_WIND_OK] }) });
+  app.get('STATE').isChocomount = true;   // Choc selected, as at boot
   for (const when of ['2026-10-01T09:00', '2026-10-02T09:00', '2026-10-03T15:00']) {
     const trained = await lookup(app, when);
     const fc = app.clone(app.call('buildForecastConditions', MARINE, WIND, HILO, PRED, hourIndex(when)));
@@ -132,13 +135,48 @@ test('swell lag is the travel time from where the swell is read (forecast point 
   assert.deepEqual(app.clone('forecastSwellPoint()'), { lat: c.forecastLat, lon: c.forecastLon });
 });
 
-test('a forecast hour past the end of the saved tide series has no tide, not a frozen slack one', () => {
+test('a forecast hour past the end of the saved 6-min tide copy is not given a frozen slack tide', () => {
   const app = loadApp();
   const hi = hourIndex('2026-10-05T04:00');   // the 72 h copies end 2026-10-03 23:54
+  // The app keeps 10 days of highs/lows next to the 6-min copy: past the
+  // 6-min end it falls back to them (still a moving tide), not to the last
+  // 6-min sample held flat at 0 ft/hr.
+  const fallback = app.clone(app.call('buildForecastConditions', MARINE, WIND, HILO, PRED_72H, hi));
+  assert.notEqual(fallback.tide, null);
+  assert.notEqual(fallback.tide.rate, 0, 'not frozen');
+  assert.ok(Math.abs(fallback.tide.height - silverEel(new Date('2026-10-05T04:00').getTime())) < 0.4, 'close to Silver Eel');
+  // Past the end of both copies: no tide and no Ride rating.
   const stale = app.clone(app.call('buildForecastConditions', MARINE, WIND, HILO_72H, PRED_72H, hi));
   assert.equal(stale.tide, null);
   assert.equal(app.call('extractRideFeatures', app.run(`(${JSON.stringify(stale)})`)), null, 'no Ride prediction on a frozen tide');
-  // Inside the series, and with a full-length series, the hour keeps its tide.
+  // Inside the copies, and with a full-length series, the hour keeps its tide.
   assert.equal(typeof app.clone(app.call('buildForecastConditions', MARINE, WIND, HILO_72H, PRED_72H, hourIndex('2026-10-03T09:00'))).tide.height, 'number');
   assert.equal(typeof app.clone(app.call('buildForecastConditions', MARINE, WIND, HILO, PRED, hi)).tide.height, 'number');
+});
+
+test('Tab 2 and the log say which swell they show: on the reef (read earlier offshore), not the chart\'s hour', async () => {
+  const app = loadApp({ fetch: fixtureFetch({ overrides: [ARCHIVE_WIND_OK] }) });
+  app.get('STATE').isChocomount = true;
+  const hi = hourIndex('2026-10-02T19:00');
+  const fc = app.call('buildForecastConditions', MARINE, WIND, HILO, PRED, hi);
+  assert.ok(fc.swellLagHours > 0);
+  const line = app.call('_regForecastSummaryLine', fc);
+  assert.match(line, /^On the reef: \d+\.\dft @ /);
+  assert.match(line, new RegExp('offshore ~' + fc.swellLagHours + 'h earlier'));
+
+  const cond = await lookup(app, '2026-10-02T09:30');
+  app.call('renderConditionsDisplay', app.run(`(${JSON.stringify(cond)})`));
+  const shown = app.dom.byId('sl-conditions-display').innerHTML;
+  assert.match(shown, /at the offshore forecast point/);
+  assert.doesNotMatch(shown, /at buoy|buoy lag/, 'archive swell is not a buoy reading');
+  assert.match(shown, new RegExp('\\(' + Math.round(cond.swell.lagHours * 10) / 10 + 'h travel\\)'));
+});
+
+test('another buoy\'s forecast is not given Choc\'s swell lag', () => {
+  const app = loadApp();
+  app.get('STATE').isChocomount = false;
+  const hi = hourIndex('2026-10-02T19:00');
+  const fc = app.clone(app.call('buildForecastConditions', MARINE, WIND, HILO, PRED, hi));
+  assert.equal(fc.swell.height, MARINE.hourly.swell_wave_height[hi]);
+  assert.equal(fc.swellLagHours, 0);
 });

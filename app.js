@@ -5559,7 +5559,8 @@ function swellLagDistanceNmi(fromLat, fromLon) {
 // session time T: distance / (SWELL_SPEED_KTS_PER_PERIOD × mean period over
 // the 2 h before T). Defaults to the forecast point, where the archive is
 // read. This used to apply the buoy's 50 mi from the forecast point, so each
-// logged session's tide sat next to swell from 4–7 h before the session.
+// logged session's tide sat next to swell from 4–7 h before the session (for
+// the usual 5–8 s swell).
 // Training (lookupOpenMeteoArchive) and prediction (buildForecastConditions)
 // both call this, so a tide is paired with swell the same way on both sides.
 function getSwellLagHours(marineData, dateStr, fromLat = CONFIG.chocomount.forecastLat, fromLon = CONFIG.chocomount.forecastLon) {
@@ -5967,7 +5968,11 @@ function renderConditionsDisplay(cond) {
   if (!display || !cond) return;
   // Values can come from a stored or imported entry: escape them (audit C27).
   const dl = (l,v) => '<span class="sl-cond-label">'+escHtml(l)+'</span> <span class="sl-cond-val">'+escHtml(v)+'</span>';
-  const lagNote = cond.swell.lagHours ? ' ('+cond.swell.lagHours+'h buoy lag)' : '';
+  // Archive swell is read at the offshore forecast point; only the NDBC
+  // fallback reads buoy 44097.
+  const fromBuoy = String(cond.source || '').startsWith('ndbc');
+  const lagH = cond.swell.lagHours ? Math.round(cond.swell.lagHours * 10) / 10 : 0;
+  const lagNote = lagH ? ' ('+lagH+'h '+(fromBuoy ? 'buoy lag' : 'travel')+')' : '';
   let h = '<div class="sl-cond-row">';
   h += dl('Swell'+lagNote+':', cond.swell.height+'ft '+cond.swell.period+'s '+directionLabel(cond.swell.direction)+' ('+cond.swell.direction+'\u00b0)');
   if (cond.swell.secondary) h += dl('2nd:', cond.swell.secondary.height+'ft '+(cond.swell.secondary.period||'')+'s '+directionLabel(cond.swell.secondary.direction));
@@ -5982,7 +5987,7 @@ function renderConditionsDisplay(cond) {
   h += dl('Tide:', cond.tide ? _formatTideReadout(cond.tide) : 'Tide unavailable (NOAA CO-OPS down) \u2014 re-Lookup later');
   h += '</div>';
   if (cond.swellLagHours > 0) {
-    h += `<div class="sl-cond-row"><span class="sl-hint">Using swell from ~${escHtml(cond.swellLagHours)}h ago at buoy (travel time estimate)</span></div>`;
+    h += `<div class="sl-cond-row"><span class="sl-hint">Using swell from ~${escHtml(cond.swellLagHours)}h earlier ${fromBuoy ? 'at buoy 44097' : 'at the offshore forecast point'} (travel time to the reef)</span></div>`;
   }
   if (cond.source) {
     let srcLabel;
@@ -7270,10 +7275,11 @@ function _tideSeriesCovers(series, t) {
 function buildForecastConditions(marine, wind, tideHiLo, tidePred, hi) {
   if (!marine?.hourly||!wind?.hourly) return null;
   const targetTime = marine.hourly.time?.[hi];
-  let si = hi;
-  if (targetTime) {
+  // The surf-log model is Choc's: another buoy's forecast gets no Choc lag.
+  let si = hi, lagH = 0;
+  if (targetTime && STATE.isChocomount) {
     const p = forecastSwellPoint();
-    const lagH = getSwellLagHours(marine, targetTime, p.lat, p.lon);
+    lagH = getSwellLagHours(marine, targetTime, p.lat, p.lon);
     if (lagH > 0) si = findNearestHour(marine.hourly.time, new Date(new Date(targetTime).getTime() - lagH * 3600000).toISOString());
   }
   const swH=marine.hourly.swell_wave_height?.[si]??marine.hourly.wave_height?.[si]??0;
@@ -7298,7 +7304,7 @@ function buildForecastConditions(marine, wind, tideHiLo, tidePred, hi) {
     tideInfo = parseTideAtTime({ predictions: tideHiLo }, targetTime);
   }
   return { swell:{height:swH,direction:swD,period:swP,secondary:secH>0.3?{height:secH,direction:secD,period:secP}:undefined},
-    wind:{speed:wSpd,direction:wDir}, tide:tideInfo };
+    wind:{speed:wSpd,direction:wDir}, tide:tideInfo, swellLagHours: si !== hi ? Math.round(lagH * 10) / 10 : 0 };
 }
 
 function findBestMatchPerDay(marine, wind, tideHiLo, tidePred) {
@@ -8764,7 +8770,13 @@ function _regForecastSummaryLine(cond) {
   const wSpd = (w.speed != null) ? Math.round(w.speed) : '—';
   const wDir = (w.direction != null) ? directionLabel(w.direction) : '';
   const tH = (t.height != null) ? (t.height >= 0 ? '+' : '') + t.height.toFixed(1) + 'ft' : '—';
-  return 'Forecast: ' + swH + ' @ ' + swP + ' ' + swD + ' · wind ' + wSpd + 'mph ' + wDir + ' · tide ' + tH;
+  // The ratings use the swell reaching the reef at this hour, read
+  // swellLagHours earlier offshore, so it can differ from the chart's
+  // reading at this hour. Say so rather than call it "Forecast".
+  const swLabel = cond.swellLagHours > 0
+    ? 'On the reef: ' + swH + ' @ ' + swP + ' ' + swD + ' (offshore ~' + cond.swellLagHours + 'h earlier)'
+    : 'Forecast: ' + swH + ' @ ' + swP + ' ' + swD;
+  return swLabel + ' · wind ' + wSpd + 'mph ' + wDir + ' · tide ' + tH;
 }
 
 function _regHeaderLabelForHour(hourMs) {
