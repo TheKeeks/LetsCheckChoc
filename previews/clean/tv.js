@@ -246,16 +246,27 @@
       h += heroHTML(F.range(sw.min, sw.max), 'ft') + swLineHTML(sw.period, sw.compass, sw.dir);
     }
     h += statusHTML(st);
+    // NOAA's tide predictions down (CO-OPS answers "No Predictions"):
+    // kioskDaySummary reads the day's swell over all daylight instead of
+    // the incoming tide (tidesDown). The card says so, as the classic
+    // Choc TV's "NO TIDE DATA — ALL-DAY SWELL", so a call that changed
+    // with the reading doesn't change silently.
+    var allDay = !!(d.tidesDown && sw);
+    // Two no-break groups: as one, "swell over all daylight" is wider
+    // than a card and the fit pass would shrink the tide and wind lines
+    // by a fifth; a third line at full size reads better across the room.
+    var ALL_DAY = '<span class="cl-nowrap">swell over</span> <span class="cl-nowrap">all daylight</span>';
     // Tide leads with the time of the low.
     var lo = d.low;
     if (lo && lo.t) {
-      var txt = !blocked && lo.until
+      var txt = !blocked && !allDay && lo.until
         ? '<span class="cl-nowrap">Incoming ' + timeB(lo.t) + '</span> <span class="cl-nowrap">until ' + timeB(lo.until) + '</span>'
-        : '<span class="cl-nowrap">Low ' + timeB(lo.t) + '</span>';
+        : '<span class="cl-nowrap">Low ' + timeB(lo.t) + (allDay ? ' ·' : '') + '</span>' + (allDay ? ' ' + ALL_DAY : '');
       h += '<div class="cl-tv-win">' + I.tide(38) + '<span>' + txt + '</span></div>';
       h += windHTML(lo.wind, 'At low');
     } else {
-      h += '<div class="cl-tv-win cl-tv-mute">' + I.tide(38) + '<span>' + (loading() ? DASH : 'No tide times') + '</span></div>';
+      var none = loading() ? DASH : allDay ? '<span class="cl-nowrap">No tide times ·</span> ' + ALL_DAY : 'No tide times';
+      h += '<div class="cl-tv-win cl-tv-mute' + (allDay ? ' is-allday' : '') + '">' + I.tide(38) + '<span>' + none + '</span></div>';
       h += windHTML(noonWind(d), 'At noon');
     }
     var sun = d.sun, moon = d.moon;
@@ -338,13 +349,33 @@
       var P = function (p) { return [fx + p[0] * fw, fy + p[1] * fh]; };
       var shore = CO.shore.map(P);
       var endY = shore[shore.length - 1][1];
-      var line = shore.map(pt).join('L') + 'L' + pt([460, endY]);
-      // Land is everything above / left of the traced shore.
-      // Clipped to the outer ring, like a scope.
-      o.push('<clipPath id="cl-tv-ring"><circle cx="220" cy="220" r="' + SC.ring[0] + '"/></clipPath><g clip-path="url(#cl-tv-ring)">');
-      o.push('<path class="land" d="M' + line + 'L460 -20L-20 -20L' + pt([-20, Math.max(460, shore[0][1])]) + 'Z"/>');
-      (CO.ponds || []).forEach(function (pond) { o.push('<path class="pond" d="M' + pond.map(P).map(pt).join('L') + 'Z"/>'); });
-      o.push('<path class="shore" d="M' + line + '"/></g>');
+      var line = 'M' + shore.map(pt).join('L') + 'L' + pt([460, endY]);
+      // Land is everything above / left of the traced shore, filled and
+      // outlined as the board draws it (faint light fill, muted edge),
+      // clipped to the outer ring like a scope. The traced "pond" is the
+      // round knob of land on the shore (the phone's lineup fills it the
+      // same way): land too, so it never reads as a stray outline.
+      var landD = line + 'L460 -20L-20 -20L' + pt([-20, Math.max(460, shore[0][1])]) + 'Z';
+      var knobs = (CO.ponds || []).map(function (pond) { return 'M' + pond.map(P).map(pt).join('L') + 'Z'; });
+      var paths = function (list, attr) { return list.map(function (d) { return '<path d="' + d + '"' + (attr || '') + '/>'; }).join(''); };
+      var cover = '<rect x="-40" y="-40" width="520" height="520" fill="#fff"/>';
+      var maskBox = ' maskUnits="userSpaceOnUse" x="-40" y="-40" width="520" height="520"';
+      o.push('<defs>' +
+        '<clipPath id="cl-tv-ring"><circle cx="220" cy="220" r="' + SC.ring[0] + '"/></clipPath>' +
+        '<clipPath id="cl-tv-land">' + paths([landD].concat(knobs)) + '</clipPath>' +
+        // Each outline only where it is the edge of land and knob together.
+        '<mask id="cl-tv-noland"' + maskBox + '>' + cover + paths([landD], ' fill="#000"') + '</mask>' +
+        '<mask id="cl-tv-noknob"' + maskBox + '>' + cover + paths(knobs, ' fill="#000"') + '</mask>' +
+        '</defs>');
+      o.push('<g clip-path="url(#cl-tv-ring)">');
+      // One group, one opacity: where the knob overlaps the land the fill
+      // stays even instead of doubling.
+      o.push('<g class="land">' + paths([landD].concat(knobs)) + '</g>');
+      o.push('<path class="shore" d="' + line + '"' + (knobs.length ? ' mask="url(#cl-tv-noknob)"' : '') + '/>');
+      o.push(paths(knobs, ' class="shore" mask="url(#cl-tv-noland)"'));
+      o.push('</g>');
+      // The land's edge along the outer ring closes the outline.
+      o.push('<circle class="rim" cx="220" cy="220" r="' + SC.ring[0] + '" clip-path="url(#cl-tv-land)"/>');
     }
     return '<svg viewBox="0 0 440 440" aria-hidden="true" focusable="false">' + o.join('') + '</svg>';
   }
@@ -397,16 +428,20 @@
     return '<svg viewBox="0 0 440 440" aria-hidden="true" focusable="false">' + o.join('') + '</svg>';
   }
 
-  // The biggest train that reaches the reef (in window or at the edge)
-  // and the biggest blocked one, as the phone's chart splits them.
+  // The biggest train that reaches the reef (in window or at the edge),
+  // the biggest blocked one and every train once, as the phone's chart
+  // splits them. `any`: the hour has a swell reading at all (0 ft is a
+  // reading; a missing one is not).
   function splitTrains(hr) {
-    var reach = null, blocked = null;
+    var all = [], reach = null, blocked = null, any = false;
     if (hr) [hr.swell].concat(hr.others || []).forEach(function (t) {
-      if (!t || !isNum(t.h) || t.h <= 0) return;
+      if (t && isNum(t.h)) any = true;
+      if (!t || !isNum(t.h) || t.h <= 0 || all.indexOf(t) >= 0) return;
+      all.push(t);
       if (t.status === 'in' || t.status === 'edge') { if (!reach || t.h > reach.h) reach = t; }
       else if (t.status === 'blocked') { if (!blocked || t.h > blocked.h) blocked = t; }
     });
-    return { reach: reach, blocked: blocked };
+    return { reach: reach, blocked: blocked, all: all, any: any };
   }
 
   // ── 7-day swell strip (viewBox 1100 × 205) ─────────────────────────
@@ -415,15 +450,26 @@
     var t0 = U.startOfDay(new Date()).getTime(), span = 7 * DAY;
     var hrs = D.hours() || [];
     var X = function (t) { return (t - t0) / span * CW; };
+    // Swell per hour as the phone's chart reads the reef (app.js
+    // _effectiveInWindowSwell): solid = the part that reaches the reef,
+    // each train (primary + secondary) weighted by its alignment with
+    // the window (1 inside 115–158°, fading to 0 over 30° outside);
+    // ghost = all the swell out there, both trains, behind it. A train
+    // sitting on the window's edge then fades in and out instead of
+    // flicking the fill on and off hour to hour. The band keeps each
+    // hour's own in / edge / blocked call.
     var rows = [], maxH = 2;
     hrs.forEach(function (hr) {
       if (!hr || !hr.at) return;
       var t = hr.at.getTime();
       if (t < t0 - HOUR || t > t0 + span + HOUR) return;
-      var tr = splitTrains(hr);
-      var g = tr.reach ? tr.reach.h : 0, b = tr.blocked ? tr.blocked.h : 0;
-      maxH = Math.max(maxH, g, b);
-      rows.push({ idx: hr.idx, t: t, x: X(t), g: g, b: b, st: tr.reach ? tr.reach.status : tr.blocked ? 'blocked' : null, dark: hr.dark });
+      var tr = splitTrains(hr), inW = null, tot = null;
+      if (tr.any) {                         // no swell reading: a gap, not 0 ft
+        inW = 0; tot = 0;
+        tr.all.forEach(function (x) { inW += U.alignment(x.dir) * x.h; tot += x.h; });
+        maxH = Math.max(maxH, tot);
+      }
+      rows.push({ t: t, x: X(t), sw: inW, gh: tot, st: tr.reach ? tr.reach.status : tr.blocked ? 'blocked' : null });
     });
     var Y = function (h) { return BASE - h / (maxH * 1.08) * (BASE - PLOT_TOP); };
     var o = [];
@@ -437,31 +483,39 @@
     }
     if (nt) o.push('<path class="nt" d="' + nt + '"/>');
     if (rows.length) {
-      // Runs of positive values with square ends half an hour out, as the
-      // phone chart draws them: the two trains often trade places hour to
-      // hour, and a slope down to zero would read as a spike.
+      // Areas: one continuous shape, hour to hour in straight lines (the
+      // board's polygons, the phone chart's rule). 0 ft lies on the
+      // baseline, so the shape thins out and comes back without vertical
+      // edges or slivers. Only a missing reading (or a missing hour)
+      // breaks it, and then it slopes to the baseline over half an hour.
+      // The strip's own ends cut it square (clip).
       var hs = HOUR / span * CW;
       var area = function (key) {
-        var d = '', run = null;
+        var d = '', run = null, prevT = null;
         var flush = function () {
           if (!run) return;
           var first = run[0], last = run[run.length - 1];
-          var x0 = Math.max(0, first[0] - hs / 2), x1 = Math.min(CW, last[0] + hs / 2);
-          d += 'M' + r1(x0) + ' ' + BASE + 'L' + r1(x0) + ' ' + r1(first[1]) + 'L' +
+          d += 'M' + r1(first[0] - hs / 2) + ' ' + BASE + 'L' +
             run.map(function (q) { return r1(q[0]) + ' ' + r1(q[1]); }).join('L') +
-            'L' + r1(x1) + ' ' + r1(last[1]) + 'L' + r1(x1) + ' ' + BASE + 'Z';
+            'L' + r1(last[0] + hs / 2) + ' ' + BASE + 'Z';
           run = null;
         };
         rows.forEach(function (r) {
-          if (r[key] > 0) (run = run || []).push([r.x, Y(r[key])]);
+          if (run && r.t - prevT > 1.5 * HOUR) flush();
+          prevT = r.t;
+          if (isNum(r[key])) (run = run || []).push([r.x, Y(Math.max(0, r[key]))]);
           else flush();
         });
         flush();
         return d;
       };
-      var dg = area('b'), dsw = area('g');
-      if (dg) o.push('<path class="gh" d="' + dg + '"/>');
-      if (dsw) o.push('<path class="sw" d="' + dsw + '"/>');
+      var dg = area('gh'), dsw = area('sw');
+      o.push('<clipPath id="cl-tv-cht-clip"><rect x="0" y="0" width="' + CW + '" height="' + CUR_H + '"/></clipPath>');
+      if (dg || dsw) {
+        o.push('<g clip-path="url(#cl-tv-cht-clip)">' +
+          (dg ? '<path class="gh" d="' + dg + '"/>' : '') +
+          (dsw ? '<path class="sw" d="' + dsw + '"/>' : '') + '</g>');
+      }
       // Window band: in / edge / blocked per hour, merged into runs.
       var run = null, step = hs;
       var flush = function () { if (run && run.st) o.push('<rect class="b-' + run.st + '" x="' + r1(run.x1) + '" y="' + BAND_Y + '" width="' + r1(Math.max(0.5, run.x2 - run.x1)) + '" height="' + BAND_H + '"/>'); };
@@ -480,7 +534,7 @@
     o.push('<line class="cur" x1="-10" y1="0" x2="-10" y2="' + CUR_H + '"/>');
     return {
       t0: t0, X: X, rows: rows,
-      svg: '<svg viewBox="0 0 ' + CW + ' 205" role="img" aria-label="Seven-day swell: green reaches the reef, grey is blocked, the line is the playing hour" focusable="false">' + o.join('') + '</svg>'
+      svg: '<svg viewBox="0 0 ' + CW + ' 205" role="img" aria-label="Seven-day swell: green is the swell that reaches the reef, grey behind it is all the swell, the line is the playing hour" focusable="false">' + o.join('') + '</svg>'
     };
   }
 
@@ -646,8 +700,24 @@
   }
 
   // ── Sources: the legacy card, restyled, with this TV's own content ──
-  var TXT_DAYS = 'Each day shows the swell over the incoming tide in daylight (from a low to the next high), sampled one swell-travel hour earlier at the offshore forecast point. In window means it arrives from ' + WIN_MIN + '–' + WIN_MAX + '°, between Block Island’s Southwest Point and Montauk Point; blocked means land stops it before the reef. The wind is the forecast at the low. Times in the dark are dimmed.';
-  var TXT_RADAR = 'The scope plays the forecast forward one daylight hour per second. The green cone is the ' + WIN_MIN + '–' + WIN_MAX + '° swell window; the swell and wind arrows point the way they travel, onto the reef. Below it, the week: green is swell that reaches the reef, grey is swell the land blocks, the band is the window, shaded columns are night. Tap to pause, tap again to play.';
+  var TXT_WINDOW = 'In window means it arrives from ' + WIN_MIN + '–' + WIN_MAX + '°, between Block Island’s Southwest Point and Montauk Point; blocked means land stops it before the reef.';
+  var TXT_DAYS = 'Each day shows the swell over the incoming tide in daylight (from a low to the next high), sampled one swell-travel hour earlier at the offshore forecast point. ' + TXT_WINDOW + ' The wind is the forecast at the low. Times in the dark are dimmed.';
+  // NOAA's tide times missing (kioskDaySummary tidesDown): every day, or
+  // only some (a saved copy running out at the end of the week).
+  var TXT_DAYS_NO_TIDES = 'NOAA’s tide times didn’t load, so each day shows the swell over all of its daylight (sunrise to sunset) instead of over the incoming tide, sampled one swell-travel hour earlier at the offshore forecast point. ' + TXT_WINDOW + ' The wind is the forecast at noon.';
+  var TXT_DAYS_SOME_NO_TIDES = ' A day that says “No tide times” shows the swell over all of its daylight instead, and the wind at noon.';
+  function daysText() {
+    var wk = D.week() || [], lead = leadOffset(), shown = 0, down = 0;
+    for (var k = lead; k < lead + 6; k++) {
+      var d = wk[k];
+      if (!d || !d.swell) continue;
+      shown++;
+      if (d.tidesDown) down++;
+    }
+    if (!down) return TXT_DAYS;
+    return down === shown ? TXT_DAYS_NO_TIDES : TXT_DAYS + TXT_DAYS_SOME_NO_TIDES;
+  }
+  var TXT_RADAR = 'The scope plays the forecast forward one daylight hour per second. The green cone is the ' + WIN_MIN + '–' + WIN_MAX + '° swell window; the swell and wind arrows point the way they travel, onto the reef. Below it, the week: green is the swell that reaches the reef (a train just outside the window counts in part), grey behind it is all the swell out there, the band is the window, shaded columns are night. Tap to pause, tap again to play.';
   function sourcesHTML() {
     var rows = (D.sources() || []).map(function (s) {
       var c = s.level === 'stale' ? ' is-stale' : s.level === 'dead' ? ' is-dead' : s.level === 'none' ? ' is-none' : '';
@@ -658,7 +728,7 @@
     var since = K.bootAt ? ' · running since ' + F.when(new Date(K.bootAt)) : '';
     return '<h3 class="cl-serif">Sources</h3>' +
       '<div class="cl-tv-src-rows">' + rows + '</div>' +
-      '<p>' + esc(S.cur === 'cl-radar' ? TXT_RADAR : TXT_DAYS) + '</p>' +
+      '<p>' + esc(S.cur === 'cl-radar' ? TXT_RADAR : daysText()) + '</p>' +
       '<p>Swell and wind: Open-Meteo forecast. Tides: NOAA CO-OPS predictions, station 8510719. Buoy: NDBC 44097, Block Island, through the site’s two-hourly pipeline. Sunrise and sunset: computed solar position.</p>' +
       '<p class="cl-tv-src-fine">Build ' + esc(build) + esc(since) + ' · tap anywhere to close</p>';
   }

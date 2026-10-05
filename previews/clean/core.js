@@ -457,8 +457,9 @@
   // week() days come from Choc TV's kioskDaySummary, which samples the
   // daylight incoming-tide windows one swell-travel lag earlier
   // (kioskSwellLagMs: 1 h, 2 h with the buoy-coords setting); the model
-  // scores use buildForecastConditions' own lag. The hero train is the one
-  // carrying more in-window energy (alignment × H²), as Choc TV's C20 hero.
+  // scores use buildForecastConditions' own lag. The hero train is reach
+  // first: the one carrying more in-window energy (alignment × H²) among
+  // the trains that reach the reef (in or edge); see heroOf().
   var gen = 0;               // bumped whenever the data under the readings changes
   var memo = { gen: -1 };
   function memoize(key, fn) {
@@ -808,12 +809,24 @@
   // missed 15-min refreshes + 10 min, dead past 3 h or no forecast. A
   // forecast drawn from a saved copy after a failed refresh is stale.
   var REFRESH_MS = 15 * MIN, DEAD_MS = 3 * HOUR;
+  // Nothing has loaded this long after boot, and nothing is loading:
+  // say the forecast didn't load instead of "Loading…" forever.
+  var BOOT_AT = Date.now(), GIVE_UP_MS = 60e3;
+  function inFlight() {
+    try { return typeof isDataLoadInFlight === 'function' && !!isDataLoadInFlight(); } catch (_) { return false; }
+  }
+  function stillLoading() {
+    if (typeof STATE === 'undefined') return true;
+    if (STATE.lastLoadCompletedAt) return false;
+    return inFlight() || Date.now() - BOOT_AT < GIVE_UP_MS;
+  }
   function levelForAge(ageMs) {
     if (!isNum(ageMs)) return 'dead';
     return ageMs > DEAD_MS ? 'dead' : ageMs > 2 * REFRESH_MS + 10 * MIN ? 'stale' : 'fresh';
   }
   function freshness() {
-    if (typeof STATE === 'undefined' || !STATE.lastLoadCompletedAt) return 'loading';
+    if (stillLoading()) return 'loading';
+    if (!STATE.lastLoadCompletedAt) return 'dead';
     var asOf = STATE.dataAsOf;
     if (!isNum(asOf)) return 'dead';
     var lvl = levelForAge(Date.now() - asOf);
@@ -828,7 +841,7 @@
     var out = [];
     function fc(key, label) {
       var s = hh[key];
-      if (!s) { out.push({ key: key, label: label, at: null, origin: null, level: 'none', text: STATE.lastLoadCompletedAt ? 'Not loaded' : 'Loading' }); return; }
+      if (!s) { out.push({ key: key, label: label, at: null, origin: null, level: 'none', text: stillLoading() ? 'Loading' : 'Not loaded' }); return; }
       if (s.origin === 'failed' || !isNum(s.asOf)) { out.push({ key: key, label: label, at: null, origin: s.origin, level: 'none', text: 'Not loaded' }); return; }
       var lvl = levelForAge(Date.now() - s.asOf);
       if (lvl === 'fresh' && s.origin === 'stale-cache') lvl = 'stale';
@@ -840,10 +853,10 @@
     // Tide predictions are astronomical: a saved copy stays right for days
     // (the app keeps them 4 days), so it is never shown as stale.
     var t = hh.tides;
-    if (!t || t.origin === 'failed' || !isNum(t.asOf)) out.push({ key: 'tides', label: 'Tides', at: null, origin: t ? t.origin : null, level: 'none', text: STATE.lastLoadCompletedAt ? 'Not loaded' : 'Loading' });
+    if (!t || t.origin === 'failed' || !isNum(t.asOf)) out.push({ key: 'tides', label: 'Tides', at: null, origin: t ? t.origin : null, level: 'none', text: stillLoading() ? 'Loading' : 'Not loaded' });
     else out.push({ key: 'tides', label: 'Tides', at: new Date(t.asOf), origin: t.origin, level: 'fresh', text: fmt.when(t.asOf) + (t.origin === 'stale-cache' ? ' · saved' : '') });
     var b = buoyNow();
-    if (!b || !b.obsAt) out.push({ key: 'buoy', label: 'Buoy', at: null, origin: hh.buoy ? hh.buoy.origin : null, level: 'none', text: STATE.lastLoadCompletedAt ? 'No reading' : 'Loading' });
+    if (!b || !b.obsAt) out.push({ key: 'buoy', label: 'Buoy', at: null, origin: hh.buoy ? hh.buoy.origin : null, level: 'none', text: stillLoading() ? 'Loading' : 'No reading' });
     else out.push({ key: 'buoy', label: 'Buoy', at: b.obsAt, origin: hh.buoy ? hh.buoy.origin : 'pipeline', level: b.level || 'fresh', text: fmt.when(b.obsAt) + ' · ' + fmt.age(b.obsAt) });
     return out;
   }
@@ -895,8 +908,10 @@
 
   // ── Week ───────────────────────────────────────────────────────────
   // Seven days from Choc TV's kioskDaySummary (swell over the daylight
-  // incoming-tide windows, the in-window hero train), plus the day's
-  // daylight low, the wind there and your model score at it.
+  // incoming-tide windows; the band that reaches the reef leads), plus
+  // the day's daylight low, the wind there and your model score at it.
+  // The lows and their wind come from core's own tides and wind series,
+  // so they still show while the wave forecast is down.
   function bandObj(b) {
     if (!b) return null;
     var dir = isNum(b.dir) ? norm360(b.dir) : null;
@@ -1020,6 +1035,7 @@
     modelAt: guardData('modelAt', modelAt, function () { return null; }),
     ratingsAt: guardData('ratingsAt', ratingsAt, function () { return null; }),
     tideAt: guardData('tideAt', tideAt, function () { return null; }),
+    windAt: guardData('windAt', windAtTime, function () { return null; }),
     tideEvents: guardData('tideEvents', function () {
       return tideEvents().map(function (e) { return { t: new Date(e.t.getTime()), h: e.v, type: e.type }; });
     }, function () { return []; }),
@@ -1615,16 +1631,60 @@
   function refreshIfOld() {
     if (IS_TV || document.hidden || typeof STATE === 'undefined') return;
     try {
-      if (typeof isDataLoadInFlight === 'function' && isDataLoadInFlight()) return;
+      ensureStatic();
+      if (inFlight()) return;
+      if (!STATE.selectedBuoy) { ensureSelected(); return; }
       var done = STATE.lastLoadCompletedAt;
-      if (!done || !STATE.selectedBuoy || Date.now() - done < REFRESH_MS) return;
+      // A station list that arrived late: load once more to get the tides.
+      if (staticKick) { staticKick = false; loadAllData(STATE.selectedBuoy); return; }
+      if (!done || Date.now() - done < REFRESH_MS) return;
       loadAllData(STATE.selectedBuoy);
     } catch (e) { err('refresh', e); }
   }
-  var lastDay = '';
+  // Phone boot recovery (Choc TV has kiosk.js kioskEnsureStatic /
+  // kioskEnsureSelected). initApp fetches the buoy and tide-station lists
+  // once, with no retry: one Wi-Fi blip there left the phone on "Loading
+  // the forecast…" for good (no buoy list, so nothing is ever selected;
+  // no station list, so no tides). From 15 s after boot, at most once a
+  // minute, re-fetch whichever list is still empty, then select the home
+  // spot as initApp's own default does.
+  var STATIC_FIRST_MS = 15e3, STATIC_RETRY_MS = 60e3;
+  var staticBusy = false, staticNextTry = 0, staticKick = false;
+  function ensureStatic() {
+    var needB = !STATE.buoys || !STATE.buoys.length;
+    var needT = !STATE.tideStations || !STATE.tideStations.length;
+    if ((!needB && !needT) || staticBusy || typeof fetchJSON !== 'function') return;
+    var t = Date.now();
+    if (t < BOOT_AT + STATIC_FIRST_MS || t < staticNextTry) return;
+    staticBusy = true;
+    staticNextTry = t + STATIC_RETRY_MS;
+    Promise.all([
+      needB ? fetchJSON('data/buoys-east-coast.json') : null,
+      needT ? fetchJSON('data/tide-stations.json') : null
+    ]).then(function (r) {
+      if (Array.isArray(r[0]) && r[0].length && !(STATE.buoys && STATE.buoys.length)) STATE.buoys = r[0];
+      if (Array.isArray(r[1]) && r[1].length && !(STATE.tideStations && STATE.tideStations.length)) {
+        STATE.tideStations = r[1];
+        if (STATE.selectedBuoy) staticKick = true;   // the last load ran without a station
+      }
+      refreshIfOld();
+    }).catch(function (e) { err('static', e); }).then(function () { staticBusy = false; });
+  }
+  function ensureSelected() {
+    if (STATE.selectedBuoy || (STATE.pinLat != null && STATE.pinLon != null)) return;
+    if (!STATE.boatGatePassed || !STATE.buoys || !STATE.buoys.length || typeof selectBuoy !== 'function') return;
+    if (Date.now() < BOOT_AT + STATIC_FIRST_MS) return;   // initApp is still on it
+    var home = STATE.buoys.filter(function (b) { return b && b.home === 'chocomount'; })[0];
+    if (home) { staticKick = false; selectBuoy(home); }
+  }
+  var lastDay = '', lastLoading = true;
   function tick() {
     var dk = dayKey(new Date());
     if (dk !== lastDay) { if (lastDay) bump(); lastDay = dk; }
+    // "Loading…" gave up (nothing loaded a minute after boot): repaint
+    // so every part says the forecast didn't load.
+    var ld = stillLoading();
+    if (ld !== lastLoading) { lastLoading = ld; if (!ld) scheduleData('health'); }
     applyTheme(false);
     updateHeader();
     refreshIfOld();
@@ -1682,6 +1742,8 @@
     installHooks();
     lastDay = dayKey(new Date());
     setInterval(guard('tick', tick), MIN);
+    // Phone: the first boot-recovery check, before the first minute tick.
+    if (!IS_TV) setTimeout(guard('boot-check', refreshIfOld), STATIC_FIRST_MS + 500);
     document.addEventListener('visibilitychange', guard('visible', function () { if (!document.hidden) tick(); }));
     document.addEventListener('DOMContentLoaded', onReady);
     window.addEventListener('load', onLoad);

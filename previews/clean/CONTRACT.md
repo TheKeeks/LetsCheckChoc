@@ -141,6 +141,10 @@ classic view.
 
 On the phone core also refreshes the data in the background once the last load
 is 15 min old (Choc TV refreshes itself), so stale and dead stay rare and true.
+It also recovers a boot that never loaded: initApp fetches the buoy and
+tide-station lists once, so from 15 s after boot, at most once a minute, core
+re-fetches whichever list is still empty and selects the home spot (Choc TV
+has kiosk.js `kioskEnsureStatic` / `kioskEnsureSelected` for the same).
 
 ## Data — `CLEAN.data`
 
@@ -154,12 +158,26 @@ Wind `quality` is `'offshore' | 'cross' | 'onshore' | null`: offshore centre 335
 under 5 mph upgrades one tier (the app chart's rule).
 
 `now()` and `hour(idx)` read the forecast hour itself, as the app's chart and
-cards do (`marineNowIndex`, the current local hour). The **hero** train is the
-one carrying more in-window energy (alignment × H², app.js `_alignmentScore`),
-the same rule as Choc TV's day hero; the other train goes to `others` (and to
-`blocked` when it is blocked). `week()` comes from Choc TV's `kioskDaySummary`
-(swell over the daylight incoming-tide windows, sampled one swell-travel lag
-earlier). Model scores use the app's `buildForecastConditions` + `predict*Rating`.
+cards do (`marineNowIndex`, the current local hour). The **hero** train is
+**reach first**: among the trains that reach the reef (`'in'` or `'edge'`), the
+one carrying more in-window energy (alignment × H², app.js `_alignmentScore`);
+only when none reach does the bigger-energy train lead (and read BLOCKED). So a
+bigger 4 s wind swell from 174° never buries the 9 s groundswell from 124°. The
+other train goes to `others` (and to `blocked` when it is blocked: the Now
+block's dim "1.6 ft @ 4 s S · blocked" line). `week()` comes from Choc TV's
+`kioskDaySummary` (swell over the daylight incoming-tide windows, sampled one
+swell-travel lag earlier), with the same reach-first swap per day. Model scores
+use the app's `buildForecastConditions` + `predict*Rating`.
+
+Sources: the wave forecast (`marine`) lives only in `STATE.forecastData`, which
+app.js sets only when the marine fetch (or its saved copy) worked. The wind
+forecast and the CO-OPS tides load on their own: core reads them from the
+newest forecast paint (`renderForecastSet`'s context, kept as `CLEAN._ctx`,
+which carries them even when the marine forecast is missing), else from
+`STATE.forecastData`. With the wave forecast down, `now().wind`, `now().tide`,
+`tideEvents()`, `tideCurve()`, `nextWindow()` and every `week()` day's
+`low` / `lows` / `window` / low wind still come through; the swell readings
+are `null`.
 
 ```
 Train  = { h, period, dir, compass, status, energy, train: 'primary'|'secondary' }
@@ -175,12 +193,13 @@ Wind   = { mph, gust, dir, compass, quality }
 | `indexAt(t)` | Hour index nearest `t` (within 90 min), `-1` otherwise |
 | `timeAt(idx)` | `Date` of hour idx |
 | `week()` | 7 × `{ offset, date, label: 'Today'\|'Fri', longLabel: 'Today'\|'Tomorrow'\|'Saturday', swell: Band\|null, other: Band\|null, status, reaches, low: Low\|null, lows: [Low], window: {start, end}\|null, sun: {firstLight, sunrise, sunset, lastLight}\|null, moon: {pct, icon}\|null, model: number\|null, tidesDown }` |
-| | `Band = { min, max, period, dir, compass, status }` (whole feet; `reaches` is false when the hero is blocked: "Nothing reaches the reef") |
-| | `Low = { t, h, until (next high), untilH, wind: Wind\|null, idx, daylight }`; `low` is the day's first daylight low, else the first whose incoming tide reaches daylight, else the first |
+| | `Band = { min, max, period, dir, compass, status }` (whole feet). `swell` is the band that reaches the reef when either does (a blocked bigger band moves to `other`); `reaches` is false only when neither reaches: "Nothing reaches the reef". `swell`/`other` are `null` without a wave forecast, while the tide and wind fields still fill |
+| | `Low = { t, h, until (next high), untilH, wind: Wind\|null, idx, daylight }`; `low` is the day's first daylight low, else the first whose incoming tide reaches daylight, else the first. `wind` is the wind forecast's nearest hour; `idx` is `-1` without a wave forecast |
 | `nextWindow()` | Next incoming tide (low → high) that reaches daylight and has not ended: `{ t (low), until, h, start (daylight start), dayOffset, label: 'Today'\|'Tomorrow'\|'Fri' }` or `null` |
 | `modelAt(idx)` | Your model's score at hour idx: average of the available size / ride / wind predictions, one decimal, `null` when untrained |
 | `ratingsAt(idx)` | `{ size, ride, wind, avg }` or `null` |
 | `tideAt(t)` | `{ h, rising }` or `null` (null outside the predictions, never a made-up 0) |
+| `windAt(t)` | `Wind` from the wind forecast's nearest hour (within 90 min) or `null`; works without a wave forecast (kiosk.js `kioskWindAt` reads only `STATE.forecastData`) |
 | `tideEvents()` | `[{ t, h, type: 'H'\|'L' }]` (CO-OPS hi/lo, ~10 days) |
 | `tideCurve()` | `[{ t, h }]` (6-min predictions, 7 days) |
 | `buoy()` | `Buoy = { h, period, dir, compass, total, band, obsAt, ageMin, level: 'fresh'\|'stale'\|'dead', reachesAt }` or `null`. `h/period/dir` are the 8 s+ swell band of the buoy spectrum when the pipeline has one (`band: true`), else WVHT/DPD/MWD; `total` is WVHT. `reachesAt` = obs time + buoy-to-reef travel. Stale past 2 h, dead past 6 h. |
@@ -188,8 +207,8 @@ Wind   = { mph, gust, dir, compass, quality }
 | `isNight(t?)` | Sunset → sunrise (the theme's rule) |
 | `isAfterDark(t?)` | Last light → first light: the boards' "Tonight" (6:40 PM is still Today; 9:30 PM is Tonight) |
 | `darkUntil(t?)` | Next first light while after dark ("Dark until 6:18 AM"), else `null` |
-| `freshness()` | `'loading' \| 'fresh' \| 'stale' \| 'dead'`: Choc TV's thresholds on `STATE.dataAsOf` (stale past 40 min or a saved copy after a failed refresh, dead past 3 h or no forecast) |
-| `sources()` | `[{ key: 'marine'\|'wind'\|'tides'\|'buoy', label, at, origin, level: 'fresh'\|'stale'\|'dead'\|'none', text }]` (Settings › Data sources, TV Sources). Tide predictions are astronomical: a saved copy is never stale. |
+| `freshness()` | `'loading' \| 'fresh' \| 'stale' \| 'dead'`: Choc TV's thresholds on `STATE.dataAsOf` (stale past 40 min or a saved copy after a failed refresh, dead past 3 h or no forecast). `'loading'` only until the first load completes, and at most a minute after boot unless a load is in flight: then `'dead'`, so screens say the forecast didn't load instead of "Loading…" forever |
+| `sources()` | `[{ key: 'marine'\|'wind'\|'tides'\|'buoy', label, at, origin, level: 'fresh'\|'stale'\|'dead'\|'none', text }]` (Settings › Data sources, TV Sources). Tide predictions are astronomical: a saved copy is never stale. `text` is "Loading" while `freshness()` is `'loading'`, then "Not loaded" / "No reading". |
 | `lagHours()` | Swell travel from the forecast point to the reef (1, or 2 with the buoy-coords setting) |
 | `loaded()` / `generation()` | A forecast is in / a counter that changes whenever the data under the readings changes |
 
@@ -201,20 +220,24 @@ chart, raises `hour`), `reset()` (back to now), `atNow()`.
 
 ## Formatting — `CLEAN.fmt`
 
-One number style everywhere. Between a number and its unit, and before AM/PM,
-the space is a **no-break space** (`CLEAN.fmt.NB`, U+00A0) so "8 s" or
-"7:28 AM" never wraps. Missing → `CLEAN.fmt.DASH` ("—"). Clock times are in the
-spot's time zone (America/New_York).
+One number style everywhere, the boards': **one decimal, a trailing ".0"
+dropped** (1.6 ft, 1 ft, 2 ft, 0 ft, never "-0"), whole feet from 10 ft, day
+bands in whole feet ("1–2 ft"). Tide heights and model scores follow the same
+rule ("2.3 ft ▲", "2 ft", "−0.4 ft", "3.8 / 10", "3 / 10"). Use these calls
+instead of `toFixed` so every screen agrees. Between a number and its unit, and
+before AM/PM, the space is a **no-break space** (`CLEAN.fmt.NB`, U+00A0) so
+"8 s" or "7:28 AM" never wraps. Missing → `CLEAN.fmt.DASH` ("—"). Clock times
+are in the spot's time zone (America/New_York).
 
 | Call | Example |
 |---|---|
-| `swell(h, period, dir?)` | `swell(1.575, 8.15)` → "1.6 ft @ 8 s"; `swell([1, 2], 8, 'ESE')` → "1–2 ft @ 8 s ESE"; `swell(1.6, null)` → "1.6 ft @ —"; `swell(null, 8)` → "—" |
-| `num(h)` / `ft(h)` | "1.6" / "1.6 ft" (one decimal, whole feet from 10) |
+| `swell(h, period, dir?)` | `swell(1.575, 8.15)` → "1.6 ft @ 8 s"; `swell(1.0, 9)` → "1 ft @ 9 s"; `swell([1, 2], 8, 'ESE')` → "1–2 ft @ 8 s ESE"; `swell(1.6, null)` → "1.6 ft @ —"; `swell(null, 8)` → "—" |
+| `num(h)` / `ft(h)` | "1.6" / "1.6 ft"; `ft(2)` → "2 ft", `ft(0.96)` → "1 ft", `ft(12.4)` → "12 ft" |
 | `range(min, max)` | "1–2", "1" |
 | `period(p)` | "8 s" |
 | `compass(deg)` / `deg(deg)` | "ESE" / "118°" |
 | `wind(mph, dir?)` | "7 mph SW" |
-| `tide(h, rising?)` | "2.3 ft ▲", "−0.4 ft ▼"; `arrow(rising)` → "▲"/"▼"/"" |
+| `tide(h, rising?)` | "2.3 ft ▲", "2 ft", "0 ft", "−0.4 ft ▼"; `arrow(rising)` → "▲"/"▼"/"" |
 | `time(t)` | "7:28 AM" |
 | `day(t)` / `dayLong(t)` / `date(t)` | "Thu" / "Thursday" / "Thu 1 Oct" |
 | `dayLabel(t, { tomorrow })` | "Today" / "Tomorrow" / "Fri" |
@@ -222,7 +245,7 @@ spot's time zone (America/New_York).
 | `ago(t)` / `age(t)` | "2h 30m ago" / "2h 30m old" (the app's `formatAgo`) |
 | `quality(q, style?)` | "cross"; `'long'` → "cross-shore"; `'caps'` → "CROSS-SHORE" |
 | `status(s, short?)` | "IN WINDOW" / "IN", "EDGE", "BLOCKED" |
-| `score(v)` | "3.8" |
+| `score(v)` | "3.8", "3" |
 
 `CLEAN.html.status(s, { short, small, pill })` →
 `<span class="cl-st cl-st-in"><i class="cl-dt"></i>IN WINDOW</span>` (`small` =
@@ -243,7 +266,7 @@ Inline SVG strings (`aria-hidden`), paths copied from the boards, round set
 | `check()` `up()` `down()` `edit()` `trash()` `camera()` | Settings tick, Model ↑/↓, Log row actions, Add photo |
 | `swell(fromDeg, 22)` | Solid wedge pointing where the swell **travels** (rotated from + 180°) |
 | `wind(fromDeg, 15)` | Feathered line arrow pointing where the wind **blows to** (week rows) |
-| `barb(mph, fromDeg, 44)` | Wind barb (A-Wind-Barb): ring where the wind is headed; short tick 5 mph, long 10, flag 50, rounded to 5; calm double ring under 3 mph; ink only |
+| `barb(mph, fromDeg, 44)` | Wind barb (A-Wind-Barb): ring where the wind is headed; short tick 5 mph, long 10, flag 50, rounded to 5; calm double ring under 3 mph; ink only. The ladder reads the speed as `fmt.wind` prints it (rounded), so 2.6 mph is "3 mph" with a 5 mph tick, never beside the calm ring |
 | `tide(44)` / `tideHigh(44)` | T2 "dashed drop" (low) and its flip (high), in `--tide` |
 | `CLEAN.icon.paths` | Raw paths, incl. `chartArrow` (7×7 arrow centred on 0,0 for wind bars inside a chart SVG: `<use>` or `<path d>` with `transform="translate(x,y) rotate(from+180)"`) |
 
@@ -256,7 +279,14 @@ Tokens on `html.cl-on` (day) and `html.cl-on[data-clean-theme="night"]`:
 A2-Tokens'. Red is dead data only, amber stale data only.
 
 Every clean root has class `.cl` (zero-specificity reset via `:where(.cl)`, so a
-part's single class always wins). Shared classes in `base.css`:
+part's single class always wins). The exception is the keyboard focus ring:
+`.cl :focus-visible` / `.cl button:focus-visible` (… `a`, `input`, `select`,
+`textarea`, `summary`) draw `2px solid var(--in)`, offset 2 px, at 0,2,0 / 0,2,1
+so style.css's app-wide slate-blue ring loses. To change the ring on your
+own control, write `.cl .cl-x:focus-visible` (0,3,0), or a single-class rule
+on a non-form element (later file, same 0,2,0). The phone sets
+`scroll-padding-bottom` on `html` so a focused control scrolls into view above
+the tab bar. Shared classes in `base.css`:
 
 | Class | Use |
 |---|---|
@@ -266,7 +296,7 @@ part's single class always wins). Shared classes in `base.css`:
 | `.cl-pad` / `.cl-lead` / `.cl-lab` / `.cl-muted` | Gutter padding / lead line / small label / muted text |
 | `.cl-fine` (+ `.cl-stale`, `.cl-dead`) | 12.5 px fine print, data age |
 | `.cl-list` + `.cl-sr` (`<small>`, `.cl-v`, `.cl-ck`) | Settings-style rows, 56 px, hair rule on top |
-| `.cl-dr`, `.cl-kv` | Detail rows (52 px), key/value grid |
+| `.cl-dr`, `.cl-kv` | Detail rows (52 px), key/value grid (`1fr auto`, values share one left edge, 600 weight) |
 | `.cl-st` `.cl-st-in\|edge\|blk` `.cl-dt` (`.cl-st-sm`, `.cl-st-pill`) | Window status tag |
 | `.cl-q-off\|crs\|on` | Wind words |
 | `.cl-chips` `.cl-chip` (`.on` / `aria-pressed`) | 44 px pills |
