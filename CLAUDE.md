@@ -56,7 +56,7 @@ node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 | `test-gate.js` | Legacy tests, still run by `npm test` |
 | `tests/` | `tests/helpers/` (vm loader, DOM stub, fixture map), `tests/unit/`, `tests/e2e/`, `tests/fixtures/` |
 | `project/` | React prototype. `project/assets/lineup.jpg` is used by the live page |
-| `previews/` | Candidate redesigns layered over the live app by `?preview=<name>` (inline loaders in `index.html`; e2e `tests/e2e/scenarios/preview-looks.js`). Not loaded without the parameter. Delete a folder (and its name in the loader) when a look is retired |
+| `previews/` | Candidate redesigns layered over the live app by `?preview=<name>` (inline loaders in `index.html`; e2e `tests/e2e/scenarios/preview-looks.js`). Not loaded without the parameter. Delete a folder (and its name in the loader) when a look is retired. `previews/clean/` is the approved "A refined" design: `previews/clean/core.js` (shell, data, Settings) plus one js/css pair per screen (forecast, log, model, tv), API in `previews/clean/CONTRACT.md`, e2e `tests/e2e/scenarios/preview-clean.js` |
 
 ## Module map (grep anchors, not line numbers)
 

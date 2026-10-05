@@ -1,0 +1,104 @@
+/* ════════════════════════════════════════════════════════════════════
+   CLEAN — ?preview=clean · tokens and legacy hiding (owner: Core)
+   ────────────────────────────────────────────────────────────────────
+   The "A refined" boards from Claude Design, layered over the real app.
+   index.html writes this file after styles-kiosk.css. Each part owns
+   one imported file; core.js owns the tokens below and the shell in
+   base.css. Nothing here applies until core.js has mounted its shell
+   and set html.cl-on, so a failed core.js leaves the classic app as is.
+
+   Tokens (A2-Tokens): day values are the default, night swaps in under
+   html[data-clean-theme="night"]. Contrast is against --bg: 7:1 for
+   primary numbers, 4.5:1 for other text, 3:1 for chart fills and lines.
+   Red means dead data and nothing else; amber means stale data and
+   nothing else.
+   ════════════════════════════════════════════════════════════════════ */
+@import url("base.css");
+@import url("forecast.css");
+@import url("log.css");
+@import url("model.css");
+@import url("tv.css");
+
+html.cl-on {
+  --bg: #FFFFFF;          /* page background */
+  --ink: #0D1217;         /* primary text and numbers · 18.8:1 */
+  --muted: #596470;       /* secondary text, units, labels · 6.0:1 */
+  --hair: #E4E8EC;        /* rules and dividers */
+  --in: #00693E;          /* in window: fill, band, dot and word · 6.8:1 (Dartmouth Green) */
+  --chip: #00693E;        /* night only: fill behind the white IN WINDOW word */
+  --edge: #306A5A;        /* edge (within 5° of the window): tag text · 6.3:1 */
+  --edge-fill: #5C9F83;   /* edge: direction band fill · 3.1:1 */
+  --blk: #6B7580;         /* blocked: tag text · 4.7:1 */
+  --blk-fill: #C9D0D6;    /* blocked: ghost swell and band (deliberately faint) */
+  --off: #1D6FB8;         /* offshore wind (solid bar) · 5.2:1 */
+  --crs: #5F6B77;         /* cross-shore wind (solid bar, 70%) · 5.4:1 */
+  --on: #B84A0A;          /* onshore wind (hatched bar) · 5.2:1 */
+  --tide: #3D4752;        /* tide line, low markers, tide icon · 9.5:1 */
+  --amber: #9A6400;       /* stale data, never anything else · 5.0:1 */
+  --red: #C62828;         /* dead data only, never anything else · 5.6:1 */
+  --shade: rgba(13, 18, 23, .06);  /* night hours on charts */
+  --ghost: .4;            /* opacity of the blocked ghost swell */
+
+  /* Spacing and radii */
+  --gut: 16px;            /* phone side gutter */
+  --r: 12px;              /* buttons, lineup image */
+  --tab-h: 52px;          /* tab bar button height */
+
+  /* Type: system UI for everything, serif for headings only. No webfont. */
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  --serif: ui-serif, "New York", "Times New Roman", Times, serif;
+  --mono: ui-monospace, Menlo, monospace;
+
+  color-scheme: light;
+  background: var(--bg);
+}
+
+html.cl-on[data-clean-theme="night"] {
+  --bg: #0D1A16;          /* black tinted green */
+  --ink: #EDF2EE;         /* 15.8:1 */
+  --muted: #9AAAA2;       /* 7.3:1 */
+  --hair: #1F312B;
+  --in: #35996C;          /* 5.0:1 */
+  --chip: #00693E;        /* white on it is 6.8:1 */
+  --edge: #8DB8A2;        /* 8.1:1 */
+  --edge-fill: #3F7D62;   /* 3.7:1 */
+  --blk: #85938B;         /* 5.6:1 */
+  --blk-fill: #43524A;
+  --off: #6FB2F0;         /* 7.9:1 */
+  --crs: #9AAAA2;         /* 7.3:1 */
+  --on: #F29B5C;          /* 8.2:1 */
+  --tide: #C3CCD5;        /* 11.0:1 */
+  --amber: #E8B04B;       /* 9.1:1 */
+  --red: #FF6B6B;         /* 6.4:1 */
+  --shade: rgba(255, 255, 255, .05);
+  --ghost: .5;
+  color-scheme: dark;
+}
+
+/* ── Legacy chrome off, legacy nodes kept ─────────────────────────────
+   Parts drive the legacy nodes (inputs, STATE, the scrubber), so they
+   stay in the DOM; only their boxes go. The Win95 frame, header, tabs,
+   boat gate and every Choc TV panel/strip are hidden on phone and TV. */
+html.cl-on #gate-overlay,
+html.cl-on #app-window,
+html.cl-on #kiosk-status,
+html.cl-on #kiosk-stale-banner,
+html.cl-on #kiosk-info-overlay {
+  display: none !important;
+}
+
+html.cl-on body,
+html.cl-on body.kiosk {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}

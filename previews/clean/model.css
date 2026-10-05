@@ -1,0 +1,455 @@
+/* ════════════════════════════════════════════════════════════════════
+   CLEAN — model.css (owner: Model part)
+   ────────────────────────────────────────────────────────────────────
+   Imported by theme.css after base.css. Styles for previews/clean/model.js
+   only: the Model tab (A2-Phone-Model, A2-Phone-Model-Early), its
+   "Model details" sub-page (the legacy Tab 2 panels, restyled to the
+   tokens) and the one-session sub-page. Classes are prefixed cl-m-.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── Model tab ──────────────────────────────────────────────────────── */
+.cl-m { padding-bottom: 8px; }
+
+/* The one plain sentence (and the early state's call to log) */
+.cl-m-say {
+  margin: 0;
+  padding: 8px var(--gut) 0;
+  font-size: 26px;
+  line-height: 1.3;
+  font-weight: 500;
+  letter-spacing: -.012em;
+  text-wrap: pretty;
+}
+.cl-m-say.cl-m-wait { color: var(--muted); font-size: 21px; }
+
+/* What matters most: one row per condition, hair rule on top */
+.cl-m-fac { padding: 0 var(--gut); }
+.cl-m-f { padding: 16px 0; border-top: 1px solid var(--hair); }
+.cl-m-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.cl-m-top > span:first-child { min-width: 0; }
+.cl-m-dir {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cl-m-bar {
+  height: 6px;
+  margin-top: 12px;
+  border-radius: 3px;
+  background: var(--hair);
+  overflow: hidden;
+}
+.cl-m-bar i { display: block; height: 100%; background: var(--ink); }
+/* Lowers: hatched, so the sign never rides on colour alone */
+.cl-m-bar i.cl-m-lo { background: repeating-linear-gradient(45deg, var(--ink) 0 3px, transparent 3px 6px); }
+
+.cl-m-err {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 var(--gut);
+  padding: 16px 0;
+  border-top: 1px solid var(--hair);
+  font-size: 16px;
+}
+.cl-m-err b { font-size: 20px; font-weight: 600; white-space: nowrap; }
+.cl-m-err small { font-size: 14px; font-weight: 500; color: var(--muted); }
+.cl-m-more svg { color: var(--muted); }
+.cl-m-n { margin-top: 12px; }
+
+/* Early: N of 12 dots, then a call to log */
+.cl-m-dots { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px var(--gut) 0; }
+.cl-m-dots i { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--ink); }
+.cl-m-dots i.f { background: var(--ink); }
+.cl-m-note { padding: 0 var(--gut); margin-top: 12px; }
+.cl .cl-btn.cl-m-cta { width: calc(100% - 2 * var(--gut)); margin: 28px var(--gut) 0; }
+
+/* ── Model details sub-page: the legacy Tab 2 panels ───────────────────
+   The app's renderers still draw these (they are borrowed, not copied).
+   The legacy styles read a handful of variables: point them at the
+   tokens inside the clean sub-pages, so the same rules render in the
+   clean palette and type. Red and green carry no meaning here (red is
+   dead data only), so signs read as text and hatching instead. */
+#cl-sub-model-detail,
+#cl-sub-model-session {
+  --mono: var(--sans);
+  --ink2: var(--muted);
+  --ink3: var(--muted);
+  --ink4: var(--muted);
+  --green: var(--ink);
+  --red-m: var(--ink);
+  --orange: var(--ink);
+  --blue: var(--ink);
+  --bg-card: var(--bg);
+  --bg-alt: var(--shade);
+  --border: var(--hair);
+  --border-l: var(--hair);
+  --radius-sm: 8px;
+  --card-r: 0;
+}
+.cl-m-dt .panel,
+.cl-m-ss .reg-drilldown-inner {
+  display: block;
+  max-width: none;
+  margin: 0;
+  padding: 0 var(--gut);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  overflow: visible;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.4;
+}
+.cl-m-dt .panel + .panel { margin-top: 28px; }
+#cl-sub-model-detail .sl-hint,
+#cl-sub-model-session .sl-hint { font-style: normal; color: var(--muted); }
+.cl-m-dt fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+/* Legends as headings: serif for the page's sections, sans for the
+   sub-sections under "By rating". float + clear makes a legend a block. */
+#cl-sub-model-detail .panel legend {
+  float: left;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  font-family: var(--serif);
+  font-variant-numeric: lining-nums;
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--ink);
+  background: none;
+  border: 0;
+}
+#cl-sub-model-detail .panel legend + * { clear: both; }
+#cl-sub-model-detail .reg-section { margin-top: 24px; }
+#cl-sub-model-detail .reg-section legend {
+  font-family: var(--sans);
+  font-size: 17px;
+  font-weight: 600;
+  min-height: 32px;
+}
+.cl-m-h2 {
+  margin: 0;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  font-family: var(--serif);
+  font-variant-numeric: lining-nums;
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+.cl-m-lead { margin: 0 0 4px; font-size: 14px; line-height: 1.4; color: var(--muted); }
+
+/* Predicted vs actual: three scatters, one per rating */
+#cl-sub-model-detail .reg-pva-grid { display: block; margin: 0; }
+#cl-sub-model-detail .reg-scatter,
+#cl-sub-model-detail .reg-feature-mini {
+  display: block;
+  margin: 0;
+  padding: 14px 0 16px;
+  border: 0;
+  border-top: 1px solid var(--hair);
+  border-radius: 0;
+  background: none;
+  text-align: left;
+}
+#cl-sub-model-detail .reg-pva-grid > .reg-scatter:first-child { margin-top: 10px; }
+#cl-sub-model-detail .reg-scatter-title,
+#cl-sub-model-detail .reg-feature-mini-title,
+#cl-sub-model-detail .reg-residual-title {
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: left;
+  letter-spacing: 0;
+}
+#cl-sub-model-detail .reg-residual-title { font-size: 13px; font-weight: 400; color: var(--muted); }
+#cl-sub-model-detail canvas { display: block; max-width: 100%; margin: 0 auto; border-radius: 6px; }
+#cl-sub-model-detail .reg-scatter-caption {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+#cl-sub-model-detail .reg-r2 { color: var(--ink); font-weight: 600; }
+#cl-sub-model-detail .reg-scatter-empty,
+#cl-sub-model-detail .reg-feature-mini-empty,
+#cl-sub-model-detail .reg-empty { padding: 8px 0; text-align: left; font-size: 14px; color: var(--muted); }
+
+/* By rating: the legacy sub-model tabs as a segmented control */
+#cl-sub-model-detail .reg-submodel-row { display: block; margin: 12px 0 0; padding: 0; border: 0; }
+#cl-sub-model-detail .reg-submodel-tabs {
+  display: flex;
+  width: 100%;
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: none;
+}
+#cl-sub-model-detail .reg-submodel-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--hair);
+  border-radius: 0;
+  background: none;
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+#cl-sub-model-detail .reg-submodel-tab:last-child { border-right: 0; }
+#cl-sub-model-detail .reg-submodel-tab.active { background: var(--ink); color: var(--bg); }
+#cl-sub-model-detail .reg-submodel-tab:hover:not(.active) { background: none; }
+#cl-sub-model-detail .reg-feature-note { margin: 0 0 6px; font-size: 13px; line-height: 1.4; }
+#cl-sub-model-detail .reg-legend-inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-left: 0; }
+#cl-sub-model-detail .reg-feature-grid { display: block; margin: 0; }
+
+/* Feature importance: ink bars on a hair track, hatched when it lowers */
+#cl-sub-model-detail .reg-importance { display: block; }
+#cl-sub-model-detail .reg-imp-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "l p" "b b";
+  align-items: baseline;
+  gap: 8px 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--hair);
+  font-size: 15px;
+}
+#cl-sub-model-detail .reg-imp-label { grid-area: l; color: var(--ink); font-weight: 500; }
+#cl-sub-model-detail .reg-imp-pct { grid-area: p; font-size: 13px; color: var(--muted); white-space: nowrap; }
+#cl-sub-model-detail .reg-imp-bar-wrap {
+  grid-area: b;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--hair);
+  overflow: hidden;
+  border: 0;
+}
+#cl-sub-model-detail .reg-imp-bar { height: 100%; border-radius: 0; background: var(--ink); }
+#cl-sub-model-detail .reg-imp-neg .reg-imp-bar { background: repeating-linear-gradient(45deg, var(--ink) 0 3px, transparent 3px 6px); }
+
+/* Preferred conditions and fit: rows with a hair rule on top */
+#cl-sub-model-detail .reg-preferred { display: block; }
+#cl-sub-model-detail .reg-pref-row {
+  padding: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--hair);
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+#cl-sub-model-detail .reg-pref-label { font-weight: 600; color: var(--ink); }
+#cl-sub-model-detail .reg-pref-detail { display: block; font-size: 13px; color: var(--muted); }
+#cl-sub-model-detail .reg-fit-row { display: block; }
+#cl-sub-model-detail .reg-fit-metrics { display: block; padding: 0; border: 0; background: none; }
+#cl-sub-model-detail .reg-fit-metric-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border: 0;
+  border-top: 1px solid var(--hair);
+  font-size: 15px;
+}
+#cl-sub-model-detail .reg-fit-key { color: var(--muted); }
+#cl-sub-model-detail .reg-fit-val,
+#cl-sub-model-detail .reg-fit-bad { color: var(--ink); font-weight: 600; }
+#cl-sub-model-detail .reg-fit-warning {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  font-size: 13px;
+}
+#cl-sub-model-detail .reg-residual { margin-top: 16px; padding: 0; border: 0; background: none; }
+
+/* Raw weights: a folded row */
+#cl-sub-model-detail .reg-raw-weights-details { padding: 0; border-top: 1px solid var(--hair); }
+#cl-sub-model-detail .reg-raw-weights-details > summary {
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0;
+  font-family: var(--sans);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  list-style: none;
+}
+#cl-sub-model-detail .reg-raw-weights-details > summary::-webkit-details-marker { display: none; }
+#cl-sub-model-detail .reg-raw-weights-details > summary::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin: 0 6px 4px auto;
+  border-right: 1.75px solid var(--muted);
+  border-bottom: 1.75px solid var(--muted);
+  transform: rotate(45deg);
+}
+#cl-sub-model-detail .reg-raw-weights-details[open] > summary::after { transform: rotate(-135deg); margin-bottom: -4px; }
+#cl-sub-model-detail .reg-raw-weights-body .panel-title,
+#cl-sub-model-detail .sl-weights-heading { padding: 0; margin: 12px 0 6px; font-size: 15px; font-weight: 600; color: var(--ink); }
+#cl-sub-model-detail .surflog-weights { padding: 0; border: 0; background: none; }
+#cl-sub-model-detail .sl-weight-bar { font-size: 13px; color: var(--ink); }
+#cl-sub-model-detail .sl-weight-bar .sl-w-bar.sl-w-pos { background: var(--ink); }
+#cl-sub-model-detail .sl-weight-bar .sl-w-bar.sl-w-neg { background: repeating-linear-gradient(45deg, var(--ink) 0 3px, transparent 3px 6px); }
+#cl-sub-model-detail .sl-weight-bar .sl-w-bar.sl-w-zero { background: var(--hair); }
+#cl-sub-model-detail .sl-w-rmse { font-size: 13px; color: var(--muted); }
+
+/* Forecast vs buoy */
+#cl-sub-model-detail .verif-intro { margin: 0 0 10px; font-size: 14px; line-height: 1.45; color: var(--muted); }
+#cl-sub-model-detail .verif-intro strong { color: var(--ink); font-weight: 600; }
+#cl-sub-model-detail .verif-legend { display: flex; flex-direction: column; gap: 4px; margin: 0 0 12px; font-size: 13px; color: var(--ink); }
+#cl-sub-model-detail .verif-swatch-obs { border-top-color: var(--ink); }
+#cl-sub-model-detail .verif-stats { margin: 0 0 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+#cl-sub-model-detail .verif-table { width: 100%; border-collapse: collapse; font-size: 13px; color: var(--ink); }
+#cl-sub-model-detail .verif-table th,
+#cl-sub-model-detail .verif-table td { padding: 6px 6px 6px 0; border: 0; border-top: 1px solid var(--hair); text-align: right; vertical-align: top; }
+#cl-sub-model-detail .verif-table th { background: none; font-weight: 600; font-size: 12.5px; color: var(--muted); }
+#cl-sub-model-detail .verif-table td:first-child,
+#cl-sub-model-detail .verif-table th:first-child { text-align: left; font-weight: 600; color: var(--ink); }
+#cl-sub-model-detail .verif-th-sub { font-size: 12px; font-weight: 400; color: var(--muted); }
+#cl-sub-model-detail .verif-table-note { margin-top: 8px; font-size: 13px; line-height: 1.4; }
+#cl-sub-model-detail .verif-chart-block { margin: 0 0 16px; }
+#cl-sub-model-detail .verif-chart-label { margin: 0 0 4px; font-size: 13px; color: var(--muted); }
+#cl-sub-model-detail .panel-footer {
+  margin: 4px 0 0;
+  padding: 10px 0 0;
+  border: 0;
+  border-top: 1px solid var(--hair);
+  background: none;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* Night: the legacy charts paint dark ink on white; turn them over so
+   they sit dark on the night page (hues come back with the rotate).
+   The white turns black and `lighten` lets the page's green-black show
+   through it, so no grey box sits behind each chart; brightness keeps
+   the ink near --ink instead of pure white. */
+html[data-clean-theme="night"] #cl-sub-model-detail canvas {
+  filter: invert(1) brightness(.93) hue-rotate(180deg);
+  mix-blend-mode: lighten;
+}
+
+/* ── One session (a tapped dot) ─────────────────────────────────────── */
+.cl-m-ss .reg-drilldown-inner { height: auto; display: flex; flex-direction: column; gap: 0; }
+.cl-m-ss .reg-drill-close { display: none; }
+.cl-m-ss .reg-drill-header { padding: 0 0 12px; border: 0; margin: 0; }
+.cl-m-ss .reg-drill-date { font-size: 15px; font-weight: 500; color: var(--ink); }
+.cl-m-ss .reg-drill-meta { margin-top: 2px; font-size: 13px; color: var(--muted); }
+.cl-m-ss .reg-drill-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+.cl-m-ss .reg-drill-photo-wrap { margin: 0 0 12px; }
+.cl-m-ss .reg-drill-photo { display: block; width: 100%; border-radius: var(--r); }
+.cl-m-ss .reg-drill-section { padding: 14px 0; margin: 0; border-top: 1px solid var(--hair); }
+.cl-m-ss .reg-drill-section-heading {
+  margin: 0 0 8px;
+  font-family: var(--serif);
+  font-variant-numeric: lining-nums;
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+}
+.cl-m-ss .reg-tooltip { display: none; }
+.cl-m-ss .reg-drill-rating-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 4px 14px;
+  align-items: baseline;
+  padding: 4px 0;
+  font-size: 15px;
+  color: var(--muted);
+}
+.cl-m-ss .reg-drill-rating-row strong { color: var(--ink); font-weight: 600; }
+.cl-m-ss .reg-drill-rating-label { color: var(--ink); font-weight: 500; }
+.cl-m-ss .reg-drill-resid { grid-column: 1 / -1; margin-top: -2px; font-size: 13px; color: var(--muted); }
+.cl-m-ss .reg-drill-line { padding: 3px 0; font-size: 15px; color: var(--ink); }
+.cl-m-ss .reg-drill-key { color: var(--muted); }
+.cl-m-ss .reg-drill-source { font-size: 13px; font-style: normal; color: var(--muted); }
+.cl-m-ss .reg-attr-summary { margin: 0 0 8px; font-size: 15px; color: var(--ink); }
+.cl-m-ss .reg-attr-list { display: block; }
+.cl-m-ss .reg-attr-row {
+  display: grid;
+  grid-template-columns: 14px 32px 1fr;
+  gap: 2px 6px;
+  padding: 5px 0;
+  font-size: 15px;
+  color: var(--ink);
+}
+.cl-m-ss .reg-attr-sign,
+.cl-m-ss .reg-attr-mag { color: var(--ink); font-weight: 600; }
+.cl-m-ss .reg-attr-detail { grid-column: 3; font-size: 12.5px; color: var(--muted); }
+.cl-m-ss .reg-attr-reconcile { margin-top: 6px; font-size: 12.5px; color: var(--muted); }
+.cl-m-ss .reg-drill-notes {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.cl-m-ss .reg-drill-footer { border-top: 0; padding-top: 8px; }
+.cl-m-ss .reg-drill-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  border: 1px solid var(--ink);
+  border-radius: var(--r);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+}
+/* the legend swatch for the model-at-buoy line, as the inverted chart draws it */
+html[data-clean-theme="night"] #cl-sub-model-detail .verif-swatch-mb { border-top-color: #9DB7E3; }

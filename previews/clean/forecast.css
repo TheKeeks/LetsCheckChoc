@@ -1,0 +1,282 @@
+/* ════════════════════════════════════════════════════════════════════
+   CLEAN — forecast.css (owner: Forecast part)
+   ────────────────────────────────────────────────────────────────────
+   The Forecast tab (previews/clean/forecast.js): Now block, This week,
+   the chart, the lineup and Details. Sizes are the A2-Phone-* boards'
+   own; colours are theme.css tokens only, so day → night is a token
+   swap (400 ms fade, layout never moves). Classes are prefixed cl-f-.
+   ════════════════════════════════════════════════════════════════════ */
+
+.cl-f { padding-bottom: 4px; }
+.cl-f-lead { margin: 0; line-height: 1.4; }
+
+/* ── Now block ──────────────────────────────────────────────────────── */
+.cl-f-now { padding: 12px var(--gut) 24px; }
+.cl-f-day {
+  font-size: 21px;
+  line-height: 1.2;
+  color: var(--ink);
+  margin: 0 0 6px;
+}
+.cl-f-hero { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.cl-f-num {
+  font-size: 104px;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -.04em;
+  white-space: nowrap;
+}
+.cl-f-nodata { font-size: 26px; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; color: var(--muted); padding: 18px 0 4px; }
+.cl-f-unit { font-size: 30px; line-height: 1; font-weight: 500; color: var(--muted); }
+.cl-f-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.3;
+  margin-top: 6px;
+}
+.cl-f-meta > span { white-space: nowrap; }
+.cl-f-sep { color: var(--muted); }
+.cl-f-st { margin-top: 14px; line-height: 1; }
+html[data-clean-theme="night"] .cl-f-st { margin-top: 12px; }
+.cl-f-st .cl-st-pill { display: inline-flex; }
+.cl-f-dim { font-size: 13px; line-height: 1.4; color: var(--muted); margin-top: 8px; }
+
+.cl-f-two {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--hair);
+}
+.cl-f-cell { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.cl-f-ico { width: 44px; height: 44px; flex: none; display: flex; align-items: center; justify-content: center; }
+.cl-f-ico svg { width: 44px; height: 44px; overflow: visible; }
+.cl-f-cv { min-width: 0; }
+.cl-f-big {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  line-height: 1.1;
+}
+.cl-f-big small { font-size: 15px; font-weight: 500; color: var(--muted); letter-spacing: 0; }
+.cl-f-sub { font-size: 13px; line-height: 1.4; color: var(--muted); margin-top: 4px; }
+.cl-f-sub:empty { display: none; }
+
+.cl-f-model {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hair);
+  font-size: 15px;
+}
+.cl-f-model b { font-size: 20px; font-weight: 600; white-space: nowrap; }
+.cl-f-model small { font-size: 14px; font-weight: 500; color: var(--muted); }
+.cl-f-fines { margin-top: 18px; }
+.cl-f-model + .cl-f-fines { margin-top: 10px; }
+.cl-f-fines .cl-f-fine + .cl-f-fine { margin-top: 10px; }
+
+/* ── This week ──────────────────────────────────────────────────────── */
+.cl-f-wk { padding: 0 var(--gut); }
+.cl-f-row {
+  display: block;
+  width: 100%;
+  min-height: 62px;
+  padding: 8px 0;
+  border-top: 1px solid var(--hair);
+  text-align: left;
+  color: var(--ink);
+}
+.cl-f-ri {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 45px;
+}
+.cl .cl-f-row.sel {
+  background: var(--shade);
+  margin: 0 calc(var(--gut) * -1);
+  padding-left: var(--gut);
+  padding-right: var(--gut);
+  width: calc(100% + 2 * var(--gut));
+}
+.cl-f-row.past { opacity: .5; }
+.cl-f-d { font-size: 15px; font-weight: 600; line-height: 1.2; }
+.cl-f-mid { min-width: 0; display: block; }
+.cl-f-s { display: block; font-size: 16px; font-weight: 500; line-height: 1.3; }
+.cl-f-s.cl-f-none { color: var(--muted); text-wrap: balance; }
+@media (max-width: 389px) { .cl-f-s.cl-f-none { font-size: 15px; } }
+.cl-f-w {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 11px;
+  row-gap: 2px;
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.cl-f-g { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.cl-f-wa { display: inline-flex; color: var(--ink); }
+.cl-f-r { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
+.cl-f-m { font-size: 13px; color: var(--muted); line-height: 1.3; }
+.cl-f-empty { padding: 14px 0; font-size: 14px; color: var(--muted); border-top: 1px solid var(--hair); }
+
+/* ── Forecast chart ─────────────────────────────────────────────────── */
+.cl-f-ch { padding: 0 var(--gut); }
+.cl-f-rd { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 12px; }
+.cl-f-rdt { font-size: 13px; line-height: 1.3; color: var(--muted); white-space: nowrap; }
+/* Fixed columns: the numbers change, the layout never jumps. */
+.cl-f-rdv {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.25fr) minmax(0, .9fr);
+  column-gap: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  max-width: 440px;
+}
+.cl-f-rdv span { white-space: nowrap; }
+@media (max-width: 389px) { .cl-f-rdv { font-size: 15px; column-gap: 8px; } }
+.cl-f-rdv .cl-f-blk { color: var(--blk); }
+
+.cl-f-cxw {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 232px;
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: col-resize;
+  border-radius: 4px;
+}
+.cl-f-cxw:focus-visible { outline: 2px solid var(--in); outline-offset: 4px; }
+.cl-f-chempty { padding: 96px 0; text-align: center; font-size: 14px; color: var(--muted); }
+.cl-f-cx { display: block; width: 100%; height: 232px; overflow: visible; }
+.cl-f-cx .nt { fill: var(--shade); }
+.cl-f-cx .gl { stroke: var(--hair); stroke-width: 1; fill: none; }
+.cl-f-cx .ax { font-size: 10px; font-weight: 500; fill: var(--muted); font-family: var(--sans); }
+.cl-f-cx .gh { fill: var(--blk-fill); opacity: var(--ghost); }
+.cl-f-cx .sw { fill: var(--in); }
+.cl-f-cx .bi { fill: var(--in); }
+.cl-f-cx .be { fill: var(--edge-fill); }
+.cl-f-cx .bb { fill: var(--blk-fill); }
+.cl-f-cx .off { fill: var(--off); }
+.cl-f-cx .crs { fill: var(--crs); opacity: .7; }
+.cl-f-cx .on { fill: url(#cl-f-hatch); stroke: var(--on); stroke-width: 1; }
+.cl-f-cx .hp { stroke: var(--on); stroke-width: 2; fill: none; }
+.cl-f-cx .ar path { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.cl-f-cx .win { fill: var(--in); opacity: .14; }
+.cl-f-cx .win.dim { opacity: .06; }
+.cl-f-cx .tl { fill: none; stroke: var(--tide); stroke-width: 1.5; stroke-linejoin: round; }
+.cl-f-cx .lo { fill: var(--bg); stroke: var(--tide); stroke-width: 1.5; }
+.cl-f-cx .cur { stroke: var(--ink); stroke-width: 1.25; }
+.cl-f-cx .cd { fill: var(--ink); }
+
+.cl-f-dl { position: relative; height: 15px; margin-top: 6px; font-size: 11px; line-height: 15px; color: var(--muted); }
+.cl-f-dl span { position: absolute; top: 0; padding-left: 2px; white-space: nowrap; }
+
+.cl-f-ctl { display: flex; gap: 8px; margin-top: 12px; }
+.cl-f-jb {
+  flex: 1 1 0;
+  min-width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.cl-f-jb:active:not(:disabled) { background: var(--shade); }
+.cl .cl-f-jb:disabled { color: var(--muted); opacity: .55; cursor: default; }
+
+/* ── Lineup (the Choc TV radar's coastline, day and night tokens) ───── */
+.cl-f-lu .cl-f-scene {
+  display: block;
+  width: 100%;
+  max-width: 560px;
+  height: auto;
+  margin: 0 auto;
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  background: var(--bg);
+}
+.cl-f-scene .land { fill: var(--hair); }
+.cl-f-scene .shore { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.cl-f-scene .pond { fill: var(--bg); stroke: var(--muted); stroke-width: 1; stroke-opacity: .5; stroke-linejoin: round; }
+.cl-f-scene .cone { fill: var(--in); fill-opacity: .2; stroke: var(--in); stroke-width: 1.8; stroke-linejoin: round; }
+.cl-f-scene .sa { fill: none; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
+.cl-f-scene .sa-in { stroke: var(--in); }
+.cl-f-scene .sa-edge { stroke: var(--edge); }
+.cl-f-scene .sa-blk { stroke: var(--blk); }
+.cl-f-scene .wa { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.cl-f-scene .mk { fill: var(--bg); stroke: var(--ink); stroke-width: 2.5; }
+.cl-f-scene text {
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  fill: var(--ink);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.cl-f-scene text.lab { fill: var(--muted); }
+.cl-f-cap { margin-top: 8px; text-align: left; }
+
+/* ── Details ────────────────────────────────────────────────────────── */
+.cl-f-det { padding-bottom: 0; }
+.cl-f-dd { border-top: 1px solid var(--hair); }
+.cl-f-dd:last-child { border-bottom: 0; }
+.cl .cl-f-dr { border-top: 0; min-height: 52px; color: var(--ink); }
+.cl-f-dd.open .cl-f-dr { min-height: 44px; }
+.cl-f-chev { display: flex; color: var(--muted); }
+.cl-f-ddb { padding: 2px 0 14px; }
+.cl-f-kv { font-size: 15px; }
+.cl-f-kv .cl-stale { color: var(--amber); }
+.cl-f-kv .cl-dead { color: var(--red); }
+.cl-f-obs { margin: 0 0 10px; }
+
+.cl-f-tt { display: flex; flex-direction: column; }
+.cl-f-tth { font-size: 13px; font-weight: 600; color: var(--muted); margin: 10px 0 2px; }
+.cl-f-tth:first-child { margin-top: 0; }
+.cl-f-ttr {
+  display: grid;
+  grid-template-columns: 22px 52px 1fr auto;
+  align-items: center;
+  column-gap: 8px;
+  min-height: 30px;
+  font-size: 15px;
+}
+.cl-f-ttr > span:nth-child(2) { color: var(--muted); }
+.cl-f-ttr > span:nth-child(3), .cl-f-ttr > span:nth-child(4) { font-weight: 600; white-space: nowrap; }
+.cl-f-ttr.past { opacity: .5; }
+
+.cl-f-rose { margin: 10px 0 0; text-align: center; }
+.cl-f-rose svg { display: block; width: 100%; max-width: 240px; height: auto; margin: 0 auto; }
+.cl-f-rose .rg { fill: none; stroke: var(--hair); stroke-width: 1; }
+.cl-f-rose .rc { fill: var(--in); fill-opacity: .12; }
+.cl-f-rose .rco { fill: none; stroke: var(--in); stroke-width: 1.5; stroke-linejoin: round; }
+.cl-f-rose .wl { fill: var(--ink); fill-opacity: .7; }
+.cl-f-rose .ws { fill: var(--muted); fill-opacity: .35; }
+.cl-f-rose text { font-family: var(--sans); font-size: 11px; font-weight: 600; fill: var(--muted); }
+.cl-f-rose figcaption { margin-top: 6px; text-align: left; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-f-jb { transition: none; }
+}
