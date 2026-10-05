@@ -75,6 +75,36 @@ module.exports = {
       assert.equal(w.ring, calm, `${w.v} mph prints "${w.text}": calm ring only under 3 mph as printed`);
       assert.equal(w.staff, !calm, `${w.v} mph: a staff and tick whenever the number is 3 or more`);
     }
+    // The window band's steady runs (CLEAN.util.steadyRuns): a call under
+    // 3 hours joins its neighbour (the one matching on both sides, else
+    // the longer), shortest first; a missing hour stays missing.
+    const runs = await ctx.state(() => {
+      const S = a => CLEAN.util.steadyRuns(a, 3).map(s => s == null ? '-' : s[0]).join('');
+      const A = s => s.split('').map(c => c === '-' ? null : { i: 'in', e: 'edge', b: 'blocked' }[c]);
+      return ['iiieiii', 'iiiebbbb', 'iiiibeebbbiii', '-e-', 'iii-biii', 'iiibbbiii', ''].map(x => S(A(x)));
+    });
+    assert.deepEqual(runs, ['iiiiiii', 'iiibbbbb', 'iiiiiiibbbiii', '-e-', 'iii-iiii', 'iiibbbiii', ''], 'steadyRuns');
+    // Model › Typical miss in the same style: a miss of 1.0 prints "1", so
+    // the unit turns singular ("±1 point", never "±1 points"). Uses the
+    // fallback (the app's per-model RMSE) with a stand-in fit, restored after.
+    const miss = await ctx.state(() => {
+      const S = STATE, cfg = REG_SUBMODELS.cond, keys = ['_lastFitAt', cfg.weightsKey, cfg.rmseKey];
+      const keep = {}; keys.forEach(k => { keep[k] = S[k]; });
+      const loo = window._regLOOFor;
+      const read = v => {
+        S._lastFitAt = S._lastFitAt || Date.now();
+        S[cfg.weightsKey] = cfg.featureNames.map((_, j) => (j + 1) / 10 + v);   // new weights: a fresh fit, not the memo
+        S[cfg.rmseKey] = v;
+        CLEAN.render('model', 'request');
+        const b = document.querySelector('#cl-view-model .cl-m-err b');
+        return b ? b.textContent.replace(/[\u00a0\u202f]/g, ' ') : null;
+      };
+      window._regLOOFor = undefined;
+      try { return [read(1.0), read(1.04), read(0.7), read(2)]; }
+      finally { window._regLOOFor = loo; keys.forEach(k => { S[k] = keep[k]; }); CLEAN.render('model', 'request'); }
+    });
+    log('typical miss', JSON.stringify(miss));
+    assert.deepEqual(miss, ['±1 point', '±1 point', '±0.7 points', '±2 points'], 'Model › Typical miss: number style and its unit');
 
     // ── 2. Keyboard focus: the clean ring, never under the tab bar ──
     await page.mouse.click(5, 300);

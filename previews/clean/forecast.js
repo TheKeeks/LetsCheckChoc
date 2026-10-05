@@ -404,8 +404,9 @@
     // the window (1 inside 115–158°, fading to 0 over 30° outside);
     // ghost = all the swell out there, both trains, behind it. A train
     // sitting on the window's edge then fades in and out instead of
-    // flicking the fill on and off hour to hour. The band keeps each
-    // hour's own in / edge / blocked call.
+    // flicking the fill on and off hour to hour. The band is the hero's
+    // in / edge / blocked call, with calls under 3 hours folded into
+    // their neighbours (U.steadyRuns); the readout keeps each hour's own.
     var sw = [], gh = [], st = [], maxH = 0;
     hrs.forEach(function (hr, i) {
       var tr = splitTrains(hr);
@@ -476,9 +477,11 @@
     o.push(area(gh, 'gh'));
     o.push(area(sw, 'sw'));
 
-    // Window band, by the hero's status.
+    // Window band, by the hero's status: blocks, not 2 px slivers (a call
+    // that lasts under 3 hours joins its neighbour, as the board draws it).
     var band = '', segStart = 0;
     var bandCls = { 'in': 'bi', edge: 'be', blocked: 'bb' };
+    st = U.steadyRuns(st, 3);
     for (var i = 1; i <= n; i++) {
       if (i < n && st[i] === st[segStart]) continue;
       var c = bandCls[st[segStart]];

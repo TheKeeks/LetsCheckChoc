@@ -113,6 +113,19 @@ module.exports = {
     assert.ok(strip.mixed > 0, 'the week has hours where a blocked train sits beside one that reaches');
     assert.ok(strip.worst < 0.05, 'solid / ghost = the in-window share of the swell, hour by hour (worst ' + strip.worst.toFixed(3) + ')');
 
+    // The strip's window band: blocks of 3 hours or more, as on the phone
+    // chart (an hour is 1100 / 168 ≈ 6.5 units; the strip's ends may clip
+    // half an hour).
+    const tvBand = await ctx.state(() => {
+      const hs = 1100 / (7 * 24);
+      const rects = [...document.querySelectorAll('#cl-tv .cl-tv-cht rect.b-in, #cl-tv .cl-tv-cht rect.b-edge, #cl-tv .cl-tv-cht rect.b-blk')]
+        .map(r => ({ c: r.getAttribute('class'), x: +r.getAttribute('x'), w: +r.getAttribute('width') }));
+      return { rects: rects.length, short: rects.filter(r => r.w < 2.5 * hs).map(r => r.c + '@' + Math.round(r.x) + ' ' + r.w) };
+    });
+    log('strip band', JSON.stringify(tvBand));
+    assert.ok(tvBand.rects > 1 && tvBand.rects <= 12, 'the strip band is a few blocks (' + tvBand.rects + ')');
+    assert.deepEqual(tvBand.short, [], 'no strip band block under 3 hours');
+
     // Land: one faint light fill over land and knob, a muted outline;
     // nothing painted in the page colour over it.
     const land = await ctx.state(() => {

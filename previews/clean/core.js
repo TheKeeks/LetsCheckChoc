@@ -323,11 +323,48 @@
   function qualityClass(q) { return q === 'offshore' ? 'cl-q-off' : q === 'cross' ? 'cl-q-crs' : q === 'onshore' ? 'cl-q-on' : ''; }
   function statusClass(s) { return s === 'in' ? 'cl-st-in' : s === 'edge' ? 'cl-st-edge' : s === 'blocked' ? 'cl-st-blk' : ''; }
 
+  // The window band under the phone chart and the TV strip: hour-by-hour
+  // in / edge / blocked calls (one entry per hour, null = no reading),
+  // with any call that lasts under `minHours` folded into its neighbour.
+  // Open-Meteo's second swell flips direction for an hour or two, which
+  // cut the band into 2 px slivers; the boards draw it as a few blocks.
+  // The shortest run goes first, into the neighbour that matches on both
+  // sides, else the longer one. Missing hours stay missing (never merged
+  // into or across). The swell shape and every readout keep each hour's
+  // own call, so a short dip still shows in the green.
+  function steadyRuns(calls, minHours) {
+    var a = [], min = minHours || 3;
+    for (var c = 0; c < (calls ? calls.length : 0); c++) a.push(calls[c] == null ? null : calls[c]);   // holes → null
+    var runs = function () {
+      var o = [];
+      for (var i = 0; i < a.length; i++) {
+        var r = o[o.length - 1];
+        if (r && r.s === a[i]) r.n++; else o.push({ s: a[i], i: i, n: 1 });
+      }
+      return o;
+    };
+    for (var guard = 0; guard < a.length; guard++) {
+      var rs = runs(), k = -1;
+      rs.forEach(function (r, j) {
+        if (r.s == null || r.n >= min) return;
+        var l = rs[j - 1], rt = rs[j + 1];
+        if (!(l && l.s != null) && !(rt && rt.s != null)) return;   // alone between gaps: keep it
+        if (k < 0 || r.n < rs[k].n) k = j;
+      });
+      if (k < 0) break;
+      var L = rs[k - 1], R = rs[k + 1];
+      L = L && L.s != null ? L : null; R = R && R.s != null ? R : null;
+      var to = L && R ? (L.s === R.s || L.n >= R.n ? L.s : R.s) : (L || R).s;
+      for (var i = rs[k].i; i < rs[k].i + rs[k].n; i++) a[i] = to;
+    }
+    return a;
+  }
+
   CLEAN.util = {
     esc: esc, h: h, isNum: isNum, round1: round1, clamp: clamp, toDate: toDate,
     dayKey: dayKey, startOfDay: startOfDay, reducedMotion: reducedMotion,
     statusFor: statusFor, alignment: alignment, windQuality: windQuality,
-    qualityClass: qualityClass, statusClass: statusClass
+    qualityClass: qualityClass, statusClass: statusClass, steadyRuns: steadyRuns
   };
   // Ready-made HTML for the two coded words.
   CLEAN.html = {

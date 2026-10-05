@@ -456,8 +456,8 @@
     // the window (1 inside 115–158°, fading to 0 over 30° outside);
     // ghost = all the swell out there, both trains, behind it. A train
     // sitting on the window's edge then fades in and out instead of
-    // flicking the fill on and off hour to hour. The band keeps each
-    // hour's own in / edge / blocked call.
+    // flicking the fill on and off hour to hour. The band is the hero's
+    // in / edge / blocked call in blocks of 3 hours or more (below).
     var rows = [], maxH = 2;
     hrs.forEach(function (hr) {
       if (!hr || !hr.at) return;
@@ -516,11 +516,21 @@
           (dg ? '<path class="gh" d="' + dg + '"/>' : '') +
           (dsw ? '<path class="sw" d="' + dsw + '"/>' : '') + '</g>');
       }
-      // Window band: in / edge / blocked per hour, merged into runs.
-      var run = null, step = hs;
+      // Window band: in / edge / blocked per hour, merged into runs. A
+      // call that lasts under 3 hours joins its neighbour (U.steadyRuns,
+      // the phone chart's rule): blocks, not slivers. A missing hour
+      // stays a gap. The playing hour's own call is in the readout.
+      var run = null, step = hs, calls = [], at = [];
+      rows.forEach(function (r, j) {
+        if (j && r.t - rows[j - 1].t > 1.5 * HOUR) calls.push(null);
+        at[j] = calls.length;
+        calls.push(r.st);
+      });
+      var steady = U.steadyRuns(calls, 3);
       var flush = function () { if (run && run.st) o.push('<rect class="b-' + run.st + '" x="' + r1(run.x1) + '" y="' + BAND_Y + '" width="' + r1(Math.max(0.5, run.x2 - run.x1)) + '" height="' + BAND_H + '"/>'); };
-      rows.forEach(function (r) {
-        var st = r.st === 'in' ? 'in' : r.st === 'edge' ? 'edge' : r.st === 'blocked' ? 'blk' : null;
+      rows.forEach(function (r, j) {
+        var sc = steady[at[j]];
+        var st = sc === 'in' ? 'in' : sc === 'edge' ? 'edge' : sc === 'blocked' ? 'blk' : null;
         var x1 = Math.max(0, r.x - step / 2), x2 = Math.min(CW, r.x + step / 2);
         if (run && run.st === st && Math.abs(run.x2 - x1) < 0.01) { run.x2 = x2; return; }
         flush();

@@ -97,6 +97,33 @@ module.exports = {
     assert.equal(ch.nowOpacity, '1');
     assert.equal(ch.nowColor, ch.inkColor, 'Now is ink, like the hour buttons');
     assert.equal(ch.axWeight, '400', 'the chart\'s "2 ft" label is regular weight');
+
+    // The window band under the swell: blocks, not slivers. Open-Meteo's
+    // second swell flips direction for an hour or two; those hours keep
+    // their own call in the readout, but the band folds any call under
+    // 3 hours into its neighbour (the board's few blocks).
+    const band = await ctx.state(() => {
+      const svg = document.querySelector('#cl-view-forecast .cl-f-cx');
+      const W = svg.viewBox.baseVal.width;
+      const hrs = CLEAN.data.hours();
+      const hs = W / hrs.length;
+      const raw = hrs.map(hr => {
+        let reach = null, blk = null;
+        [hr && hr.swell].concat(hr && hr.others || []).forEach(t => {
+          if (!t || !(t.h > 0)) return;
+          if (t.status === 'in' || t.status === 'edge') { if (!reach || t.h > reach.h) reach = t; }
+          else if (t.status === 'blocked' && (!blk || t.h > blk.h)) blk = t;
+        });
+        return reach ? reach.status : blk ? 'blocked' : null;
+      });
+      const runs = []; raw.forEach(s => { const r = runs[runs.length - 1]; if (r && r.s === s) r.n++; else runs.push({ s, n: 1 }); });
+      const rects = [...svg.querySelectorAll('rect.bi, rect.be, rect.bb')].map(r => ({ c: r.getAttribute('class'), x: +r.getAttribute('x'), w: +r.getAttribute('width') }));
+      return { hs, rawShort: runs.filter(r => r.s && r.n < 3).length, rects: rects.length, short: rects.filter(r => r.w < 2.5 * hs).map(r => r.c + '@' + Math.round(r.x) + ' ' + r.w) };
+    });
+    log('band', JSON.stringify(band));
+    assert.ok(band.rawShort > 0, 'the fixtures have hour-by-hour calls that flip for under 3 hours');
+    assert.ok(band.rects > 1 && band.rects <= 12, 'the band is a few blocks (' + band.rects + ')');
+    assert.deepEqual(band.short, [], 'no band block under 3 hours');
     const before = await ctx.state(() => STATE.scrubberIdx);
     await page.locator('#cl-view-forecast .cl-f-jb[data-j="now"]').click();
     assert.equal(await ctx.state(() => STATE.scrubberIdx), before, 'Now at now changes nothing');

@@ -196,8 +196,11 @@
   }
 
   function trainedHTML(m) {
-    var miss = isNum(m.miss)
-      ? '±' + F.score(m.miss) + F.NB + '<small>points</small>'
+    // The number style drops a trailing ".0", so a miss of 1.0 prints "1":
+    // say "±1 point", not "±1 points".
+    var missTxt = isNum(m.miss) ? F.score(m.miss) : null;
+    var miss = missTxt != null
+      ? '±' + missTxt + F.NB + '<small>' + (missTxt === '1' ? 'point' : 'points') + '</small>'
       : F.DASH;
     return '' +
       '<p class="cl-m-say">' + esc(sentence(m.factors)) + '</p>' +

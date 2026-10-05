@@ -332,7 +332,10 @@ Part classes are prefixed `cl-f-` (forecast), `cl-l-` (log), `cl-m-` (model),
 `CLEAN.util`: `esc(s)`, `h(tag, attrs, html|nodes)` (attrs `class`, `aria-*`,
 `onclick: fn`), `isNum`, `round1`, `clamp`, `toDate`, `dayKey(t)` ("2026-10-01",
 spot time), `startOfDay(t, days)`, `reducedMotion()`, `statusFor(deg)`,
-`alignment(deg)`, `windQuality(mph, deg)`, `qualityClass(q)`, `statusClass(s)`.
+`alignment(deg)`, `windQuality(mph, deg)`, `qualityClass(q)`, `statusClass(s)`,
+`steadyRuns(calls, minHours = 3)` (hourly in / edge / blocked calls with any call
+under `minHours` folded into its neighbour, shortest first; `null` hours stay
+gaps: the phone chart's and the TV strip's window band).
 
 Auth: `CLEAN.auth()` → `{ signedIn, uid, name }`; `CLEAN.signIn()`;
 `CLEAN.signOut()`.
