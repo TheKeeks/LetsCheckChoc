@@ -11,15 +11,17 @@
 //     row tints it, scrolls to the chart and slides the cursor to that
 //     day's low.
 //   • Forecast chart: a new SVG renderer of STATE.forecastData (the
-//     legacy canvas chart stays hidden): swell that reaches the reef
-//     solid, blocked swell as a faint ghost, the window band, wind bars
-//     coloured by quality with direction arrows, the tide with the
-//     day's low and its daylight incoming tide. One cursor, dragged
-//     hour by hour or moved by the jump buttons; it is the app's own
-//     scrubber hour (CLEAN.cursor), so other parts can read it.
-//   • Lineup: the Choc TV radar's coastline vectors (kiosk.js
-//     KIOSK_COAST), the 115–158° window cone and the cursor hour's swell
-//     and wind arrows.
+//     legacy canvas chart stays hidden): the swell that reaches the
+//     reef (alignment-weighted) solid over a ghost of all the swell,
+//     the window band, wind bars coloured by quality with direction
+//     arrows, the tide with the day's low and its daylight incoming
+//     tide. One cursor, dragged hour by hour or moved by the jump
+//     buttons; it is the app's own scrubber hour (CLEAN.cursor), so
+//     other parts can read it.
+//   • Lineup: flat colour blocks (water, reef shallows, sand, land)
+//     from the Choc TV radar's coastline vectors (kiosk.js KIOSK_COAST),
+//     the 115–158° window cone and the cursor hour's swell and wind
+//     arrows with their readings in dark pills.
 //   • Details: light and water, tide table, buoy waves, data sources.
 // Every block renders inside try/catch: one failing block never blanks
 // the tab. Missing data stays null and shows "—". Times are the spot's
@@ -136,6 +138,10 @@
       rz = setTimeout(C.guard('forecast.resize', function () { if (measure()) { renderChart(); renderLineup(); } }), 120);
     });
     C.on('tick', function () { render('tick'); });
+    // Every app repaint (drawForecastChart) puts the app's own scrubber
+    // back to now; the cursor on screen is this one, so bring the app's
+    // back to it whenever the two part (Model details read the app's).
+    C.on('hour', function () { if (!drag) schedulePush(); });
   }
 
   // Column width of the chart (the view may be hidden: keep the last one).
@@ -242,7 +248,8 @@
     var cls = b.level === 'stale' ? ' cl-stale' : b.level === 'dead' ? ' cl-dead' : '';
     var s = 'Buoy ' + F.swell(b.h, b.period, b.compass);
     if (b.obsAt) s += ' · ' + F.when(b.obsAt) + ' (' + F.age(b.obsAt) + ')';
-    if (b.reachesAt) s += ' · ' + (b.reachesAt.getTime() >= Date.now() ? 'reaches' : 'reached') + ' the reef ~' + F.time(b.reachesAt);
+    // F.when: a reading from yesterday reached the reef "~Thu 11:48 AM", not "~11:48 AM".
+    if (b.reachesAt) s += ' · ' + (b.reachesAt.getTime() >= Date.now() ? 'reaches' : 'reached') + ' the reef ~' + F.when(b.reachesAt);
     return '<p class="cl-fine cl-f-fine' + cls + '">' + esc(s) + '</p>';
   }
 
@@ -312,13 +319,21 @@
     var any = wk.some(function (d) { return d && (d.swell || d.low); });
     if (!any) return '<p class="cl-f-empty">' + (D.freshness() === 'loading' ? 'Loading the week…' : 'No days to show: the forecast and tides didn’t load.') + '</p>';
     var nowMs = Date.now();
-    return wk.map(function (d, k) {
+    // NOAA's tide predictions down: each day's swell falls back to all
+    // daylight (kioskDaySummary tidesDown), not its incoming tide. Say so
+    // once, and put "all day" where the low would be, so a verdict that
+    // changed with the reading doesn't change silently.
+    var down = wk.some(function (d) { return d && d.tidesDown && d.swell; });
+    var note = down ? '<p class="cl-fine cl-f-wkn">No tide times: each day shows the swell over all daylight</p>' : '';
+    return note + wk.map(function (d, k) {
       var past = k === 0 && d.sun && d.sun.lastLight && nowMs >= d.sun.lastLight.getTime();
       var sw = d.swell
         ? (d.reaches ? '<span class="cl-f-s">' + F.swell([d.swell.min, d.swell.max], d.swell.period, d.swell.compass) + '</span>'
           : '<span class="cl-f-s cl-f-none">Nothing reaches the reef</span>')
         : '<span class="cl-f-s cl-f-none">' + DASH + '</span>';
-      var low = '<span class="cl-f-g">' + I.tide(15) + '<span>' + (d.low ? F.time(d.low.t) : DASH) + '</span></span>';
+      var low = d.low ? '<span class="cl-f-g">' + I.tide(15) + '<span>' + F.time(d.low.t) + '</span></span>'
+        : d.tidesDown && d.swell ? '<span class="cl-f-g cl-f-ad">all day</span>'
+        : '<span class="cl-f-g">' + I.tide(15) + '<span>' + DASH + '</span></span>';
       var w = d.low && d.low.wind;
       var wind = w ? '<span class="cl-f-g cl-f-wg">' + (isNum(w.dir) ? '<span class="cl-f-wa">' + I.wind(w.dir, 15) + '</span>' : '') +
         '<span>' + F.wind(w.mph, w.dir) + '</span>' + (w.quality ? ' ' + C.html.quality(w.quality) : '') + '</span>' : '';
@@ -387,20 +402,25 @@
     var times = hrs.map(function (h) { return h && h.at ? h.at.getTime() : NaN; });
     var o = [];
 
-    // Swell that reaches the reef (hero in window or at the edge), and
-    // the blocked ghost (the biggest blocked train).
-    // Per hour, the biggest train that reaches the reef (in window or at
-    // the edge) is the solid fill and sets the band; the biggest blocked
-    // train is the ghost. The forecast's two trains often trade places
-    // hour to hour, so following one "hero" would chop the fill apart.
+    // Swell, per hour, as the model reads the reef (app.js
+    // _effectiveInWindowSwell): solid = the part that reaches the reef,
+    // each train (primary + secondary) weighted by its alignment with
+    // the window (1 inside 115–158°, fading to 0 over 30° outside);
+    // ghost = all the swell out there, both trains, behind it. A train
+    // sitting on the window's edge then fades in and out instead of
+    // flicking the fill on and off hour to hour. The band is the hero's
+    // in / edge / blocked call, with calls under 3 hours folded into
+    // their neighbours (U.steadyRuns); the readout keeps each hour's own.
     var sw = [], gh = [], st = [], maxH = 0;
     hrs.forEach(function (hr, i) {
       var tr = splitTrains(hr);
-      sw[i] = tr.reach ? tr.reach.h : null;
-      gh[i] = tr.blocked ? tr.blocked.h : null;
+      if (!tr.any) { sw[i] = gh[i] = st[i] = null; return; }   // no swell reading: a gap, not 0 ft
+      var inW = 0, tot = 0;
+      tr.all.forEach(function (t) { inW += U.alignment(t.dir) * t.h; tot += t.h; });
+      sw[i] = inW;
+      gh[i] = tot;
       st[i] = tr.reach ? tr.reach.status : tr.blocked ? 'blocked' : null;
-      if (isNum(sw[i])) maxH = Math.max(maxH, sw[i]);
-      if (isNum(gh[i])) maxH = Math.max(maxH, gh[i]);
+      maxH = Math.max(maxH, tot);
     });
     var ppf = Math.min(G.swPx, (G.swBase - G.swTop) / Math.max(1, maxH));
     var ySw = function (v) { return G.swBase - v * ppf; };
@@ -432,21 +452,27 @@
     if (grid) o.push('<path class="gl" d="' + grid + '"/>');
     if (labY != null) o.push('<text class="ax" x="2" y="' + r1(labY - 3.5) + '">' + labV + NB + 'ft</text>');
 
-    // Areas
+    // Areas: one continuous shape, hour to hour in straight lines (the
+    // board's polygons). 0 ft lies on the baseline, so the shape thins
+    // out and comes back without vertical edges. Only a missing reading
+    // breaks it, and then it slopes to the baseline over half an hour.
     var area = function (vals, cls) {
       var d = '', run = null;
       var flush = function () {
         if (!run) return;
-        var x0 = Math.max(0, run[0][0] - hs / 2), x1 = run.last === n - 1 ? W : Math.min(W, run[run.length - 1][0] + hs / 2);
-        d += 'M' + r1(x0) + ' ' + G.swBase + 'L' + run.map(function (p) { return r1(p[0]) + ' ' + r1(p[1]); }).join('L') + 'L' + r1(x1) + ' ' + G.swBase + 'Z';
+        var first = run[0], last = run[run.length - 1];
+        var x0 = first.i === 0 ? 0 : Math.max(0, first.x - hs / 2);
+        var x1 = last.i === n - 1 ? W : Math.min(W, last.x + hs / 2);
+        var pts = run.map(function (p) { return r1(p.x) + ' ' + r1(p.y); });
+        if (last.i === n - 1 && x1 - last.x > 0.05) pts.push(r1(x1) + ' ' + r1(last.y));   // the last hour holds to the edge
+        d += 'M' + r1(x0) + ' ' + G.swBase + 'L' + pts.join('L') + 'L' + r1(x1) + ' ' + G.swBase + 'Z';
         run = null;
       };
       for (var i = 0; i < n; i++) {
         var val = vals[i];
-        if (isNum(val) && val > 0 && isFinite(times[i])) {
+        if (isNum(val) && isFinite(times[i])) {
           if (!run) run = [];
-          run.push([X(times[i]), ySw(val)]);
-          run.last = i;
+          run.push({ i: i, x: X(times[i]), y: ySw(Math.max(0, val)) });
         } else flush();
       }
       flush();
@@ -455,9 +481,11 @@
     o.push(area(gh, 'gh'));
     o.push(area(sw, 'sw'));
 
-    // Window band, by the hero's status.
+    // Window band, by the hero's status: blocks, not 2 px slivers (a call
+    // that lasts under 3 hours joins its neighbour, as the board draws it).
     var band = '', segStart = 0;
     var bandCls = { 'in': 'bi', edge: 'be', blocked: 'bb' };
+    st = U.steadyRuns(st, 3);
     for (var i = 1; i <= n; i++) {
       if (i < n && st[i] === st[segStart]) continue;
       var c = bandCls[st[segStart]];
@@ -578,16 +606,18 @@
   }
 
   // An hour's trains → { reach: biggest in-window/edge train, blocked:
-  // biggest blocked train, all } (either may be null).
+  // biggest blocked train (either may be null), all, any: the hour has
+  // a swell reading at all (0 ft counts, missing doesn't) }.
   function splitTrains(hr) {
-    var all = [], reach = null, blocked = null;
+    var all = [], reach = null, blocked = null, any = false;
     if (hr) [hr.swell].concat(hr.others || []).forEach(function (t) {
+      if (t && isNum(t.h)) any = true;
       if (!t || !isNum(t.h) || t.h <= 0 || all.indexOf(t) >= 0) return;
       all.push(t);
       if (t.status === 'in' || t.status === 'edge') { if (!reach || t.h > reach.h) reach = t; }
       else if (t.status === 'blocked') { if (!blocked || t.h > blocked.h) blocked = t; }
     });
-    return { reach: reach, blocked: blocked, all: all };
+    return { reach: reach, blocked: blocked, all: all, any: any };
   }
 
   // ── Cursor ─────────────────────────────────────────────────────────
@@ -681,11 +711,13 @@
     if (nh <= chart.tLast) out.nh = nh;
     return out;
   }
+  // Now stays a live ink button at rest, as on every board (a tap there
+  // does nothing); the others go muted at the chart's ends.
   function updateButtons() {
-    var tg = targets(), atNow = cur.mode === 'now';
+    var tg = targets();
     E.ctl.querySelectorAll('[data-j]').forEach(function (b) {
       var j = b.getAttribute('data-j');
-      var dis = !chart || (j === 'now' ? atNow : tg[j] == null);
+      var dis = !chart || (j !== 'now' && tg[j] == null);
       if (b.disabled !== dis) b.disabled = dis;
     });
   }
@@ -693,7 +725,7 @@
     var b = e.target.closest ? e.target.closest('[data-j]') : null;
     if (!b || b.disabled || !chart) return;
     var j = b.getAttribute('data-j');
-    if (j === 'now') { setCursor({ mode: 'now', t: 0, low: false }, { slide: 250 }); return; }
+    if (j === 'now') { if (cur.mode !== 'now') setCursor({ mode: 'now', t: 0, low: false }, { slide: 250 }); return; }
     var t = targets()[j];
     if (t == null) return;
     setCursor({ mode: 'time', t: t, low: j === 'pl' || j === 'nl' }, { slide: 180 });
@@ -806,15 +838,20 @@
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // LINEUP — the Choc TV radar's coastline, the window cone, the hour's
-  // swell and wind (viewBox 358 × 220, the A2-Phone-Sat picture)
+  // LINEUP — flat colour blocks (A2-Phone-Sat; A-Green "Lineup picture,
+  // flat colour blocks"): water, the lighter shallows round the reef, a
+  // sand edge along the coast and green land, all from the Choc TV
+  // radar's coastline vectors (A2-Notes: one set of shapes for phone and
+  // TV), then the window cone, the hour's swell and wind arrows and dark
+  // label pills on top. viewBox 358 × 220; colours are forecast.css
+  // --lu-* (day: the Sat board, night: A-Green "Deep").
   // ════════════════════════════════════════════════════════════════════
-  var LU = { W: 358, H: 220, crop: 0.15, lx: 140, R: 125 };
+  var LU = { W: 358, H: 220, crop: 0.15, lx: 140, R: 125, pillH: 20, pad: 5, ch: 6.6 };
   function coast() { try { return typeof KIOSK_COAST !== 'undefined' && KIOSK_COAST && KIOSK_COAST.shore ? KIOSK_COAST : null; } catch (_) { return null; } }
 
   function lineupSVG(T) {
     var CO = coast();
-    var W = LU.W, H = LU.H;
+    var W = LU.W, H = LU.H, M = 40;      // M: how far the land runs on past the frame
     var aspect = CO ? CO.aspect : 1992 / 949;
     var fh = H / (1 - LU.crop), fw = fh * aspect;
     var cxF = CO ? CO.lineup[0] : 0.5, cyF = CO ? CO.lineup[1] : 0.5;
@@ -822,17 +859,29 @@
     var lx = LU.lx, ly = fy + cyF * fh;
     var P = function (p) { return [fx + p[0] * fw, fy + p[1] * fh]; };
     var pt = function (x, y) { return r1(x) + ' ' + r1(y); };
+    var path = function (pts) { return 'M' + pts.map(function (p) { return pt(p[0], p[1]); }).join('L'); };
     var o = [];
+    o.push('<rect class="wt" width="' + W + '" height="' + H + '"/>');
+    // The reef's shallows: the board's ellipse, 12 px right of and 11 px
+    // below the reef mark.
+    o.push('<ellipse class="shl" cx="' + r1(lx + 12) + '" cy="' + r1(ly + 11) + '" rx="50" ry="32"/>');
     if (CO) {
       // Land is everything above / left of the traced shore (kiosk.js).
+      // The coast runs on past the frame at both ends, so neither the
+      // sand nor the land stops mid-picture.
       var shore = CO.shore.map(P);
-      var endY = shore[shore.length - 1][1];
-      var line = shore.map(function (p) { return pt(p[0], p[1]); }).join('L') + 'L' + pt(W + 2, endY);
-      o.push('<path class="land" d="M' + line + 'L' + pt(W + 2, -2) + 'L-2 -2L' + pt(-2, H + 2) + 'Z"/>');
-      (CO.ponds || []).forEach(function (pond) {
-        o.push('<path class="pond" d="M' + pond.map(P).map(function (p) { return pt(p[0], p[1]); }).join('L') + 'Z"/>');
-      });
-      o.push('<path class="shore" d="M' + line + '"/>');
+      var s0 = shore[0], sN = shore[shore.length - 1], xR = Math.max(W + M, sN[0]);
+      var coastD = path([[s0[0], H + M]].concat(shore, [[xR, sN[1]]]));
+      var landD = coastD + 'L' + pt(xR, -M) + 'L' + pt(-M, -M) + 'L' + pt(-M, H + M) + 'Z';
+      // The traced "pond" is a round knob of land on the shore (it reads
+      // as a stray outline otherwise): filled as land, with the same sand.
+      var knobs = (CO.ponds || []).map(function (pond) { return path(pond.map(P)) + 'Z'; });
+      // Sand: one wide stroke along the coast and round the knobs; the
+      // land fills then cover its landward half, leaving an even edge.
+      o.push('<path class="sand" d="' + coastD + knobs.join('') + '"/>');
+      o.push('<path class="land" d="' + landD + '"/>');
+      // Separate paths: a knob overlapping the land must not cut a hole.
+      knobs.forEach(function (d) { o.push('<path class="land" d="' + d + '"/>'); });
     } else {
       // No vectors for this spot: the satellite photo, same frame.
       o.push('<image href="project/assets/lineup.jpg" x="' + r1(fx) + '" y="' + r1(fy) + '" width="' + r1(fw) + '" height="' + r1(fh) + '" preserveAspectRatio="none"/>');
@@ -860,21 +909,24 @@
     };
     var labels = [];
     if (sw && isNum(sw.dir)) {
+      var blk = sw.status === 'blocked';
       var len = U.clamp(Math.sqrt(sw.h * sw.h * (sw.period || 1)) * 28, 56, 112);
-      var a = arrow(sw.dir, len, 5, 'sa sa-' + (sw.status === 'blocked' ? 'blk' : sw.status === 'edge' ? 'edge' : 'in'));
-      labels.push(readLabel(F.swell(sw.h, sw.period, sw.compass), a, mid, 'rd'));
+      var a = arrow(sw.dir, len, 5, 'sa' + (blk ? ' sa-blk' : ''));
+      labels.push(readLabel(F.swell(sw.h, sw.period, sw.compass) + (blk ? ' · blocked' : ''), a, mid));
     }
     if (w && isNum(w.dir) && isNum(w.mph)) {
       var wa = arrow(w.dir, U.clamp(w.mph * 5.5, 36, 100), 9, 'wa');
-      labels.push(readLabel(F.wind(w.mph, w.dir), wa, mid, 'rd'));
+      labels.push(readLabel(F.wind(w.mph, w.dir), wa, mid));
     }
-    o.push('<circle class="mk" cx="' + r1(lx) + '" cy="' + r1(ly) + '" r="4.5"/>');
-    // The cone's real-world ends, two lines each, outside the arc.
-    labels.push({ lines: ['SW Pt Block', WIN_MIN + '°'], x: W - 8, y: e1[1] + 22, anchor: 'end', cls: 'lab' });
-    labels.push({ lines: ['Montauk Pt ' + WIN_MAX + '°'], x: e2[0] + 10, y: e2[1] + 1, anchor: 'start', cls: 'lab' });
+    o.push('<circle class="mk" cx="' + r1(lx) + '" cy="' + r1(ly) + '" r="5"/>');
+    // The cone's real-world ends, as the board: Block Island's SW Point
+    // under the east edge (kept inside the frame), Montauk Point beside
+    // the south one.
+    labels.push({ text: 'SW Pt Block ' + WIN_MIN + '°', x: W - 6, y: e1[1] + 20, anchor: 'end' });
+    labels.push({ text: 'Montauk Pt ' + WIN_MAX + '°', x: e2[0] + 4, y: e2[1] - 3, anchor: 'start' });
     placeLabels(labels, W, H).forEach(function (l) {
-      o.push('<text class="' + l.cls + '" x="' + r1(l.x) + '" y="' + r1(l.y) + '" text-anchor="' + l.anchor + '">' +
-        l.lines.map(function (t, k) { return k ? '<tspan x="' + r1(l.x) + '" dy="13.5">' + esc(t) + '</tspan>' : esc(t); }).join('') + '</text>');
+      o.push('<g class="pill" data-a="' + l.anchor + '"><rect x="' + r1(l.x1) + '" y="' + r1(l.y1) + '" width="' + r1(l.w) + '" height="' + LU.pillH + '" rx="6"/>' +
+        '<text x="' + r1(l.x1 + LU.pad) + '" y="' + r1(l.y1 + 14) + '">' + esc(l.text) + '</text></g>');
     });
 
     var aria = 'Lineup: swell window from ' + WIN_MIN + ' to ' + WIN_MAX + ' degrees' +
@@ -882,38 +934,54 @@
       (w ? '; wind ' + F.wind(w.mph, w.dir) : '');
     return '<svg class="cl-f-scene" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(aria) + '">' + o.join('') + '</svg>';
   }
-  // A reading sits just past its arrow's tail, pushed off the shaft to
-  // the side away from the window's centre so it never sits on the cone.
-  function readLabel(text, a, midDeg, cls) {
+  // A reading's pill sits just past its arrow's tail, pushed off the
+  // shaft to the side away from the window's centre so it never sits on
+  // the cone. x is the pill's edge on the anchor side, y the baseline.
+  function readLabel(text, a, midDeg) {
     var d = ((a.from - midDeg) % 360 + 540) % 360 - 180;          // signed bearing from the window centre
     var nx = d >= 0 ? -a.uy : a.uy, ny = d >= 0 ? a.ux : -a.ux;   // unit normal, away from the cone
     var px = a.tail[0] + a.ux * 6 + nx * 8, py = a.tail[1] + a.uy * 6 + ny * 8;
     var ex = a.ux + nx * 0.8;                                      // which way the text runs
     var anchor = ex > 0.3 ? 'start' : ex < -0.3 ? 'end' : 'middle';
-    var y = ny < -0.3 ? py : ny > 0.3 ? py + 11 : py + 4;          // baseline: above, below or beside
-    var x = px;
-    return { lines: [text], x: x, y: y, anchor: anchor, cls: cls };
+    var x = anchor === 'start' ? px - LU.pad : anchor === 'end' ? px + LU.pad : px;
+    var y = ny < -0.3 ? py - 6 : ny > 0.3 ? py + 14 : py + 4;      // pill above, below or beside
+    return { text: text, x: x, y: y, anchor: anchor };
   }
-  // Keep labels inside the picture and off each other (first placed wins).
+  // Pills inside the picture and off each other (first placed wins).
+  // Widths are estimated here and trued up once laid out (fitPills).
   function placeLabels(labels, W, H) {
-    var boxes = [];
+    var boxes = [], PH = LU.pillH;
     return labels.map(function (l) {
-      var wpx = Math.max.apply(null, l.lines.map(function (t) { return t.length * 6.6; }));
-      var hpx = 13.5 * (l.lines.length - 1);
+      var wpx = l.text.length * LU.ch + 2 * LU.pad;
       var x1 = l.anchor === 'end' ? l.x - wpx : l.anchor === 'middle' ? l.x - wpx / 2 : l.x;
-      if (x1 < 6) { l.x += 6 - x1; x1 = 6; }
-      if (x1 + wpx > W - 6) { l.x -= x1 + wpx - (W - 6); x1 = W - 6 - wpx; }
-      l.y = U.clamp(l.y, 14, H - 6 - hpx);
+      x1 = U.clamp(x1, 4, W - 4 - wpx);
+      var y1 = U.clamp(l.y - 14, 4, H - 4 - PH);
       for (var g = 0; g < 6; g++) {
-        var y1 = l.y - 11, y2 = l.y + hpx + 3;
-        var hit = boxes.filter(function (b) { return x1 < b.x2 && x1 + wpx > b.x1 && y1 < b.y2 && y2 > b.y1; })[0];
+        var hit = boxes.filter(function (b) { return x1 < b.x2 && x1 + wpx > b.x1 && y1 < b.y2 && y1 + PH > b.y1; })[0];
         if (!hit) break;
-        var down = hit.y2 + 12, up = hit.y1 - 4 - hpx;
-        l.y = down + hpx <= H - 6 ? down : Math.max(14, up);
+        var down = hit.y2 + 4, up = hit.y1 - 4 - PH;
+        y1 = down + PH <= H - 4 ? down : Math.max(4, up);
       }
-      boxes.push({ x1: x1, x2: x1 + wpx, y1: l.y - 11, y2: l.y + hpx + 3 });
-      return l;
+      boxes.push({ x1: x1, x2: x1 + wpx, y1: y1, y2: y1 + PH });
+      return { text: l.text, x1: x1, y1: y1, w: wpx, anchor: l.anchor };
     });
+  }
+  // Size each pill to its laid-out text, keeping its anchor edge (a
+  // hidden tab has no layout yet: the estimate stands until onShow).
+  function fitPills(svg) {
+    if (!svg) return;
+    var pills = svg.querySelectorAll('g.pill');
+    for (var k = 0; k < pills.length; k++) {
+      var g = pills[k], t = g.querySelector('text'), r = g.querySelector('rect'), tw = 0;
+      try { tw = t.getComputedTextLength(); } catch (_) { tw = 0; }
+      if (!(tw > 0)) continue;
+      var bw = tw + 2 * LU.pad, x1 = +r.getAttribute('x'), ow = +r.getAttribute('width'), an = g.getAttribute('data-a');
+      var nx = an === 'end' ? x1 + ow - bw : an === 'middle' ? x1 + (ow - bw) / 2 : x1;
+      nx = U.clamp(nx, 4, LU.W - 4 - bw);
+      r.setAttribute('x', r1(nx));
+      r.setAttribute('width', r1(bw));
+      t.setAttribute('x', r1(nx + LU.pad));
+    }
   }
   function renderLineup() {
     var T = curTime();
@@ -923,6 +991,7 @@
     E.lu.innerHTML = lineupSVG(T) +
       '<p class="cl-fine cl-f-cap">' + (D.loaded() ? esc(F.day(new Date(T)) + ' ' + F.time(new Date(T))) + ', swell and wind at the reef'
         : D.freshness() === 'loading' ? 'Waiting for the forecast' : 'No forecast for the swell and wind arrows') + '</p>';
+    fitPills(E.lu.querySelector('svg'));
   }
 
   // ════════════════════════════════════════════════════════════════════
@@ -1000,7 +1069,7 @@
     var h = '<p class="cl-fine cl-f-obs' + (cls ? ' ' + cls : '') + '">' + esc('Wave buoy, observed ' + (b.obsAt ? F.when(b.obsAt) + ' · ' + F.age(b.obsAt) : DASH)) + '</p>';
     var rows = [];
     rows.push([b.band ? 'Swell 8 s and longer' : 'Waves', F.swell(b.h, b.period, b.compass)]);
-    if (b.reachesAt) rows.push([b.reachesAt.getTime() >= Date.now() ? 'Reaches the reef' : 'Reached the reef', '~' + F.time(b.reachesAt)]);
+    if (b.reachesAt) rows.push([b.reachesAt.getTime() >= Date.now() ? 'Reaches the reef' : 'Reached the reef', '~' + F.when(b.reachesAt)]);
     rows.push(['Total sea', F.ft(b.total)]);
     var sp = typeof STATE !== 'undefined' ? STATE.lastSpecSummary : null;
     var m2f = function (v) { return isNum(v) ? v * 3.28084 : null; };

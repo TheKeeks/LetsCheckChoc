@@ -129,7 +129,12 @@ module.exports = {
     log('cursor', JSON.stringify(Object.assign({ from: x0 }, where, after)));
     assert.notEqual(Math.round(after.x), Math.round(x0), 'the cursor moved');
     assert.equal(after.sel, 'true', 'the tapped row stays selected');
-    assert.equal(after.scrub, want.idx, 'the app\'s scrubber follows to the low\'s hour');
+    await ctx.waitFor(i => STATE.scrubberIdx === i, { arg: want.idx, label: 'the app\'s scrubber follows to the low\'s hour', timeout: 3000 });
+    // A repaint of the app's chart (live data landing after the saved copy,
+    // which CI's slower runner hits) puts the app's scrubber back to now;
+    // it has to come back to the cursor on screen.
+    await ctx.state(() => { const d = STATE.forecastData; drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo, d.tidePred, d.buoyParsed); });
+    await ctx.waitFor(i => STATE.scrubberIdx === i, { arg: want.idx, label: 'the app\'s scrubber returns to the cursor after a repaint', timeout: 3000 });
     await ctx.waitFor(() => Math.abs(document.querySelector('#cl-view-forecast .cl-f-fch').getBoundingClientRect().top) < 12,
       { label: 'page scrolled to the chart', timeout: 3000 });
     await ctx.screenshot('clean-week-tap');

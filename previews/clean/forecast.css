@@ -14,6 +14,7 @@
 .cl-f-now { padding: 12px var(--gut) 24px; }
 .cl-f-day {
   font-size: 21px;
+  font-weight: 400;       /* a label, not a heading (A2-Phone-Late); .cl-serif is 500 */
   line-height: 1.2;
   color: var(--ink);
   margin: 0 0 6px;
@@ -130,6 +131,7 @@ html[data-clean-theme="night"] .cl-f-st { margin-top: 12px; }
 .cl-f-r { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
 .cl-f-m { font-size: 13px; color: var(--muted); line-height: 1.3; }
 .cl-f-empty { padding: 14px 0; font-size: 14px; color: var(--muted); border-top: 1px solid var(--hair); }
+.cl-f-wkn { margin: 0 0 8px; }
 
 /* ── Forecast chart ─────────────────────────────────────────────────── */
 .cl-f-ch { padding: 0 var(--gut); }
@@ -165,7 +167,7 @@ html[data-clean-theme="night"] .cl-f-st { margin-top: 12px; }
 .cl-f-cx { display: block; width: 100%; height: 232px; overflow: visible; }
 .cl-f-cx .nt { fill: var(--shade); }
 .cl-f-cx .gl { stroke: var(--hair); stroke-width: 1; fill: none; }
-.cl-f-cx .ax { font-size: 10px; font-weight: 500; fill: var(--muted); font-family: var(--sans); }
+.cl-f-cx .ax { font-size: 10px; font-weight: 400; fill: var(--muted); font-family: var(--sans); }
 .cl-f-cx .gh { fill: var(--blk-fill); opacity: var(--ghost); }
 .cl-f-cx .sw { fill: var(--in); }
 .cl-f-cx .bi { fill: var(--in); }
@@ -203,40 +205,62 @@ html[data-clean-theme="night"] .cl-f-st { margin-top: 12px; }
   white-space: nowrap;
 }
 .cl-f-jb:active:not(:disabled) { background: var(--shade); }
-.cl .cl-f-jb:disabled { color: var(--muted); opacity: .55; cursor: default; }
+.cl .cl-f-jb:disabled { color: var(--muted); cursor: default; }   /* muted text stays 6:1 */
 
-/* ── Lineup (the Choc TV radar's coastline, day and night tokens) ───── */
+/* ── Lineup: flat colour blocks ─────────────────────────────────────────
+   One flat colour each for water, reef shallows, sand and land, no
+   gradients (A-Green "Lineup picture, flat colour blocks"). Day is the
+   A2-Phone-Sat board's palette, night A-Green "Deep" (its brighter cone,
+   for the dark page and the TV at night). A picture, not text, so these
+   fixed colours sit outside the page tokens; the pills keep every label
+   at 4.5:1 or more over any of them. */
+.cl-f-scene {
+  --lu-water: #123F5F;
+  --lu-shallow: #266F8F;
+  --lu-sand: #CDBB8A;
+  --lu-land: #5E7A4A;
+  --lu-cone: #3FB07F;
+  --lu-cone-a: .38;
+  --lu-cone-line: #6FD3A5;
+  --lu-mark: #FFFFFF;     /* arrows and the reef mark */
+  --lu-pill: #06192A;
+  --lu-pill-a: .6;
+  --lu-text: #F1F4F7;
+}
+html[data-clean-theme="night"] .cl-f-scene {
+  --lu-cone: #5BD08A;
+  --lu-cone-a: .34;
+  --lu-cone-line: #5BD08A;
+}
 .cl-f-lu .cl-f-scene {
   display: block;
   width: 100%;
   max-width: 560px;
   height: auto;
   margin: 0 auto;
-  border: 1px solid var(--hair);
   border-radius: var(--r);
-  background: var(--bg);
+  overflow: hidden;
+  background: var(--lu-water);
 }
-.cl-f-scene .land { fill: var(--hair); }
-.cl-f-scene .shore { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
-.cl-f-scene .pond { fill: var(--bg); stroke: var(--muted); stroke-width: 1; stroke-opacity: .5; stroke-linejoin: round; }
-.cl-f-scene .cone { fill: var(--in); fill-opacity: .2; stroke: var(--in); stroke-width: 1.8; stroke-linejoin: round; }
-.cl-f-scene .sa { fill: none; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
-.cl-f-scene .sa-in { stroke: var(--in); }
-.cl-f-scene .sa-edge { stroke: var(--edge); }
-.cl-f-scene .sa-blk { stroke: var(--blk); }
-.cl-f-scene .wa { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.cl-f-scene .mk { fill: var(--bg); stroke: var(--ink); stroke-width: 2.5; }
-.cl-f-scene text {
+.cl-f-scene .wt { fill: var(--lu-water); }
+.cl-f-scene .shl { fill: var(--lu-shallow); }
+/* Twice the visible sand: the land fill covers the landward half. */
+.cl-f-scene .sand { fill: none; stroke: var(--lu-sand); stroke-width: 24px; stroke-linejoin: round; stroke-linecap: round; }
+.cl-f-scene .land { fill: var(--lu-land); }
+.cl-f-scene .cone { fill: var(--lu-cone); fill-opacity: var(--lu-cone-a); stroke: var(--lu-cone-line); stroke-width: 1.8px; stroke-linejoin: round; }
+.cl-f-scene .sa,
+.cl-f-scene .wa { fill: none; stroke: var(--lu-mark); stroke-linecap: round; stroke-linejoin: round; }
+.cl-f-scene .sa { stroke-width: 3.2px; }
+.cl-f-scene .sa-blk { stroke-opacity: .55; }    /* blocked: faded, and the pill says so */
+.cl-f-scene .wa { stroke-width: 2px; }
+.cl-f-scene .mk { fill: var(--lu-mark); }
+.cl-f-scene .pill rect { fill: var(--lu-pill); fill-opacity: var(--lu-pill-a); }
+.cl-f-scene .pill text {
   font-family: var(--sans);
   font-size: 11.5px;
   font-weight: 600;
-  fill: var(--ink);
-  paint-order: stroke;
-  stroke: var(--bg);
-  stroke-width: 4px;
-  stroke-linejoin: round;
+  fill: var(--lu-text);
 }
-.cl-f-scene text.lab { fill: var(--muted); }
 .cl-f-cap { margin-top: 8px; text-align: left; }
 
 /* ── Details ────────────────────────────────────────────────────────── */

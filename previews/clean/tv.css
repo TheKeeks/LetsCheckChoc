@@ -240,9 +240,13 @@ html[data-clean-theme="night"] #cl-tv .cl-tv-st-in .cl-tv-dt,
 #cl-tv .cl-tv-scope > div { position: absolute; inset: 0; }
 #cl-tv .cl-tv-scope svg { display: block; width: 100%; height: 100%; overflow: visible; }
 #cl-tv .cl-tv-scope .ring { fill: none; stroke: var(--hair); }
-#cl-tv .cl-tv-scope .land { fill: rgba(255, 255, 255, .05); stroke: none; }
-#cl-tv .cl-tv-scope .pond { fill: var(--bg); stroke: var(--muted); stroke-opacity: .35; stroke-width: 1; }
-#cl-tv .cl-tv-scope .shore { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+/* Land as the board draws it: a faint light fill (white at 5 %, one
+   group opacity so the knob's overlap stays even) and a muted outline
+   along the shore, round the knob and along the ring. */
+#cl-tv .cl-tv-scope .land { opacity: .05; }
+#cl-tv .cl-tv-scope .land path { fill: #fff; stroke: none; }
+#cl-tv .cl-tv-scope .shore,
+#cl-tv .cl-tv-scope .rim { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
 #cl-tv .cl-tv-scope-base svg { overflow: hidden; }
 #cl-tv .cl-tv-scope .cone { fill: var(--in); fill-opacity: .22; stroke: var(--in); stroke-width: 2; stroke-linejoin: round; }
 #cl-tv .cl-tv-scope .arr { fill: none; stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; }
