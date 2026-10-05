@@ -1,0 +1,223 @@
+/* ════════════════════════════════════════════════════════════════════
+   CLEAN — log.css (owner: Log part)
+   ────────────────────────────────────────────────────────────────────
+   Imported by theme.css after base.css. Styles for previews/clean/log.js
+   only: the Log tab (A2-Phone-Log, A2-Phone-Log-Other). Sizes are the
+   boards' own; colours are the tokens from theme.css, so night needs no
+   rules of its own. Classes are prefixed cl-l-.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Until Firebase has had its chance to restore a session: hold the
+   space quietly instead of flashing "Sign in". */
+.cl-l-wait { min-height: 50vh; }
+
+/* ── Signed out ─────────────────────────────────────────────────────── */
+.cl-l-gate { padding-top: 12px; }
+.cl-l-gt { font-size: 17px; font-weight: 600; }
+.cl-l-gf { margin: 4px 0 16px; }
+
+/* ── Editing one of your sessions ───────────────────────────────────── */
+.cl-l-edit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 var(--gut) 4px;
+  font-size: 15px;
+  color: var(--muted);
+}
+.cl-l-edit b { color: var(--ink); font-weight: 600; }
+.cl .cl-l-edit .cl-chip { color: var(--ink); flex: none; }
+.cl-l-edit[hidden] { display: none; }
+
+/* ── When ───────────────────────────────────────────────────────────── */
+.cl-l-whn {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 12px;
+  row-gap: 2px;
+  padding: 0 var(--gut) 12px;
+  font-size: 26px;
+  line-height: 1.15;
+  letter-spacing: -.02em;
+}
+.cl-l-whn b { font-weight: 600; white-space: nowrap; }
+.cl-l-whn span { font-weight: 500; color: var(--muted); white-space: nowrap; }
+.cl-l-whn.cl-l-unsure b { color: var(--muted); }
+
+.cl-l-chips { padding: 0 var(--gut); }
+.cl-l-dayc { margin-top: 12px; }
+
+/* Typed time (and, for Older, typed date) with the AM / PM segment */
+.cl-l-tf { display: flex; align-items: center; gap: 12px; padding: 16px var(--gut) 0; }
+.cl-l-tf[hidden] { display: none; }
+.cl-l-tin {
+  width: 128px;
+  height: 56px;
+  flex: none;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  background: var(--bg);
+  color: var(--ink);
+  caret-color: var(--ink);
+  text-align: center;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  font-variant-numeric: tabular-nums;
+  -webkit-appearance: none;
+  appearance: none;
+  box-shadow: none;
+}
+.cl-l-tin::placeholder { color: var(--muted); opacity: .55; font-weight: 500; }
+/* Typing: the 2 px ink box of the board, without moving a pixel. */
+.cl .cl-l-tin:focus,
+.cl .cl-l-tin:focus-visible {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+.cl-l-hint { padding: 8px var(--gut) 0; font-size: 13px; color: var(--muted); line-height: 1.4; }
+
+/* ── How was it? 0–10, unrated until tapped ─────────────────────────── */
+.cl-l-rt { padding: 0 var(--gut); margin-bottom: 20px; }
+.cl-l-rl {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 17px;
+}
+.cl-l-rl b { font-weight: 600; }
+.cl-l-rv { font-size: 15px; font-weight: 600; white-space: nowrap; }
+.cl-l-rv.cl-l-none { color: var(--muted); font-weight: 500; }
+/* 11 cells across the column: ~31 px wide at 375 px, 44 px high, no gaps
+   between them (A2-Notes accepts the narrow cells for one-row scales). */
+.cl-l-sc {
+  display: grid;
+  grid-template-columns: repeat(11, minmax(0, 1fr));
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.cl .cl-l-sc button {
+  min-width: 0;
+  height: 44px;
+  border-left: 1px solid var(--hair);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: center;
+}
+.cl .cl-l-sc button:first-child { border-left: 0; }
+.cl .cl-l-sc button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.cl .cl-l-sc button:focus-visible { outline-offset: -3px; border-radius: 0; }
+
+/* ── Conditions, filled in for you ─────────────────────────────────── */
+.cl-l-cond {
+  margin: 4px var(--gut) 0;
+  padding: 14px 0;
+  border-top: 1px solid var(--hair);
+  border-bottom: 1px solid var(--hair);
+  font-size: 15px;
+  line-height: 1.45;
+}
+.cl-l-lab { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.cl-l-cv.cl-l-busy { color: var(--muted); }
+.cl .cl-l-retry {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-bottom: -10px;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.cl-l-retry[hidden] { display: none; }
+
+/* ── Notes, photos, save ────────────────────────────────────────────── */
+.cl-l-fld { padding: 0 var(--gut); }
+.cl .cl-l-notes {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  margin: 0;
+  padding: 15px 0 14px;
+  border: 0;
+  border-bottom: 1px solid var(--hair);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 16px;            /* 16 px: iOS does not zoom into the field */
+  line-height: 1.4;
+  resize: none;
+  overflow: hidden;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.cl .cl-l-notes::placeholder { color: var(--muted); opacity: 1; }
+.cl .cl-l-notes:focus-visible { outline: none; border-bottom-color: var(--ink); }
+
+.cl-l-phs { display: flex; flex-wrap: wrap; gap: 14px; padding: 16px var(--gut) 0; }
+.cl-l-phs[hidden] { display: none; }
+.cl-l-ph { position: relative; width: 72px; height: 72px; border-radius: 8px; background: var(--shade); }
+.cl-l-ph.cl-l-has { background: #3A4C5B; }
+.cl-l-ph img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+/* Remove: a 24 px dot inside a 44 px target that overhangs the corner by
+   10 px (inside the 16 px gutter, so no sideways scroll). */
+.cl .cl-l-ph button {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 0;
+}
+.cl-l-ph button i {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--bg);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+.cl-l-addw { margin-top: 14px; }
+.cl-l-savew { margin-top: 24px; }
+.cl-l-why { margin-top: 10px; text-align: center; font-size: 13px; color: var(--muted); line-height: 1.4; }
+.cl-l-why[hidden] { display: none; }
+
+/* ── Past sessions ──────────────────────────────────────────────────── */
+.cl-l-list { padding: 0 var(--gut); }
+.cl-l-ss {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 88px;
+  gap: 12px;
+  align-items: center;
+  min-height: 96px;
+  padding: 10px 0;
+  border-top: 1px solid var(--hair);
+}
+.cl-l-ss.cl-l-crew { grid-template-columns: 56px minmax(0, 1fr); }
+.cl-l-tn { width: 56px; height: 56px; border-radius: 8px; overflow: hidden; background: var(--shade); }
+.cl-l-tn.cl-l-has { background: #3A4C5B; }
+.cl-l-tn img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cl-l-sb { min-width: 0; }
+.cl-l-sd { font-size: 15px; font-weight: 600; line-height: 1.3; }
+.cl-l-sc2 { font-size: 12.5px; color: var(--muted); margin-top: 2px; line-height: 1.35; overflow-wrap: break-word; }
+.cl-l-sr { font-size: 14px; font-weight: 500; margin-top: 4px; }
+.cl-l-ac { display: flex; }
+.cl-l-empty { padding: 14px 0; border-top: 1px solid var(--hair); font-size: 14px; color: var(--muted); }
+.cl-l-morew { margin-top: 8px; }
+.cl-l-morew[hidden] { display: none; }

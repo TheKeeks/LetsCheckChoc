@@ -5,7 +5,7 @@
 // must never fetch anything from previews/.
 'use strict';
 
-const PREVIEWS = (process.env.E2E_PREVIEWS || 'shader-pack,one-instrument,chart-room,draft-paper,draft-navy').split(',');
+const PREVIEWS = (process.env.E2E_PREVIEWS || 'shader-pack,one-instrument,chart-room,draft-paper,draft-navy,clean').split(',');
 
 module.exports = {
   name: 'design previews: each ?preview= look loads on the phone and Choc TV; the plain URL loads none',

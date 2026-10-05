@@ -1,0 +1,426 @@
+/* ════════════════════════════════════════════════════════════════════
+   CLEAN — base.css (owner: Core)
+   ────────────────────────────────────────────────────────────────────
+   Resets, the phone shell (header, tab bar, settings button), the
+   sub-page pattern (Settings and any part's drill-down page) and the
+   shared pieces every part uses: section heading, list rows, fine
+   print, window status tag, wind words, chips, buttons. Sizes and
+   colours are the A2 boards' own. Everything is scoped to .cl, the
+   class on the phone shell (#cl-app), every sub-page and the TV root
+   (#cl-tv). Part styles live in forecast.css / log.css / model.css /
+   tv.css and should prefix their classes cl-f-, cl-l-, cl-m-, cl-tv-.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── Reset (scoped, zero specificity) ───────────────────────────────
+   :where() keeps these at the weight of a bare element selector, so any
+   class a part writes (.cl-f-btn { border: … }) wins without a fight. */
+:where(.cl),
+:where(.cl) *,
+:where(.cl) *::before,
+:where(.cl) *::after { box-sizing: border-box; }
+:where(.cl) {
+  font-family: var(--sans);
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+:where(.cl) :where(h1, h2, h3, h4, h5, h6) { margin: 0; padding: 0; font-size: inherit; font-weight: inherit; line-height: inherit; }
+:where(.cl) :where(p, ul, ol, figure, dl, dd) { margin: 0; padding: 0; }
+:where(.cl) :where(ul, ol) { list-style: none; }
+:where(.cl) :where(button, input, select, textarea) {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+}
+:where(.cl) button {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: inherit;
+  touch-action: manipulation;
+}
+:where(.cl) button:disabled { cursor: default; }
+:where(.cl) a { color: inherit; }
+:where(.cl) svg { flex: none; }
+:where(.cl) :focus { outline: none; }
+:where(.cl) :focus-visible { outline: 2px solid var(--in); outline-offset: 2px; border-radius: 6px; }
+.cl [hidden],
+#cl-app[hidden],
+.cl-sub[hidden] { display: none !important; }
+
+.cl-serif { font-family: var(--serif); font-variant-numeric: lining-nums; font-weight: 500; }
+.cl-num { font-variant-numeric: tabular-nums; }
+.cl-nowrap { white-space: nowrap; }
+.cl-sr-only {
+  position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ── Icons (A-Icons, round set: 1.75 stroke, soft ends) ─────────────── */
+.cl-ic {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+  overflow: visible;
+}
+.cl-ic .f { fill: currentColor; }
+.cl-ic .th { stroke-width: 1.1; opacity: .5; }
+.cl-ic .dash { stroke-dasharray: 2 2.4; }
+.cl-ic.cl-ic-bold { stroke-width: 2.5; }
+.cl-ic-tide { color: var(--tide); }
+.cl-barb { flex: none; overflow: visible; }
+
+/* ── Phone shell ────────────────────────────────────────────────────── */
+/* A phone layout: on an iPad or desktop it stays one centred column
+   (--col), the tab bar spans the screen with its buttons over the column. */
+html.cl-on { --col: 640px; }
+#cl-app,
+.cl-sub {
+  max-width: var(--col);
+  margin-left: auto;
+  margin-right: auto;
+}
+#cl-app {
+  min-height: 100vh;
+  background: var(--bg);
+  overflow-x: clip;
+  /* the fixed tab bar sits over the end of every view */
+  padding-bottom: calc(var(--tab-h) + 14px + env(safe-area-inset-bottom, 0px));
+}
+.cl-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 56px;
+  padding: env(safe-area-inset-top, 0px) 8px 0 var(--gut);
+}
+.cl-hd-t { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 8px; }
+.cl-hd-t b { font-size: 23px; font-weight: 500; letter-spacing: -.005em; line-height: 1.2; }
+.cl-hd-t span { font-size: 13px; color: var(--muted); }
+.cl-ib {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+}
+.cl-view { display: block; }
+.cl-view.cl-enter { animation: cl-fade-in 120ms ease-out; }
+@keyframes cl-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Tab bar: always the same three tabs in the same place. The active
+   icon takes the in-window colour, its label turns ink. */
+.cl-tabs {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  border-top: 1px solid var(--hair);
+  padding: 6px max(8px, calc((100% - var(--col)) / 2 + 8px)) max(10px, env(safe-area-inset-bottom, 0px));
+  background: var(--bg);
+}
+.cl-tabs .cl-tab {
+  flex: 1;
+  min-width: 0;
+  height: var(--tab-h);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--muted);
+  border-radius: 10px;
+  text-align: center;
+}
+.cl-tabs .cl-tab[aria-current="page"] { color: var(--ink); }
+.cl-tabs .cl-tab[aria-current="page"] svg { color: var(--in); }
+
+/* Fallback when a part did not load: quiet, honest, with a way out. */
+.cl-empty {
+  padding: 48px var(--gut);
+  text-align: center;
+  font-size: 15px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.cl-empty a,
+.cl-set-note a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ── Sub-page (Settings, drill-downs) ───────────────────────────────── */
+.cl-sub {
+  min-height: 100vh;
+  background: var(--bg);
+  padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  overflow-x: clip;
+}
+.cl-sub.cl-enter { animation: cl-fade-in 120ms ease-out; }
+.cl-hb {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding: env(safe-area-inset-top, 0px) var(--gut) 0 4px;
+}
+.cl-hb b { font-size: 23px; font-weight: 500; line-height: 1.2; min-width: 0; }
+
+/* ── Shared blocks ──────────────────────────────────────────────────── */
+.cl-h2 {
+  font-family: var(--serif);
+  font-variant-numeric: lining-nums;
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1.2;
+  margin: 0;
+  padding: 0 var(--gut);
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+}
+.cl-gap { height: 28px; }
+.cl-pad { padding-left: var(--gut); padding-right: var(--gut); }
+.cl-lead { font-size: 14px; color: var(--muted); padding: 2px var(--gut) 0; }
+.cl-lab { font-size: 15px; color: var(--muted); margin: 0 0 4px; }
+.cl-muted { color: var(--muted); }
+.cl-fine { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.cl-stale { color: var(--amber); }
+.cl-dead { color: var(--red); }
+.cl-fine.cl-stale, .cl-fine.cl-dead { font-weight: 500; }
+
+/* List rows. .cl-list wraps rows in the gutter; every row has a hair
+   rule on top instead of a box. */
+.cl-list { padding: 0 var(--gut); }
+.cl-sr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 0;
+  border-top: 1px solid var(--hair);
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-align: left;
+}
+.cl-sr > span:first-child { min-width: 0; }
+.cl-sr small { display: block; font-size: 13px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+.cl-sr .cl-v {
+  flex: none;
+  max-width: 62%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--muted);
+  text-align: right;
+}
+.cl-sr .cl-v.cl-stale { color: var(--amber); font-weight: 600; }
+.cl-sr .cl-v.cl-dead { color: var(--red); font-weight: 600; }
+.cl-ck { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; flex: none; }
+.cl-dr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  border-top: 1px solid var(--hair);
+  font-size: 16px;
+  font-weight: 500;
+  text-align: left;
+}
+.cl-kv {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  row-gap: 10px;
+  column-gap: 12px;
+  font-size: 15px;
+  padding: 2px 0 8px;
+}
+.cl-kv > :nth-child(odd) { color: var(--muted); }
+.cl-kv > :nth-child(even) { font-weight: 600; text-align: right; }
+
+/* Window status tag: IN WINDOW (filled dot), EDGE and BLOCKED (ring). */
+.cl-st {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.cl-dt { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+.cl-st-in { color: var(--in); }
+.cl-st-in .cl-dt { background: var(--in); }
+.cl-st-edge { color: var(--edge); }
+.cl-st-edge .cl-dt { border: 2px solid var(--edge); }
+.cl-st-blk { color: var(--blk); }
+.cl-st-blk .cl-dt { border: 2px solid var(--blk); }
+.cl-st.cl-st-sm { font-size: 11.5px; gap: 6px; }
+.cl-st.cl-st-sm .cl-dt { width: 8px; height: 8px; }
+/* Night: the big IN WINDOW word sits white on a green pill (6.8:1). */
+html[data-clean-theme="night"] .cl-st-pill.cl-st-in {
+  color: #fff;
+  background: var(--chip);
+  padding: 6px 12px;
+  border-radius: 8px;
+}
+html[data-clean-theme="night"] .cl-st-pill.cl-st-in .cl-dt { background: #fff; }
+
+/* Wind quality words: colour stays on the word, never on the barb. */
+.cl-q-off { color: var(--off); font-weight: 600; }
+.cl-q-crs { color: var(--crs); font-weight: 600; }
+.cl-q-on { color: var(--on); font-weight: 600; }
+
+/* Chips (Log quick times) */
+.cl-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.cl-chip {
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--hair);
+  border-radius: 22px;
+  font-size: 15px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+.cl .cl-chip.on,
+.cl .cl-chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+/* Buttons. .cl-btn: ink outline (Sign in, call to action). Add
+   .cl-btn-fill for the filled ink state (Save, ready); .cl-btn-quiet for
+   a hair outline (Add photo, chart jumps). */
+.cl-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 16px;
+  border: 1px solid var(--ink);
+  border-radius: var(--r);
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+}
+.cl .cl-btn.cl-btn-fill { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.cl .cl-btn.cl-btn-quiet { border-color: var(--hair); min-height: 48px; font-size: 15px; }
+.cl .cl-btn:disabled { border-color: var(--hair); color: var(--muted); background: none; }
+.cl-btn.cl-btn-block { width: 100%; }
+
+/* Segmented control (AM / PM) */
+.cl-seg { display: inline-flex; border: 1px solid var(--hair); border-radius: var(--r); overflow: hidden; }
+.cl-seg button { min-width: 64px; height: 56px; padding: 0 12px; font-size: 17px; font-weight: 600; color: var(--muted); }
+.cl-seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+/* Toggle row switch (Settings) */
+.cl-switch {
+  position: relative;
+  width: 51px;
+  height: 31px;
+  flex: none;
+  border-radius: 16px;
+  background: var(--hair);
+  transition: background-color .15s;
+}
+.cl-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .25);
+  transition: transform .15s;
+}
+[aria-checked="true"] > .cl-switch { background: var(--in); }
+[aria-checked="true"] > .cl-switch::after { transform: translateX(20px); background: #fff; }
+
+/* Settings page specifics */
+.cl-set-acct { padding: 0 var(--gut); }
+.cl-set-acct .cl-fine { margin-top: 10px; }
+.cl-set-who { font-size: 15px; color: var(--muted); margin: 2px 0 12px; }
+.cl-set-who b { color: var(--ink); font-weight: 600; }
+.cl-set-note { padding: 10px var(--gut) 0; }
+.cl-set-note a { font-size: 13px; }
+
+/* ── Toasts (the app's own showToast, restyled) ─────────────────────── */
+html.cl-on .toast-container {
+  bottom: calc(var(--tab-h) + 26px + env(safe-area-inset-bottom, 0px));
+  width: calc(100% - 2 * var(--gut));
+  max-width: 420px;
+}
+html.cl-on.cl-tv .toast-container { bottom: 32px; }
+html.cl-on .toast {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: var(--r);
+  background: var(--ink);
+  color: var(--bg);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+  max-width: 100%;
+  text-shadow: none;
+}
+html.cl-on .toast.toast-error,
+html.cl-on .toast.toast-warn,
+html.cl-on .toast.toast-success { background: var(--ink); color: var(--bg); }
+
+/* ── Choc TV root (tv.js owns everything inside) ────────────────────── */
+#cl-tv {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+/* ── Motion ─────────────────────────────────────────────────────────── */
+/* Day to night: colours fade over 400 ms; layout never moves. */
+html.cl-fade,
+html.cl-fade body,
+html.cl-fade .cl,
+html.cl-fade .cl * {
+  transition: background-color .4s ease, color .4s ease, border-color .4s ease, fill .4s ease, stroke .4s ease !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cl *, .cl *::before, .cl *::after, .cl.cl-enter, .cl .cl-enter {
+    animation: none !important;
+    transition: none !important;
+  }
+  html.cl-fade, html.cl-fade body, html.cl-fade .cl, html.cl-fade .cl * { transition: none !important; }
+}

@@ -1,0 +1,394 @@
+/* ════════════════════════════════════════════════════════════════════
+   CLEAN — tv.css (owner: TV part) · Choc TV under ?preview=clean
+   ────────────────────────────────────────────────────────────────────
+   Imported by theme.css after base.css. Styles for previews/clean/tv.js
+   only, inside #cl-tv. Sizes are the A2-TV boards' pixels times --u, one
+   board pixel = 1/820 of the screen height (hero 152 → 18.5vh, as
+   A2-Tokens asks), held by the width only on a screen much narrower
+   than the boards; tv.js pins --u to the real screen. Red is dead data
+   only, amber stale data only. The radar is dark day and night
+   (.cl-tv-dark).
+   ════════════════════════════════════════════════════════════════════ */
+
+#cl-tv .cl-tv-wrap {
+  --u: min(calc(100vh / 820), calc(100vw / 1180 * 1.1));
+  --gk: 1;   /* spacing factor (tv.js steps it down when a panel would overflow) */
+  --tk: 1;   /* type factor (last resort) */
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, "Segoe UI", Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  -webkit-user-select: none;
+}
+@supports (height: 100svh) {
+  #cl-tv .cl-tv-wrap { --u: min(calc(100svh / 820), calc(100vw / 1180 * 1.1)); }
+}
+
+/* The radar's palette, day and night: the night tokens (theme.css),
+   scoped. Keep in step with html.cl-on[data-clean-theme="night"]. */
+#cl-tv .cl-tv-dark {
+  --bg: #0D1A16;
+  --ink: #EDF2EE;
+  --muted: #9AAAA2;
+  --hair: #1F312B;
+  --in: #35996C;
+  --chip: #00693E;
+  --edge: #8DB8A2;
+  --edge-fill: #3F7D62;
+  --blk: #85938B;
+  --blk-fill: #43524A;
+  --off: #6FB2F0;
+  --crs: #9AAAA2;
+  --on: #F29B5C;
+  --tide: #C3CCD5;
+  --amber: #E8B04B;
+  --red: #FF6B6B;
+  --shade: rgba(255, 255, 255, .05);
+  --ghost: .5;
+  color-scheme: dark;
+}
+
+/* ── Panels: stacked, 600 ms cross-fade ────────────────────────────── */
+#cl-tv .cl-tv-panels { position: relative; flex: 1; min-height: 0; }
+#cl-tv .cl-tv-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+  opacity: 0;
+  visibility: hidden;
+  z-index: 0;
+}
+#cl-tv .cl-tv-panel.is-on { opacity: 1; visibility: visible; z-index: 2; transition: opacity .6s ease; }
+#cl-tv .cl-tv-panel.is-out { opacity: 1; visibility: visible; z-index: 1; }
+#cl-tv .cl-tv-panel.no-anim { transition: none; }
+
+/* ── Night banner (A2-TV-Night) ────────────────────────────────────── */
+#cl-tv .cl-tv-banner {
+  flex: none;
+  padding: calc(36 * var(--u) * var(--gk)) calc(40 * var(--u)) 0;
+  font-size: calc(32 * var(--u) * var(--tk));
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#cl-tv .cl-tv-banner b { color: var(--ink); font-weight: 600; }
+
+/* ── Day cards (A2-TV) ─────────────────────────────────────────────── */
+#cl-tv .cl-tv-cards {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  padding: 0 calc(40 * var(--u));
+}
+#cl-tv .cl-tv-card {
+  min-width: 0;
+  overflow: hidden;
+  padding: calc(48 * var(--u) * var(--gk)) calc(32 * var(--u)) 0;
+  border-left: 1px solid var(--hair);
+}
+#cl-tv .has-banner .cl-tv-card { padding-top: calc(30 * var(--u) * var(--gk)); }
+#cl-tv .cl-tv-card:first-child { border-left: 0; padding-left: 0; }
+#cl-tv .cl-tv-card:last-child { padding-right: 0; }
+
+#cl-tv .cl-tv-day {
+  font-size: calc(50 * var(--u) * var(--tk));
+  font-weight: 500;
+  letter-spacing: -.005em;
+  line-height: 1;
+  white-space: nowrap;
+}
+#cl-tv .cl-tv-hero {
+  display: flex;
+  align-items: baseline;
+  gap: calc(12 * var(--u));
+  margin-top: calc(20 * var(--u) * var(--gk));
+  white-space: nowrap;
+}
+#cl-tv .cl-tv-num {
+  font-size: calc(152 * var(--u) * var(--tk) * var(--fk, 1));
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -.045em;
+}
+#cl-tv .cl-tv-hero.is-none .cl-tv-num { color: var(--muted); font-weight: 400; }  /* no reading: a quiet dash */
+#cl-tv .cl-tv-unit {
+  font-size: calc(46 * var(--u) * var(--tk) * var(--fk, 1));
+  font-weight: 500;
+  color: var(--muted);
+}
+#cl-tv .cl-tv-sw {
+  display: flex;
+  align-items: center;
+  gap: calc(14 * var(--u));
+  margin-top: calc(6 * var(--u) * var(--gk));
+  font-size: calc(38 * var(--u) * var(--tk) * var(--fk, 1));
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+#cl-tv .cl-tv-sw .cl-ic { width: calc(40 * var(--u) * var(--tk) * var(--fk, 1)); height: calc(40 * var(--u) * var(--tk) * var(--fk, 1)); }
+
+/* Blocked day: the hero's box says nothing reaches the reef. */
+#cl-tv .cl-tv-blk {
+  height: calc(152 * var(--u) * var(--tk));
+  margin-top: calc(20 * var(--u) * var(--gk));
+  display: flex;
+  align-items: center;
+  font-size: calc(46 * var(--u) * var(--tk));
+  line-height: 1.08;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: -.02em;
+  overflow: hidden;
+}
+#cl-tv .cl-tv-bl {
+  font-size: calc(28 * var(--u) * var(--tk) * var(--fk, 1));
+  line-height: 1.3;
+  color: var(--muted);
+  margin-top: calc(6 * var(--u) * var(--gk));
+}
+
+/* Window status: IN WINDOW (dot), EDGE and BLOCKED (ring). */
+#cl-tv .cl-tv-strow { margin-top: calc(26 * var(--u) * var(--gk)); white-space: nowrap; }
+#cl-tv .cl-tv-st {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+  font-size: calc(32 * var(--u) * var(--tk) * var(--fk, 1));
+  font-weight: 700;
+  letter-spacing: .07em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+#cl-tv .cl-tv-dt {
+  width: calc(18 * var(--u) * var(--tk) * var(--fk, 1));
+  height: calc(18 * var(--u) * var(--tk) * var(--fk, 1));
+  border-radius: 50%;
+  flex: none;
+}
+#cl-tv .cl-tv-st-in { color: var(--in); }
+#cl-tv .cl-tv-st-in .cl-tv-dt { background: var(--in); }
+#cl-tv .cl-tv-st-edge { color: var(--edge); }
+#cl-tv .cl-tv-st-edge .cl-tv-dt { border: calc(3 * var(--u)) solid var(--edge); }
+#cl-tv .cl-tv-st-blk { color: var(--blk); }
+#cl-tv .cl-tv-st-blk .cl-tv-dt { border: calc(3 * var(--u)) solid var(--blk); }
+/* Night, and the radar always: IN WINDOW white on the green chip (6.8:1). */
+html[data-clean-theme="night"] #cl-tv .cl-tv-st-in,
+#cl-tv .cl-tv-dark .cl-tv-st-in {
+  color: #fff;
+  background: var(--chip);
+  padding: calc(8 * var(--u) * var(--fk, 1)) calc(20 * var(--u) * var(--fk, 1));
+  border-radius: calc(12 * var(--u));
+}
+html[data-clean-theme="night"] #cl-tv .cl-tv-st-in .cl-tv-dt,
+#cl-tv .cl-tv-dark .cl-tv-st-in .cl-tv-dt { background: #fff; }
+
+/* Tide and wind lines: icon + text, break only at the chosen spots. */
+#cl-tv .cl-tv-win,
+#cl-tv .cl-tv-wd {
+  display: flex;
+  align-items: center;
+  gap: calc(14 * var(--u));
+  font-size: calc(28 * var(--u) * var(--tk) * var(--fk, 1));
+  line-height: 1.3;
+}
+#cl-tv .cl-tv-win { margin-top: calc(40 * var(--u) * var(--gk)); }
+#cl-tv .cl-tv-wd { margin-top: calc(14 * var(--u) * var(--gk)); }
+#cl-tv .cl-tv-win .cl-ic,
+#cl-tv .cl-tv-wd .cl-ic { width: calc(38 * var(--u) * var(--tk)); height: calc(38 * var(--u) * var(--tk)); }
+#cl-tv .cl-tv-win b { font-weight: 600; }
+#cl-tv .cl-tv-win b.cl-tv-dim { color: var(--muted); font-weight: 500; }  /* a time in the dark */
+#cl-tv .cl-tv-q { font-weight: 700; }
+#cl-tv .cl-tv-mute { color: var(--muted); }
+
+#cl-tv .cl-tv-sun {
+  font-size: calc(24 * var(--u) * var(--tk));
+  color: var(--muted);
+  margin-top: calc(36 * var(--u) * var(--gk));
+  line-height: 1.5;
+}
+
+/* ── Radar (A2-TV-Radar) ───────────────────────────────────────────── */
+#cl-tv .cl-tv-radar { padding: calc(28 * var(--u)) calc(40 * var(--u)) 0; }
+/* Fixed height: the readout changes shape hour to hour (a blocked hour
+   has no "@ 9 s" line), and the strip below must never jump. */
+#cl-tv .cl-tv-rtop {
+  display: flex;
+  gap: calc(56 * var(--u));
+  height: calc(472 * var(--u));
+  flex: none;
+}
+#cl-tv .cl-tv-scope {
+  position: relative;
+  width: calc(440 * var(--u));
+  height: calc(440 * var(--u));
+  flex: none;
+  margin-top: calc(12 * var(--u));
+}
+#cl-tv .cl-tv-scope > div { position: absolute; inset: 0; }
+#cl-tv .cl-tv-scope svg { display: block; width: 100%; height: 100%; overflow: visible; }
+#cl-tv .cl-tv-scope .ring { fill: none; stroke: var(--hair); }
+#cl-tv .cl-tv-scope .land { fill: rgba(255, 255, 255, .05); stroke: none; }
+#cl-tv .cl-tv-scope .pond { fill: var(--bg); stroke: var(--muted); stroke-opacity: .35; stroke-width: 1; }
+#cl-tv .cl-tv-scope .shore { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+#cl-tv .cl-tv-scope-base svg { overflow: hidden; }
+#cl-tv .cl-tv-scope .cone { fill: var(--in); fill-opacity: .22; stroke: var(--in); stroke-width: 2; stroke-linejoin: round; }
+#cl-tv .cl-tv-scope .arr { fill: none; stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; }
+#cl-tv .cl-tv-scope .sa-in { stroke: var(--in); }
+#cl-tv .cl-tv-scope .sa-edge { stroke: var(--edge); }
+#cl-tv .cl-tv-scope .sa-blk { stroke: var(--blk); }
+#cl-tv .cl-tv-scope .wa { stroke: var(--ink); }
+#cl-tv .cl-tv-scope .mk { fill: var(--bg); stroke: var(--ink); stroke-width: 3; }
+#cl-tv .cl-tv-scope text { font-family: inherit; font-size: 16px; font-weight: 600; }
+#cl-tv .cl-tv-scope .n { fill: var(--muted); }
+#cl-tv .cl-tv-scope .lab { fill: var(--ink); }
+
+/* The sweep: one turn every 6 s at 20 steps a second (the kiosk's
+   ~20 fps cap), composited, running only while the radar is up and
+   playing. Reduced motion: no sweep. */
+#cl-tv .cl-tv-sweep {
+  will-change: transform;
+  animation: cl-tv-spin 6s steps(120, end) infinite;
+  animation-play-state: paused;
+}
+#cl-tv .cl-tv-sweep path { fill: var(--muted); }
+#cl-tv .cl-tv-sweep .ln { stroke: var(--muted); stroke-width: 2; }
+#cl-tv .cl-tv-radar.is-on .cl-tv-sweep { animation-play-state: running; }
+#cl-tv .is-paused .cl-tv-radar .cl-tv-sweep { animation-play-state: paused; }
+@keyframes cl-tv-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  #cl-tv .cl-tv-sweep { display: none; }
+  #cl-tv .cl-tv-panel.is-on { transition: none; }
+}
+
+/* Right: the playing hour, big. */
+#cl-tv .cl-tv-rt { flex: 1; min-width: 0; padding-top: calc(12 * var(--u)); }
+#cl-tv .cl-tv-rt .cl-tv-blk { height: calc(152 * var(--u)); }
+#cl-tv .cl-tv-rt .cl-tv-wd { margin-top: calc(18 * var(--u)); }
+#cl-tv .cl-tv-hint {
+  font-size: calc(20 * var(--u));
+  color: var(--muted);
+  margin-top: calc(22 * var(--u));
+  white-space: nowrap;
+}
+
+/* Bottom: the 7-day swell strip. */
+#cl-tv .cl-tv-cht { flex: none; padding: 0 calc(40 * var(--u)); margin-top: calc(6 * var(--u)); }
+#cl-tv .cl-tv-cht svg { display: block; width: 100%; height: auto; overflow: visible; }
+#cl-tv .cl-tv-cht .nt { fill: var(--shade); }
+#cl-tv .cl-tv-cht .gh { fill: var(--blk-fill); opacity: var(--ghost); }
+#cl-tv .cl-tv-cht .sw { fill: var(--in); }
+#cl-tv .cl-tv-cht .b-in { fill: var(--in); }
+#cl-tv .cl-tv-cht .b-edge { fill: var(--edge-fill); }
+#cl-tv .cl-tv-cht .b-blk { fill: var(--blk-fill); }
+#cl-tv .cl-tv-cht .cur { stroke: var(--ink); stroke-width: 2; }
+#cl-tv .cl-tv-cht text { font-family: inherit; font-size: 19px; fill: var(--muted); }
+
+/* ── Status strip (every panel) ────────────────────────────────────── */
+#cl-tv .cl-tv-strip {
+  flex: none;
+  position: relative;
+  z-index: 3;
+  height: calc(72 * var(--u));
+  display: flex;
+  align-items: center;
+  gap: calc(36 * var(--u));
+  padding: 0 calc(40 * var(--u));
+  border-top: 1px solid var(--hair);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: calc(22 * var(--u));
+  line-height: 1.2;
+  white-space: nowrap;
+  transition: background-color .6s ease, color .6s ease, border-color .6s ease;
+}
+#cl-tv .cl-tv-strip.is-tight { gap: calc(20 * var(--u)); }
+#cl-tv .cl-tv-strip.is-tighter { gap: calc(14 * var(--u)); font-size: calc(20 * var(--u)); padding: 0 calc(28 * var(--u)); }
+#cl-tv .cl-tv-strip.is-tighter .cl-tv-btn { padding: 0 calc(18 * var(--u)); font-size: calc(20 * var(--u)); }
+#cl-tv .cl-tv-strip > span { flex: none; }
+/* Last resort: the forecast age gives way before Next leaves the screen. */
+#cl-tv .cl-tv-strip > .cl-tv-fc { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#cl-tv .cl-tv-strip .cl-tv-sp { flex: 1; }
+#cl-tv .cl-tv-strip .is-stale { color: var(--amber); font-weight: 600; }
+#cl-tv .cl-tv-strip .is-dead { color: var(--red); font-weight: 600; }
+#cl-tv .cl-tv-strip .cl-tv-ps { color: var(--ink); font-weight: 600; }
+#cl-tv .cl-tv-clk { color: var(--ink); font-weight: 600; font-size: calc(26 * var(--u)); transition: color .6s ease; }
+#cl-tv .cl-tv-btn {
+  flex: none;
+  height: max(44px, calc(48 * var(--u)));
+  min-width: 44px;
+  padding: 0 calc(24 * var(--u));
+  border: 1px solid var(--hair);
+  border-radius: calc(14 * var(--u));
+  font-size: calc(22 * var(--u));
+  font-weight: 600;
+  color: var(--muted);
+  transition: background-color .6s ease, color .6s ease, border-color .6s ease;
+}
+#cl-tv .cl-tv-btn:active { background: var(--hair); color: var(--ink); }
+@media (prefers-reduced-motion: reduce) {
+  #cl-tv .cl-tv-strip, #cl-tv .cl-tv-btn, #cl-tv .cl-tv-clk { transition: none; }
+}
+
+/* ── Sources: kiosk.js's own card (#kiosk-info-overlay), adopted into
+   #cl-tv and restyled. Shown exactly while kiosk.js has it open (its
+   inline display), so its reload guard and tap-to-close still hold. */
+html.cl-on.cl-tv #cl-tv #kiosk-info-overlay:not([style*="none"]) { display: flex !important; }
+html.cl-on.cl-tv #cl-tv #kiosk-info-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  align-items: center;
+  justify-content: center;
+  padding: calc(40 * var(--u, 1px));
+  background: rgba(13, 18, 23, .55);
+}
+html.cl-on.cl-tv #cl-tv #kiosk-info-card {
+  width: min(100%, 820px);
+  max-height: 86%;
+  overflow-y: auto;
+  padding: 32px 40px 28px;
+  border: 1px solid var(--hair);
+  border-radius: 18px;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 19px/1.5 var(--sans);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .25);
+}
+html.cl-on.cl-tv #cl-tv #kiosk-info-card h3 {
+  margin: 0 0 14px;
+  font-family: var(--serif);
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -.005em;
+  text-transform: none;
+  color: var(--ink);
+}
+html.cl-on.cl-tv #cl-tv #kiosk-info-card p { margin: 14px 0 0; color: var(--muted); }
+html.cl-on.cl-tv #cl-tv #kiosk-info-card .cl-tv-src-rows { border-bottom: 1px solid var(--hair); }
+html.cl-on.cl-tv #cl-tv #kiosk-info-card .cl-tv-src-r {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 52px;
+  align-items: center;
+  border-top: 1px solid var(--hair);
+  font-size: 21px;
+}
+html.cl-on.cl-tv #cl-tv #kiosk-info-card .cl-tv-src-v { font-weight: 600; text-align: right; }
+html.cl-on.cl-tv #cl-tv #kiosk-info-card .cl-tv-src-v.is-stale { color: var(--amber); }
+html.cl-on.cl-tv #cl-tv #kiosk-info-card .cl-tv-src-v.is-dead { color: var(--red); }
+html.cl-on.cl-tv #cl-tv #kiosk-info-card .cl-tv-src-v.is-none { color: var(--muted); font-weight: 500; }
+html.cl-on.cl-tv #cl-tv #kiosk-info-card .cl-tv-src-fine { font-size: 16px; }
