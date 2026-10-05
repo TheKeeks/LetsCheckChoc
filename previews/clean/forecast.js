@@ -11,15 +11,17 @@
 //     row tints it, scrolls to the chart and slides the cursor to that
 //     day's low.
 //   • Forecast chart: a new SVG renderer of STATE.forecastData (the
-//     legacy canvas chart stays hidden): swell that reaches the reef
-//     solid, blocked swell as a faint ghost, the window band, wind bars
-//     coloured by quality with direction arrows, the tide with the
-//     day's low and its daylight incoming tide. One cursor, dragged
-//     hour by hour or moved by the jump buttons; it is the app's own
-//     scrubber hour (CLEAN.cursor), so other parts can read it.
-//   • Lineup: the Choc TV radar's coastline vectors (kiosk.js
-//     KIOSK_COAST), the 115–158° window cone and the cursor hour's swell
-//     and wind arrows.
+//     legacy canvas chart stays hidden): the swell that reaches the
+//     reef (alignment-weighted) solid over a ghost of all the swell,
+//     the window band, wind bars coloured by quality with direction
+//     arrows, the tide with the day's low and its daylight incoming
+//     tide. One cursor, dragged hour by hour or moved by the jump
+//     buttons; it is the app's own scrubber hour (CLEAN.cursor), so
+//     other parts can read it.
+//   • Lineup: flat colour blocks (water, reef shallows, sand, land)
+//     from the Choc TV radar's coastline vectors (kiosk.js KIOSK_COAST),
+//     the 115–158° window cone and the cursor hour's swell and wind
+//     arrows with their readings in dark pills.
 //   • Details: light and water, tide table, buoy waves, data sources.
 // Every block renders inside try/catch: one failing block never blanks
 // the tab. Missing data stays null and shows "—". Times are the spot's
@@ -387,20 +389,24 @@
     var times = hrs.map(function (h) { return h && h.at ? h.at.getTime() : NaN; });
     var o = [];
 
-    // Swell that reaches the reef (hero in window or at the edge), and
-    // the blocked ghost (the biggest blocked train).
-    // Per hour, the biggest train that reaches the reef (in window or at
-    // the edge) is the solid fill and sets the band; the biggest blocked
-    // train is the ghost. The forecast's two trains often trade places
-    // hour to hour, so following one "hero" would chop the fill apart.
+    // Swell, per hour, as the model reads the reef (app.js
+    // _effectiveInWindowSwell): solid = the part that reaches the reef,
+    // each train (primary + secondary) weighted by its alignment with
+    // the window (1 inside 115–158°, fading to 0 over 30° outside);
+    // ghost = all the swell out there, both trains, behind it. A train
+    // sitting on the window's edge then fades in and out instead of
+    // flicking the fill on and off hour to hour. The band keeps each
+    // hour's own in / edge / blocked call.
     var sw = [], gh = [], st = [], maxH = 0;
     hrs.forEach(function (hr, i) {
       var tr = splitTrains(hr);
-      sw[i] = tr.reach ? tr.reach.h : null;
-      gh[i] = tr.blocked ? tr.blocked.h : null;
+      if (!tr.any) { sw[i] = gh[i] = st[i] = null; return; }   // no swell reading: a gap, not 0 ft
+      var inW = 0, tot = 0;
+      tr.all.forEach(function (t) { inW += U.alignment(t.dir) * t.h; tot += t.h; });
+      sw[i] = inW;
+      gh[i] = tot;
       st[i] = tr.reach ? tr.reach.status : tr.blocked ? 'blocked' : null;
-      if (isNum(sw[i])) maxH = Math.max(maxH, sw[i]);
-      if (isNum(gh[i])) maxH = Math.max(maxH, gh[i]);
+      maxH = Math.max(maxH, tot);
     });
     var ppf = Math.min(G.swPx, (G.swBase - G.swTop) / Math.max(1, maxH));
     var ySw = function (v) { return G.swBase - v * ppf; };
@@ -432,21 +438,27 @@
     if (grid) o.push('<path class="gl" d="' + grid + '"/>');
     if (labY != null) o.push('<text class="ax" x="2" y="' + r1(labY - 3.5) + '">' + labV + NB + 'ft</text>');
 
-    // Areas
+    // Areas: one continuous shape, hour to hour in straight lines (the
+    // board's polygons). 0 ft lies on the baseline, so the shape thins
+    // out and comes back without vertical edges. Only a missing reading
+    // breaks it, and then it slopes to the baseline over half an hour.
     var area = function (vals, cls) {
       var d = '', run = null;
       var flush = function () {
         if (!run) return;
-        var x0 = Math.max(0, run[0][0] - hs / 2), x1 = run.last === n - 1 ? W : Math.min(W, run[run.length - 1][0] + hs / 2);
-        d += 'M' + r1(x0) + ' ' + G.swBase + 'L' + run.map(function (p) { return r1(p[0]) + ' ' + r1(p[1]); }).join('L') + 'L' + r1(x1) + ' ' + G.swBase + 'Z';
+        var first = run[0], last = run[run.length - 1];
+        var x0 = first.i === 0 ? 0 : Math.max(0, first.x - hs / 2);
+        var x1 = last.i === n - 1 ? W : Math.min(W, last.x + hs / 2);
+        var pts = run.map(function (p) { return r1(p.x) + ' ' + r1(p.y); });
+        if (last.i === n - 1 && x1 - last.x > 0.05) pts.push(r1(x1) + ' ' + r1(last.y));   // the last hour holds to the edge
+        d += 'M' + r1(x0) + ' ' + G.swBase + 'L' + pts.join('L') + 'L' + r1(x1) + ' ' + G.swBase + 'Z';
         run = null;
       };
       for (var i = 0; i < n; i++) {
         var val = vals[i];
-        if (isNum(val) && val > 0 && isFinite(times[i])) {
+        if (isNum(val) && isFinite(times[i])) {
           if (!run) run = [];
-          run.push([X(times[i]), ySw(val)]);
-          run.last = i;
+          run.push({ i: i, x: X(times[i]), y: ySw(Math.max(0, val)) });
         } else flush();
       }
       flush();
@@ -578,16 +590,18 @@
   }
 
   // An hour's trains → { reach: biggest in-window/edge train, blocked:
-  // biggest blocked train, all } (either may be null).
+  // biggest blocked train (either may be null), all, any: the hour has
+  // a swell reading at all (0 ft counts, missing doesn't) }.
   function splitTrains(hr) {
-    var all = [], reach = null, blocked = null;
+    var all = [], reach = null, blocked = null, any = false;
     if (hr) [hr.swell].concat(hr.others || []).forEach(function (t) {
+      if (t && isNum(t.h)) any = true;
       if (!t || !isNum(t.h) || t.h <= 0 || all.indexOf(t) >= 0) return;
       all.push(t);
       if (t.status === 'in' || t.status === 'edge') { if (!reach || t.h > reach.h) reach = t; }
       else if (t.status === 'blocked') { if (!blocked || t.h > blocked.h) blocked = t; }
     });
-    return { reach: reach, blocked: blocked, all: all };
+    return { reach: reach, blocked: blocked, all: all, any: any };
   }
 
   // ── Cursor ─────────────────────────────────────────────────────────

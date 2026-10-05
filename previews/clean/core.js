@@ -169,9 +169,19 @@
     if (!isNum(deg)) return DASH;
     return COMPASS16[Math.round(norm360(deg) / 22.5) % 16];
   }
+  // One decimal, a trailing ".0" dropped, as the boards print every
+  // number: 1.6, 1, 2, 0 (never "-0"). `minus` is the sign to print
+  // ('-' for plain numbers, U+2212 for tide heights).
+  function dec1(v, minus) {
+    var r = round1(v);
+    if (r === 0) return '0';
+    var s = Math.abs(r).toFixed(1).replace(/\.0$/, '');
+    return r < 0 ? (minus || '-') + s : s;
+  }
+  // Heights: dec1, whole feet from 10 ft.
   function heightNum(v) {
     if (!isNum(v)) return null;
-    return Math.abs(v) >= 9.95 ? String(Math.round(v)) : round1(v).toFixed(1);
+    return Math.abs(v) >= 9.95 ? String(Math.round(v)) : dec1(v);
   }
   function rangeNum(min, max) {
     var a = isNum(min) ? Math.round(min) : null, b = isNum(max) ? Math.round(max) : null;
@@ -189,9 +199,10 @@
   var fmt = {
     NB: NB,
     DASH: DASH,
-    // "1.6" (one decimal, whole numbers from 10 ft), or "—"
+    // "1.6", "1" (one decimal, a trailing .0 dropped; whole numbers from
+    // 10 ft), or "—"
     num: function (v) { var s = heightNum(v); return s == null ? DASH : s; },
-    // "1.6 ft"
+    // "1.6 ft", "2 ft"
     ft: function (v) { var s = heightNum(v); return s == null ? DASH : s + NB + 'ft'; },
     // "1–2" (whole feet, en dash), "1" when equal
     range: function (min, max) { var s = rangeNum(min, max); return s == null ? DASH : s; },
@@ -215,11 +226,10 @@
       if (!isNum(mph)) return DASH;
       return Math.round(mph) + NB + 'mph' + (isNum(dir) ? ' ' + compass(dir) : '');
     },
-    // "2.3 ft ▲" (▼ falling; no arrow when unknown)
+    // "2.3 ft ▲", "2 ft", "0 ft", "−0.4 ft ▼" (▼ falling; no arrow when unknown)
     tide: function (hgt, rising) {
       if (!isNum(hgt)) return DASH;
-      var v = round1(hgt);
-      var s = (v < 0 ? '−' + Math.abs(v).toFixed(1) : v.toFixed(1)) + NB + 'ft';
+      var s = dec1(hgt, '−') + NB + 'ft';
       return rising === true ? s + ' ▲' : rising === false ? s + ' ▼' : s;
     },
     arrow: function (rising) { return rising === true ? '▲' : rising === false ? '▼' : ''; },
@@ -271,8 +281,8 @@
     status: function (s, short) {
       return s === 'in' ? (short ? 'IN' : 'IN WINDOW') : s === 'edge' ? 'EDGE' : s === 'blocked' ? 'BLOCKED' : '';
     },
-    // model score "3.8"
-    score: function (v) { return isNum(v) ? round1(v).toFixed(1) : DASH; }
+    // model score "3.8", "3" (the same one-decimal style)
+    score: function (v) { return isNum(v) ? dec1(v) : DASH; }
   };
   CLEAN.fmt = fmt;
 
@@ -375,11 +385,15 @@
   // Wind barb (A-Wind-Barb): the ring end is where the wind is headed,
   // staff and ticks trail back to where it came from. Short tick 5 mph,
   // long tick 10, solid flag 50, rounded to the nearest 5; under 3 mph a
-  // calm double ring. Ink only: quality colour stays on the word.
+  // calm double ring. Ink only: quality colour stays on the word. The
+  // ladder reads the speed as printed (fmt.wind rounds it), so 2.6 mph
+  // is "3 mph" with a 5 mph tick, never "3 mph" beside the calm ring.
+  function barbMph(mph) { return Math.round(mph); }
   function barbInner(mph) {
     if (!isNum(mph)) return null;
-    if (mph < 3) return '<circle cx="16" cy="16" r="2.5"/><circle cx="16" cy="16" r="5.5"/>';
-    var n5 = Math.max(1, Math.round(mph / 5));
+    var v = barbMph(mph);
+    if (v < 3) return '<circle cx="16" cy="16" r="2.5"/><circle cx="16" cy="16" r="5.5"/>';
+    var n5 = Math.max(1, Math.round(v / 5));
     var flags = Math.floor(n5 / 10); n5 -= flags * 10;
     var longs = Math.floor(n5 / 2), shorts = n5 % 2;
     var slots = flags * 2 + longs + shorts;
@@ -427,7 +441,7 @@
       var b = barbInner(mph);
       if (b == null) return '';
       var size = s || 44, sw = size <= 20 ? 2.2 : 1.9;
-      var calm = mph < 3;
+      var calm = barbMph(mph) < 3;
       return '<svg class="cl-barb" width="' + size + '" height="' + size + '" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="' + sw +
         '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
         (calm || !isNum(fromDeg) ? b : '<g transform="rotate(' + Math.round(norm360(fromDeg)) + ' 16 16)">' + b + '</g>') + '</svg>';
@@ -457,8 +471,31 @@
   function bump() { gen++; }
 
   function FD() { return (typeof STATE !== 'undefined' && STATE.forecastData) || null; }
-  function M() { var d = FD(); return d && d.marine && d.marine.hourly && d.marine.hourly.time ? d.marine : null; }
-  function W() { var d = FD(); return d && d.wind && d.wind.hourly && d.wind.hourly.time ? d.wind : null; }
+  function hasHourly(x) { return !!(x && x.hourly && x.hourly.time && x.hourly.time.length); }
+  function M() { var d = FD(); return d && hasHourly(d.marine) ? d.marine : null; }
+  // The wave forecast lives only in STATE.forecastData (app.js sets it
+  // inside the marine branch of renderForecastSet). The wind forecast and
+  // the CO-OPS tides load on their own: when the marine fetch fails (and
+  // no saved copy is left) the app still paints them, and every paint
+  // passes its context through core's renderForecastSet hook
+  // (CLEAN._ctx). A context without a marine forecast is newer than
+  // STATE.forecastData, so wind and tides come from it first; a context
+  // with one is the same paint as STATE.forecastData.
+  function newerCtx() {
+    var c = CLEAN._ctx;
+    return c && !hasHourly(c.marine) ? c : null;
+  }
+  function W() {
+    var c = newerCtx(), d = FD();
+    if (c && hasHourly(c.wind)) return c.wind;
+    return d && hasHourly(d.wind) ? d.wind : null;
+  }
+  function tideRaw(key) {
+    var c = newerCtx(), d = FD();
+    var a = c ? c[key] : null;
+    if (a && (Array.isArray(a) ? a.length : a.predictions && a.predictions.length)) return a;
+    return d ? d[key] : null;
+  }
   function lagHours() {
     try { if (typeof kioskSwellLagMs === 'function') return Math.round(kioskSwellLagMs() / HOUR); } catch (_) { /* fall through */ }
     try { return typeof getForecastUseBuoyCoords === 'function' && getForecastUseBuoyCoords() ? 2 : 1; } catch (_) { return 1; }
@@ -501,6 +538,28 @@
     var j = windIndexMap()[String(m.hourly.time[idx]).slice(0, 13)];
     if (j == null) return null;
     return windFrom(w.hourly.wind_speed_10m, w.hourly.wind_direction_10m, w.hourly.wind_gusts_10m, j);
+  }
+  // Wind at an instant from the wind series alone (nearest hour within
+  // 90 min, as kiosk.js kioskWindAt), so it works with no wave forecast.
+  function windAtTime(t) {
+    var d = toDate(t), w = W();
+    if (!d || !w) return null;
+    var ms = d.getTime(), best = -1, bd = 90 * MIN, tt = w.hourly.time;
+    for (var i = 0; i < tt.length; i++) {
+      var dd = Math.abs(new Date(tt[i]).getTime() - ms);
+      if (dd < bd) { bd = dd; best = i; }
+    }
+    return best < 0 ? null : windFrom(w.hourly.wind_speed_10m, w.hourly.wind_direction_10m, w.hourly.wind_gusts_10m, best);
+  }
+  // Wind for the current local hour of the wind series (the app's
+  // marineNowIndex rule, applied to the wind's own hourly times; no
+  // clamping to the series ends: outside it there is no reading).
+  function windNow() {
+    var w = W();
+    if (!w) return null;
+    var key = new Date(Date.now() + (w.utc_offset_seconds || 0) * 1000).toISOString().slice(0, 13);
+    var j = windIndexMap()[key];
+    return j == null ? null : windFrom(w.hourly.wind_speed_10m, w.hourly.wind_direction_10m, w.hourly.wind_gusts_10m, j);
   }
   function windFrom(spd, dirs, gusts, j) {
     var mph = spd ? spd[j] : null, dir = dirs ? dirs[j] : null, gust = gusts ? gusts[j] : null;
@@ -546,10 +605,18 @@
     return out;
   }
   // → { swell (hero) | null, others: [...], blocked: [...] }
+  // Reach first: the hero is the train with the most in-window energy
+  // among those that reach the reef (in the window or at its edge). Only
+  // when none reach does the biggest-energy train lead (it then reads
+  // BLOCKED). The energy rule alone gives a blocked train up to 30° out
+  // partial credit, so a bigger 4 s wind swell from 174° would bury the
+  // 9 s groundswell from 124° that actually breaks on the reef.
   function heroOf(trains) {
     if (!trains.length) return { swell: null, others: [], blocked: [] };
-    var hero = trains[0];
-    for (var i = 1; i < trains.length; i++) if (trains[i].energy > hero.energy) hero = trains[i];
+    var reach = trains.filter(function (t) { return t.status === 'in' || t.status === 'edge'; });
+    var pool = reach.length ? reach : trains;
+    var hero = pool[0];
+    for (var i = 1; i < pool.length; i++) if (pool[i].energy > hero.energy) hero = pool[i];
     var others = trains.filter(function (t) { return t !== hero; });
     return { swell: hero, others: others, blocked: others.filter(function (t) { return t.status === 'blocked'; }) };
   }
@@ -563,8 +630,8 @@
       .filter(function (p) { return isFinite(p.t.getTime()) && isFinite(p.v); })
       .sort(function (a, b) { return a.t - b.t; });
   }
-  function tidePreds() { return memoize('tp', function () { var d = FD(); return d ? normTide(d.tidePred) : []; }); }
-  function tideEvents() { return memoize('te', function () { var d = FD(); return d ? normTide(d.tideHiLo).filter(function (p) { return p.type === 'H' || p.type === 'L'; }) : []; }); }
+  function tidePreds() { return memoize('tp', function () { return normTide(tideRaw('tidePred')); }); }
+  function tideEvents() { return memoize('te', function () { return normTide(tideRaw('tideHiLo')).filter(function (p) { return p.type === 'H' || p.type === 'L'; }); }); }
   // Water level at t, or null outside the series (never a made-up value).
   function levelAt(preds, ms) {
     var n = preds.length;
@@ -800,8 +867,10 @@
     var idx = nowIndex();
     var hr = idx >= 0 ? hourAt(idx) : null;
     var wind = hr ? hr.wind : null;
+    // No wave forecast (or no matching hour): the wind series on its own.
+    if (!wind) wind = windNow();
     if (!wind) {
-      var w = FD() && FD().wind;
+      var w = W();
       if (w && w.current) wind = windObj({ mph: w.current.wind_speed_10m, dir: w.current.wind_direction_10m, gust: w.current.wind_gusts_10m });
     }
     var asOf = typeof STATE !== 'undefined' && isNum(STATE.dataAsOf) ? new Date(STATE.dataAsOf) : null;
@@ -840,9 +909,9 @@
   function lowObj(e, s) {
     if (!e) return null;
     var hi = nextEvent('H', e.t.getTime());
-    var w = null;
-    try { if (typeof kioskWindAt === 'function') w = windObj(kioskWindAt(e.t.getTime())); } catch (_) { w = null; }
-    if (!w) { var i = indexAt(e.t); w = i >= 0 ? windAtIdx(i) : null; }
+    // Core's own wind series (kiosk.js kioskWindAt reads only
+    // STATE.forecastData, which is empty while the wave forecast is down).
+    var w = windAtTime(e.t);
     var daylight = !!(s && s.sunrise && e.t >= s.sunrise && e.t < s.sunset);
     return {
       t: new Date(e.t.getTime()),
@@ -878,6 +947,13 @@
     var lowsRaw = lowsOfDay(day0);
     var low = lowObj(pickLow(lowsRaw, s), s);
     var swell = sum ? bandObj(sum.primary) : null;
+    var other = sum ? bandObj(sum.secondary) : null;
+    // Reach first, as the hourly hero: kioskDaySummary picks the day's
+    // hero by energy alone, so a bigger blocked band can lead while the
+    // other band is in the window. Swap so the band that reaches the
+    // reef heads the day and the blocked one becomes the dim line.
+    var reachesReef = function (b) { return !!(b && (b.status === 'in' || b.status === 'edge')); };
+    if (other && (!swell || (swell.status === 'blocked' && reachesReef(other)))) { var sw0 = swell; swell = other; other = sw0; }
     var moon = sum && sum.moon ? sum.moon : (typeof kioskMoonPhase === 'function' ? kioskMoonPhase(noon) : null);
     return {
       offset: k,
@@ -885,7 +961,7 @@
       label: k === 0 ? 'Today' : fmt.day(noon),
       longLabel: k === 0 ? 'Today' : k === 1 ? 'Tomorrow' : fmt.dayLong(noon),
       swell: swell,
-      other: sum ? bandObj(sum.secondary) : null,
+      other: other,
       status: swell ? swell.status : null,
       reaches: !!(swell && swell.status !== 'blocked'),
       low: low,
