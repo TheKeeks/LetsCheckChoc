@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased] — The model pairs each Silver Eel tide with the swell that's actually on the reef
+
+The owner's rule: for tide purposes there is no lag vs Silver Eel (CO-OPS 8510719) in the model. An audit of every tide path, measured against the raw Silver Eel predictions, found the tide itself was already exact. The model's training and its predictions, the forecast chart and scrubber, the tide card and Choc TV's lows and incoming windows all use Silver Eel's own times, with a best-fit offset of 0 min. What broke the rule was the swell the model set next to that tide. Learning from a logged session, it read swell from hours before the session: 4–7 h for the usual 5–8 s swell, about 3 h for a 12 s groundswell. It applied the buoy's 50-mile travel time even though that swell comes from the open-water forecast point, about 16 nmi from the beach. Predicting, it read swell from the same hour as the tide. So the model learned how the tide mattered against one swell and applied it against another.
+
+Training (from the Open-Meteo archive) and prediction now use one rule. Tide and wind come from the session or forecast hour itself, with no lag. Swell is the reading that reaches the reef at that hour: it is read that many hours earlier, worked out with the 1.5 kt × period rule over the distance from where it was read. That is about 1–2 hours from the forecast point (1.3 h for an 8 s swell), or the buoy's ~42 nmi when "Use buoy coordinates" is on. The "IF I WENT AT" card, threshold lights and match lights now rate that pairing. The card's swell line now reads "On the reef: 1.2ft @ 4.8s SSE (offshore ~2.2h earlier)", because it can differ from the chart's reading for the same hour. The log's lookup says the swell came from the offshore forecast point, not "at buoy". Another buoy's forecast gets no Choc lag.
+
+When NOAA is down and an older saved tide copy stands in, forecast hours past the end of its 6-min predictions used to get the last value held flat: a frozen slack tide at 0 ft/hr. They now fall back to the saved highs and lows (10 days), drawn as straight lines between them. An hour past the end of both copies gets no tide and no Ride rating.
+
+Sessions already in the log still carry swell from the old lag. Tap "Re-fetch all session conditions from Open-Meteo archive" in the Log tab once to re-pair them; ratings are untouched. Each crew member re-fetches their own sessions. CHOCOMOUNT_KNOWLEDGE.md records the owner's rule in the owner's own words.
+
+Verified by `tests/unit/tide-no-lag.test.js`. Three of its tests guard the tide timing, which was already right: they fail if a 1-hour lag is injected into the model's tide lookup or into Choc TV's lows. The other five fail on the previous code and pass now:
+- training read a 4.7 h swell lag where the travel time is 1.4 h;
+- the swell paired with a tide differed between training and prediction;
+- a frozen tide was rated;
+- the card and the log mislabelled the swell;
+- another buoy got Choc's lag.
+
 ## [Unreleased] — Try the redesign drafts on your own phone and Choc TV (?preview=)
 
 The look-and-feel audit produced three prototype redesigns (Shader Pack, One Instrument, Chart Room) and, from the owner's pick of One Instrument's layout with Chart Room's colours, two hybrid drafts: Paper (chart paper by day, navy chart after sunset at Choc, best in sun) and Navy (a navy instrument with 14-segment digits by day, black glass at night). Until now they existed only as screenshots. Adding `?preview=draft-paper`, `?preview=draft-navy`, `?preview=one-instrument`, `?preview=chart-room` or `?preview=shader-pack` to the site's address (and `?kiosk=1&preview=…` for Choc TV) now layers that look over the real app with live data. The plain address is unchanged and loads none of it; the crew sees nothing new.
