@@ -60,6 +60,7 @@
     dateBad: false, timeBad: false,
     lookup: { state: 'idle', dt: '', queued: false, timer: null, dog: null, waiters: [] },
     saving: false, saveStarted: false, saveTimer: null, pendingEdit: null,
+    saveSeq: 0,             // bumped when a waiting Save is abandoned
     photoBusy: false,
     shown: PAGE, listHTML: null
   };
@@ -374,8 +375,33 @@
   // ════════════════════════════════════════════════════════════════════
   // Actions
   // ════════════════════════════════════════════════════════════════════
+  // An open edit must stay the signed-in surfer's own session. Edit checks
+  // the owner, but the legacy form never checks again: sign out and back in
+  // as someone else in Settings and the edit stays open, and Save would put
+  // the new surfer's ratings and notes on another crew member's session on
+  // this device (STATE and the lcc_surfLog copy; saveLogEntryToFirebase
+  // refuses, so only the cloud copy is safe). So every auth change and every
+  // Save checks again, and Save stays off while the edit isn't yours.
+  function foreignEdit() {
+    var id = editId();
+    if (!id) return '';
+    var e = findEntry(id);
+    if (!e) return 'This session is no longer in the log. Cancel the edit';
+    return isOwn(e, C.auth().uid) ? '' : 'This is another surfer’s session. Cancel the edit';
+  }
+  function dropForeignEdit() {
+    if (!foreignEdit()) return false;
+    S.pendingEdit = null;
+    S.saving = false;
+    S.saveSeq++;         // a Save still waiting on the lookup never clicks
+    clearTimeout(S.saveTimer);
+    onCancelEdit();      // clears STATE.surfLogEditId, resets the form and the face
+    return true;
+  }
   function blockReason() {
     if (!legacyIsReady()) return 'Getting the log ready…';
+    var fe = foreignEdit();
+    if (fe) return fe;
     if (S.sel === 'other' && S.dateBad) return 'Type the date, like 9/24';
     if (S.sel === 'other' && S.timeBad) return 'Type the time, like 730';
     if (futureWhen()) return 'Pick a time that has passed';
@@ -385,7 +411,7 @@
     return '';
   }
   function onSave() {
-    if (S.saving || blockReason()) return;
+    if (S.saving || dropForeignEdit() || blockReason()) return;
     var btn = $('sl-save-btn');
     if (!btn) return;
     S.saving = true;
@@ -393,7 +419,11 @@
     var ln = $('sl-notes');
     if (ln && S.el.notes && ln.value !== S.el.notes.value) { ln.value = S.el.notes.value; fire(ln, 'input'); }
     writeLegacyTime();
+    var seq = ++S.saveSeq;
     whenSettled(SAVE_WAIT_MS).then(C.guard('log.save', function (ok) {
+      // Abandoned while it waited on the lookup (the edit was cancelled, or
+      // the account changed): the form it was for is gone.
+      if (seq !== S.saveSeq || dropForeignEdit()) return;
       // A lookup still out for an earlier time must not label this one.
       if (!ok && S.lookup.dt !== legacyTime()) { try { _slConditions = null; } catch (_) { /* gone */ } }
       if (btn.disabled || blockReason()) { S.saving = false; renderSave(); return; }
@@ -878,6 +908,7 @@
   wrap('resetSurfLogForm', null, function () {
     var wasSaving = S.saving;
     S.saving = false;
+    S.saveSeq++;
     clearTimeout(S.saveTimer);
     if (S.root) resetFace();
     if (wasSaving && S.root) {
@@ -904,6 +935,9 @@
   });
   C.on('log', function () { if (S.root) { renderList(); renderSave(); } });
   C.on('auth', function (a) {
+    // Signed out, or in as someone else: an open edit of the last
+    // account's session ends here (see foreignEdit).
+    dropForeignEdit();
     if (!S.root) return;
     if (a && a.signedIn) S.authSettled = true;
     renderAll();

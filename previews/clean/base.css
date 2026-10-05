@@ -48,7 +48,19 @@
 :where(.cl) a { color: inherit; }
 :where(.cl) svg { flex: none; }
 :where(.cl) :focus { outline: none; }
-:where(.cl) :focus-visible { outline: 2px solid var(--in); outline-offset: 2px; border-radius: 6px; }
+:where(.cl) :focus-visible { border-radius: 6px; }
+/* The focus ring needs weight: style.css's app-wide
+   `button:focus-visible, a:focus-visible, …` (0,1,1) would otherwise
+   paint the classic slate-blue ring. These are 0,2,0 / 0,2,1; a part
+   rule written as `.cl .cl-x:focus-visible` (0,3,0) still wins, and a
+   part's single-class rule in a later file wins over `.cl :focus-visible`. */
+.cl :focus-visible,
+.cl button:focus-visible,
+.cl a:focus-visible,
+.cl input:focus-visible,
+.cl select:focus-visible,
+.cl textarea:focus-visible,
+.cl summary:focus-visible { outline: 2px solid var(--in); outline-offset: 2px; }
 .cl [hidden],
 #cl-app[hidden],
 .cl-sub[hidden] { display: none !important; }
@@ -82,6 +94,12 @@
 /* A phone layout: on an iPad or desktop it stays one centred column
    (--col), the tab bar spans the screen with its buttons over the column. */
 html.cl-on { --col: 640px; }
+/* Keyboard, switch and VoiceOver focus scroll the control into view
+   above the fixed tab bar (1 px rule + 6 px + --tab-h + max(10 px, safe
+   area)), with 8 px of air, never behind it. */
+html.cl-on:not(.cl-tv) {
+  scroll-padding-bottom: calc(var(--tab-h) + 15px + max(10px, env(safe-area-inset-bottom, 0px)));
+}
 #cl-app,
 .cl-sub {
   max-width: var(--col);
@@ -262,7 +280,8 @@ html.cl-on { --col: 640px; }
   padding: 2px 0 8px;
 }
 .cl-kv > :nth-child(odd) { color: var(--muted); }
-.cl-kv > :nth-child(even) { font-weight: 600; text-align: right; }
+/* Values share one left edge in the auto column (A2-Phone-Sat / -Late). */
+.cl-kv > :nth-child(even) { font-weight: 600; }
 
 /* Window status tag: IN WINDOW (filled dot), EDGE and BLOCKED (ring). */
 .cl-st {
