@@ -27,7 +27,14 @@
 //
 // ctx API:
 //   ctx.open(path = '/', gotoOpts)   navigate (waitUntil 'domcontentloaded');
-//                                    resets ctx.t0, the zero for every ms below
+//                                    resets ctx.t0, the zero for every ms below.
+//                                    The new look (previews/clean) is the
+//                                    site's default, so a path that names no
+//                                    look (no preview= / classic=) opens with
+//                                    ?classic=1: those scenarios test the app
+//                                    underneath. To open the default look as
+//                                    a visitor does, name it (?preview=clean)
+//                                    or page.goto(ctx.url('/')).
 //   ctx.waitFor(fnOrExpr, { arg, timeout = 30000, interval = 50, label })
 //                                    poll in the page from Node until truthy →
 //                                    { ms, value }. Works with a paused clock.
@@ -329,6 +336,7 @@ function createCtx({ page, context, baseURL, slug, options }) {
     url: (p = '/') => new URL(p, baseURL).href,
     async open(p = '/', opts = {}) {
       ctx.t0 = Date.now();
+      if (!/[?&](preview|classic)=/.test(p)) p += (p.includes('?') ? '&' : '?') + 'classic=1';
       return page.goto(ctx.url(p), Object.assign({ waitUntil: 'domcontentloaded' }, opts));
     },
     // Poll fn/expression in the page (Node-side polling, so it works with a

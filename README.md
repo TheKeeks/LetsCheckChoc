@@ -17,6 +17,16 @@
 
 Your site will be live at `https://[username].github.io/LetsCheckChoc/`
 
+## The look
+
+The site opens in the clean design (white by day, dark green after sunset
+at the spot): the swell that reaches the reef up top, this week below it,
+then the chart, the lineup and the details, with Forecast / Log / Model tabs
+and Settings behind the icon in the top right. Choc TV (`?kiosk=1`) uses the
+same design. The old Windows-style look is still there at `?classic=1`
+(`?kiosk=1&classic=1` for Choc TV), and Settings links to it. The new look
+skips the boat question below; the classic look still asks it.
+
 ## File Structure
 
 ```
@@ -59,6 +69,10 @@ LetsCheckChoc/
 ```
 
 ## Choc TV (iPad kiosk mode)
+
+This section describes the classic Choc TV (`?kiosk=1&classic=1`). The
+default Choc TV uses the clean design: next 3 days, days 4–6 and the radar,
+with the forecast and buoy ages and the clock along the bottom.
 
 An ambient always-on display mode for an iPad on a stand: true-black
 faceplate with phosphor-green readouts (14-segment digits, big filled
@@ -181,7 +195,7 @@ MAE for both analyses.
 
 ## Chocomount Access Gate
 
-The app shows a "Are you coming by boat today?" prompt on first visit.
+The classic look (`?classic=1`) shows a "Are you coming by boat today?" prompt on first visit. The default clean look skips it.
 - "No" → full access including Chocomount star on the map.
 - "Yes" → "Go Home" splash, then the user lands on the buoy map with no
   Chocomount auto-select. Both choices persist for the session in

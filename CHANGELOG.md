@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased] — The new look is the default (old look at ?classic=1)
+
+The owner approved the clean "A refined" design for everyone. The plain address and Choc TV (`?kiosk=1`) now open it with no special link, so the crew's bookmarks and Home Screen icons get the new look on their next load. The Choc TV iPad picks it up by itself within about 15 minutes, because it reloads when the site's code changes. The old Windows-style look, boat question included, is still available at `?classic=1` (`?kiosk=1&classic=1` for the TV), and Settings › "Open the classic view" goes there. `?preview=<name>` still opens the other candidate looks.
+
+Nothing about the forecast, tides, the surf log or the model changed. The new look runs on top of the same app, which still does all the fetching, saving and training underneath. The e2e runner opens the older scenarios with `?classic=1` so they keep testing that app. A new scenario, `look-default.js`, checks that the plain address and `?kiosk=1` mount the new look without asking the boat question, that Settings links to `?classic=1`, and that `?classic=1` loads the old look with no look files. It fails on the previous `index.html` and passes now.
+
 ## [Unreleased] — Try the clean redesign (?preview=clean)
 
 The redesign you approved in Claude Design (the "A refined" boards) can now be tried on the real app with live data. On your phone, open the site with `?preview=clean` added to the address. For Choc TV, use `?kiosk=1&preview=clean`. The plain address is unchanged and loads none of it, so the crew sees nothing new until you decide.

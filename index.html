@@ -21,11 +21,13 @@
   <link rel="stylesheet" href="styles-web1-extensions.css">
   <link rel="stylesheet" href="styles-retro.css">
   <link rel="stylesheet" href="styles-kiosk.css">
-  <!-- Design previews: ?preview=clean | draft-paper | draft-navy | shader-pack | one-instrument | chart-room
-       layers that look (previews/<name>/) over today's app, for trying the
-       candidate redesigns on a real phone or Choc TV. No parameter, no change. -->
+  <!-- Looks: the approved "A refined" design (previews/clean/) is the default
+       on the phone and on Choc TV. ?classic=1 opens the old look; ?preview=
+       draft-paper | draft-navy | shader-pack | one-instrument | chart-room
+       still layers a candidate look over the app instead. -->
   <script>
-    var LCC_PREVIEW = (/[?&]preview=(shader-pack|one-instrument|chart-room|draft-paper|draft-navy|clean)(?:&|$)/.exec(location.search) || [])[1] || null;
+    var LCC_CLASSIC = /[?&]classic=1(?:&|$)/.test(location.search);
+    var LCC_PREVIEW = (/[?&]preview=(shader-pack|one-instrument|chart-room|draft-paper|draft-navy|clean)(?:&|$)/.exec(location.search) || [])[1] || (LCC_CLASSIC ? null : 'clean');
     if (LCC_PREVIEW) document.write('<link rel="stylesheet" href="previews/' + LCC_PREVIEW + '/theme.css">');
   </script>
   <!-- Choc TV kiosk mode PWA (?kiosk=1): installable via Add to Home Screen -->
