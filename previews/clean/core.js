@@ -1388,7 +1388,7 @@
       var cls = s.level === 'stale' ? ' cl-stale' : s.level === 'dead' ? ' cl-dead' : '';
       return '<div class="cl-sr" data-src="' + s.key + '"><span>' + esc(s.label) + '</span><span class="cl-v' + cls + '">' + esc(s.text) + '</span></div>';
     }).join('');
-    var classic = location.pathname + (IS_TV ? '?kiosk=1' : '');
+    var classic = location.pathname + (IS_TV ? '?kiosk=1&classic=1' : '?classic=1');
     return '' +
       '<h2 class="cl-h2" id="cl-set-account">Account</h2>' +
       '<div class="cl-set-acct">' +
@@ -1419,7 +1419,7 @@
       '<div class="cl-list">' +
         '<button type="button" class="cl-sr" data-act="spot"><span>Spot and buoy</span><span class="cl-v">' + icon.chevronRight() + '</span></button>' +
       '</div>' +
-      '<p class="cl-fine cl-set-note">This is the new look on trial. <a href="' + esc(classic) + '">Back to the classic view</a></p>';
+      '<p class="cl-fine cl-set-note">The old look is still here: <a href="' + esc(classic) + '">Open the classic view</a></p>';
   }
   function renderSettings(body) {
     var focusKey = null, ae = document.activeElement;
@@ -1577,7 +1577,7 @@
     else renderAll(reason || 'request');
   };
   function showFallback(root) {
-    root.innerHTML = '<div class="cl-empty">This screen didn’t load.<br><a href="' + esc(location.pathname) + '">Open the classic view</a></div>';
+    root.innerHTML = '<div class="cl-empty">This screen didn’t load.<br><a href="' + esc(location.pathname + (IS_TV ? '?kiosk=1&classic=1' : '?classic=1')) + '">Open the classic view</a></div>';
   }
 
   // Data arrived (cache paint, fresh load, failed refresh): one render pass.

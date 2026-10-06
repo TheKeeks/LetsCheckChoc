@@ -3,7 +3,7 @@
 // drives the clean look the way the crew will, on a phone and on Choc TV,
 // against the fixtures (2026-10-01 11:00 ET):
 //   • it skips the boat question by itself without remembering the answer
-//     (the plain address still asks), and none of its own code logs an error;
+//     (the classic look, ?classic=1, still asks), and none of its own code logs an error;
 //   • the three tabs switch; the Now block leads with the fixture's in-window
 //     swell (1.6 ft @ 8 s ESE at 11:00); the week has 7 rows; tapping a day
 //     slides the chart cursor to that day's low (the readout names it);
@@ -48,7 +48,7 @@ module.exports = {
       await ctx.waitForLoad();
     };
 
-    // ── Phone: boot, boat question skipped, plain address untouched ──
+    // ── Phone: boot, boat question skipped ──
     await boot('/?preview=clean');
     const boot0 = await ctx.state(() => ({
       on: document.documentElement.classList.contains('cl-on'),
@@ -64,7 +64,7 @@ module.exports = {
     assert.equal(boot0.theme, 'day', '11:00 is daytime at the spot');
     assert.equal(boot0.gateShown, false, 'the boat question is not on screen');
     assert.equal(boot0.passed, true);
-    assert.equal(boot0.gateKey, null, 'the preview does not remember a boat answer (the plain address still asks)');
+    assert.equal(boot0.gateKey, null, 'the new look does not remember a boat answer (?classic=1 still asks)');
     assert.equal(boot0.title, 'Today');
     for (const p of boot0.parts) assert.deepEqual(p, { mounted: true, failed: false });
 
