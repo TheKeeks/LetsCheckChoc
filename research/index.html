@@ -132,7 +132,9 @@ html.hub-lock, html.hub-lock body { overflow: hidden; }
 .trip-stage.hub-wide.hub-pn .trip-hud { right: 296px; }
 .trip-phase { font-family: var(--display); font-size: clamp(1.1rem, 3.2vw, 1.45rem); line-height: 1.15; color: var(--fg); }
 .trip-line { font-size: 0.75rem; color: var(--fg-2); }
-.trip-pow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; font-size: .72rem; color: var(--fg-2); }
+.trip-pow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; font-family: var(--body); font-size: .82rem; color: var(--fg-2); }
+.trip-pow-l { font-weight: 600; color: var(--fg); }
+.trip-pow-v { font-variant-numeric: tabular-nums; }
 .trip-bar { position: relative; width: 120px; height: 8px; border-radius: 4px; background: rgba(255,255,255,.15); overflow: hidden; }
 .trip-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--cool); }
 .trip-bar b { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 2px; background: #fff; }
@@ -242,12 +244,26 @@ html.hub-lock, html.hub-lock body { overflow: hidden; }
 .dec-day b { color: var(--fg); font-weight: 600; }
 .dec-day .ok { color: var(--offshore); }
 .dec-w { font-size: .82rem; }
+svg.dec-cam, .chart svg.dec-cam { width: 12px; height: 9px; display: inline-block; vertical-align: -1px; overflow: visible; }
+.dec-d { position: relative; }
+.chart .dec-d svg.dec-cam { position: absolute; right: 3px; top: 3px; width: 10px; height: 8px; }
+.dec-ph { margin-top: 12px; }
+.dec-ph-h { font-size: .82rem; color: var(--fg-2); margin-bottom: 6px; }
+.dec-ph-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-top: 8px; }
+.dec-ph-a { flex: 0 0 auto; text-decoration: none; color: var(--fg-2); font-size: .72rem; text-align: center; }
+.dec-ph-a img { display: block; width: 120px; height: 90px; object-fit: cover; border-radius: 4px; background: #121b24; }
 .cut { margin-top: 14px; }
 .cut-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 8px; }
 .cut-top .fr-cap { margin: 0 auto 0 0; }
 #cutCv { width: 100%; display: block; border-radius: 6px; }
 .w3 { position: relative; }
 #w3Cv { width: 100%; height: min(70vh, 520px); display: block; border-radius: 6px; touch-action: none; background: #0b1622; }
+.w3-cmp { position: absolute; right: 10px; top: 10px; width: 52px; height: 52px; border-radius: 50%; background: rgba(11,22,34,.75); border: 1px solid rgba(255,255,255,.25); touch-action: none; cursor: grab; }
+.w3-cmp svg { width: 100%; height: 100%; display: block; }
+.w3-cmp .ring { fill: none; stroke: rgba(255,255,255,.35); }
+.w3-cmp .n { fill: #f08a4b; } .w3-cmp .s { fill: rgba(231,237,242,.7); }
+.w3-cmp .t { display: none; }
+#w3Needle { transform-origin: 0 0; transform-box: view-box; }
 .w3-note { position: absolute; left: 12px; top: 10px; margin: 0; color: var(--fg-2); font-size: .85rem; pointer-events: none; }
 .w3-bar { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
 .w3-bar input { flex: 1; }
@@ -294,7 +310,7 @@ body { margin: 0; }
     <div class="trip-stage" id="tripStage">
       <canvas id="tripCv" aria-label="Map from the Caribbean to Fishers Island showing the forecast swell, or one wave traced over the sea floor"></canvas>
       <div class="trip-hud" aria-live="off"><div id="tripPhase" class="trip-phase">Loading…</div><div id="tripLine" class="mono trip-line"></div>
-        <div id="tripPow" class="trip-pow" hidden><span class="mono">Power per meter of crest</span><span class="trip-bar"><i id="tripPowFill"></i><b></b></span><span id="tripPowV" class="mono"></span><span id="tripPowH" class="mono trip-powh"></span></div></div>
+        <div id="tripPow" class="trip-pow" hidden><span class="trip-pow-l">Energy along the crest</span><span class="trip-bar" title="The white tick is where it started (100%)"><i id="tripPowFill"></i><b></b></span><span id="tripPowV" class="trip-pow-v"></span><span id="tripPowH" class="trip-powh"></span></div></div>
       <div class="hub-tr" id="hubTr">
         <button type="button" class="hub-ib" id="hubLayers" aria-expanded="false" aria-controls="hubPanel" aria-label="Layers" title="Layers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 12.5 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg></button>
         <button type="button" class="hub-ib" id="hubInfo" aria-expanded="false" aria-controls="hubInfoCard" aria-label="How to read this map" title="How to read this map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6" stroke-linecap="round"/><circle cx="12" cy="7.6" r="1.2" fill="currentColor" stroke="none"/></svg></button>
@@ -388,10 +404,11 @@ body { margin: 0; }
     <canvas id="cutCv" aria-label="The wave side-on over the sea floor along its last kilometers"></canvas>
     <div id="w3Box" class="w3" hidden>
       <canvas id="w3Cv" aria-label="3D view: the whole wave front crossing the sea floor"></canvas>
+      <div id="w3Compass" class="w3-cmp" role="button" aria-label="Compass: drag to turn or tilt, tap to face north"><svg viewBox="-20 -20 40 40" aria-hidden="true"><circle r="18" class="ring"/><g id="w3Needle"><path d="M0 -14 L4 0 L0 -2 L-4 0 Z" class="n"/><path d="M0 14 L4 0 L0 2 L-4 0 Z" class="s"/></g><text y="-6.5" x="0" text-anchor="middle" class="t">N</text></svg></div>
       <p id="w3Note" class="w3-note"></p>
       <div class="w3-bar"><button type="button" id="w3Play" class="hub-go">Pause</button><input type="range" id="w3Time" min="0" max="100" value="0" aria-label="Time since the wave left"><button type="button" id="w3Follow" aria-pressed="true">Follow</button><button type="button" id="w3Fishers">Fishers</button><button type="button" id="w3Reset">Reset</button></div>
       <p id="w3Read" class="w3-read mono"></p>
-      <p class="w3-help">Drag to move, pinch to zoom, twist with two fingers to turn and slide them up or down to tilt; double-tap to zoom in on a spot. Fishers jumps to the west end of the island; Follow keeps the wave in view. The band is your wave's front, 30 km wide: the colored top is the wave, as tall as it is there (color is height, white where it's breaking), and the pale curtain under it is the water column down to the sea floor beneath that part of the front. Depths are stretched 70 times from afar (deeper than 60 m squeezed), easing to about 9 times as you zoom in close; the wave is stretched 4 times more than the depths. Faint lines are where each part of it went. Around Fishers and the Race the sea floor is drawn from the 16 m survey.</p>
+      <p class="w3-help">Drag to move, pinch to zoom, twist two fingers to turn, slide two fingers up or down to tilt, double-tap to zoom in on a spot. Or use the compass: drag it to turn and tilt, tap it to face north. Fishers jumps to the west end of the island; Follow keeps the wave in view. The band is your wave's front, 30 km wide: the colored top is the wave, as tall as it is there (color is height, white where it's breaking), and the pale curtain under it is the water column down to the sea floor beneath that part of the front. Depths are stretched 70 times from afar (deeper than 60 m squeezed), easing to about 9 times as you zoom in close; the wave is stretched 4 times more than the depths. Faint lines are where each part of it went. Around Fishers and the Race the sea floor is drawn from the 16 m survey.</p>
     </div>
     <figcaption id="cutCap"></figcaption>
   </figure>
@@ -525,7 +542,7 @@ body { margin: 0; }
   </figure>
   <figure class="chart">
     <div class="scroll"><table id="wildTop"></table></div>
-    <figcaption>Biggest modeled days at Wilderness (size), with the experimental shape read. The very biggest are winter storms with south winds, which are blown out. The clean ones come with north-to-east wind.</figcaption>
+    <figcaption>Biggest modeled days at Wilderness (size). The very biggest are winter storms with south winds, which are blown out. The clean ones come with north-to-east wind.</figcaption>
   </figure>
   <p><strong>How much to trust it:</strong> less than Choc. A point break works by wrapping swell around the point and peeling down the shore, which is mostly diffraction plus refraction over the last few hundred meters. On 48 m cells the rays see the shape of the point, but not the wave breaking or wrapping in the last few dozen meters. So far there is one Wilderness session to check it against, below. One good day shows the model isn't wrong about that day; it can't validate the model. Logging a handful more Wilderness sessions, good and flat, would let us test it the way Choc was tested.</p>
   <div class="takeaways">
@@ -690,9 +707,11 @@ body { margin: 0; }
   <div class="eyebrow">Research process</div>
   <h2 id="next-h">What's next</h2>
   <ol>
-    <li><strong>Keep logging, especially off-season and flat days.</strong> The model has never seen a session from November to May and has seen only two flat ones. Each new log adds a point to the learning curve, and winter logs would turn the hatched bars into real estimates.</li>
-    <li><strong>Sharper wind.</strong> The wind grid is now complete (17 points over the water). For Windy-level detail (3 km), NOAA's HRRR archive goes back to 2018 and could be pulled by a GitHub Action.</li>
-    <li><strong>Move this into the site.</strong> As a <code>?research</code> page or a Choc TV night mode, it could read your logs live from Firebase and refit every time you add one, instead of waiting for a CSV export.</li>
+    <li><strong>Keep logging, especially off-season, flat days and Wilderness.</strong> The ratings model has 28 Choc sessions, none from November to May, only two flat ones, and no logged Wilderness sessions. Wilderness numbers can't be checked against anything until there are some.</li>
+    <li><strong>Refresh the forecast on a schedule.</strong> The forecast on this page is a snapshot from the last time the pull script ran. A GitHub Action could run it every 6 hours.</li>
+    <li><strong>Read the logs live.</strong> The ten-year calendar now reads photos from the site's surf log. The ratings model still fits from a CSV export; reading the logs live would let it refit after every new session.</li>
+    <li><strong>Sharper sea floor for Choc's number.</strong> Tracing the last kilometer and a half on the 8 m survey, with your reef sketch as the landing zone, puts rays on the reef itself instead of a 650 m circle. It would replace the ten-year numbers only if it ranks your logged sessions better than the current model.</li>
+    <li><strong>Sharper wind.</strong> The 17-point wind grid uses the ECMWF 9 km model. NOAA's HRRR (3 km, archived since 2018) would resolve the wind over the reef better.</li>
   </ol>
   <p class="eyebrow">Sources: NDBC 44097 stdmet · ERA5 10 m wind (Open-Meteo, over-water cell 41.25 N 72.00 W) · NOAA CO-OPS 8510719 high/low predictions · NOAA NCEI CUDEM 1/9″ (3 m) and 1/3″ (10 m) topo-bathymetry · NOAA ETOPO 2022 15″ (deep corner) · CDIP 154 directional spectra (Scripps) · NDBC 44017 (gap fill) · NOAA GFS-Wave 0.16° and ECMWF IFS wave 0.25° forecasts (ECMWF open data, CC BY 4.0) · GFS-Wave archive on AWS for the scorecard · ECMWF IFS 9 km daily wind, 17 points (Open-Meteo) · your surf log export (28 sessions)</p>
 </section>
@@ -1052,7 +1071,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     document.getElementById('modelTiles').innerHTML = `
       <div class="take"><b class="mono">${m.loo_r2.toFixed(2)}</b><span>Share of the spread in your ${TNAME[target]} it explains on sessions it hasn't seen (leave-one-out R²). 0 is no better than a guess, 1 is perfect.</span></div>
       <div class="take"><b class="mono">±${m.mae.toFixed(1)}</b><span>Typical miss in rating points, against ±${m.mae_base.toFixed(1)} for always guessing your average rating.</span></div>
-      <div class="take"><b class="mono">${lateM < lateB ? 'Yes' : 'Not yet'}</b><span>On your latest ${p.length - half} sessions, predicted from the logs before each one, it missed by ${lateM.toFixed(1)} against ${lateB.toFixed(1)} for the plain guess.</span></div>
+      <div class="take"><b class="mono">±${lateM.toFixed(1)}</b><span>Typical miss on your latest ${p.length - half} sessions, each predicted using only the sessions logged before it. Always guessing your average rating misses by ±${lateB.toFixed(1)}.</span></div>
       <div class="take"><b class="mono" style="font-size:1.3rem">${MODEL.labels[order[0][0]].replace(/ \(.*\)/, '')}</b><span>is the input that matters most, then ${MODEL.labels[order[1][0]].replace(/ \(.*\)/, '').toLowerCase()}.</span></div>`;
   }
 
@@ -1258,7 +1277,8 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       out.innerHTML = `<table class="dct"><thead><tr><th>Spot</th><th class="num">Modeled best 3 h</th><th>Wind then</th></tr></thead><tbody>
         <tr><td>Choc</td><td class="num"><b>${ch} ft</b>${hr(chh)}</td><td>${wind(chw, 'Choc')}</td></tr>
         <tr><td>Wilderness</td><td class="num"><b>${wi} ft</b>${hr(wih)}</td><td>${wind(wiw, 'Wilderness')}</td></tr></tbody></table>
-        <p class="mono" style="font-size:.8rem">Buoy peak ${bpk} ft · ${bper ?? '—'} s · from ${bdir ?? '—'}°${bdir != null ? ' · <button type="button" id="dcLoad">See this swell\'s rays</button>' : ''}</p>`;
+        <p class="mono" style="font-size:.8rem">Buoy peak ${bpk} ft · ${bper ?? '—'} s · from ${bdir ?? '—'}°${bdir != null ? ' · <button type="button" id="dcLoad">See this swell\'s rays</button>' : ''} · <button type="button" id="dcOcean">Show the ocean that day</button></p>`;
+      const oc = document.getElementById('dcOcean'); if (oc) oc.addEventListener('click', () => { if (window.CHOC.showPast) window.CHOC.showPast(k); });   // the map's Past view: the whole Atlantic that day
       const tr = TRAINS[k], b = document.getElementById('dcLoad');
       if (tr && tr[1].length) {
         // the buoy's spectrum at Choc's biggest hour, split into trains
@@ -1306,8 +1326,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       const hit = el('rect', { x: L + i * bw, y: T, width: bw, height: h - B - T, fill: 'transparent' }, svg);
       hit.addEventListener('mousemove', e => window.CHOC.showTip(e, `<b>${m.month}</b><br>Choc 2.5 ft+: ${m.choc}%<br>Wilderness 2.5 ft+: ${m.wild}%<br>Wilderness works, Choc's wind doesn't: ${m.wild_day}%`)); hit.addEventListener('mouseleave', () => window.CHOC.hideTip()); });
     const tb = document.getElementById('wildTop');
-    const shape = p => p == null ? '—' : p >= 0.5 ? '<span style="color:var(--offshore)">peels</span>' : p >= 0.25 ? 'mixed' : 'closes out';
-    if (tb) tb.innerHTML = '<thead><tr><th>Day</th><th class="num">Wilderness</th><th>Shape</th><th class="num">Choc</th><th class="num">Buoy</th><th>Wind at Wilderness</th></tr></thead><tbody>' + s.top.map(t => `<tr><td class="mono">${t.date}</td><td class="num">${t.wild} ft</td><td>${shape(t.peel)}</td><td class="num">${t.choc} ft</td><td class="num">${t.buoy} ft</td><td>${t.wind_ok ? '<span style="color:var(--offshore)">clean</span>' : 'not clean'}${t.wdir != null ? ' · ' + window.CHOC.windArrow(t.wdir) + 'from ' + t.wdir + '°' : ''}</td></tr>`).join('') + '</tbody>';
+    if (tb) tb.innerHTML = '<thead><tr><th>Day</th><th class="num">Wilderness</th><th class="num">Choc</th><th class="num">Buoy</th><th>Wind at Wilderness</th></tr></thead><tbody>' + s.top.map(t => `<tr><td class="mono">${t.date}</td><td class="num">${t.wild} ft</td><td class="num">${t.choc} ft</td><td class="num">${t.buoy} ft</td><td>${t.wind_ok ? '<span style="color:var(--offshore)">clean</span>' : 'not clean'}${t.wdir != null ? ' · ' + window.CHOC.windArrow(t.wdir) + 'from ' + t.wdir + '°' : ''}</td></tr>`).join('') + '</tbody>';
   }
 
   kresp('choc'); thisWeek(); wildSection(); dayCheck();
@@ -2088,9 +2107,9 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     $('tripPowFill').style.width = Math.min(100, p * 100 / 2) + '%';            // the bar runs to 200 %; the tick marks 100 %
     $('tripPowFill').style.background = p >= 1 ? 'var(--swell)' : 'var(--cool)';
     const atEnd = S.phase !== 'play' || dd >= r.len - 1e-6, inf = r.pw.info;
-    $('tripPowV').textContent = Math.round(p * 100) + '%' + (atEnd ? ` · ${inf.hi < 0.9 ? 'spread out' : inf.lo > 1.1 ? 'focused' : 'about the same'}` : '');
+    $('tripPowV').textContent = `${Math.round(p * 100)}% of where it started` + (atEnd ? ` · ${inf.hi < 0.9 ? 'the bottom spread it out' : inf.lo > 1.1 ? 'the bottom focused it' : 'about the same as it started'}` : '');
     $('tripPowH').textContent = '';
-    S.detail = `Power per meter of crest at the shore: ${Math.round(pwAt(r, r.len) * 100)}% of the start (likely ${Math.round(inf.lo * 100)}–${Math.round(inf.hi * 100)}%): rays per ${inf.window} m of crest, ${inf.started} at the start and ${inf.arrived} at the shore, averaged over a ±10° spread of directions. With shallowing, the wave stands ×${hf.toFixed(2)} as tall in 4 m of water as it started` + (size ? `, so a ${size} ft swell at the start arrives at about ${(size * hf).toFixed(1)} ft.` : '.');
+    S.detail = `Energy per meter of crest at the shore: ${Math.round(pwAt(r, r.len) * 100)}% of the start (likely ${Math.round(inf.lo * 100)}–${Math.round(inf.hi * 100)}%): rays per ${inf.window} m of crest, ${inf.started} at the start and ${inf.arrived} at the shore, averaged over a ±10° spread of directions. With shallowing, the wave stands ×${hf.toFixed(2)} as tall in 4 m of water as it started` + (size ? `, so a ${size} ft swell at the start arrives at about ${(size * hf).toFixed(1)} ft.` : '.');
     infoSync();
   }
   function hudSetup() {
@@ -3179,7 +3198,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   const CUT = { len: 1, ft: 6, key: '', prof: null, bed: null, t: 0, run: false, vis: false };
   const cutCv = $('cutCv'), cutCtx = cutCv ? cutCv.getContext('2d') : null;
   function cutProfile(r) {
-    const Lkm = Math.min(CUT.len, r.len), NA = 150, JM = 0, out = { Lkm, NA, JM, h: [], bed: [], H: [], k: [], ph: [], c: [], ib: -1 };
+    const Lkm = Math.min(CUT.len, r.len), NA = 150, JM = 0, out = { Lkm, NA, JM, h: [], bed: [], H: [], k: [], ph: [], c: [], pw: [], ib: -1 };
     const across = 0;                                        // flat section: just the line under the ray
     for (let a = 0; a < NA; a++) {
       const dd = r.len - Lkm + Lkm * a / (NA - 1), p = sample(r, dd), hd = headingAt(r, Math.max(dd, 0.06), 0.06) * D2R;
@@ -3199,7 +3218,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       if (out.ib < 0 && H >= 0.78 * h) out.ib = a;
       if (out.ib >= 0) H = Math.min(H, 0.78 * h);            // broken: the surf zone keeps it about 0.78 x depth
       if (a) ph += k * Lkm * 1000 / (NA - 1);
-      out.H.push(H); out.k.push(k); out.ph.push(ph); out.c.push(c);
+      out.H.push(H); out.k.push(k); out.ph.push(ph); out.c.push(c); out.pw.push(r.pw ? pwAt(r, dd) : null);
     }
     return out;
   }
@@ -3214,7 +3233,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const [w, h] = cutSize(), key = [r.start, r.th, r.T, r.len, !!r.pw, CUT.len, CUT.ft, w, h].join();
     if (key !== CUT.key) { CUT.key = key; CUT.prof = cutProfile(r); CUT.bed = null; cutCaption(); }
     const P = CUT.prof, g = cutCtx, NA = P.NA, JM = P.JM;
-    const padL = 44, padR = 16 + JM * 2 * 9, top = 26, bot = 30, ox = 9, oy = 6;
+    const padL = 44, padR = 16 + JM * 2 * 9, top = 84, bot = 30, ox = 9, oy = 6;
     const zmax = Math.max(4, Math.min(60, Math.max(...P.h) * 1.05)), V = (h - top - bot - JM * 2 * oy) / (zmax + 3);
     const sx = (a) => padL + (w - padL - padR) * a / (NA - 1);
     const XY = (a, j, z) => [sx(a) + (j + JM) * ox, top + 3 * V + JM * 2 * oy - (j + JM) * oy - z * V];
@@ -3260,6 +3279,17 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       if (!(P.ib >= 0 && a >= P.ib && E[a] > E[a - 1] && E[a] >= E[a + 1] && E[a] > 0)) continue;
       const [x, y] = XY(a, 0, E[a]); g.fillStyle = 'rgba(255,255,255,.55)';
       for (let k = 0; k < 4; k++) { g.beginPath(); g.ellipse(x + 3 + k * 4, y + 2 + k * 2.5, 6 - k, 3, 0, 0, 7); g.fill(); }
+    }
+    // energy along the crest, % of where the wave started (the same count as Drop a wave's bar): a strip on top
+    if (P.pw[0] != null) {
+      const top100 = Math.max(1.2, Math.min(2, Math.max(...P.pw) * 1.1)), y0 = 22, y1 = 66, py = (v) => y1 - Math.min(top100, Math.max(0, v)) / top100 * (y1 - y0);
+      g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = 1; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(sx(0), py(1)); g.lineTo(sx(NA - 1), py(1)); g.stroke(); g.setLineDash([]);
+      g.beginPath(); for (let a = 0; a < NA; a++) { const p = [sx(a), py(P.pw[a])]; a ? g.lineTo(...p) : g.moveTo(...p); }
+      g.strokeStyle = '#f0b25a'; g.lineWidth = 2; g.stroke();
+      g.font = '12px "Instrument Sans", system-ui, sans-serif'; g.fillStyle = 'rgba(231,237,242,.85)'; g.textAlign = 'left';
+      g.fillText(`Energy along the crest: ${Math.round(P.pw[0] * 100)}% → ${Math.round(P.pw[NA - 1] * 100)}% of where it started`, sx(0), 13);
+      g.textAlign = 'right'; g.fillStyle = 'rgba(231,237,242,.55)'; g.font = '11px "IBM Plex Mono", monospace'; g.fillText('100%', sx(0) - 6, py(1) + 4); g.fillText('0', sx(0) - 6, py(0) + 4);
+      g.strokeStyle = 'rgba(255,255,255,.12)'; g.beginPath(); g.moveTo(sx(0), py(0)); g.lineTo(sx(NA - 1), py(0)); g.stroke();
     }
     // breaking point
     g.font = '11px "IBM Plex Mono", monospace'; g.fillStyle = 'rgba(231,237,242,.9)'; g.textAlign = 'center';
@@ -3502,7 +3532,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     // the vertical stretch eases off as you zoom in: 70x from afar, down to about 9x right over the reef
     const vs = Math.max(0.13, Math.min(1, W3.view.dist / 40)); if (W3.root.scale.y !== vs) W3.root.scale.y = vs;
     const key = [W3.t, W3.view.az, W3.view.el, W3.view.dist, W3.view.tx, W3.view.tz, W3.rd.domElement.width, W3.rd.domElement.height].join();
-    if (key !== W3.drawn) { W3.drawn = key; w3Frame(); w3Place(); W3.rd.render(W3.scene, W3.cam); }   // paused and still: nothing to draw
+    if (key !== W3.drawn) { W3.drawn = key; w3Frame(); w3Place(); W3.rd.render(W3.scene, W3.cam); const nd = $('w3Needle'); if (nd) nd.style.transform = `rotate(${(W3.view.az * 180 / Math.PI).toFixed(1)}deg)`; }   // paused and still: nothing to draw
     requestAnimationFrame(w3Loop);
   }
   function w3Show(on) {
@@ -3538,16 +3568,25 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       if (!tp.has(e.pointerId) || !W3.scene) return; const [px, py, btn] = tp.get(e.pointerId); tp.set(e.pointerId, [e.clientX, e.clientY, btn]);
       const dx = e.clientX - px, dy = e.clientY - py; moved += Math.abs(dx) + Math.abs(dy);
       if (tp.size === 1) { if (btn === 2 || e.shiftKey) turn(dx, dy); else { manual(); pan(dx, dy); } return; }
-      if (tp.size === 2) {
-        const [a, b] = [...tp.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), ang = Math.atan2(b[1] - a[1], b[0] - a[0]), my = (a[1] + b[1]) / 2, mx = (a[0] + b[0]) / 2;
-        if (g0) {
-          manual(); const v = W3.view;
-          v.dist = Math.max(0.4, Math.min(W3.size * 3, v.dist * g0.d / Math.max(10, d)));
-          v.az -= ((ang - g0.ang + Math.PI * 3) % (Math.PI * 2) - Math.PI);                 // twist turns
-          v.el = Math.max(0.08, Math.min(1.45, v.el + (my - g0.my) * 0.006));                // slide up/down tilts
-        }
-        g0 = { d, ang, my, mx };
+      if (tp.size !== 2) return;
+      // two fingers, as in Google Earth: each gesture locks into one mode once it's clear what it is.
+      // Pinch and twist go together (zoom about the fingers, turn with them); both fingers sliding the
+      // same way up or down tilts. Each step applies only the change since the last one, so nothing jumps.
+      const [a, b] = [...tp.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      if (!g0) { g0 = { d, ang, mx, my, d0: d, ang0: ang, my0: my, mode: null }; return; }
+      const wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
+      if (!g0.mode) {
+        const zoomed = Math.abs(Math.log(d / g0.d0)) > 0.06, twisted = Math.abs(wrap(ang - g0.ang0)) > 0.12, slid = Math.abs(my - g0.my0) > 14;
+        if (slid && !zoomed && !twisted) g0.mode = 'tilt'; else if (zoomed || twisted) g0.mode = 'zr';
       }
+      manual(); const v = W3.view;
+      if (g0.mode === 'tilt') v.el = Math.max(0.08, Math.min(1.45, v.el + (my - g0.my) * 0.006));
+      else if (g0.mode === 'zr') {
+        zoomTo(mx, my, g0.d / Math.max(10, d));
+        if (Math.abs(wrap(ang - g0.ang0)) > 0.12) v.az += wrap(ang - g0.ang);        // turn with the fingers once the twist is clear
+      }
+      g0.d = d; g0.ang = ang; g0.mx = mx; g0.my = my;
     });
     const up = (e) => {
       if (tp.size === 1 && tp.has(e.pointerId) && moved < 8) {                             // a tap: double-tap zooms in
@@ -3558,6 +3597,14 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       tp.delete(e.pointerId); g0 = null;
     };
     cv3.addEventListener('pointerup', up); cv3.addEventListener('pointercancel', up);
+    // compass: the needle shows north; drag it sideways to turn, up or down to tilt; tap it to face north
+    const cmp = $('w3Compass'); let cg = null;
+    if (cmp) {
+      cmp.addEventListener('pointerdown', (e) => { e.stopPropagation(); cmp.setPointerCapture(e.pointerId); cg = { x: e.clientX, y: e.clientY, n: 0 }; });
+      cmp.addEventListener('pointermove', (e) => { if (!cg || !W3.scene) return; const dx = e.clientX - cg.x, dy = e.clientY - cg.y; cg.x = e.clientX; cg.y = e.clientY; cg.n += Math.abs(dx) + Math.abs(dy); manual(); turn(-dx * 1.2, dy); });
+      cmp.addEventListener('pointerup', () => { if (cg && cg.n < 6 && W3.scene) { manual(); W3.view.az = 0; W3.view.el = Math.max(W3.view.el, 0.5); } cg = null; });
+      cmp.addEventListener('pointercancel', () => { cg = null; });
+    }
     $('w3Fishers').addEventListener('click', () => {      // close in on the west end of Fishers: Choc, Wilderness, the Race
       if (!W3.scene || !S.ray) return; manual(); const v = W3.view, r = S.ray;
       v.tx = (-71.985 - r.start[0]) * KX; v.tz = -(41.262 - r.start[1]) * KY; v.dist = 6; v.el = 0.55; v.az = 0.15;                // from the south, looking at the reef
@@ -3790,6 +3837,33 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   const compass = (d) => COMP[Math.round(((d % 360) + 360) % 360 / 22.5) % 16];
   const key = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
   let metric = 'good', sel = null;
+  // ── photos from the site's surf log (Firestore surf_logs, read only). The page runs inside the site's
+  // Swell Map tab, so it borrows the site's Firebase connection and sign-in; opened on its own (or in a
+  // preview) there is no connection and the calendar simply shows no photos. Months and days with photos
+  // get a camera; a month lists its photos, a day shows its own.
+  const PH = { month: {}, day: {} };
+  const CAM = '<svg class="dec-cam" viewBox="0 0 16 12" aria-hidden="true"><path d="M1 3.2h3.2l1.3-1.9h5l1.3 1.9H15v8H1z" fill="currentColor"/><circle cx="8" cy="7" r="2.6" fill="#0b1622"/><circle cx="8" cy="7" r="1.5" fill="currentColor"/></svg>';
+  function setPhotos(list) {                               // [{when: 'YYYY-MM-DDTHH:MM' (Eastern), url}]
+    PH.month = {}; PH.day = {};
+    for (const q of list || []) {
+      if (!q || typeof q.url !== 'string' || !/^https:\/\/[^"'<>\s]+$/.test(q.url) || typeof q.when !== 'string') continue;   // plain https links only: they go into src/href
+      const iso = q.when.slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
+      (PH.month[iso.slice(0, 7)] = PH.month[iso.slice(0, 7)] || []).push(q); (PH.day[iso] = PH.day[iso] || []).push(q);
+    }
+    for (const k in PH.month) PH.month[k].sort((a, b) => (a.when < b.when ? -1 : 1));
+    draw(); month();
+  }
+  window.CHOC.setPhotos = setPhotos;
+  (async () => {
+    let P = null; try { P = window.parent !== window && window.parent.fbFirestore ? window.parent : null; } catch (e) { P = null; }   // another origin: no access
+    if (!P) return;
+    try {
+      if (P._fbAuthReady) await P._fbAuthReady;
+      const snap = await P.fbFirestore.collection('surf_logs').orderBy('createdAt', 'desc').limit(500).get(), out = [];
+      snap.forEach((doc) => { const d = doc.data() || {}; for (const ph of d.photos || []) { const url = typeof ph === 'string' ? ph : ph && ph.url; if (url) out.push({ when: d.timestamp, url }); } });
+      setPhotos(out);
+    } catch (e) { /* not signed in yet or offline: no photos */ }
+  })();
   const CAP = {
     good: 'A good day is one whose best 3 hours score 7/10 or better on the ratings model built from your surf log at Choc. Your log has no sessions from November to May, so winter counts are extrapolation.',
     big: 'A big swell day has at least 3 hours at 4 ft or more at the buoy, coming from inside the swell window.',
@@ -3830,6 +3904,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
         el('rect', { x: x + 1, y: y + 1, width: cell - 2, height: cell - 2, rx: 3, fill: thin ? 'url(#decHatch)' : v ? `rgba(240,138,75,${(0.12 + 0.88 * Math.min(1, v / max)).toFixed(2)})` : '#121b24' }, g);
         if (sel === key(yr, m)) el('rect', { x: x + 1.5, y: y + 1.5, width: cell - 3, height: cell - 3, rx: 3, fill: 'none', stroke: C.fg, 'stroke-width': 2 }, g);
         if (v) { const t = el('text', { x: x + cell / 2, y: y + cell / 2 + 4, 'text-anchor': 'middle', 'font-size': 12, 'font-family': css('--mono'), fill: v / max > 0.55 ? '#1a0e06' : C.fg, 'pointer-events': 'none' }, g); t.textContent = v; }
+        if (PH.month[key(yr, m)]) { const fo = el('foreignObject', { x: x + cell - 15, y: y + 3, width: 12, height: 10, 'pointer-events': 'none' }, g); fo.innerHTML = `<div xmlns="http://www.w3.org/1999/xhtml" style="color:${v / max > 0.55 ? '#1a0e06' : '#e7edf2'};line-height:0">${CAM}</div>`; }
         const pick = () => { sel = key(yr, m); draw(); month(); };
         g.addEventListener('click', pick); g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
       }
@@ -3846,14 +3921,16 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       const iso = `${key(y, m)}-${String(d).padStart(2, '0')}`, i = window.CHOC.dayIndex(iso), x = D[i];
       if (!x) { cal += `<div class="dec-d none"><i>${d}</i></div>`; continue; }
       const ft = x.mh[dl], c = hCol(ft || 0), good = (x.s[dl] || 0) >= 7, light = c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11 > 140;
-      cal += `<button type="button" class="dec-d${good ? ' good' : ''}${st.idx === i ? ' on' : ''}" data-i="${i}" style="background:rgb(${c});color:${light ? '#10161c' : '#f2f5f8'}" aria-label="${MONTHS[m - 1]} ${d}: Choc ${ft.toFixed(1)} ft${good ? ', good day' : ''}"><i>${d}</i><b>${ft.toFixed(1)}</b></button>`;
+      const hasPh = !!PH.day[iso];
+      cal += `<button type="button" class="dec-d${good ? ' good' : ''}${st.idx === i ? ' on' : ''}${hasPh ? ' ph' : ''}" data-i="${i}" style="background:rgb(${c});color:${light ? '#10161c' : '#f2f5f8'}" aria-label="${MONTHS[m - 1]} ${d}: Choc ${ft.toFixed(1)} ft${good ? ', good day' : ''}${hasPh ? ', has photos' : ''}"><i>${d}</i><b>${ft.toFixed(1)}</b>${hasPh ? CAM : ''}</button>`;
     }
     const best = o.best ? `${MON[m - 1]} ${o.best.d}, ${o.best.mh[dl].toFixed(1)} ft at Choc` : '—';
     out.innerHTML = `<div class="dec-mh"><h3>${MONTHS[m - 1]} ${y}</h3><span>${o.days} days with buoy data · biggest: ${best}</span></div>
       <div class="dec-tiles">${tile(o.good, 'good days')}${tile(o.big, 'big swell days')}${tile(o.c3, 'Choc 3 ft+')}${tile(o.w3, 'Wilderness 3 ft+')}</div>
       <div class="dec-cal">${cal}</div>
       <div class="dec-key"><span><i class="g"></i>good day</span><span>numbers: Choc's best 3 hours (ft), colored like the map</span></div>
-      <div class="dec-day" id="decDay"></div>`;
+      <div class="dec-day" id="decDay"></div>
+      ${PH.month[sel] ? `<div class="dec-ph"><div class="dec-ph-h">${CAM} ${PH.month[sel].length} photo${PH.month[sel].length > 1 ? 's' : ''} from the surf log this month</div><div class="dec-ph-row">${PH.month[sel].map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a" title="${q.when.slice(0, 10)}"><img src="${q.url}" alt="Surf log photo, ${q.when.slice(0, 10)}" loading="lazy"><span>${MON[+q.when.slice(5, 7) - 1]} ${+q.when.slice(8, 10)}</span></a>`).join('')}</div></div>` : ''}`;
     out.querySelectorAll('.dec-d[data-i]').forEach((b) => b.addEventListener('click', () => { if (window.CHOC.pastStop) window.CHOC.pastStop(); window.CHOC.jump(+b.dataset.i); }));
     day();
   }
@@ -3865,7 +3942,8 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     box.innerHTML = `<div><b>${new Date(Date.UTC(x.y, x.m - 1, x.d, 12)).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</b></div>
       <div>Choc <b>${x.mh[dl].toFixed(1)} ft</b>${v && v[4] != null ? ` · Wilderness <b>${v[4].toFixed(1)} ft</b>` : ''} · buoy ${x.hs.toFixed(1)} ft, ${Math.round(x.per)} s from ${compass(x.dir)}${x.s[dl] != null ? ` · ratings model <b>${x.s[dl].toFixed(1)}/10</b>` : ''}</div>
       <div class="dec-w">${[wind(w, 'Choc'), wind(ww, 'Wilderness')].filter(Boolean).join(' · ')}</div>
-      <button type="button" id="decShow" class="dec-go">Open this day on the map</button>`;
+      <button type="button" id="decShow" class="dec-go">Open this day on the map</button>
+      ${PH.day[x.iso] ? `<div class="dec-ph-row">${PH.day[x.iso].map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a"><img src="${q.url}" alt="Surf log photo, ${x.iso}" loading="lazy"><span>${q.when.slice(11, 16)}</span></a>`).join('')}</div>` : ''}`;
     document.getElementById('decShow').addEventListener('click', () => window.CHOC.showPast(x.iso));
   }
   document.querySelectorAll('#decMetric button').forEach((b) => b.addEventListener('click', () => {

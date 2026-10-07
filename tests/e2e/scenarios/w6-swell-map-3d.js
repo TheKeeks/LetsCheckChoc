@@ -48,6 +48,12 @@ module.exports = {
       const t1 = await page.evaluate(() => [window.CHOC.trip.w3.view.tx, window.CHOC.trip.w3.view.tz]);
       assert.ok(Math.hypot(t1[0] - t0[0], t1[1] - t0[1]) > 0.05, 'drag moves the view');
       assert.ok(await page.evaluate(() => window.CHOC.trip.w3.root.scale.y < 0.5), 'stretch eases off close in');
+      // the compass: tap faces north
+      const cb = await (await page.$('#w3Compass')).boundingBox();
+      await page.evaluate(() => { window.CHOC.trip.w3.view.az = 1.2; });
+      await page.mouse.click(cb.x + cb.width / 2, cb.y + cb.height / 2);
+      await page.waitForTimeout(300);
+      assert.equal(await page.evaluate(() => window.CHOC.trip.w3.view.az), 0, 'compass tap faces north');
     }
     // back to the side view
     await page.click('#cutView button[data-v="side"]');
