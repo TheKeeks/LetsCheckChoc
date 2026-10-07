@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — Swell Map: surf-log photos come with their session's ratings and notes
+
+The calendar's photos showed no context. Each day with photos now lists every logged session on it:
+- the time logged;
+- the rating, as the average of size, wind and ride, with all three shown;
+- the session's notes;
+- that session's photos.
+
+The ratings model's score for the day sits alongside, so a reader can compare the two. In the month's photo strip, each caption carries the session's average and the notes show on hover. A missing rating stays a dash rather than a made-up number. Notes are shown as plain text, never as page markup. Names are not shown.
+
+Verified by `w6-swell-map-photos-standalone.js`. Its test log now has ratings and notes, one note containing an HTML tag and one session missing its wind rating. The scenario checks:
+- the session line reads "Logged at 5:40 pm: rated 9.0/10 (size 9, wind 8, ride 10)" with the model's score next to it;
+- the note shows as typed and adds no markup;
+- the month caption carries the rating;
+- the session with a missing wind rating shows dashes, not an average.
+
+It fails on the previous page and passes now.
+
 ## [Unreleased] — Swell Map: 3D follow stays with the wave headed for Choc; the bending physics spelled out
 
 In Drop a wave's 3D view, Follow kept the camera on the middle of the whole 30 km wave front. Most of that front misses Choc, so the camera wandered off to wherever the bulk of the wave went. It now follows the stretch of the front that gets closest to the spot the wave was aimed at (Choc, or Wilderness when aimed there). When that stretch arrives, the view stays over the spot, even if those rays carry on along the shore.

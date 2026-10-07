@@ -253,6 +253,10 @@ svg.dec-cam, .chart svg.dec-cam { width: 12px; height: 9px; display: inline-bloc
 .dec-ph-h { font-size: .82rem; color: var(--fg-2); margin-bottom: 6px; }
 .dec-ph-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-top: 8px; }
 .dec-ph-a { flex: 0 0 auto; text-decoration: none; color: var(--fg-2); font-size: .72rem; text-align: center; }
+.dec-log { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
+.dec-log-h { font-size: .84rem; color: var(--fg-2); }
+.dec-log-h b { color: var(--fg); }
+.dec-log-n { margin: 6px 0 0; padding: 2px 0 2px 10px; border-left: 2px solid rgba(255,255,255,.25); font-size: .86rem; line-height: 1.45; white-space: pre-wrap; }
 .dec-ph-a img { display: block; width: 120px; height: 90px; object-fit: cover; border-radius: 4px; background: #121b24; }
 .cut { margin-top: 14px; }
 .cut-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 8px; }
@@ -3879,16 +3883,25 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   const key = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
   let metric = 'good', sel = null;
   // ── photos from the site's surf log (Firestore surf_logs, read only). The page runs inside the site's
-  // Swell Map tab, so it borrows the site's Firebase connection and sign-in; opened on its own (or in a
-  // preview) there is no connection and the calendar simply shows no photos. Months and days with photos
-  // get a camera; a month lists its photos, a day shows its own.
+  // Swell Map tab, so it borrows the site's Firebase connection and sign-in; opened on its own it connects
+  // itself (below). Months and days with photos get a camera; a month lists its photos, a day shows each
+  // logged session with its ratings (size, wind, ride) and notes next to the ratings model's score.
   const PH = { month: {}, day: {} };
   const CAM = '<svg class="dec-cam" viewBox="0 0 16 12" aria-hidden="true"><path d="M1 3.2h3.2l1.3-1.9h5l1.3 1.9H15v8H1z" fill="currentColor"/><circle cx="8" cy="7" r="2.6" fill="#0b1622"/><circle cx="8" cy="7" r="1.5" fill="currentColor"/></svg>';
-  function setPhotos(list) {                               // [{when: 'YYYY-MM-DDTHH:MM' (Eastern), url}]
+  const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const r10 = (v) => (typeof v === 'number' && isFinite(v) && v >= 0 && v <= 10 ? v : null);   // a rating is 0-10, or missing
+  function session(x) {                                    // the log entry a photo belongs to: its ratings and notes
+    const r = (x && x.ratings) || {}, o = { size: r10(r.size), wind: r10(r.windQuality), ride: r10(r.rideQuality), notes: x && typeof x.notes === 'string' ? x.notes.trim().slice(0, 600) : '' };
+    const got = [o.size, o.wind, o.ride].filter((v) => v != null); o.avg = got.length === 3 ? (o.size + o.wind + o.ride) / 3 : null;
+    return o;
+  }
+  const hm = (when) => { const h = +when.slice(11, 13), mi = when.slice(14, 16); return isNaN(h) ? '' : `${h % 12 || 12}:${mi} ${h < 12 ? 'am' : 'pm'}`; };
+  function setPhotos(list) {                               // [{when: 'YYYY-MM-DDTHH:MM' (Eastern), url, log?: {ratings, notes}}]
     PH.month = {}; PH.day = {};
-    for (const q of list || []) {
-      if (!q || typeof q.url !== 'string' || !/^https:\/\/[^"'<>\s]+$/.test(q.url) || typeof q.when !== 'string') continue;   // plain https links only: they go into src/href
-      const iso = q.when.slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
+    for (const q0 of list || []) {
+      if (!q0 || typeof q0.url !== 'string' || !/^https:\/\/[^"'<>\s]+$/.test(q0.url) || typeof q0.when !== 'string') continue;   // plain https links only: they go into src/href
+      const iso = q0.when.slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
+      const q = { when: q0.when, url: q0.url, s: q0.log ? session(q0.log) : null };
       (PH.month[iso.slice(0, 7)] = PH.month[iso.slice(0, 7)] || []).push(q); (PH.day[iso] = PH.day[iso] || []).push(q);
     }
     for (const k in PH.month) PH.month[k].sort((a, b) => (a.when < b.when ? -1 : 1));
@@ -3917,7 +3930,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       if (P) { if (P._fbAuthReady) await P._fbAuthReady; fs = P.fbFirestore; } else fs = await ownFirestore();
       if (!fs) return;
       const snap = await fs.collection('surf_logs').orderBy('createdAt', 'desc').limit(500).get(), out = [];
-      snap.forEach((doc) => { const d = doc.data() || {}; for (const ph of d.photos || []) { const url = typeof ph === 'string' ? ph : ph && ph.url; if (url) out.push({ when: d.timestamp, url }); } });
+      snap.forEach((doc) => { const d = doc.data() || {}; const log = { ratings: d.ratings, notes: d.notes }; for (const ph of d.photos || []) { const url = typeof ph === 'string' ? ph : ph && ph.url; if (url) out.push({ when: d.timestamp, url, log }); } });
       setPhotos(out);
     } catch (e) { /* offline, blocked or not signed in: no photos */ }
   })();
@@ -3987,9 +4000,19 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       <div class="dec-cal">${cal}</div>
       <div class="dec-key"><span><i class="g"></i>good day</span><span>numbers: Choc's best 3 hours (ft), colored like the map</span></div>
       <div class="dec-day" id="decDay"></div>
-      ${PH.month[sel] ? `<div class="dec-ph"><div class="dec-ph-h">${CAM} ${PH.month[sel].length} photo${PH.month[sel].length > 1 ? 's' : ''} from the surf log this month</div><div class="dec-ph-row">${PH.month[sel].map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a" title="${q.when.slice(0, 10)}"><img src="${q.url}" alt="Surf log photo, ${q.when.slice(0, 10)}" loading="lazy"><span>${MON[+q.when.slice(5, 7) - 1]} ${+q.when.slice(8, 10)}</span></a>`).join('')}</div></div>` : ''}`;
+      ${PH.month[sel] ? `<div class="dec-ph"><div class="dec-ph-h">${CAM} ${PH.month[sel].length} photo${PH.month[sel].length > 1 ? 's' : ''} from the surf log this month</div><div class="dec-ph-row">${PH.month[sel].map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a" title="${esc(q.when.slice(0, 10) + (q.s && q.s.notes ? ': ' + q.s.notes : ''))}"><img src="${q.url}" alt="Surf log photo, ${q.when.slice(0, 10)}" loading="lazy"><span>${MON[+q.when.slice(5, 7) - 1]} ${+q.when.slice(8, 10)}${q.s && q.s.avg != null ? ` · rated ${q.s.avg.toFixed(1)}` : ''}</span></a>`).join('')}</div></div>` : ''}`;
     out.querySelectorAll('.dec-d[data-i]').forEach((b) => b.addEventListener('click', () => { if (window.CHOC.pastStop) window.CHOC.pastStop(); window.CHOC.jump(+b.dataset.i); }));
     day();
+  }
+  function sessions(list, model) {                         // the day's logged sessions: what it was rated, the notes, the photos
+    const by = new Map(); for (const q of list) { const k = q.when + '|' + (q.s ? q.s.notes : ''); if (!by.has(k)) by.set(k, []); by.get(k).push(q); }
+    const n = (v) => (v == null ? '–' : String(Math.round(v * 10) / 10));
+    return [...by.values()].map((g) => {
+      const s = g[0].s, when = hm(g[0].when);
+      const head = s ? `<div class="dec-log-h">Logged${when ? ' at ' + when : ''}: rated <b>${s.avg != null ? s.avg.toFixed(1) + '/10' : '–'}</b> (size ${n(s.size)}, wind ${n(s.wind)}, ride ${n(s.ride)})${model != null ? ` · ratings model for the day <b>${model.toFixed(1)}/10</b>` : ''}</div>` : '';
+      const note = s && s.notes ? `<blockquote class="dec-log-n">${esc(s.notes)}</blockquote>` : '';
+      return `<div class="dec-log">${head}${note}<div class="dec-ph-row">${g.map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a"><img src="${q.url}" alt="Surf log photo, ${q.when.slice(0, 10)}" loading="lazy"><span>${hm(q.when)}</span></a>`).join('')}</div></div>`;
+    }).join('');
   }
   function day() {                                         // the chosen day, if it falls in the month on show
     const box = document.getElementById('decDay'); if (!box) return;
@@ -4000,7 +4023,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       <div>Choc <b>${x.mh[dl].toFixed(1)} ft</b>${v && v[4] != null ? ` · Wilderness <b>${v[4].toFixed(1)} ft</b>` : ''} · buoy ${x.hs.toFixed(1)} ft, ${Math.round(x.per)} s from ${compass(x.dir)}${x.s[dl] != null ? ` · ratings model <b>${x.s[dl].toFixed(1)}/10</b>` : ''}</div>
       <div class="dec-w">${[wind(w, 'Choc'), wind(ww, 'Wilderness')].filter(Boolean).join(' · ')}</div>
       <button type="button" id="decShow" class="dec-go">Open this day on the map</button>
-      ${PH.day[x.iso] ? `<div class="dec-ph-row">${PH.day[x.iso].map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a"><img src="${q.url}" alt="Surf log photo, ${x.iso}" loading="lazy"><span>${q.when.slice(11, 16)}</span></a>`).join('')}</div>` : ''}`;
+      ${PH.day[x.iso] ? sessions(PH.day[x.iso], x.s[dl]) : ''}`;
     document.getElementById('decShow').addEventListener('click', () => window.CHOC.showPast(x.iso));
   }
   document.querySelectorAll('#decMetric button').forEach((b) => b.addEventListener('click', () => {

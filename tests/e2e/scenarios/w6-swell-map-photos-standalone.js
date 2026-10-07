@@ -13,8 +13,8 @@ module.exports = {
     viewport: { width: 1180, height: 820 },
     firebase: {
       logs: [
-        { id: 'a', timestamp: '2022-10-14T17:40', photos: [{ url: 'https://firebasestorage.test/a.jpg', path: 'surf-photos/raw/u/a.jpg' }, 'https://firebasestorage.test/b.jpg'] },
-        { id: 'b', timestamp: '2024-08-19T21:00', photos: [{ url: null, path: null, _uploadFailed: true }, { url: 'https://firebasestorage.test/c.jpg' }] },
+        { id: 'a', timestamp: '2022-10-14T17:40', ratings: { size: 9, windQuality: 8, rideQuality: 10 }, notes: 'Most rippable walls <img src=x onerror=alert(1)>', photos: [{ url: 'https://firebasestorage.test/a.jpg', path: 'surf-photos/raw/u/a.jpg' }, 'https://firebasestorage.test/b.jpg'] },
+        { id: 'b', timestamp: '2024-08-19T21:00', ratings: { size: 3, windQuality: null, rideQuality: 4 }, photos: [{ url: null, path: null, _uploadFailed: true }, { url: 'https://firebasestorage.test/c.jpg' }] },
         { id: 'c', timestamp: '2025-06-02T07:00' },
       ],
     },
@@ -40,6 +40,23 @@ module.exports = {
     await page.evaluate(() => window.CHOC.showPast('2022-10-14'));
     await page.waitForTimeout(800);
     assert.equal(await page.$$eval('#decMonth .dec-ph img', n => n.length), 2, 'the month lists both photos');
+    // The day shows what the session was rated and the notes, next to the ratings model's score for the day.
+    const card = await page.evaluate(() => ({
+      head: document.querySelector('#decDay .dec-log-h') && document.querySelector('#decDay .dec-log-h').textContent,
+      note: document.querySelector('#decDay .dec-log-n') && document.querySelector('#decDay .dec-log-n').textContent,
+      injected: document.querySelectorAll('#decDay .dec-log-n img').length,
+      cap: document.querySelector('#decMonth .dec-ph .dec-ph-a span').textContent,
+    }));
+    log(JSON.stringify(card));
+    assert.match(card.head, /^Logged at 5:40 pm: rated 9\.0\/10 \(size 9, wind 8, ride 10\)/, 'session ratings shown');
+    assert.match(card.head, /ratings model for the day \d+\.\d\/10/, 'next to the model score');
+    assert.equal(card.note, 'Most rippable walls <img src=x onerror=alert(1)>', 'notes shown as plain text');
+    assert.equal(card.injected, 0, 'notes never become markup');
+    assert.match(card.cap, /Oct 14 · rated 9\.0/, 'month photo caption carries the rating');
+    // A session with a missing rating shows no made-up average.
+    await page.evaluate(() => window.CHOC.showPast('2024-08-19'));
+    await page.waitForTimeout(800);
+    assert.match(await page.$eval('#decDay .dec-log-h', n => n.textContent), /rated – \(size 3, wind –, ride 4\)/, 'missing rating stays blank');
     await page.locator('#decMonth').scrollIntoViewIfNeeded();
     await ctx.screenshot('swell-map-photos-standalone');
 
