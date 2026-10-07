@@ -253,6 +253,10 @@ svg.dec-cam, .chart svg.dec-cam { width: 12px; height: 9px; display: inline-bloc
 .dec-ph-h { font-size: .82rem; color: var(--fg-2); margin-bottom: 6px; }
 .dec-ph-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-top: 8px; }
 .dec-ph-a { flex: 0 0 auto; text-decoration: none; color: var(--fg-2); font-size: .72rem; text-align: center; }
+.dec-log { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
+.dec-log-h { font-size: .84rem; color: var(--fg-2); }
+.dec-log-h b { color: var(--fg); }
+.dec-log-n { margin: 6px 0 0; padding: 2px 0 2px 10px; border-left: 2px solid rgba(255,255,255,.25); font-size: .86rem; line-height: 1.45; white-space: pre-wrap; }
 .dec-ph-a img { display: block; width: 120px; height: 90px; object-fit: cover; border-radius: 4px; background: #121b24; }
 .cut { margin-top: 14px; }
 .cut-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 8px; }
@@ -379,7 +383,7 @@ body { margin: 0; }
           </ul>
           <p id="hubWave" class="hub-wave"></p>
           <details class="hub-more"><summary>How the power is counted</summary><p>A crest of rays 24 km wide, 100 m apart, leaves with your heading. Along the way we count how many pass within a wavelength-wide window of your wave (about 1.1 km at 8 s, 1.5 km at 12 s, 1.8 km at 16 s), since real waves smear out over about that width. At the shore the count is repeated for directions out to ±10° in 2.5° steps, weighted the way the main model spreads the buoy's swell, each centered on the part of the swell that heads for the spot. The likely range is the wider of the ray-counting noise and how much the answer moves between neighboring directions. The height figure adds shallowing, read at 4 m of water.</p></details>
-          <p class="hub-fine">Deep water is NOAA's ETOPO 2022 (about 1 km). On the survey map the ray runs on the same sea floor as the rest of this page, averaged to 64 m and smoothed over about 150 m, traced live in your browser. Times are at group speed, the speed wave energy travels. Bottom friction and breaking aren't modeled. The arrival close-up is a 2016 New York State aerial photo with your reef map.</p>
+          <p class="hub-fine">The bending is the same ray tracing as in "How does the model work?": crest speed from depth and period (linear dispersion), and the ray turns toward slower water by Snell's law, step by step. Deep water is NOAA's ETOPO 2022 (about 1 km, smoothed over about 1.2 km, 400 m steps, following the curve of the Earth). On the survey map the ray runs on the same sea floor as the rest of this page, averaged to 64 m and smoothed over about 150 m, in 32 m steps, traced live in your browser. Times are at group speed, the speed wave energy travels. Bottom friction and breaking aren't modeled. The arrival close-up is a 2016 New York State aerial photo with your reef map.</p>
         </div>
       </div>
       <div class="trip-inset" id="tripInsetBox" hidden><canvas id="tripInset" aria-label="Close-up of where the wave arrives, over a 2016 aerial photo with your reef map"></canvas><button type="button" class="trip-inset-x" id="tripInsetClose" aria-label="Hide the arrival close-up">×</button></div>
@@ -460,7 +464,12 @@ body { margin: 0; }
   <h3>How size and shape are worked out</h3>
   <ol>
     <li><strong>Send the swell in.</strong> A line of rays, 20 m apart, enters wherever the swell crosses the open-ocean edge of the map, square to the swell. Each ray carries the same share of energy.</li>
-    <li><strong>Let the sea floor bend them.</strong> Waves slow down in shallow water, so each ray turns toward the shallows, exactly as a wave would over NOAA's survey. Rays that hit land stop.</li>
+    <li><strong>Let the sea floor bend them.</strong> This is linear wave ray tracing (geometric optics, the standard refraction method in coastal engineering). Two rules:
+      <ul>
+        <li><b>Speed from depth.</b> A crest's speed <i>c</i> at each point comes from the swell's period <i>T</i> and the local depth <i>h</i> through the linear dispersion relation (Fenton and McKee's explicit form, within about 2% of the exact one). That is about 1.56·<i>T</i> m/s in deep water, slowing toward √(<i>g·h</i>) in the shallows. The deeper the water a wave can feel, the longer its period: 6 s swell starts slowing in about 28 m, 15 s swell in about 175 m.</li>
+        <li><b>Turn toward slower water.</b> This is Snell's law applied continuously. Over each step <i>ds</i> the ray turns by d<i>θ</i> = −(1/<i>c</i>)·(∂<i>c</i>/∂<i>n</i>)·<i>ds</i>, where ∂<i>c</i>/∂<i>n</i> is how fast the speed changes across the ray. When one end of a crest is in shallower, slower water, the crest swings toward it.</li>
+      </ul>
+      The depth is NOAA's survey (CUDEM), averaged to 144 m cells and smoothed over about 350 m, so the rays follow the shape of the bottom on the scale of a wavelength rather than single survey pixels. The step is 72 m. Rays that hit land stop. Left out: diffraction (energy spreading sideways into shadows, allowed for roughly by the wavelength-wide landing zones below), currents, wind and bottom friction.</li>
     <li><strong>Count who lands.</strong> Count the rays that pass through each spot's zone and compare with open water, where a patch that size would be crossed by a fixed number. More rays than that means the bottom funnels energy in; fewer means it spreads it out or blocks it. Waves also build a little as they slow down; both spots are measured at the same depth (4 m), so neither gets a boost from shallower water. The square root of all that is the share of the buoy's height that arrives: <b>size</b>.</li>
     <li><strong>Check the angle they arrive at.</strong> For every ray that lands, we measure the angle between it and the bottom contours where it gets there, from the 3–8 m survey. Square-on (under 30°) means the whole wave breaks at once and closes out; at an angle, it breaks progressively along the contours and peels. The share arriving at 30° or more is the <b>shape</b>. Surf scientists call this the peel angle. It says whether a wave can peel, not how fast or how good.</li>
   </ol>
@@ -3435,6 +3444,13 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const T3 = await w3Lib(); await w3FineLoad(); let F;
     try { F = await w3Front(r); } catch (e) { return; }
     W3.front = F; W3.built = key; W3.t = 0; W3.drawn = '';
+    // the part of the front the camera follows: the ray that gets closest to the spot it was aimed at
+    // (Choc unless it was aimed at Wilderness), not the middle of the whole 30 km front
+    { const g = /Wilderness/.test(S.note || '') ? SPOT.wild : SPOT.choc, gx = (g.pt[0] - r.start[0]) * KX, gz = -(g.pt[1] - r.start[1]) * KY;
+      let best = Infinity, bj = Math.floor(F.rays.length / 2), bi = 0;
+      F.rays.forEach((q, j) => { for (let i = 0; i < q.x.length; i++) { const d = Math.hypot(q.x[i] - gx, q.z[i] - gz); if (d < best) { best = d; bj = j; bi = i; } } });
+      const q = F.rays[bj];   // once it gets there the view stays put, even if that ray runs on along the shore
+      W3.lead = bj; W3.aimPt = null; W3.goal = { name: g.name, x: gx, z: gz, km: best, t: q.t.length ? q.t[bi] : 0, at: q.t.length ? [q.x[bi], q.z[bi], Math.max(0, q.h[bi])] : null }; }
     // scene box: everything the rays cover, plus a margin
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
     for (const q of F.rays) for (let i = 0; i < q.x.length; i++) { x0 = Math.min(x0, q.x[i]); x1 = Math.max(x1, q.x[i]); z0 = Math.min(z0, q.z[i]); z1 = Math.max(z1, q.z[i]); }
@@ -3521,6 +3537,11 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       for (let j = 0; j < NR; j++) { if (isNaN(Hs[j])) continue; let s2 = 0, w2 = 0; for (let d = -4; d <= 4; d++) { const k = j + d; if (k < 0 || k >= NR || isNaN(Hs[k])) continue; const ww = 5 - Math.abs(d); s2 += ww * Hs[k]; w2 += ww; } H[j] = Math.min(s2 / w2, 0.78 * Math.max(0.3, P[3 * j + 2])); } }
     { let cx = 0, cz = 0, cd = 0, n = 0; for (let j = 0; j < NR; j++) if (!isNaN(H[j])) { cx += P[3 * j]; cz += P[3 * j + 1]; cd += P[3 * j + 2]; n++; }
       W3.mid = n ? [cx / n, cz / n, cd / n] : null; }
+    if (W3.goal && W3.goal.at && t >= W3.goal.t) W3.aimPt = W3.goal.at;
+    else { const L = W3.lead; let cx = 0, cz = 0, cd = 0, n = 0;   // the stretch of front headed for the spot (a few rays either side of the closest)
+      for (let j = Math.max(0, L - 3); j <= Math.min(NR - 1, L + 3); j++) if (!isNaN(P[3 * j])) { cx += P[3 * j]; cz += P[3 * j + 1]; cd += P[3 * j + 2]; n++; }
+      if (n) W3.aimPt = [cx / n, cz / n, cd / n];
+      else { const q = F.rays[L], k = q.t.length - 1; W3.aimPt = k >= 0 ? (t >= q.t[k] ? [q.x[k], q.z[k], Math.max(0, q.h[k])] : [q.x[0], q.z[0], q.h[0]]) : W3.mid; } }
     let nv = 0, nc = 0; const cpos = W3.column.geometry.attributes.position, bed = new Float32Array(NR);
     for (let j = 0; j < NR; j++) if (!isNaN(H[j])) { const [dd, land] = depth3(r.start[0] + P[3 * j] / KX, r.start[1] - P[3 * j + 1] / KY); bed[j] = land ? 0 : vz(dd); }
     const colOf = (j) => { const brk = H[j] >= 0.78 * Math.max(0.3, P[3 * j + 2]) - 1e-6, c = brk ? [255, 255, 255] : hCol(H[j] * FTm); return [c[0] / 255, c[1] / 255, c[2] / 255]; };
@@ -3541,12 +3562,13 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   function w3Loop(ts) {
     if (!W3.on || !W3.scene) return;
     if (ts != null && W3.play && !reduce) {                  // deep water goes by fast; over the shelf, slow down
-      const dt = W3.last ? Math.min(0.1, (ts - W3.last) / 1000) : 0, slow = W3.mid && W3.mid[2] < 80 ? 0.3 : 1;
+      const dt = W3.last ? Math.min(0.1, (ts - W3.last) / 1000) : 0, lp = W3.aimPt || W3.mid, slow = lp && lp[2] < 80 ? 0.3 : 1;
       W3.t += dt * slow * W3.front.tmax / 25; if (W3.t > W3.front.tmax) W3.t = 0;
     }
-    if (W3.follow && W3.mid) {                               // keep the wave in view
-      const v = W3.view, k = W3.t < 1 ? 1 : 0.06, want = Math.max(6, Math.min(W3.size * 0.5, W3.mid[2] < 30 ? 10 : W3.mid[2] < 80 ? 25 : 70));
-      const dx = W3.mid[0] - v.tx, dz = W3.mid[1] - v.tz, dd = want - v.dist;
+    const fp = W3.aimPt || W3.mid;
+    if (W3.follow && fp) {                                   // keep the part of the wave headed for the spot in view
+      const v = W3.view, k = W3.t < 1 ? 1 : 0.06, want = Math.max(6, Math.min(W3.size * 0.5, fp[2] < 30 ? 10 : fp[2] < 80 ? 25 : 70));
+      const dx = fp[0] - v.tx, dz = fp[1] - v.tz, dd = want - v.dist;
       if (Math.hypot(dx, dz) > 0.02 * v.dist) { v.tx += dx * k; v.tz += dz * k; }   // caught up: stop nudging, so a paused view sits still
       if (Math.abs(dd) > 0.02 * v.dist) v.dist += dd * 0.03;
     }
@@ -3861,16 +3883,25 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   const key = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
   let metric = 'good', sel = null;
   // ── photos from the site's surf log (Firestore surf_logs, read only). The page runs inside the site's
-  // Swell Map tab, so it borrows the site's Firebase connection and sign-in; opened on its own (or in a
-  // preview) there is no connection and the calendar simply shows no photos. Months and days with photos
-  // get a camera; a month lists its photos, a day shows its own.
+  // Swell Map tab, so it borrows the site's Firebase connection and sign-in; opened on its own it connects
+  // itself (below). Months and days with photos get a camera; a month lists its photos, a day shows each
+  // logged session with its ratings (size, wind, ride) and notes next to the ratings model's score.
   const PH = { month: {}, day: {} };
   const CAM = '<svg class="dec-cam" viewBox="0 0 16 12" aria-hidden="true"><path d="M1 3.2h3.2l1.3-1.9h5l1.3 1.9H15v8H1z" fill="currentColor"/><circle cx="8" cy="7" r="2.6" fill="#0b1622"/><circle cx="8" cy="7" r="1.5" fill="currentColor"/></svg>';
-  function setPhotos(list) {                               // [{when: 'YYYY-MM-DDTHH:MM' (Eastern), url}]
+  const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const r10 = (v) => (typeof v === 'number' && isFinite(v) && v >= 0 && v <= 10 ? v : null);   // a rating is 0-10, or missing
+  function session(x) {                                    // the log entry a photo belongs to: its ratings and notes
+    const r = (x && x.ratings) || {}, o = { size: r10(r.size), wind: r10(r.windQuality), ride: r10(r.rideQuality), notes: x && typeof x.notes === 'string' ? x.notes.trim().slice(0, 600) : '' };
+    const got = [o.size, o.wind, o.ride].filter((v) => v != null); o.avg = got.length === 3 ? (o.size + o.wind + o.ride) / 3 : null;
+    return o;
+  }
+  const hm = (when) => { const h = +when.slice(11, 13), mi = when.slice(14, 16); return isNaN(h) ? '' : `${h % 12 || 12}:${mi} ${h < 12 ? 'am' : 'pm'}`; };
+  function setPhotos(list) {                               // [{when: 'YYYY-MM-DDTHH:MM' (Eastern), url, log?: {ratings, notes}}]
     PH.month = {}; PH.day = {};
-    for (const q of list || []) {
-      if (!q || typeof q.url !== 'string' || !/^https:\/\/[^"'<>\s]+$/.test(q.url) || typeof q.when !== 'string') continue;   // plain https links only: they go into src/href
-      const iso = q.when.slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
+    for (const q0 of list || []) {
+      if (!q0 || typeof q0.url !== 'string' || !/^https:\/\/[^"'<>\s]+$/.test(q0.url) || typeof q0.when !== 'string') continue;   // plain https links only: they go into src/href
+      const iso = q0.when.slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
+      const q = { when: q0.when, url: q0.url, s: q0.log ? session(q0.log) : null };
       (PH.month[iso.slice(0, 7)] = PH.month[iso.slice(0, 7)] || []).push(q); (PH.day[iso] = PH.day[iso] || []).push(q);
     }
     for (const k in PH.month) PH.month[k].sort((a, b) => (a.when < b.when ? -1 : 1));
@@ -3899,7 +3930,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       if (P) { if (P._fbAuthReady) await P._fbAuthReady; fs = P.fbFirestore; } else fs = await ownFirestore();
       if (!fs) return;
       const snap = await fs.collection('surf_logs').orderBy('createdAt', 'desc').limit(500).get(), out = [];
-      snap.forEach((doc) => { const d = doc.data() || {}; for (const ph of d.photos || []) { const url = typeof ph === 'string' ? ph : ph && ph.url; if (url) out.push({ when: d.timestamp, url }); } });
+      snap.forEach((doc) => { const d = doc.data() || {}; const log = { ratings: d.ratings, notes: d.notes }; for (const ph of d.photos || []) { const url = typeof ph === 'string' ? ph : ph && ph.url; if (url) out.push({ when: d.timestamp, url, log }); } });
       setPhotos(out);
     } catch (e) { /* offline, blocked or not signed in: no photos */ }
   })();
@@ -3969,9 +4000,19 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       <div class="dec-cal">${cal}</div>
       <div class="dec-key"><span><i class="g"></i>good day</span><span>numbers: Choc's best 3 hours (ft), colored like the map</span></div>
       <div class="dec-day" id="decDay"></div>
-      ${PH.month[sel] ? `<div class="dec-ph"><div class="dec-ph-h">${CAM} ${PH.month[sel].length} photo${PH.month[sel].length > 1 ? 's' : ''} from the surf log this month</div><div class="dec-ph-row">${PH.month[sel].map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a" title="${q.when.slice(0, 10)}"><img src="${q.url}" alt="Surf log photo, ${q.when.slice(0, 10)}" loading="lazy"><span>${MON[+q.when.slice(5, 7) - 1]} ${+q.when.slice(8, 10)}</span></a>`).join('')}</div></div>` : ''}`;
+      ${PH.month[sel] ? `<div class="dec-ph"><div class="dec-ph-h">${CAM} ${PH.month[sel].length} photo${PH.month[sel].length > 1 ? 's' : ''} from the surf log this month</div><div class="dec-ph-row">${PH.month[sel].map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a" title="${esc(q.when.slice(0, 10) + (q.s && q.s.notes ? ': ' + q.s.notes : ''))}"><img src="${q.url}" alt="Surf log photo, ${q.when.slice(0, 10)}" loading="lazy"><span>${MON[+q.when.slice(5, 7) - 1]} ${+q.when.slice(8, 10)}${q.s && q.s.avg != null ? ` · rated ${q.s.avg.toFixed(1)}` : ''}</span></a>`).join('')}</div></div>` : ''}`;
     out.querySelectorAll('.dec-d[data-i]').forEach((b) => b.addEventListener('click', () => { if (window.CHOC.pastStop) window.CHOC.pastStop(); window.CHOC.jump(+b.dataset.i); }));
     day();
+  }
+  function sessions(list, model) {                         // the day's logged sessions: what it was rated, the notes, the photos
+    const by = new Map(); for (const q of list) { const k = q.when + '|' + (q.s ? q.s.notes : ''); if (!by.has(k)) by.set(k, []); by.get(k).push(q); }
+    const n = (v) => (v == null ? '–' : String(Math.round(v * 10) / 10));
+    return [...by.values()].map((g) => {
+      const s = g[0].s, when = hm(g[0].when);
+      const head = s ? `<div class="dec-log-h">Logged${when ? ' at ' + when : ''}: rated <b>${s.avg != null ? s.avg.toFixed(1) + '/10' : '–'}</b> (size ${n(s.size)}, wind ${n(s.wind)}, ride ${n(s.ride)})${model != null ? ` · ratings model for the day <b>${model.toFixed(1)}/10</b>` : ''}</div>` : '';
+      const note = s && s.notes ? `<blockquote class="dec-log-n">${esc(s.notes)}</blockquote>` : '';
+      return `<div class="dec-log">${head}${note}<div class="dec-ph-row">${g.map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a"><img src="${q.url}" alt="Surf log photo, ${q.when.slice(0, 10)}" loading="lazy"><span>${hm(q.when)}</span></a>`).join('')}</div></div>`;
+    }).join('');
   }
   function day() {                                         // the chosen day, if it falls in the month on show
     const box = document.getElementById('decDay'); if (!box) return;
@@ -3982,7 +4023,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       <div>Choc <b>${x.mh[dl].toFixed(1)} ft</b>${v && v[4] != null ? ` · Wilderness <b>${v[4].toFixed(1)} ft</b>` : ''} · buoy ${x.hs.toFixed(1)} ft, ${Math.round(x.per)} s from ${compass(x.dir)}${x.s[dl] != null ? ` · ratings model <b>${x.s[dl].toFixed(1)}/10</b>` : ''}</div>
       <div class="dec-w">${[wind(w, 'Choc'), wind(ww, 'Wilderness')].filter(Boolean).join(' · ')}</div>
       <button type="button" id="decShow" class="dec-go">Open this day on the map</button>
-      ${PH.day[x.iso] ? `<div class="dec-ph-row">${PH.day[x.iso].map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a"><img src="${q.url}" alt="Surf log photo, ${x.iso}" loading="lazy"><span>${q.when.slice(11, 16)}</span></a>`).join('')}</div>` : ''}`;
+      ${PH.day[x.iso] ? sessions(PH.day[x.iso], x.s[dl]) : ''}`;
     document.getElementById('decShow').addEventListener('click', () => window.CHOC.showPast(x.iso));
   }
   document.querySelectorAll('#decMetric button').forEach((b) => b.addEventListener('click', () => {

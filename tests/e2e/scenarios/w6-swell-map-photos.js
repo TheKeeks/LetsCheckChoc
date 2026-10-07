@@ -41,6 +41,9 @@ module.exports = {
     // Plainer wording: no bare "Yes" tile, no shape column.
     assert.ok(!(await page.$eval('#modelTiles', n => /\bYes\b|Not yet/.test(n.textContent))), 'ratings tile states the miss');
     assert.ok(!(await page.$eval('#wildTop', n => /Shape/.test(n.textContent))), 'no shape column');
+    // The method names the refraction physics: linear dispersion for the speed, Snell's law for the turn.
+    const how = await page.evaluate(() => document.body.textContent);
+    assert.ok(/linear dispersion relation/.test(how) && /Snell's law applied continuously/.test(how), 'methodology states how the sea floor bends the rays');
     assert.deepEqual(errors, [], 'no page errors');
   }
 };

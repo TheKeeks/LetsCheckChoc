@@ -1,5 +1,31 @@
 # Changelog
 
+## [Unreleased] — Swell Map: surf-log photos come with their session's ratings and notes
+
+The calendar's photos showed no context. Each day with photos now lists every logged session on it:
+- the time logged;
+- the rating, as the average of size, wind and ride, with all three shown;
+- the session's notes;
+- that session's photos.
+
+The ratings model's score for the day sits alongside, so a reader can compare the two. In the month's photo strip, each caption carries the session's average and the notes show on hover. A missing rating stays a dash rather than a made-up number. Notes are shown as plain text, never as page markup. Names are not shown.
+
+Verified by `w6-swell-map-photos-standalone.js`. Its test log now has ratings and notes, one note containing an HTML tag and one session missing its wind rating. The scenario checks:
+- the session line reads "Logged at 5:40 pm: rated 9.0/10 (size 9, wind 8, ride 10)" with the model's score next to it;
+- the note shows as typed and adds no markup;
+- the month caption carries the rating;
+- the session with a missing wind rating shows dashes, not an average.
+
+It fails on the previous page and passes now.
+
+## [Unreleased] — Swell Map: 3D follow stays with the wave headed for Choc; the bending physics spelled out
+
+In Drop a wave's 3D view, Follow kept the camera on the middle of the whole 30 km wave front. Most of that front misses Choc, so the camera wandered off to wherever the bulk of the wave went. It now follows the stretch of the front that gets closest to the spot the wave was aimed at (Choc, or Wilderness when aimed there). When that stretch arrives, the view stays over the spot, even if those rays carry on along the shore.
+
+"How does the model work?" now says exactly how the sea floor bends the waves. It is linear wave ray tracing: crest speed from period and depth through the linear dispersion relation (Fenton and McKee's explicit form), and each ray turns toward slower water by Snell's law applied continuously. The text also gives the depth grids, the smoothing and step sizes, and what is left out (diffraction, currents, wind, bottom friction). The Drop a wave fine print points to the same method and gives its own grids and steps.
+
+Verified by the 3D e2e scenario. With Follow on as the wave reaches Choc, the view is 0.14 km from Choc, while the middle of the front is about 19 km away. The page has no such follow target before this change. The photos scenario now checks that the methodology names the dispersion relation and Snell's law.
+
 ## [Unreleased] — Swell Map: surf-log photos show wherever the page is opened
 
 The camera icons and photos on the ten-year calendar only appeared inside the site's Swell Map tab, because the page borrowed the main site's Firebase connection. Opened from a shared /research/ link, or anywhere it wasn't inside that tab, it had no connection and showed no photos. The page now connects to the same Firebase project itself when it isn't in the tab, using the same SDK version as the site. It reuses an existing sign-in on the site's address, or signs in anonymously as the site does, and then reads the surf log's photos. It only reads. If Firebase can't load (blocked or offline), the page works as before without photos. No Firebase rules change.
