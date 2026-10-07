@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased] — Sound Check: every logged session on the calendar, with the crew member's name; tab renamed
+
+The ten-year calendar showed only sessions that had photos. Now every surf-log session appears:
+- **With photos:** marked by a camera, as before.
+- **Without photos:** marked by a small dot on its day and on its month in the ten-year grid.
+
+The day card lists each session with:
+- the first name of whoever logged it (from their sign-in; anonymous entries show no name);
+- the time, the ratings and the notes;
+- any photos.
+
+The month header counts the sessions logged.
+
+The site's tab is now called "Sound Check", matching the page's title. It was "Swell Map".
+
+Verified by `w6-swell-map-photos-standalone.js`. It checks that "Logged by Keeks at 5:40 pm" appears for a named entry. It also checks a session with no photos and no name: the day card shows it with its ratings and notes, its day and month carry the dot, and the header counts it. `w6-swell-map-tab.js` checks the new tab name and that the tab bar still fits a 375 px phone. Both fail on the previous page and pass now.
+
 ## [Unreleased] — Swell Map: surf-log photos come with their session's ratings and notes
 
 The calendar's photos showed no context. Each day with photos now lists every logged session on it:

@@ -56,7 +56,7 @@ node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 | `test-gate.js` | Legacy tests, still run by `npm test` |
 | `tests/` | `tests/helpers/` (vm loader, DOM stub, fixture map), `tests/unit/`, `tests/e2e/`, `tests/fixtures/` |
 | `project/` | React prototype. `project/assets/lineup.jpg` is used by the live page |
-| `research/` | Swell Map tab: a self-contained research page (`research/index.html` plus its tiles, ray tables and forecast snapshot `research/fc/`), framed by `#view-research` and loaded on first open. Built outside this repo; treat as generated |
+| `research/` | Sound Check tab (was "Swell Map"): a self-contained research page (`research/index.html` plus its tiles, ray tables and forecast snapshot `research/fc/`), framed by `#view-research` and loaded on first open. Built outside this repo; treat as generated |
 | `previews/` | Looks layered over the live app by the inline loaders in `index.html`. `previews/clean/` is the DEFAULT look (no parameter); `?classic=1` opens the old look with no look files, `?preview=<name>` picks a candidate look instead (e2e `tests/e2e/scenarios/preview-looks.js`, `tests/e2e/scenarios/look-default.js`). The e2e runner's `ctx.open()` adds `classic=1` to any path that names no look, so the older scenarios test the app underneath. Delete a folder (and its name in the loader) when a look is retired. `previews/clean/` is the approved "A refined" design: `previews/clean/core.js` (shell, data, Settings) plus one js/css pair per screen (forecast, log, model, tv), API in `previews/clean/CONTRACT.md`, e2e `tests/e2e/scenarios/preview-clean.js` plus `preview-clean-{core,forecast,log,tv}.js` |
 
 ## Module map (grep anchors, not line numbers)
