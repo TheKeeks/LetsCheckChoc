@@ -2395,7 +2395,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   const ecRow = (i) => (FC.ecIx[i] == null ? null : FC.d.ec[FC.ecIx[i]]);
   const spotFt = (model, i, spot) => (model === 'gfs' ? FC.d.gfs[i][spot || FC.spot] : (ecRow(i) || {})[spot || FC.spot]);
   async function setWeek(i) {
-    if (FC.i !== i) FC.fan = null;
+    if (FC.i !== i) { FC.fan = null; FC.dot = null; }        // a new hour: the dot picked belongs to the old one
     FC.i = i; const my = i, g = FC.d.gfs[i], e = ecRow(i);
     if (S.phase === 'week') weekHud();                       // the headline needs only the forecast numbers, not the rays still loading
     const tr = FC.model === 'gfs' ? g.trains.filter((t) => t.T >= 5).map((t) => ({ ft: t.ft, T: t.T, D: t.D })) : e ? [{ ft: e.hs, T: e.T, D: e.D }] : [];
@@ -2443,6 +2443,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = fa; ctx.drawImage(layer, 0, 0); ctx.restore();
   }
   function pill(x, y, lines, anchor) {                       // a small dark callout; anchor 'l' = box to the right of x
+    FC.pillLines = lines;
     ctx.font = '600 12px "Instrument Sans", system-ui, sans-serif';
     const w = Math.max(...lines.map((s) => ctx.measureText(s).width)) + 16, h = 8 + 16 * lines.length;
     let bx = anchor === 'l' ? x + 10 : x - w / 2, by = y - h - 10;
@@ -2533,13 +2534,16 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     }
     if (FC.pick && PAST) pastPick(X, Y);
     else if (FC.pick) {
-      const [lon, lat] = FC.pick, s = row == null ? null : fcAt(lon, lat, FC.model, row), x = X(lon), y = Y(lon, lat);
+      const [lon, lat] = FC.pick, all = row == null ? null : fcAt(lon, lat, FC.model, row), x = X(lon), y = Y(lon, lat);
+      // a dot is one swell train aimed at the spot, often not the biggest one there: show that train
+      const s = FC.dot ? [FC.dot.h, FC.dot.T, FC.dot.D] : all;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 3, 0, 7); ctx.fill();
       if (!s) pill(x, y, ['No ' + MNAME[FC.model] + ' data here']);
       else {
         const sp = FC.spot, tgt = SPOT[sp].pt, nm = SPOT[sp].name;
         const toC = gcBrg([lon, lat], tgt), off = Math.abs((((s[2] + 180) % 360) - toC + 540) % 360 - 180), km = gcKm([lon, lat], tgt);
         const lines = [`${(s[0] * FTm).toFixed(1)} ft · ${Math.round(s[1])} s from ${compass(s[2])}`];
+        if (FC.dot && all && (Math.abs(((all[2] - s[2]) + 540) % 360 - 180) > 20 || Math.abs(all[1] - s[1]) > 1.5)) lines.push(`One of the swells here; the biggest sea is ${(all[0] * FTm).toFixed(1)} ft, ${Math.round(all[1])} s from ${compass(all[2])}`);
         if (FC.fan) {                                   // the traced rays: where they land, and when
           const F = FC.fan, m = F.rays.find((r) => r.off === 0);
           if (F.searching) lines.push(`Tracing the ray into ${nm}…`);
@@ -2681,7 +2685,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const at = atFn(), here = !same && at ? at(ll[0], ll[1]) : null; FC.pick = here ? ll : null;
     // any tap on the water traces that spot's swell in, not just the dots
     const sw = dot || (S.phase === 'week' && Array.isArray(here) && here[1] >= 5 ? { lon: ll[0], lat: ll[1], h: here[0], T: here[1], D: here[2] } : null);
-    FC.fan = FC.pick && sw ? dotRays(sw) : null; draw();
+    FC.fan = FC.pick && sw ? dotRays(sw) : null; FC.dot = FC.pick && dot ? dot : null; draw();
   }
   // the swell at a dot, traced in: 21 rays across +-10 deg of its travel direction, 1 deg apart (real swell
   // spreads), straight on great circles over the deep ocean, then over the sea floor with the same tracer as
@@ -2732,7 +2736,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const was = S.phase, wasMap = was === 'week' || was === 'past';
     for (const b of document.querySelectorAll('#tripModeSeg button')) b.setAttribute('aria-pressed', String(b.dataset.v === m));
     for (const el of stage.querySelectorAll('[data-mode]')) el.hidden = !el.dataset.mode.split(' ').includes(m);
-    fcStop(); pastStop(); FC.pick = null; FC.fan = null; FC.cur = []; botSize();
+    fcStop(); pastStop(); FC.pick = null; FC.fan = null; FC.dot = null; FC.cur = []; botSize();
     if (m === 'week' || m === 'past') {
       if (!wasMap) { S.dcam = S.cam; S.playing = false; }
       S.phase = m; $('tripInsetBox').hidden = true; $('tripPow').hidden = true;
@@ -3514,7 +3518,8 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     setInterval(() => { if (W3.on && S.ray && W3.built !== [S.ray.start, S.ray.th, S.ray.T].join() && !W3.busy) { W3.busy = true; W3.scene = null; w3Build().catch(() => { $('w3Note').textContent = 'This browser can\u2019t show the 3D view.'; }).finally(() => { W3.busy = false; }); } if (W3.on && (MAPV() || !S.ray)) W3.on = false; else if (!W3.on && !MAPV() && S.ray && !$('w3Box').hidden) w3Show(true); }, 800);
   }
 
-  window.CHOC.trip = { w3: W3, _raw: (T, lon, lat, th) => trace(T, lon, lat, th, false), state: S, aim: doAim, play, _miss: (T, lon, lat, th, spot) => miss(trace(T, lon, lat, th, false), spot), _aim: (spot, T, s) => aim(spot, T, s), trace: (T, lon, lat, th) => makeRay(T, [lon, lat], th),
+  window.CHOC.trip = { w3: W3, _aimed: () => (FC.d && fRow() != null ? fcAimed(FC.model, fRow(), FC.spot) : []), _at: (lon, lat) => fcAt(lon, lat, FC.model, fRow()),
+    _week: (i) => setWeek(i), _tapAt: (lon, lat) => { const { sc, x0, y0 } = proj(cam()); fcTap((lon * KX - x0) * sc, (-lat * KY - y0) * sc); }, _raw: (T, lon, lat, th) => trace(T, lon, lat, th, false), state: S, aim: doAim, play, _miss: (T, lon, lat, th, spot) => miss(trace(T, lon, lat, th, false), spot), _aim: (spot, T, s) => aim(spot, T, s), trace: (T, lon, lat, th) => makeRay(T, [lon, lat], th),
     skip: () => { if (S.ray) { S.dist = S.ray.len; S.phase = 'done'; S.playing = false; draw(); finish(); } }, setMode, fc: FC,
     _screen: (lon, lat) => { const { sc, x0, y0 } = proj(cam()); return [(lon * KX - x0) * sc, (-lat * KY - y0) * sc]; } };
 

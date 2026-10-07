@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased] — Swell Map: tapping a dot shows that dot's swell
+
+Since the dots began checking every swell train, a dot can stand for a smaller swell aimed at Choc that sits under a bigger sea from another direction. Tapping it showed the bigger sea's numbers instead, for example "3.6 ft at 5 s from NNW" on a dot for a 7 s swell from the southeast, which read like a north swell reaching Choc. The card now shows the dot's own swell (height, period, direction, and when its ray reaches the spot). Where a bigger sea from another direction is also there, a second line says so ("One of the swells here; the biggest sea is …"). A picked dot also clears when you move to another hour.
+
+Verified by `w6-swell-map-cutaway.js`, which finds an hour with a dot under a different sea, taps it and checks the card. The full unit, e2e and Python suites pass.
+
 ## [Unreleased] — Swell Map 3D: the front reaches the sea floor, sharper bottom around Fishers
 
 In the 3D view, each part of the wave front is now a curtain from the sea floor up to the wave's crest. The pale part is the water column under that part of the front, and the colored top is the wave itself, so you can see how deep the water is under every part of it as it crosses shoals and holes. Water and wave share one vertical scale: depths stretched 70 times (squeezed below 60 m so the deep ocean doesn't swallow the view), the wave 4 times more than that.
