@@ -5148,6 +5148,7 @@ function initTabBar() {
   el('tab-btn-forecast')?.addEventListener('click', () => switchTab('forecast'));
   el('tab-btn-regression')?.addEventListener('click', () => switchTab('regression'));
   el('tab-btn-surflog')?.addEventListener('click', () => switchTab('surflog'));
+  el('tab-btn-research')?.addEventListener('click', () => switchTab('research'));
 }
 
 function switchTab(tab) {
@@ -5155,10 +5156,15 @@ function switchTab(tab) {
   el('tab-btn-forecast')?.classList.toggle('active', tab === 'forecast');
   el('tab-btn-regression')?.classList.toggle('active', tab === 'regression');
   el('tab-btn-surflog')?.classList.toggle('active', tab === 'surflog');
-  const vF = el('view-forecast'), vR = el('view-regression'), vS = el('view-surflog');
+  el('tab-btn-research')?.classList.toggle('active', tab === 'research');
+  const vF = el('view-forecast'), vR = el('view-regression'), vS = el('view-surflog'), vM = el('view-research');
   if (vF) vF.style.display = tab === 'forecast' ? '' : 'none';
   if (vR) vR.style.display = tab === 'regression' ? '' : 'none';
   if (vS) vS.style.display = tab === 'surflog' ? '' : 'none';
+  if (vM) vM.style.display = tab === 'research' ? '' : 'none';
+  // The swell map is a large page (sea-floor tiles, forecast fields): it loads only when first opened.
+  const frame = el('research-frame');
+  if (tab === 'research' && frame && !frame.getAttribute('src')) frame.setAttribute('src', frame.dataset.src);
   // The now-pulse stops itself while the forecast view is hidden.
   if (tab === 'forecast' && STATE.forecastChart) startNowPulse();
   if (tab === 'regression') {

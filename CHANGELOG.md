@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — Swell Map tab: forecast, past days and one wave's trip on one map
+
+A fourth tab, Swell Map, opens the research page built alongside the site: one full-screen map with its controls laid over it like a weather app. Its Forecast view plays this week's swell from GFS-Wave and ECMWF across the Atlantic down to the reef. The colors show wave height, moving streaks show where the swell travels, and dots mark open-ocean swell aimed at Choc or Wilderness; tapping a dot traces that swell's rays in and gives its arrival time. Its Past view shows any day since 2016 in the same frame, from buoy 44097 run through the ray model plus the Copernicus wave reanalysis offshore. Drop a wave traces one line of swell from anywhere over the real sea floor. Below the map are the ten-year analysis, a month-by-month heatmap of good days with a calendar for each month, and the forecast table with its scorecard.
+
+The page lives in `research/` as its own static page (classic scripts, no build step) and loads in a frame only when the tab is first opened, so the Forecast tab's load is unchanged. `research/` is about 80 MB, mostly sea-floor tiles and the yearly reanalysis fields. Its forecast (`research/fc/`) is a snapshot taken 6 Oct 2026; nothing refreshes it yet. A scheduled job running the pull script is the next step. On phones the four tab buttons tighten so they fit a 375 px screen.
+
+Verified by a new e2e scenario (`w6-swell-map-tab.js`). On a 375 px phone it checks that nothing under `research/` loads before the tab is opened, that the tab bar fits, and that the map boots on the forecast with no errors. The full unit and e2e suites pass.
+
 ## [Unreleased] — The new look is the default (old look at ?classic=1)
 
 The owner approved the clean "A refined" design for everyone. The plain address and Choc TV (`?kiosk=1`) now open it with no special link, so the crew's bookmarks and Home Screen icons get the new look on their next load. The Choc TV iPad picks it up by itself within about 15 minutes, because it reloads when the site's code changes. The old Windows-style look, boat question included, is still available at `?classic=1` (`?kiosk=1&classic=1` for the TV), and Settings › "Open the classic view" goes there. `?preview=<name>` still opens the other candidate looks.
