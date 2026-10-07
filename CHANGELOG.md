@@ -2,7 +2,7 @@
 
 ## [Unreleased] — Swell Map: wave cutaway, dots for every swell, how the forecast is read
 
-Drop a wave now has a cutaway under the map. It shows your wave side-on over the real sea floor under its last 300 m, 1 km or 5 km, for a 3, 6 or 10 ft swell. You can watch it get shorter, slow down and grow as the water shoals, then break once it is about 0.78 times as tall as the water is deep. Its height comes from shoaling plus how much the bottom focused or spread that ray, and the caption gives the numbers (wavelength, speed, breaking depth and height).
+Drop a wave now has a cross-section under the map. It shows your wave side-on, flat in 2D, over the real sea floor right under its last 300 m, 1 km or 5 km, for a 3, 6 or 10 ft swell. You can watch it get shorter, slow down and grow as the water shoals, then break once it is about 0.78 times as tall as the water is deep. Its height comes from shoaling plus how much the bottom focused or spread that ray, and the caption gives the numbers (wavelength, speed, breaking depth and height).
 
 The forecast's "headed our way" dots now check every GFS-Wave swell train in each patch of ocean, not just the biggest. A secondary swell aimed at the spot now shows even when a bigger swell from another direction sits on top of it (for example a 12 s ESE swell under an 8 s east swell). Some coastal forecast cells had a wave height but no swell direction, so they showed color but read as "no data" and could never show a dot. They now take the wind sea's period and direction. A new "How the forecast is tied to Choc and Wilderness" section under Behind the numbers explains that the forecast is read at buoy 44097, why, how that was chosen, and what it can miss.
 
