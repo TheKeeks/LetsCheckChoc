@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased] — Swell Map: surf-log photos show wherever the page is opened
+
+The camera icons and photos on the ten-year calendar only appeared inside the site's Swell Map tab, because the page borrowed the main site's Firebase connection. Opened from a shared /research/ link, or anywhere it wasn't inside that tab, it had no connection and showed no photos. The page now connects to the same Firebase project itself when it isn't in the tab, using the same SDK version as the site. It reuses an existing sign-in on the site's address, or signs in anonymously as the site does, and then reads the surf log's photos. It only reads. If Firebase can't load (blocked or offline), the page works as before without photos. No Firebase rules change.
+
+Verified by a new e2e scenario, `w6-swell-map-photos-standalone.js`. It opens /research/ directly, with the Firebase stub serving a log that has photos and a failed upload. It checks that the page signs in anonymously, puts cameras on the two months with photos, lists them, and writes nothing. It then blocks Firebase and checks there are no photos and no errors. It fails on the previous page and passes now. The unit suite and all Swell Map e2e scenarios pass.
+
+## [Unreleased] — Swell Map: pinching the map on an iPhone zooms the map, not the page
+
+On an iPhone (Safari, and Chrome too, since every iPhone browser runs on Safari's engine), pinching the Swell Map's map zoomed the whole web page instead of the map. You saw a blurry, uniform dark-blue close-up of the ocean. A double-tap did the same. The map relied on the CSS `touch-action: none` setting to keep gestures for itself, and iPhone browsers ignore it; desktop browsers don't, which is why it never showed on a computer. The map and the 3D view now cancel the browser's own pinch (two-finger touch moves and Safari's gesture events) and double-tap zoom, only over the map itself. The layers panel, timeline and buttons on top still scroll and tap normally.
+
+The 3D view's help line now starts with the mouse controls: left-click and drag to pan, right-click and drag to rotate and tilt, scroll to zoom.
+
+Verified by a new e2e scenario, `w6-swell-map-iphone.js`, on a 390 px phone. It checks that a two-finger move, Safari's gesture event and a double-tap over the map are cancelled, and that a drag or quick taps on a panel button are not. It fails on the previous page and passes now. The full unit, e2e and Python suites pass. It can't be run in real iPhone Safari here, so please confirm on the phone.
+
 ## [Unreleased] — Swell Map: zooming in no longer turns the map dark
 
 Zooming in on the Swell Map's forecast (or past) map faded the wave-height color out everywhere below about 200 km across. That fade was meant only to let the sea-floor relief and the rays show near Fishers, but over open water (off New Jersey, south of Block Island) there was nothing underneath, so the map went dark. The color now stays at full strength over open water at every zoom. Over the survey map it fades as before, but keeps 40% so the area near Choc doesn't look empty either.

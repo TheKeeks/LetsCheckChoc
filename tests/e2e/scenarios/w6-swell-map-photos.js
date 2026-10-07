@@ -14,8 +14,8 @@ module.exports = {
     await ctx.open('/research/index.html');
     await page.waitForFunction(() => window.CHOC && window.CHOC.setPhotos && window.CHOC.showPast, null, { timeout: 30000 });
 
-    // Opened on its own the page has no Firebase connection: no cameras, no errors.
-    assert.equal(await page.$$eval('#decHeat .dec-cam', n => n.length), 0, 'no photos without the site');
+    // The test log has no photos: no cameras until some are given.
+    assert.equal(await page.$$eval('#decHeat .dec-cam', n => n.length), 0, 'no photos in an empty log');
     await page.evaluate(() => window.CHOC.setPhotos([
       { when: '2022-10-14T17:40', url: 'https://photos.example.test/a.jpg' },
       { when: '2022-10-14T18:10', url: 'https://photos.example.test/b.jpg' },
