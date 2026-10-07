@@ -27,6 +27,16 @@ module.exports = {
     assert.ok(W >= 3 - 1e-9, `forecast zoom stops at 3 km across (got ${W})`);
     await ctx.screenshot('swell-map-deep-zoom');
 
+    // Double-tap on the flat map zooms in there.
+    await page.click('#fcZoom button[data-v="reg"]');
+    await page.waitForTimeout(500);
+    const Wb = await T(() => window.CHOC.trip.state.cam.W), cb = await (await page.$('#tripStage canvas')).boundingBox();
+    await page.mouse.dblclick(cb.x + cb.width * 0.4, cb.y + cb.height * 0.5);
+    await page.waitForTimeout(400);
+    const Wa = await T(() => window.CHOC.trip.state.cam.W);
+    log(`double-tap: ${Wb.toFixed(0)} -> ${Wa.toFixed(0)} km across`);
+    assert.ok(Wa < Wb * 0.6, 'double-tap zooms the map in');
+
     // Drop a wave, then straight back to the forecast while its wave is still starting up.
     await T(() => window.CHOC.trip.setMode('drop'));
     await page.waitForTimeout(4000);

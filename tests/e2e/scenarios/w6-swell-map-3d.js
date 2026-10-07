@@ -32,6 +32,22 @@ module.exports = {
       log(rd);
       assert.match(rd, /after leaving · energy still moving \d+% of the start · tallest part [\d.]+ ft/);
       await ctx.screenshot('swell-map-3d');
+      // Fishers jumps in close; a double-tap zooms in further on the spot tapped; one-finger drag moves the view
+      await page.click('#w3Fishers');
+      await page.waitForTimeout(800);
+      const d0 = await page.evaluate(() => window.CHOC.trip.w3.view.dist);
+      assert.ok(d0 < 10, `Fishers view is close in (${d0} km)`);
+      const bb = await (await page.$('#w3Cv')).boundingBox();
+      await page.mouse.dblclick(bb.x + bb.width * 0.5, bb.y + bb.height * 0.6);
+      await page.waitForTimeout(800);
+      const d1 = await page.evaluate(() => window.CHOC.trip.w3.view.dist);
+      log(`double-tap zoom: ${d0} -> ${d1.toFixed(2)} km`);
+      assert.ok(d1 < d0 * 0.6, 'double-tap zooms in');
+      const t0 = await page.evaluate(() => [window.CHOC.trip.w3.view.tx, window.CHOC.trip.w3.view.tz]);
+      await page.mouse.move(bb.x + 200, bb.y + 200); await page.mouse.down(); await page.mouse.move(bb.x + 320, bb.y + 220, { steps: 4 }); await page.mouse.up();
+      const t1 = await page.evaluate(() => [window.CHOC.trip.w3.view.tx, window.CHOC.trip.w3.view.tz]);
+      assert.ok(Math.hypot(t1[0] - t0[0], t1[1] - t0[1]) > 0.05, 'drag moves the view');
+      assert.ok(await page.evaluate(() => window.CHOC.trip.w3.root.scale.y < 0.5), 'stretch eases off close in');
     }
     // back to the side view
     await page.click('#cutView button[data-v="side"]');
