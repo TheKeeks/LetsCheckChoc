@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — Swell Map 3D: the front reaches the sea floor, sharper bottom around Fishers
+
+In the 3D view, each part of the wave front is now a curtain from the sea floor up to the wave's crest. The pale part is the water column under that part of the front, and the colored top is the wave itself, so you can see how deep the water is under every part of it as it crosses shoals and holes. Water and wave share one vertical scale: depths stretched 70 times (squeezed below 60 m so the deep ocean doesn't swallow the view), the wave 4 times more than that.
+
+Around Fishers, the Race and the mouth of the sound (about 24 by 18 km), the 3D sea floor now comes from a 16 m cut of the survey (`research/ocean/fine16.png`, about 1.9 MB, loaded only with 3D) instead of the page's 64 m grid. The rocks off Choc, the reef and the Race's trench show. The mesh there has a point about every 35–40 m. The 3D view only redraws when something changes, so a paused, still view costs nothing. The follow camera stops nudging once it has caught up, and it comes in closer as the wave reaches shallow water.
+
+Verified by `w6-swell-map-3d.js` (now about 20 s with software WebGL) and the full unit, e2e and Python suites.
+
 ## [Unreleased] — Swell Map: the wave front in 3D
 
 Drop a wave's panel under the map now has a 3D view next to the side view. It shows the sea floor in 3D, with the depth stretched and the deep ocean squeezed so the shelf shows, and your wave's whole front moving across it. The front is a line of rays 30 km wide, one every 150 m, square to your wave and traced with the same tracer as the rest of the page. It stands up as a band as tall as the wave is at each point.
