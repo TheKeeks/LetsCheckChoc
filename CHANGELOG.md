@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — Swell Map: zooming in close and leaving Drop a wave no longer glitch
+
+Two glitches on the Swell Map tab. First, pinching far in on the Forecast or Past map went down to about half a kilometer across. The forecast grid and sea-floor survey have no detail at that scale, and the iPad had to stretch whole-ocean images to millions of pixels, so the map went blank or stuttered. Second, opening Drop a wave starts its demo wave after a few seconds. If you switched back to Forecast or Past before it started, the wave played on top of that map anyway, and the headline showed the wave's depth and speed instead of the forecast.
+
+The map views now stop zooming at 3 km across, still close enough to see the reef shelf off Choc. Each background image is cut to the part on screen before it is drawn, so close zoom stays sharp and smooth. Drop a wave now plays its demo only if you are still on Drop a wave when it is ready. The Forecast headline also shows the numbers as soon as the forecast loads, instead of "Loading the forecast…" until the swell rays arrive.
+
+Verified by a new e2e scenario, `w6-swell-map-zoom.js`, on an iPad-sized screen. It zooms far in and checks that the map stops at 3 km across. It then opens Drop a wave, goes back to Forecast and then Past, and checks that no wave plays and the forecast headline is back. Both checks fail on the previous page and pass now. The full unit, e2e and Python suites pass.
+
 ## [Unreleased] — Swell Map tab: forecast, past days and one wave's trip on one map
 
 A fourth tab, Swell Map, opens the research page built alongside the site: one full-screen map with its controls laid over it like a weather app. Its Forecast view plays this week's swell from GFS-Wave and ECMWF across the Atlantic down to the reef. The colors show wave height, moving streaks show where the swell travels, and dots mark open-ocean swell aimed at Choc or Wilderness; tapping a dot traces that swell's rays in and gives its arrival time. Its Past view shows any day since 2016 in the same frame, from buoy 44097 run through the ray model plus the Copernicus wave reanalysis offshore. Drop a wave traces one line of swell from anywhere over the real sea floor. Below the map are the ten-year analysis, a month-by-month heatmap of good days with a calendar for each month, and the forecast table with its scorecard.

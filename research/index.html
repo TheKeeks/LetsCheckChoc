@@ -1545,6 +1545,21 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     }
     return t.im;
   }
+  // drawImage only the part of an image that lands on screen: zoomed in close, a whole-ocean image would
+  // otherwise be stretched to millions of pixels, which iPad Safari draws blank or very slowly
+  function blit(g, im, dx, dy, dw, dh, W, H) {
+    if (!im || !(dw > 0) || !(dh > 0)) return;
+    const iw = im.naturalWidth || im.width, ih = im.naturalHeight || im.height; if (!iw || !ih) return;
+    W = W || cw; H = H || chh;
+    const l = Math.max(0, dx), t = Math.max(0, dy), r = Math.min(W, dx + dw), b = Math.min(H, dy + dh);
+    if (r <= l || b <= t) return;
+    if (l === dx && t === dy && r === dx + dw && b === dy + dh) { g.drawImage(im, dx, dy, dw, dh); return; }
+    const kx = iw / dw, ky = ih / dh, sx = (l - dx) * kx, sy = (t - dy) * ky, sw = (r - l) * kx, sh = (b - t) * ky;
+    // pad the source by a pixel so smoothing doesn't leave a hard edge, then map that pad back to screen
+    const px0 = Math.max(0, Math.floor(sx) - 1), py0 = Math.max(0, Math.floor(sy) - 1);
+    const px1 = Math.min(iw, Math.ceil(sx + sw) + 1), py1 = Math.min(ih, Math.ceil(sy + sh) + 1);
+    g.drawImage(im, px0, py0, px1 - px0, py1 - py0, dx + px0 / kx, dy + py0 / ky, (px1 - px0) / kx, (py1 - py0) / ky);
+  }
   const reliefCv = document.createElement('canvas'), reliefCtx = reliefCv.getContext('2d');
   function drawTiles(x0, y0, sc, alpha, under) {
     if (alpha <= 0) return;
@@ -1563,7 +1578,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     rg.clearRect(0, 0, cw, chh);
     // color under the relief: the same sea blue as the overview map, only inside the survey map
     const wl = ox, wt = oy, ww = TW.W * TW.px_km * sc, wh = TW.H * TW.px_km * sc;
-    if (under) { rg.imageSmoothingEnabled = true; rg.imageSmoothingQuality = 'high'; rg.drawImage(under, wl, wt, ww, wh); }
+    if (under) { rg.imageSmoothingEnabled = true; rg.imageSmoothingQuality = 'high'; blit(rg, under, wl, wt, ww, wh); }
     else { rg.fillStyle = 'rgb(62,104,150)'; rg.fillRect(wl, wt, ww, wh); }
     rg.globalCompositeOperation = 'multiply'; rg.imageSmoothingEnabled = true; rg.imageSmoothingQuality = 'high';
     for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
@@ -1584,7 +1599,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       rg.drawImage(im, 0, 0, wpx, hpx, dx0, dy0, Math.round(ox + tx * tk * sc + wpx * lv.px_km * sc) - dx0, Math.round(oy + ty * tk * sc + hpx * lv.px_km * sc) - dy0);
     }
     if (L.world) {                                             // fade the survey map into the ocean image at its edges
-      rg.globalCompositeOperation = 'destination-in'; rg.drawImage(L.world, wl, wt, ww, wh);
+      rg.globalCompositeOperation = 'destination-in'; blit(rg, L.world, wl, wt, ww, wh);
       rg.globalCompositeOperation = 'source-over';
     }
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = alpha; ctx.drawImage(reliefCv, 0, 0); ctx.restore();
@@ -1861,7 +1876,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     if (!im || alpha <= 0) return;
     const p0 = P(b[0], b[3]), p1 = P(b[1], b[2]);
     ctx.globalAlpha = alpha;
-    ctx.drawImage(im, (p0[0] - x0) * sc, (p0[1] - y0) * sc, (p1[0] - p0[0]) * sc, (p1[1] - p0[1]) * sc);
+    blit(ctx, im, (p0[0] - x0) * sc, (p0[1] - y0) * sc, (p1[0] - p0[0]) * sc, (p1[1] - p0[1]) * sc);
     ctx.globalAlpha = 1;
   }
   const hudBottom = () => INS.top;
@@ -2102,9 +2117,10 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   function localXY(e) { const b = cv.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; }
   function zoomAt(px, py, f) {
     const v = S.cam, { sc, x0, y0 } = proj(v); const wx = px / sc + x0, wy = py / sc + y0;
-    v.W = Math.max(0.6, Math.min(MAPV() ? 9000 : 1400, v.W * f)); const s2 = Math.min(cw, chh) / v.W;
+    v.W = Math.max(MAPV() ? MAPMIN : 0.6, Math.min(MAPV() ? 9000 : 1400, v.W * f)); const s2 = Math.min(cw, chh) / v.W;
     v.cx = wx - (px - cw / 2) / s2; v.cy = wy - (py - chh / 2) / s2; S.moved = true; draw();
   }
+  const MAPMIN = 3;                                          // km across: the forecast grid and survey tiles hold no more detail than this
   const panMode = () => S.phase === 'setup' || MAPV();
   cv.addEventListener('pointerdown', (e) => {
     if (!panMode()) return;
@@ -2165,7 +2181,9 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   }
   async function play() {
     if (!S.ray) return;
-    if (!S.ray.pw) { $('tripPhase').textContent = 'Working out how much energy arrives…'; await ensurePw(S.ray); if (!S.ray || !S.ray.pw) return; }
+    if (S.phase !== 'setup') return;                         // only from the drop view's setup step, never over the forecast or past maps
+    const r0 = S.ray;
+    if (!r0.pw) { $('tripPhase').textContent = 'Working out how much energy arrives…'; await ensurePw(r0); if (S.phase !== 'setup' || S.ray !== r0 || !r0.pw) return; }
     S.phase = 'play'; S.dist = 0; S.hold = 1.2; S.last = 0; syncButtons(); cv.style.cursor = 'pointer';
     if (reduce) { S.dist = S.ray.len; S.phase = 'done'; draw(); finish(); return; }
     S.playing = true; requestAnimationFrame(frame);
@@ -2330,6 +2348,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   async function setWeek(i) {
     if (FC.i !== i) FC.fan = null;
     FC.i = i; const my = i, g = FC.d.gfs[i], e = ecRow(i);
+    if (S.phase === 'week') weekHud();                       // the headline needs only the forecast numbers, not the rays still loading
     const tr = FC.model === 'gfs' ? g.trains.filter((t) => t.T >= 5).map((t) => ({ ft: t.ft, T: t.T, D: t.D })) : e ? [{ ft: e.hs, T: e.T, D: e.D }] : [];
     const cur = await Promise.all(tr.map(async (t) => {
       const Te = Math.max(6, Math.min(16, Math.round(t.T / 2) * 2)), De = Math.round(t.D / 5) * 5, f = await frFile(Te);
@@ -2359,7 +2378,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   }
   function fcBackdrop(x0, y0, sc) { if (L.obg && L.obgB) drawImg(L.obg, L.obgB, x0, y0, sc, 1); }
   function landMask(g, x0, y0, sc) {                         // cut land out of whatever is on `g`
-    const put = (im, b) => { if (!im || !b) return; const p0 = P(b[0], b[3]), p1 = P(b[1], b[2]); g.drawImage(im, (p0[0] - x0) * sc, (p0[1] - y0) * sc, (p1[0] - p0[0]) * sc, (p1[1] - p0[1]) * sc); };
+    const put = (im, b) => { if (!im || !b) return; const p0 = P(b[0], b[3]), p1 = P(b[1], b[2]); blit(g, im, (p0[0] - x0) * sc, (p0[1] - y0) * sc, (p1[0] - p0[0]) * sc, (p1[1] - p0[1]) * sc); };
     g.globalCompositeOperation = 'destination-out'; put(L.oland, L.obgB); put(L.aland, L.meta && L.meta.bounds); g.globalCompositeOperation = 'source-over';
   }
   const layer = document.createElement('canvas'), lctx = layer.getContext('2d');
@@ -2369,7 +2388,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     lctx.setTransform(dpr, 0, 0, dpr, 0, 0); lctx.clearRect(0, 0, cw, chh); lctx.imageSmoothingEnabled = true; lctx.imageSmoothingQuality = 'high';
     for (const [im, b] of fieldImages()) {
       const p0 = P(b[0], b[3]), p1 = P(b[1], b[2]);
-      lctx.drawImage(im, (p0[0] - x0) * sc, (p0[1] - y0) * sc, (p1[0] - p0[0]) * sc, (p1[1] - p0[1]) * sc);
+      blit(lctx, im, (p0[0] - x0) * sc, (p0[1] - y0) * sc, (p1[0] - p0[0]) * sc, (p1[1] - p0[1]) * sc);
     }
     landMask(lctx, x0, y0, sc);
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = fa; ctx.drawImage(layer, 0, 0); ctx.restore();
