@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased] — Swell Map: surf-log photos show wherever the page is opened
+
+The camera icons and photos on the ten-year calendar only appeared inside the site's Swell Map tab, because the page borrowed the main site's Firebase connection. Opened from a shared /research/ link, or anywhere it wasn't inside that tab, it had no connection and showed no photos. The page now connects to the same Firebase project itself when it isn't in the tab, using the same SDK version as the site. It reuses an existing sign-in on the site's address, or signs in anonymously as the site does, and then reads the surf log's photos. It only reads. If Firebase can't load (blocked or offline), the page works as before without photos. No Firebase rules change.
+
+Verified by a new e2e scenario, `w6-swell-map-photos-standalone.js`. It opens /research/ directly, with the Firebase stub serving a log that has photos and a failed upload. It checks that the page signs in anonymously, puts cameras on the two months with photos, lists them, and writes nothing. It then blocks Firebase and checks there are no photos and no errors. It fails on the previous page and passes now. The unit suite and all Swell Map e2e scenarios pass.
+
 ## [Unreleased] — Swell Map: pinching the map on an iPhone zooms the map, not the page
 
 On an iPhone (Safari, and Chrome too, since every iPhone browser runs on Safari's engine), pinching the Swell Map's map zoomed the whole web page instead of the map. You saw a blurry, uniform dark-blue close-up of the ocean. A double-tap did the same. The map relied on the CSS `touch-action: none` setting to keep gestures for itself, and iPhone browsers ignore it; desktop browsers don't, which is why it never showed on a computer. The map and the 3D view now cancel the browser's own pinch (two-finger touch moves and Safari's gesture events) and double-tap zoom, only over the map itself. The layers panel, timeline and buttons on top still scroll and tap normally.

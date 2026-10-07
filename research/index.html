@@ -3877,15 +3877,31 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     draw(); month();
   }
   window.CHOC.setPhotos = setPhotos;
+  // Opened on its own (the site's address, outside the tab) it connects to the same Firebase project itself:
+  // the same SDK version as the site, the default app so it reuses the visitor's existing sign-in on this
+  // address, and an anonymous sign-in only if there is none (as the site does). It only reads.
+  const FB_CFG = { apiKey: 'AIzaSyBWuLMPKGS91HSOzmQALinQl3w5FwkIdIs', authDomain: 'letscheckchoc.firebaseapp.com', projectId: 'letscheckchoc', storageBucket: 'letscheckchoc.firebasestorage.app', messagingSenderId: '801516961544', appId: '1:801516961544:web:c28584674e5be4643e36bd' };
+  const script = (src) => new Promise((ok, no) => { const t = document.createElement('script'); t.src = src; t.onload = ok; t.onerror = no; document.head.appendChild(t); });
+  async function ownFirestore() {
+    if (!/(^|\.)thekeeks\.github\.io$|^localhost$|^127\.0\.0\.1$/.test(location.hostname)) return null;   // Firebase only accepts the site's own address
+    const V = 'https://www.gstatic.com/firebasejs/9.23.0/';
+    if (!window.firebase) { await script(V + 'firebase-app-compat.js'); await Promise.all([script(V + 'firebase-auth-compat.js'), script(V + 'firebase-firestore-compat.js')]); }
+    const fb = window.firebase; if (!(fb.apps && fb.apps.length)) fb.initializeApp(FB_CFG);
+    const auth = fb.auth();
+    const user = await new Promise((ok) => { const off = auth.onAuthStateChanged((u) => { off(); ok(u); }); });
+    if (!user) await auth.signInAnonymously();
+    return fb.firestore();
+  }
   (async () => {
-    let P = null; try { P = window.parent !== window && window.parent.fbFirestore ? window.parent : null; } catch (e) { P = null; }   // another origin: no access
-    if (!P) return;
+    let fs = null;
     try {
-      if (P._fbAuthReady) await P._fbAuthReady;
-      const snap = await P.fbFirestore.collection('surf_logs').orderBy('createdAt', 'desc').limit(500).get(), out = [];
+      let P = null; try { P = window.parent !== window && window.parent.fbFirestore ? window.parent : null; } catch (e) { P = null; }   // another origin: no access
+      if (P) { if (P._fbAuthReady) await P._fbAuthReady; fs = P.fbFirestore; } else fs = await ownFirestore();
+      if (!fs) return;
+      const snap = await fs.collection('surf_logs').orderBy('createdAt', 'desc').limit(500).get(), out = [];
       snap.forEach((doc) => { const d = doc.data() || {}; for (const ph of d.photos || []) { const url = typeof ph === 'string' ? ph : ph && ph.url; if (url) out.push({ when: d.timestamp, url }); } });
       setPhotos(out);
-    } catch (e) { /* not signed in yet or offline: no photos */ }
+    } catch (e) { /* offline, blocked or not signed in: no photos */ }
   })();
   const CAP = {
     good: 'A good day is one whose best 3 hours score 7/10 or better on the ratings model built from your surf log at Choc. Your log has no sessions from November to May, so winter counts are extrapolation.',
