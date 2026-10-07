@@ -253,6 +253,8 @@ svg.dec-cam, .chart svg.dec-cam { width: 12px; height: 9px; display: inline-bloc
 .dec-ph-h { font-size: .82rem; color: var(--fg-2); margin-bottom: 6px; }
 .dec-ph-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-top: 8px; }
 .dec-ph-a { flex: 0 0 auto; text-decoration: none; color: var(--fg-2); font-size: .72rem; text-align: center; }
+.dec-dot { position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: currentColor; text-decoration: none; }
+.dec-key .dec-dot { position: static; display: inline-block; margin-right: 4px; vertical-align: middle; color: var(--fg-2); }
 .dec-log { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
 .dec-log-h { font-size: .84rem; color: var(--fg-2); }
 .dec-log-h b { color: var(--fg); }
@@ -814,10 +816,17 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   let KG = null, DEPTH = null, NEAREST = null, started = null;
   const updates = [];
   const loadImg = src => new Promise((res, rej) => { const i = new Image(); i.decoding = 'async'; i.onload = () => res(i); i.onerror = () => rej(new Error('load ' + src)); i.src = src; });
-  function pixels(img) {
-    const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
-    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0); return x.getImageData(0, 0, img.width, img.height).data;
-  }
+  // Every image the page reads pixels from goes through this one scratch canvas, shrunk back to 1x1 after
+  // each read. iPhone and iPad Safari cap the memory all of a page's canvases hold together (about 224 MB on
+  // an iPhone); a fresh canvas per image (about 70 sea-floor images, plus the forecast strips) went over it,
+  // after which new canvases come back with no drawing context and the map drew only its dark background.
+  const SCRATCH = document.createElement('canvas');
+  window.CHOC.pixels = function (img) {
+    const c = SCRATCH; c.width = img.width; c.height = img.height;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0);
+    const d = x.getImageData(0, 0, img.width, img.height).data; c.width = 1; c.height = 1; return d;
+  };
+  const pixels = window.CHOC.pixels;
   async function setupModel() {
     const [kimg, dimg] = await Promise.all([loadImg('kgrid.png'), loadImg('depth144.png')]);
     const p = pixels(kimg), W = kimg.width;
@@ -1561,9 +1570,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   const json = (u) => fetch(u).then((r) => r.ok ? r.json() : null).catch(() => null);
   async function png16(u) {                          // depth PNG: red = high byte, green = low byte
     const im = await img(u); if (!im) throw new Error(u);
-    const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
-    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0);
-    const px = g.getImageData(0, 0, im.width, im.height).data, out = new Uint16Array(im.width * im.height);
+    const px = window.CHOC.pixels(im), out = new Uint16Array(im.width * im.height);   // the shared scratch canvas: see CHOC.pixels
     for (let i = 0; i < out.length; i++) out[i] = px[4 * i] << 8 | px[4 * i + 1];
     return out;
   }
@@ -2338,9 +2345,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     FC.px[k] = null;
     img(`fc/field_${k}.png`).then((im) => {
       if (!im) return;
-      const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
-      const gx = c.getContext('2d', { willReadFrequently: true }); gx.drawImage(im, 0, 0);
-      FC.px[k] = { w: im.width, a: gx.getImageData(0, 0, im.width, im.height).data };
+      FC.px[k] = { w: im.width, a: window.CHOC.pixels(im) };
       FC.aim = {}; FC.arr = {};
       if (S.phase === 'week') { draw(); fcTimeline(); }
     });
@@ -2378,7 +2383,8 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const k = model + g + step; if (FC.cv[k]) return FC.cv[k];
     const F = fcPx(model, g); if (!F) return null;
     const Gd = FC.d.grids[g], nla = Gd.lat[3], nlo = Gd.lon[3], c = document.createElement('canvas'); c.width = nlo; c.height = nla;
-    const gx = c.getContext('2d'), id = gx.createImageData(nlo, nla);
+    const gx = c.getContext('2d'); if (!gx) return null;    // a phone out of canvas memory: skip the color, keep drawing the rest
+    const id = gx.createImageData(nlo, nla);
     for (let q = 0; q < nla * nlo; q++) { const p = 4 * (step * F.w + q); if (F.a[p] === 255) continue;
       const la = Gd.lat[0] - Math.floor(q / nlo) * Gd.lat[2], lo = Gd.lon[0] + (q % nlo) * Gd.lon[2]; if (lo < -74.5 && la > 41.6) continue;   /* inland lakes: not our ocean */ const col = hCol(F.a[p] / 10 * FTm); id.data[4 * q] = col[0]; id.data[4 * q + 1] = col[1]; id.data[4 * q + 2] = col[2]; id.data[4 * q + 3] = 255; }
     gx.putImageData(id, 0, 0);
@@ -2921,9 +2927,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     (async () => {
       PS.fm = PS.fm || await json('ocean/field/meta.json'); const mm = PS.fm && PS.fm.months[y]; if (!mm) return;
       const im = await img(`ocean/field/${y}.png`); if (!im) return;
-      const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
-      const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0);
-      PS.years[y] = { a: g.getImageData(0, 0, im.width, im.height).data, w: im.width, start: Date.parse(mm[0] + ':00Z'), n: mm[1] };
+      PS.years[y] = { a: window.CHOC.pixels(im), w: im.width, start: Date.parse(mm[0] + ':00Z'), n: mm[1] };
       if (S.phase === 'past') setPast(CST.idx);
     })();
     return null;
@@ -2937,9 +2941,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     (async () => {
       PS.om = PS.om || await json('ocean/field/ocean_meta.json'); const mm = PS.om && PS.om.months[y]; if (!mm) return;
       const im = await img(`ocean/field/ocean/${y}.png`); if (!im) return;
-      const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
-      const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0);
-      PS.oyears[y] = { a: g.getImageData(0, 0, im.width, im.height).data, w: im.width, start: Date.parse(mm[0] + ':00Z'), n: mm[1] };
+      PS.oyears[y] = { a: window.CHOC.pixels(im), w: im.width, start: Date.parse(mm[0] + ':00Z'), n: mm[1] };
       if (S.phase === 'past') setPast(CST.idx);
     })();
     return null;
@@ -2949,7 +2951,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const f = PS.o; if (!f) return null;
     const key = f.F.start + '_' + f.row; if (PS.oimgKey === key) return PS.oimg;
     const fm = PS.om, NLA = fm.lat.length, NLO = fm.lon.length;
-    const c = document.createElement('canvas'); c.width = NLO; c.height = NLA;
+    const c = PS.ocv || (PS.ocv = document.createElement('canvas')); c.width = NLO; c.height = NLA;   // one canvas, redrawn each step
     const g = c.getContext('2d'), id = g.createImageData(NLO, NLA);
     for (let i = 0; i < NLA; i++) for (let j = 0; j < NLO; j++) {
       let h = oceanVal(i, j, 0);
@@ -2992,7 +2994,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const f = PS.f; if (!f) return null;
     const key = f.F.start + '_' + f.row + (PS.o ? 'o' : ''); if (PS.imgKey === key) return PS.img;
     const fm = PS.fm, NLA = fm.lat.length, NLO = fm.lon.length;
-    const c = document.createElement('canvas'); c.width = NLO; c.height = NLA;
+    const c = PS.fcv || (PS.fcv = document.createElement('canvas')); c.width = NLO; c.height = NLA;
     const g = c.getContext('2d'), id = g.createImageData(NLO, NLA);
     for (let i = 0; i < NLA; i++) for (let j = 0; j < NLO; j++) {
       let h = pastVal(i, j, 0);
@@ -3270,7 +3272,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const XY = (a, j, z) => [sx(a) + (j + JM) * ox, top + 3 * V + JM * 2 * oy - (j + JM) * oy - z * V];
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (!CUT.bed) {                                          // the sea floor doesn't move: draw it once
-      const c = document.createElement('canvas'); c.width = w * dpr; c.height = h * dpr; const b = c.getContext('2d'); b.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const c = document.createElement('canvas'); c.width = w * dpr; c.height = h * dpr; const b = c.getContext('2d'); if (!b) return; b.setTransform(dpr, 0, 0, dpr, 0, 0);
       b.fillStyle = '#0b1622'; b.fillRect(0, 0, w, h);
       for (let j = JM; j > -JM; j--) for (let a = 0; a < NA - 1; a++) {      // back to front
         const z1 = -P.bed[a][j + JM], z2 = -P.bed[a + 1][j + JM], z3 = -P.bed[a + 1][j - 1 + JM], z4 = -P.bed[a][j - 1 + JM];
@@ -3393,9 +3395,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     if (FINE.a || FINE.m === false) return;
     const [m, im] = await Promise.all([json('ocean/fine16.json'), img('ocean/fine16.png')]);
     if (!m || !im) { FINE.m = false; return; }
-    const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
-    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0);
-    const px = g.getImageData(0, 0, im.width, im.height).data, a = new Float32Array(m.rows * m.cols), wet = new Uint8Array(m.rows * m.cols);
+    const px = window.CHOC.pixels(im), a = new Float32Array(m.rows * m.cols), wet = new Uint8Array(m.rows * m.cols);
     for (let i = 0; i < a.length; i++) { a[i] = ((px[4 * i] << 8) | px[4 * i + 1]) / m.scale - m.off; wet[i] = px[4 * i + 2] > 127; }
     FINE.m = m; FINE.a = a; FINE.wet = wet;
   }
@@ -3738,6 +3738,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   const cv = document.getElementById('odMap'), slider = document.getElementById('odT'), tl = document.getElementById('odTl');
   const ctx = cv.getContext('2d');
   let FM = null, atl = null, fieldDay = null;
+  const SCR = {};                                   // working canvases, reused on every redraw (Safari caps canvas memory)
   const img = (src) => new Promise((r) => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = src; });
   async function fieldFor(month) {
     const k = 'f' + month;                            // one PNG per year
@@ -3745,9 +3746,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     cache[k] = (async () => {
       FM = FM || await load('ocean/field/meta.json'); if (!FM || !FM.months[month]) return null;
       const im = await img(`ocean/field/${month}.png`); if (!im) return null;
-      const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
-      const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0);
-      return { px: g.getImageData(0, 0, im.width, im.height).data, w: im.width, start: Date.parse(FM.months[month][0] + ':00Z'), n: FM.months[month][1] };
+      return { px: window.CHOC.pixels(im), w: im.width, start: Date.parse(FM.months[month][0] + ':00Z'), n: FM.months[month][1] };
     })();
     return cache[k];
   }
@@ -3767,7 +3766,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const val = (i, j, q) => f.px[(row * f.w + (i * NLO + j) * 3) * 4 + q];        // 3 RGB pixels per cell
     // color: primary swell height, one pixel per cell (land cells borrow a neighbor), scaled up
     // smoothly, then clipped to the sea with the ETOPO water mask
-    const off = document.createElement('canvas'); off.width = NLO; off.height = NLA;
+    const off = SCR.off || (SCR.off = document.createElement('canvas')); off.width = NLO; off.height = NLA;   // reused: see CHOC.pixels
     const og = off.getContext('2d'), id = og.createImageData(NLO, NLA);
     const hAt = (i, j) => { const h = val(i, j, 0); if (h !== 255) return h; let s = 0, n = 0;
       for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) { const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= NLA || jj >= NLO) continue; const v = val(ii, jj, 0); if (v !== 255) { s += v; n++; } }
@@ -3778,7 +3777,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       id.data[p] = c[0]; id.data[p + 1] = c[1]; id.data[p + 2] = c[2]; id.data[p + 3] = Math.round(255 * Math.min(0.7, 0.2 + ft / 14));
     }
     og.putImageData(id, 0, 0);
-    const lay = document.createElement('canvas'); lay.width = cv.width; lay.height = cv.height;
+    const lay = SCR.lay || (SCR.lay = document.createElement('canvas')); lay.width = cv.width; lay.height = cv.height;
     const lg = lay.getContext('2d'); lg.setTransform(dpr, 0, 0, dpr, 0, 0); lg.imageSmoothingEnabled = true; lg.imageSmoothingQuality = 'high';
     lg.drawImage(off, X(FM.lon[0] - dLo / 2), Y(FM.lat[NLA - 1] + dLa / 2), X(FM.lon[NLO - 1] + dLo / 2) - X(FM.lon[0] - dLo / 2), Y(FM.lat[0] - dLa / 2) - Y(FM.lat[NLA - 1] + dLa / 2));
     if (atl && atl.mask) { const m = atl.meta.bounds, hx = 1 / 240; lg.globalCompositeOperation = 'destination-in'; lg.drawImage(atl.mask, X(m[0] - hx), Y(m[3] + hx), X(m[1] + hx) - X(m[0] - hx), Y(m[2] - hx) - Y(m[3] + hx)); }
@@ -3886,7 +3885,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   // Swell Map tab, so it borrows the site's Firebase connection and sign-in; opened on its own it connects
   // itself (below). Months and days with photos get a camera; a month lists its photos, a day shows each
   // logged session with its ratings (size, wind, ride) and notes next to the ratings model's score.
-  const PH = { month: {}, day: {} };
+  const PH = { month: {}, day: {}, log: {}, logMonth: {} };
   const CAM = '<svg class="dec-cam" viewBox="0 0 16 12" aria-hidden="true"><path d="M1 3.2h3.2l1.3-1.9h5l1.3 1.9H15v8H1z" fill="currentColor"/><circle cx="8" cy="7" r="2.6" fill="#0b1622"/><circle cx="8" cy="7" r="1.5" fill="currentColor"/></svg>';
   const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const r10 = (v) => (typeof v === 'number' && isFinite(v) && v >= 0 && v <= 10 ? v : null);   // a rating is 0-10, or missing
@@ -3896,18 +3895,30 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     return o;
   }
   const hm = (when) => { const h = +when.slice(11, 13), mi = when.slice(14, 16); return isNaN(h) ? '' : `${h % 12 || 12}:${mi} ${h < 12 ? 'am' : 'pm'}`; };
-  function setPhotos(list) {                               // [{when: 'YYYY-MM-DDTHH:MM' (Eastern), url, log?: {ratings, notes}}]
-    PH.month = {}; PH.day = {};
-    for (const q0 of list || []) {
-      if (!q0 || typeof q0.url !== 'string' || !/^https:\/\/[^"'<>\s]+$/.test(q0.url) || typeof q0.when !== 'string') continue;   // plain https links only: they go into src/href
-      const iso = q0.when.slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
-      const q = { when: q0.when, url: q0.url, s: q0.log ? session(q0.log) : null };
-      (PH.month[iso.slice(0, 7)] = PH.month[iso.slice(0, 7)] || []).push(q); (PH.day[iso] = PH.day[iso] || []).push(q);
+  const okUrl = (u) => typeof u === 'string' && /^https:\/\/[^"'<>\s]+$/.test(u);   // plain https links only: they go into src/href
+  // the surf log: [{when: 'YYYY-MM-DDTHH:MM' (Eastern), ratings, notes, who, photos: [url]}], with or without photos
+  function setLog(list) {
+    PH.month = {}; PH.day = {}; PH.log = {}; PH.logMonth = {};
+    for (const e of list || []) {
+      if (!e || typeof e.when !== 'string') continue;
+      const iso = e.when.slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
+      const se = Object.assign(session(e), { when: e.when, who: typeof e.who === 'string' ? e.who.trim().split(/\s+/)[0].slice(0, 30) : '', photos: [] });   // first name only
+      for (const u of e.photos || []) if (okUrl(u)) {
+        const q = { when: e.when, url: u, s: se }; se.photos.push(q);
+        (PH.month[iso.slice(0, 7)] = PH.month[iso.slice(0, 7)] || []).push(q); (PH.day[iso] = PH.day[iso] || []).push(q);
+      }
+      (PH.log[iso] = PH.log[iso] || []).push(se); PH.logMonth[iso.slice(0, 7)] = (PH.logMonth[iso.slice(0, 7)] || 0) + 1;
     }
     for (const k in PH.month) PH.month[k].sort((a, b) => (a.when < b.when ? -1 : 1));
+    for (const k in PH.log) PH.log[k].sort((a, b) => (a.when < b.when ? -1 : 1));
     draw(); month();
   }
-  window.CHOC.setPhotos = setPhotos;
+  function setPhotos(list) {                               // [{when, url, log?: {ratings, notes, who}}]: one session per log entry
+    const by = new Map();
+    for (const q of list || []) { if (!q || typeof q.when !== 'string') continue; const k = q.log || q.when; if (!by.has(k)) by.set(k, Object.assign({ when: q.when, photos: [] }, q.log || {})); by.get(k).photos.push(q.url); }
+    setLog([...by.values()]);
+  }
+  window.CHOC.setPhotos = setPhotos; window.CHOC.setLog = setLog;
   // Opened on its own (the site's address, outside the tab) it connects to the same Firebase project itself:
   // the same SDK version as the site, the default app so it reuses the visitor's existing sign-in on this
   // address, and an anonymous sign-in only if there is none (as the site does). It only reads.
@@ -3930,8 +3941,8 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       if (P) { if (P._fbAuthReady) await P._fbAuthReady; fs = P.fbFirestore; } else fs = await ownFirestore();
       if (!fs) return;
       const snap = await fs.collection('surf_logs').orderBy('createdAt', 'desc').limit(500).get(), out = [];
-      snap.forEach((doc) => { const d = doc.data() || {}; const log = { ratings: d.ratings, notes: d.notes }; for (const ph of d.photos || []) { const url = typeof ph === 'string' ? ph : ph && ph.url; if (url) out.push({ when: d.timestamp, url, log }); } });
-      setPhotos(out);
+      snap.forEach((doc) => { const d = doc.data() || {}; out.push({ when: d.timestamp, ratings: d.ratings, notes: d.notes, who: d.displayName, photos: (d.photos || []).map((ph) => (typeof ph === 'string' ? ph : ph && ph.url)).filter(Boolean) }); });
+      setLog(out);
     } catch (e) { /* offline, blocked or not signed in: no photos */ }
   })();
   const CAP = {
@@ -3974,6 +3985,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
         el('rect', { x: x + 1, y: y + 1, width: cell - 2, height: cell - 2, rx: 3, fill: thin ? 'url(#decHatch)' : v ? `rgba(240,138,75,${(0.12 + 0.88 * Math.min(1, v / max)).toFixed(2)})` : '#121b24' }, g);
         if (sel === key(yr, m)) el('rect', { x: x + 1.5, y: y + 1.5, width: cell - 3, height: cell - 3, rx: 3, fill: 'none', stroke: C.fg, 'stroke-width': 2 }, g);
         if (v) { const t = el('text', { x: x + cell / 2, y: y + cell / 2 + 4, 'text-anchor': 'middle', 'font-size': 12, 'font-family': css('--mono'), fill: v / max > 0.55 ? '#1a0e06' : C.fg, 'pointer-events': 'none' }, g); t.textContent = v; }
+        if (!PH.month[key(yr, m)] && PH.logMonth[key(yr, m)]) el('circle', { class: 'dec-lg', cx: x + cell - 8, cy: y + 8, r: 2.6, fill: v / max > 0.55 ? '#1a0e06' : '#e7edf2', 'pointer-events': 'none' }, g);
         if (PH.month[key(yr, m)]) { const fo = el('foreignObject', { x: x + cell - 15, y: y + 3, width: 12, height: 10, 'pointer-events': 'none' }, g); fo.innerHTML = `<div xmlns="http://www.w3.org/1999/xhtml" style="color:${v / max > 0.55 ? '#1a0e06' : '#e7edf2'};line-height:0">${CAM}</div>`; }
         const pick = () => { sel = key(yr, m); draw(); month(); };
         g.addEventListener('click', pick); g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
@@ -3991,27 +4003,27 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       const iso = `${key(y, m)}-${String(d).padStart(2, '0')}`, i = window.CHOC.dayIndex(iso), x = D[i];
       if (!x) { cal += `<div class="dec-d none"><i>${d}</i></div>`; continue; }
       const ft = x.mh[dl], c = hCol(ft || 0), good = (x.s[dl] || 0) >= 7, light = c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11 > 140;
-      const hasPh = !!PH.day[iso];
-      cal += `<button type="button" class="dec-d${good ? ' good' : ''}${st.idx === i ? ' on' : ''}${hasPh ? ' ph' : ''}" data-i="${i}" style="background:rgb(${c});color:${light ? '#10161c' : '#f2f5f8'}" aria-label="${MONTHS[m - 1]} ${d}: Choc ${ft.toFixed(1)} ft${good ? ', good day' : ''}${hasPh ? ', has photos' : ''}"><i>${d}</i><b>${ft.toFixed(1)}</b>${hasPh ? CAM : ''}</button>`;
+      const hasPh = !!PH.day[iso], hasLog = !hasPh && !!PH.log[iso];
+      cal += `<button type="button" class="dec-d${good ? ' good' : ''}${st.idx === i ? ' on' : ''}${hasPh ? ' ph' : ''}${hasLog ? ' lg' : ''}" data-i="${i}" style="background:rgb(${c});color:${light ? '#10161c' : '#f2f5f8'}" aria-label="${MONTHS[m - 1]} ${d}: Choc ${ft.toFixed(1)} ft${good ? ', good day' : ''}${hasPh ? ', logged with photos' : hasLog ? ', logged' : ''}"><i>${d}</i><b>${ft.toFixed(1)}</b>${hasPh ? CAM : hasLog ? '<s class="dec-dot" aria-hidden="true"></s>' : ''}</button>`;
     }
     const best = o.best ? `${MON[m - 1]} ${o.best.d}, ${o.best.mh[dl].toFixed(1)} ft at Choc` : '—';
-    out.innerHTML = `<div class="dec-mh"><h3>${MONTHS[m - 1]} ${y}</h3><span>${o.days} days with buoy data · biggest: ${best}</span></div>
+    out.innerHTML = `<div class="dec-mh"><h3>${MONTHS[m - 1]} ${y}</h3><span>${o.days} days with buoy data · biggest: ${best}${PH.logMonth[sel] ? ` · ${PH.logMonth[sel]} session${PH.logMonth[sel] > 1 ? 's' : ''} logged` : ''}</span></div>
       <div class="dec-tiles">${tile(o.good, 'good days')}${tile(o.big, 'big swell days')}${tile(o.c3, 'Choc 3 ft+')}${tile(o.w3, 'Wilderness 3 ft+')}</div>
       <div class="dec-cal">${cal}</div>
-      <div class="dec-key"><span><i class="g"></i>good day</span><span>numbers: Choc's best 3 hours (ft), colored like the map</span></div>
+      <div class="dec-key"><span><i class="g"></i>good day</span>${PH.logMonth[sel] ? `<span>${CAM} logged, with photos</span><span><s class="dec-dot"></s> logged</span>` : ''}<span>numbers: Choc's best 3 hours (ft), colored like the map</span></div>
       <div class="dec-day" id="decDay"></div>
-      ${PH.month[sel] ? `<div class="dec-ph"><div class="dec-ph-h">${CAM} ${PH.month[sel].length} photo${PH.month[sel].length > 1 ? 's' : ''} from the surf log this month</div><div class="dec-ph-row">${PH.month[sel].map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a" title="${esc(q.when.slice(0, 10) + (q.s && q.s.notes ? ': ' + q.s.notes : ''))}"><img src="${q.url}" alt="Surf log photo, ${q.when.slice(0, 10)}" loading="lazy"><span>${MON[+q.when.slice(5, 7) - 1]} ${+q.when.slice(8, 10)}${q.s && q.s.avg != null ? ` · rated ${q.s.avg.toFixed(1)}` : ''}</span></a>`).join('')}</div></div>` : ''}`;
+      ${PH.month[sel] ? `<div class="dec-ph"><div class="dec-ph-h">${CAM} ${PH.month[sel].length} photo${PH.month[sel].length > 1 ? 's' : ''} from the surf log this month</div><div class="dec-ph-row">${PH.month[sel].map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a" title="${esc(q.when.slice(0, 10) + (q.s && q.s.who ? ', ' + q.s.who : '') + (q.s && q.s.notes ? ': ' + q.s.notes : ''))}"><img src="${q.url}" alt="Surf log photo, ${q.when.slice(0, 10)}" loading="lazy"><span>${MON[+q.when.slice(5, 7) - 1]} ${+q.when.slice(8, 10)}${q.s && q.s.avg != null ? ` · rated ${q.s.avg.toFixed(1)}` : ''}</span></a>`).join('')}</div></div>` : ''}`;
     out.querySelectorAll('.dec-d[data-i]').forEach((b) => b.addEventListener('click', () => { if (window.CHOC.pastStop) window.CHOC.pastStop(); window.CHOC.jump(+b.dataset.i); }));
     day();
   }
-  function sessions(list, model) {                         // the day's logged sessions: what it was rated, the notes, the photos
-    const by = new Map(); for (const q of list) { const k = q.when + '|' + (q.s ? q.s.notes : ''); if (!by.has(k)) by.set(k, []); by.get(k).push(q); }
+  function sessions(list, model) {                         // the day's logged sessions: who, when, the ratings, the notes, the photos
     const n = (v) => (v == null ? '–' : String(Math.round(v * 10) / 10));
-    return [...by.values()].map((g) => {
-      const s = g[0].s, when = hm(g[0].when);
-      const head = s ? `<div class="dec-log-h">Logged${when ? ' at ' + when : ''}: rated <b>${s.avg != null ? s.avg.toFixed(1) + '/10' : '–'}</b> (size ${n(s.size)}, wind ${n(s.wind)}, ride ${n(s.ride)})${model != null ? ` · ratings model for the day <b>${model.toFixed(1)}/10</b>` : ''}</div>` : '';
-      const note = s && s.notes ? `<blockquote class="dec-log-n">${esc(s.notes)}</blockquote>` : '';
-      return `<div class="dec-log">${head}${note}<div class="dec-ph-row">${g.map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a"><img src="${q.url}" alt="Surf log photo, ${q.when.slice(0, 10)}" loading="lazy"><span>${hm(q.when)}</span></a>`).join('')}</div></div>`;
+    return list.map((se) => {
+      const when = hm(se.when);
+      const head = `<div class="dec-log-h">Logged${se.who ? ' by ' + esc(se.who) : ''}${when ? ' at ' + when : ''}: rated <b>${se.avg != null ? se.avg.toFixed(1) + '/10' : '–'}</b> (size ${n(se.size)}, wind ${n(se.wind)}, ride ${n(se.ride)})${model != null ? ` · ratings model for the day <b>${model.toFixed(1)}/10</b>` : ''}</div>`;
+      const note = se.notes ? `<blockquote class="dec-log-n">${esc(se.notes)}</blockquote>` : '';
+      const pics = se.photos.length ? `<div class="dec-ph-row">${se.photos.map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a"><img src="${q.url}" alt="Surf log photo, ${q.when.slice(0, 10)}" loading="lazy"><span>${hm(q.when)}</span></a>`).join('')}</div>` : '';
+      return `<div class="dec-log">${head}${note}${pics}</div>`;
     }).join('');
   }
   function day() {                                         // the chosen day, if it falls in the month on show
@@ -4023,7 +4035,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       <div>Choc <b>${x.mh[dl].toFixed(1)} ft</b>${v && v[4] != null ? ` · Wilderness <b>${v[4].toFixed(1)} ft</b>` : ''} · buoy ${x.hs.toFixed(1)} ft, ${Math.round(x.per)} s from ${compass(x.dir)}${x.s[dl] != null ? ` · ratings model <b>${x.s[dl].toFixed(1)}/10</b>` : ''}</div>
       <div class="dec-w">${[wind(w, 'Choc'), wind(ww, 'Wilderness')].filter(Boolean).join(' · ')}</div>
       <button type="button" id="decShow" class="dec-go">Open this day on the map</button>
-      ${PH.day[x.iso] ? sessions(PH.day[x.iso], x.s[dl]) : ''}`;
+      ${PH.log[x.iso] ? sessions(PH.log[x.iso], x.s[dl]) : ''}`;
     document.getElementById('decShow').addEventListener('click', () => window.CHOC.showPast(x.iso));
   }
   document.querySelectorAll('#decMetric button').forEach((b) => b.addEventListener('click', () => {

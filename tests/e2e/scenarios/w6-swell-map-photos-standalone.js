@@ -13,9 +13,9 @@ module.exports = {
     viewport: { width: 1180, height: 820 },
     firebase: {
       logs: [
-        { id: 'a', timestamp: '2022-10-14T17:40', ratings: { size: 9, windQuality: 8, rideQuality: 10 }, notes: 'Most rippable walls <img src=x onerror=alert(1)>', photos: [{ url: 'https://firebasestorage.test/a.jpg', path: 'surf-photos/raw/u/a.jpg' }, 'https://firebasestorage.test/b.jpg'] },
+        { id: 'a', timestamp: '2022-10-14T17:40', displayName: 'Keeks George', ratings: { size: 9, windQuality: 8, rideQuality: 10 }, notes: 'Most rippable walls <img src=x onerror=alert(1)>', photos: [{ url: 'https://firebasestorage.test/a.jpg', path: 'surf-photos/raw/u/a.jpg' }, 'https://firebasestorage.test/b.jpg'] },
         { id: 'b', timestamp: '2024-08-19T21:00', ratings: { size: 3, windQuality: null, rideQuality: 4 }, photos: [{ url: null, path: null, _uploadFailed: true }, { url: 'https://firebasestorage.test/c.jpg' }] },
-        { id: 'c', timestamp: '2025-06-02T07:00' },
+        { id: 'c', timestamp: '2025-06-02T07:00', displayName: '', ratings: { size: 5, windQuality: 6, rideQuality: 7 }, notes: 'Fun little peelers' },
       ],
     },
   },
@@ -48,7 +48,7 @@ module.exports = {
       cap: document.querySelector('#decMonth .dec-ph .dec-ph-a span').textContent,
     }));
     log(JSON.stringify(card));
-    assert.match(card.head, /^Logged at 5:40 pm: rated 9\.0\/10 \(size 9, wind 8, ride 10\)/, 'session ratings shown');
+    assert.match(card.head, /^Logged by Keeks at 5:40 pm: rated 9\.0\/10 \(size 9, wind 8, ride 10\)/, 'session ratings shown');
     assert.match(card.head, /ratings model for the day \d+\.\d\/10/, 'next to the model score');
     assert.equal(card.note, 'Most rippable walls <img src=x onerror=alert(1)>', 'notes shown as plain text');
     assert.equal(card.injected, 0, 'notes never become markup');
@@ -57,6 +57,23 @@ module.exports = {
     await page.evaluate(() => window.CHOC.showPast('2024-08-19'));
     await page.waitForTimeout(800);
     assert.match(await page.$eval('#decDay .dec-log-h', n => n.textContent), /rated – \(size 3, wind –, ride 4\)/, 'missing rating stays blank');
+    // A session logged without photos still shows, with a dot (not a camera) on its day and month.
+    await page.evaluate(() => window.CHOC.showPast('2025-06-02'));
+    await page.waitForTimeout(800);
+    const plain = await page.evaluate(() => ({
+      head: document.querySelector('#decDay .dec-log-h').textContent, note: document.querySelector('#decDay .dec-log-n').textContent,
+      imgs: document.querySelectorAll('#decDay .dec-log img').length, dot: document.querySelectorAll('#decMonth .dec-d.lg .dec-dot').length,
+      heatDots: document.querySelectorAll('#decHeat .dec-lg').length, mh: document.querySelector('#decMonth .dec-mh span').textContent,
+    }));
+    log(JSON.stringify(plain));
+    assert.match(plain.head, /^Logged at 7:00 am: rated 6\.0\/10 \(size 5, wind 6, ride 7\)/, 'session without photos shown, no name when none was given');
+    assert.equal(plain.note, 'Fun little peelers');
+    assert.equal(plain.imgs, 0);
+    assert.equal(plain.dot, 1, 'its day is marked as logged');
+    assert.equal(plain.heatDots, 1, 'its month is marked on the ten-year grid');
+    assert.match(plain.mh, /1 session logged/);
+    await page.locator('#decMonth .dec-cal').scrollIntoViewIfNeeded();
+    await ctx.screenshot('swell-map-log-no-photo');
     await page.locator('#decMonth').scrollIntoViewIfNeeded();
     await ctx.screenshot('swell-map-photos-standalone');
 

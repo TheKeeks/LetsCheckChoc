@@ -1,4 +1,4 @@
-// The Swell Map tab: the research page (research/) opens in a frame on first
+// The Sound Check tab (formerly Swell Map): the research page (research/) opens in a frame on first
 // click only (it is large: sea-floor tiles and forecast fields), its map boots
 // on the forecast with no errors, and the four tabs fit a 375 px phone.
 'use strict';
@@ -19,6 +19,7 @@ module.exports = {
     assert.ok(bar.sw <= bar.cw + 1, `tab bar overflows (${bar.sw} > ${bar.cw})`);
     assert.ok(bar.page <= bar.vw, `page wider than the screen (${bar.page} > ${bar.vw})`);
 
+    assert.equal((await page.textContent('#tab-btn-research')).trim(), 'Sound Check', 'tab named after the page');
     await page.click('#tab-btn-research');
     assert.ok(await page.isVisible('#view-research'), 'Swell Map view shown');
     assert.ok(!(await page.isVisible('#view-forecast')), 'forecast view hidden');
