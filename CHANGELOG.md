@@ -2,7 +2,7 @@
 
 ## [Unreleased] — Swell Map: plainer titles
 
-The Swell Map page no longer opens with "When is it big at Choc?" in large type. It starts with the small "Chocomount research · Block Island buoy 44097 · 2016 – 2026" line and a one-sentence description of what it is. The heading is still there for screen readers, and the browser tab reads "Chocomount research". Section titles are drier:
+The Swell Map page no longer opens with "When is it big at Choc?" in large type. It is now titled **Sound Check** (a nod to Long Island Sound and to LetsCheckChoc), at a modest size, above the small "Chocomount research · Block Island buoy 44097 · 2016 – 2026" line and a one-sentence description of what it is. The browser tab reads "Sound Check · Chocomount research". Section titles are drier:
 
 | Before | After |
 |---|---|
