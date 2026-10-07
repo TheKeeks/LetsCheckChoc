@@ -2185,6 +2185,17 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   }
   const MAPMIN = 3;                                          // km across: the forecast grid and survey tiles hold no more detail than this
   const panMode = () => S.phase === 'setup' || MAPV();
+  // iPhone and iPad Safari ignore CSS touch-action: none, so a pinch on the map zoomed the whole page (a
+  // blurry, uniform close-up of the ocean) and a double-tap did the same. Block the browser's own pinch and
+  // double-tap zoom over the maps; the map's pointer handlers still get every touch.
+  function noPageZoom(el, always) {
+    if (!el) return; let lastEnd = 0;
+    const onMap = (e) => e.target && e.target.tagName === 'CANVAS';   // the map itself, not the panels and buttons over it
+    el.addEventListener('touchmove', (e) => { if (e.touches.length > 1 || (onMap(e) && always())) e.preventDefault(); }, { passive: false });
+    el.addEventListener('touchend', (e) => { if (!onMap(e)) return; const t = e.timeStamp; if (t - lastEnd < 350 && e.changedTouches.length === 1) e.preventDefault(); lastEnd = t; }, { passive: false });
+    for (const g of ['gesturestart', 'gesturechange', 'gestureend']) el.addEventListener(g, (e) => e.preventDefault(), { passive: false });
+  }
+  noPageZoom(stage, panMode);
   cv.addEventListener('pointerdown', (e) => {
     if (!panMode()) return;
     cv.setPointerCapture(e.pointerId); const [px, py] = localXY(e); ptrs.set(e.pointerId, [px, py]);
@@ -3560,6 +3571,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     // like a map: one finger (or mouse) drags the sea floor; two fingers pinch to zoom, twist to turn and slide
     // up or down to tilt (mouse: right- or shift-drag turns and tilts); double-tap zooms in on the spot tapped
     const cv3 = $('w3Cv'), tp = new Map(); let g0 = null, lastTap = null, moved = 0;
+    noPageZoom(cv3, () => true);
     const rect = () => cv3.getBoundingClientRect();
     const manual = () => { W3.follow = false; $('w3Follow').setAttribute('aria-pressed', 'false'); };
     const pan = (dx, dy) => { const v = W3.view, k = v.dist / rect().height * 1.1; v.tx -= (dx * Math.cos(v.az) + dy * Math.sin(v.az)) * k; v.tz -= (-dx * Math.sin(v.az) + dy * Math.cos(v.az)) * k; };
