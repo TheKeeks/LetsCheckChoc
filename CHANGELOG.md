@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased] — Swell Map: map-style 3D controls, double-tap zoom, easier exploring around Fishers
+
+The 3D view now handles like a map. One finger (or the mouse) drags the sea floor, and two fingers pinch to zoom, twist to turn and slide up or down to tilt (on a computer, right- or shift-drag turns and tilts). A double-tap zooms in on the spot you tapped, and a new **Fishers** button jumps to a close view of the west end of the island. The vertical stretch now eases off as you zoom in, from 70 times from afar to about 9 times over the reef, so the bottom keeps its real shape up close instead of turning into cliffs. The sea floor is colored by depth (sand, teal, blue, navy) so shoals and channels stand out. On the flat map, a double-tap also zooms in where you tap.
+
+This also fixes a race where opening 3D could build the scene twice at once. That doubled the start-up work, and the second build could reset the camera after you had moved it.
+
+Verified by `w6-swell-map-3d.js` (Fishers button, double-tap zoom, drag, eased stretch) and `w6-swell-map-zoom.js` (double-tap on the flat map), plus the full unit, e2e and Python suites.
+
+## [Unreleased] — Swell Map: tapping a dot shows that dot's swell
+
+Since the dots began checking every swell train, a dot can stand for a smaller swell aimed at Choc that sits under a bigger sea from another direction. Tapping it showed the bigger sea's numbers instead, for example "3.6 ft at 5 s from NNW" on a dot for a 7 s swell from the southeast, which read like a north swell reaching Choc. The card now shows the dot's own swell (height, period, direction, and when its ray reaches the spot). Where a bigger sea from another direction is also there, a second line says so ("One of the swells here; the biggest sea is …"). A picked dot also clears when you move to another hour.
+
+Verified by `w6-swell-map-cutaway.js`, which finds an hour with a dot under a different sea, taps it and checks the card. The full unit, e2e and Python suites pass.
+
 ## [Unreleased] — Swell Map 3D: the front reaches the sea floor, sharper bottom around Fishers
 
 In the 3D view, each part of the wave front is now a curtain from the sea floor up to the wave's crest. The pale part is the water column under that part of the front, and the colored top is the wave itself, so you can see how deep the water is under every part of it as it crosses shoals and holes. Water and wave share one vertical scale: depths stretched 70 times (squeezed below 60 m so the deep ocean doesn't swallow the view), the wave 4 times more than that.

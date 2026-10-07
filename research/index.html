@@ -389,9 +389,9 @@ body { margin: 0; }
     <div id="w3Box" class="w3" hidden>
       <canvas id="w3Cv" aria-label="3D view: the whole wave front crossing the sea floor"></canvas>
       <p id="w3Note" class="w3-note"></p>
-      <div class="w3-bar"><button type="button" id="w3Play" class="hub-go">Pause</button><input type="range" id="w3Time" min="0" max="100" value="0" aria-label="Time since the wave left"><button type="button" id="w3Follow" aria-pressed="true">Follow</button><button type="button" id="w3Reset">Reset</button></div>
+      <div class="w3-bar"><button type="button" id="w3Play" class="hub-go">Pause</button><input type="range" id="w3Time" min="0" max="100" value="0" aria-label="Time since the wave left"><button type="button" id="w3Follow" aria-pressed="true">Follow</button><button type="button" id="w3Fishers">Fishers</button><button type="button" id="w3Reset">Reset</button></div>
       <p id="w3Read" class="w3-read mono"></p>
-      <p class="w3-help">Drag to turn, pinch or scroll to zoom, two fingers (or shift-drag) to move; Follow keeps the wave in view. The band is your wave's front, 30 km wide: the colored top is the wave, as tall as it is there (color is height, white where it's breaking), and the pale curtain under it is the water column down to the sea floor beneath that part of the front. Depths are stretched 70 times (deeper than 60 m squeezed), the wave 4 times more than that. Faint lines are where each part of it went. Around Fishers and the Race the sea floor is drawn from the 16 m survey.</p>
+      <p class="w3-help">Drag to move, pinch to zoom, twist with two fingers to turn and slide them up or down to tilt; double-tap to zoom in on a spot. Fishers jumps to the west end of the island; Follow keeps the wave in view. The band is your wave's front, 30 km wide: the colored top is the wave, as tall as it is there (color is height, white where it's breaking), and the pale curtain under it is the water column down to the sea floor beneath that part of the front. Depths are stretched 70 times from afar (deeper than 60 m squeezed), easing to about 9 times as you zoom in close; the wave is stretched 4 times more than the depths. Faint lines are where each part of it went. Around Fishers and the Race the sea floor is drawn from the 16 m survey.</p>
     </div>
     <figcaption id="cutCap"></figcaption>
   </figure>
@@ -2199,7 +2199,11 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     }
     if (drag && drag.kind === 'pan' && ptrs.size === 0 && MAPV()) {
       const [px, py] = localXY(e);
-      if (Math.hypot(px - drag.sx, py - drag.sy) < 6 && performance.now() - drag.t < 500) fcTap(px, py);
+      if (Math.hypot(px - drag.sx, py - drag.sy) < 6 && performance.now() - drag.t < 500) {
+        const now = performance.now(), lt = S.lastTap;
+        if (lt && now - lt.t < 350 && Math.hypot(px - lt.x, py - lt.y) < 30) { S.lastTap = null; FC.pick = null; FC.fan = null; FC.dot = null; zoomAt(px, py, 0.4); }   // double-tap: zoom in there
+        else { S.lastTap = { t: now, x: px, y: py }; fcTap(px, py); }
+      }
     }
     if (ptrs.size === 0) drag = null;
   };
@@ -2395,7 +2399,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   const ecRow = (i) => (FC.ecIx[i] == null ? null : FC.d.ec[FC.ecIx[i]]);
   const spotFt = (model, i, spot) => (model === 'gfs' ? FC.d.gfs[i][spot || FC.spot] : (ecRow(i) || {})[spot || FC.spot]);
   async function setWeek(i) {
-    if (FC.i !== i) FC.fan = null;
+    if (FC.i !== i) { FC.fan = null; FC.dot = null; }        // a new hour: the dot picked belongs to the old one
     FC.i = i; const my = i, g = FC.d.gfs[i], e = ecRow(i);
     if (S.phase === 'week') weekHud();                       // the headline needs only the forecast numbers, not the rays still loading
     const tr = FC.model === 'gfs' ? g.trains.filter((t) => t.T >= 5).map((t) => ({ ft: t.ft, T: t.T, D: t.D })) : e ? [{ ft: e.hs, T: e.T, D: e.D }] : [];
@@ -2443,6 +2447,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = fa; ctx.drawImage(layer, 0, 0); ctx.restore();
   }
   function pill(x, y, lines, anchor) {                       // a small dark callout; anchor 'l' = box to the right of x
+    FC.pillLines = lines;
     ctx.font = '600 12px "Instrument Sans", system-ui, sans-serif';
     const w = Math.max(...lines.map((s) => ctx.measureText(s).width)) + 16, h = 8 + 16 * lines.length;
     let bx = anchor === 'l' ? x + 10 : x - w / 2, by = y - h - 10;
@@ -2533,13 +2538,16 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     }
     if (FC.pick && PAST) pastPick(X, Y);
     else if (FC.pick) {
-      const [lon, lat] = FC.pick, s = row == null ? null : fcAt(lon, lat, FC.model, row), x = X(lon), y = Y(lon, lat);
+      const [lon, lat] = FC.pick, all = row == null ? null : fcAt(lon, lat, FC.model, row), x = X(lon), y = Y(lon, lat);
+      // a dot is one swell train aimed at the spot, often not the biggest one there: show that train
+      const s = FC.dot ? [FC.dot.h, FC.dot.T, FC.dot.D] : all;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 3, 0, 7); ctx.fill();
       if (!s) pill(x, y, ['No ' + MNAME[FC.model] + ' data here']);
       else {
         const sp = FC.spot, tgt = SPOT[sp].pt, nm = SPOT[sp].name;
         const toC = gcBrg([lon, lat], tgt), off = Math.abs((((s[2] + 180) % 360) - toC + 540) % 360 - 180), km = gcKm([lon, lat], tgt);
         const lines = [`${(s[0] * FTm).toFixed(1)} ft · ${Math.round(s[1])} s from ${compass(s[2])}`];
+        if (FC.dot && all && (Math.abs(((all[2] - s[2]) + 540) % 360 - 180) > 20 || Math.abs(all[1] - s[1]) > 1.5)) lines.push(`One of the swells here; the biggest sea is ${(all[0] * FTm).toFixed(1)} ft, ${Math.round(all[1])} s from ${compass(all[2])}`);
         if (FC.fan) {                                   // the traced rays: where they land, and when
           const F = FC.fan, m = F.rays.find((r) => r.off === 0);
           if (F.searching) lines.push(`Tracing the ray into ${nm}…`);
@@ -2681,7 +2689,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const at = atFn(), here = !same && at ? at(ll[0], ll[1]) : null; FC.pick = here ? ll : null;
     // any tap on the water traces that spot's swell in, not just the dots
     const sw = dot || (S.phase === 'week' && Array.isArray(here) && here[1] >= 5 ? { lon: ll[0], lat: ll[1], h: here[0], T: here[1], D: here[2] } : null);
-    FC.fan = FC.pick && sw ? dotRays(sw) : null; draw();
+    FC.fan = FC.pick && sw ? dotRays(sw) : null; FC.dot = FC.pick && dot ? dot : null; draw();
   }
   // the swell at a dot, traced in: 21 rays across +-10 deg of its travel direction, 1 deg apart (real swell
   // spreads), straight on great circles over the deep ocean, then over the sea floor with the same tracer as
@@ -2732,7 +2740,8 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const was = S.phase, wasMap = was === 'week' || was === 'past';
     for (const b of document.querySelectorAll('#tripModeSeg button')) b.setAttribute('aria-pressed', String(b.dataset.v === m));
     for (const el of stage.querySelectorAll('[data-mode]')) el.hidden = !el.dataset.mode.split(' ').includes(m);
-    fcStop(); pastStop(); FC.pick = null; FC.fan = null; FC.cur = []; botSize();
+    fcStop(); pastStop(); FC.pick = null; FC.fan = null; FC.dot = null; FC.cur = []; botSize();
+    if ((m === 'week' || m === 'past') && $('cutBox')) $('cutBox').hidden = true;   // the wave panel belongs to Drop a wave: hide it straight away
     if (m === 'week' || m === 'past') {
       if (!wasMap) { S.dcam = S.cam; S.playing = false; }
       S.phase = m; $('tripInsetBox').hidden = true; $('tripPow').hidden = true;
@@ -3342,6 +3351,13 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const d = depthAt(lon, lat), dep = d == null ? 0 : d, inW = GR.w && inWorld(lat, lon, 0);
     return [dep, inW ? !wetW(...worldXY(lon, lat)) : dep <= 0.3];
   }
+  // sea floor color by depth: sand in the shallows, through teal and blue, to navy offshore
+  const FLOOR = [[0, [0.80, 0.74, 0.58]], [3, [0.55, 0.72, 0.68]], [8, [0.35, 0.60, 0.68]], [20, [0.24, 0.45, 0.62]], [45, [0.18, 0.32, 0.52]], [150, [0.12, 0.20, 0.38]], [3000, [0.07, 0.11, 0.24]]];
+  function floorCol(d) {
+    let k = 0; while (k < FLOOR.length - 2 && d > FLOOR[k + 1][0]) k++;
+    const [d0, c0] = FLOOR[k], [d1, c1] = FLOOR[k + 1], f = Math.max(0, Math.min(1, (d - d0) / (d1 - d0)));
+    return c0.map((v, i) => v + (c1[i] - v) * f);
+  }
   function w3Terrain(T3, box, n, inner) {
     const [x0, x1, z0, z1] = box, nx = n, nz = Math.max(8, Math.round(n * (z1 - z0) / (x1 - x0))), g = new T3.PlaneGeometry(x1 - x0, z1 - z0, nx - 1, nz - 1);
     g.rotateX(-Math.PI / 2); g.translate((x0 + x1) / 2, 0, (z0 + z1) / 2);
@@ -3350,13 +3366,17 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       const x = pos.getX(i), z = pos.getZ(i), lon = lon0 + x / KX, lat = lat0 - z / KY, [dep, land] = depth3(lon, lat);
       const hole = inner && inner.some((q) => x > q[0] && x < q[1] && z > q[2] && z < q[3]);   // a sharper patch covers this: sink it out of the way
       pos.setY(i, (land ? 0.12 : vz(dep)) - (hole ? 0.3 : 0));
-      const c = land ? [0.42, 0.39, 0.33] : [0.25 + 0.45 * Math.exp(-dep / 12), 0.33 + 0.33 * Math.exp(-dep / 12), 0.42 + 0.12 * Math.exp(-dep / 30)];
+      const c = land ? [0.42, 0.39, 0.33] : floorCol(dep);
       col[3 * i] = c[0]; col[3 * i + 1] = c[1]; col[3 * i + 2] = c[2];
     }
     g.setAttribute('color', new T3.BufferAttribute(col, 3)); g.computeVertexNormals();
     return new T3.Mesh(g, new T3.MeshLambertMaterial({ vertexColors: true }));
   }
-  async function w3Build() {
+  function w3Build() {                                       // one build at a time (the panel and the watcher can both ask)
+    if (!W3.building) W3.building = w3BuildNow().finally(() => { W3.building = null; });
+    return W3.building;
+  }
+  async function w3BuildNow() {
     const r = S.ray; if (!r) return;
     const key = [r.start, r.th, r.T].join(); if (W3.built === key && W3.scene) return;
     $('w3Note').textContent = 'Loading 3D…';
@@ -3370,8 +3390,9 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const cv3 = $('w3Cv'), w = cv3.clientWidth, h = cv3.clientHeight;
     if (!W3.rd) { W3.rd = new T3.WebGLRenderer({ canvas: cv3, antialias: true }); W3.rd.setPixelRatio(dpr); }
     W3.rd.setSize(w, h, false);
-    const sc = new T3.Scene(); sc.background = new T3.Color(0x0b1622);
-    sc.add(new T3.HemisphereLight(0xcfe3f5, 0x2a2018, 0.85)); const sun = new T3.DirectionalLight(0xffffff, 0.6); sun.position.set(-1, 2, 1.2); sc.add(sun);
+    const sc0 = new T3.Scene(); sc0.background = new T3.Color(0x0b1622);
+    const sc = new T3.Group(); sc0.add(sc); W3.root = sc;   // everything that gets the vertical stretch
+    sc0.add(new T3.HemisphereLight(0xcfe3f5, 0x2a2018, 0.85)); const sun = new T3.DirectionalLight(0xffffff, 0.6); sun.position.set(-1, 2, 1.2); sc0.add(sun);
     // sea floor: the whole box, plus a sharper patch where the rays meet the shallows (the last 35 km)
     let fx0 = 1e9, fx1 = -1e9, fz0 = 1e9, fz1 = -1e9;
     for (const q of F.rays) for (let i = 0; i < q.x.length; i++) if (q.h[i] < 40) { fx0 = Math.min(fx0, q.x[i]); fx1 = Math.max(fx1, q.x[i]); fz0 = Math.min(fz0, q.z[i]); fz1 = Math.max(fz1, q.z[i]); }
@@ -3386,9 +3407,10 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       if (fb[1] - fb[0] > 1 && fb[3] - fb[2] > 1) fine = fb;
     }
     const shrink = (q) => [q[0] + 0.3, q[1] - 0.3, q[2] + 0.3, q[3] - 0.3];
-    sc.add(w3Terrain(T3, [x0, x1, z0, z1], 220, [inner, fine].filter(Boolean).map(shrink)));
-    if (inner) sc.add(w3Terrain(T3, inner, 320, fine ? [shrink(fine)] : null));
-    if (fine) sc.add(w3Terrain(T3, fine, Math.min(600, Math.round((fine[1] - fine[0]) / 0.03)), null));   // about 30-40 m between points
+    W3.ground = [w3Terrain(T3, [x0, x1, z0, z1], 220, [inner, fine].filter(Boolean).map(shrink))];
+    if (inner) W3.ground.push(w3Terrain(T3, inner, 320, fine ? [shrink(fine)] : null));
+    if (fine) W3.ground.push(w3Terrain(T3, fine, Math.min(600, Math.round((fine[1] - fine[0]) / 0.03)), null));   // about 30-40 m between points
+    for (const g of W3.ground) sc.add(g);
     const water = new T3.Mesh(new T3.PlaneGeometry(x1 - x0, z1 - z0), new T3.MeshBasicMaterial({ color: 0x3a7cb8, transparent: true, opacity: 0.22, depthWrite: false }));
     water.rotateX(-Math.PI / 2); water.position.set((x0 + x1) / 2, 0.02, (z0 + z1) / 2); sc.add(water);
     // the rays' tracks on the water, faint: where each bit of the front went
@@ -3409,7 +3431,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const cam = new T3.PerspectiveCamera(45, w / h, 0.05, 5000);
     const size = Math.max(x1 - x0, z1 - z0);
     W3.view = { az: -0.5 + (r.th * D2R), el: 0.6, dist: size * 0.9, tx: (x0 + x1) / 2, tz: (z0 + z1) / 2 };
-    W3.scene = sc; W3.cam = cam; W3.size = size; W3.box = [x0, x1, z0, z1];
+    W3.scene = sc0; W3.cam = cam; W3.size = size; W3.box = [x0, x1, z0, z1];
     W3.WZ = VZA * WAVEX;                                     // km of band per meter of wave
     $('w3Time').max = String(Math.round(F.tmax));
     $('w3Note').textContent = '';
@@ -3477,6 +3499,8 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       if (Math.abs(dd) > 0.02 * v.dist) v.dist += dd * 0.03;
     }
     W3.last = ts || 0;
+    // the vertical stretch eases off as you zoom in: 70x from afar, down to about 9x right over the reef
+    const vs = Math.max(0.13, Math.min(1, W3.view.dist / 40)); if (W3.root.scale.y !== vs) W3.root.scale.y = vs;
     const key = [W3.t, W3.view.az, W3.view.el, W3.view.dist, W3.view.tx, W3.view.tz, W3.rd.domElement.width, W3.rd.domElement.height].join();
     if (key !== W3.drawn) { W3.drawn = key; w3Frame(); w3Place(); W3.rd.render(W3.scene, W3.cam); }   // paused and still: nothing to draw
     requestAnimationFrame(w3Loop);
@@ -3492,29 +3516,59 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     $('w3Time').addEventListener('input', () => { W3.t = +$('w3Time').value; W3.play = false; $('w3Play').textContent = 'Play'; });
     $('w3Reset').addEventListener('click', () => { W3.built = ''; W3.scene = null; W3.follow = true; $('w3Follow').setAttribute('aria-pressed', 'true'); w3Show(true); });
     $('w3Follow').addEventListener('click', () => { W3.follow = !W3.follow; $('w3Follow').setAttribute('aria-pressed', String(W3.follow)); });
-    // drag to turn, two fingers (or shift-drag) to move, pinch or wheel to zoom
-    const cv3 = $('w3Cv'), tp = new Map(); let g0 = null;
+    // like a map: one finger (or mouse) drags the sea floor; two fingers pinch to zoom, twist to turn and slide
+    // up or down to tilt (mouse: right- or shift-drag turns and tilts); double-tap zooms in on the spot tapped
+    const cv3 = $('w3Cv'), tp = new Map(); let g0 = null, lastTap = null, moved = 0;
     const rect = () => cv3.getBoundingClientRect();
-    cv3.addEventListener('pointerdown', (e) => { cv3.setPointerCapture(e.pointerId); tp.set(e.pointerId, [e.clientX, e.clientY]); g0 = null; });
+    const manual = () => { W3.follow = false; $('w3Follow').setAttribute('aria-pressed', 'false'); };
+    const pan = (dx, dy) => { const v = W3.view, k = v.dist / rect().height * 1.1; v.tx -= (dx * Math.cos(v.az) + dy * Math.sin(v.az)) * k; v.tz -= (-dx * Math.sin(v.az) + dy * Math.cos(v.az)) * k; };
+    const turn = (dx, dy) => { const v = W3.view; v.az -= dx * 0.006; v.el = Math.max(0.08, Math.min(1.45, v.el + dy * 0.005)); };
+    function zoomTo(cx, cy, f) {                             // zoom toward the sea floor under a screen point
+      const v = W3.view, b = rect(), T3 = window.THREE; let hit = null;
+      if (T3 && W3.cam) {
+        const rc = new T3.Raycaster(); rc.setFromCamera({ x: (cx - b.left) / b.width * 2 - 1, y: -((cy - b.top) / b.height * 2 - 1) }, W3.cam);
+        const h = rc.intersectObjects(W3.ground || [], false)[0]; if (h) hit = h.point;
+      }
+      if (hit) { v.tx += (hit.x - v.tx) * (1 - f); v.tz += (hit.z - v.tz) * (1 - f); }
+      v.dist = Math.max(0.4, Math.min(W3.size * 3, v.dist * f));
+    }
+    cv3.addEventListener('contextmenu', (e) => e.preventDefault());
+    cv3.addEventListener('pointerdown', (e) => { cv3.setPointerCapture(e.pointerId); tp.set(e.pointerId, [e.clientX, e.clientY, e.button]); g0 = null; moved = 0; });
     cv3.addEventListener('pointermove', (e) => {
-      if (!tp.has(e.pointerId) || !W3.scene) return; const [px, py] = tp.get(e.pointerId); tp.set(e.pointerId, [e.clientX, e.clientY]);
-      const v = W3.view, dx = e.clientX - px, dy = e.clientY - py;
-      if (tp.size === 1 && !e.shiftKey) { v.az -= dx * 0.006; v.el = Math.max(0.08, Math.min(1.45, v.el + dy * 0.005)); }
-      else if (tp.size === 1) { W3.follow = false; $('w3Follow').setAttribute('aria-pressed', 'false'); const k = v.dist / rect().height; v.tx -= (dx * Math.cos(v.az) + dy * Math.sin(v.az)) * k; v.tz -= (-dx * Math.sin(v.az) + dy * Math.cos(v.az)) * k; }
-      else if (tp.size === 2) {
-        const [a, b] = [...tp.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-        if (g0) { W3.follow = false; $('w3Follow').setAttribute('aria-pressed', 'false'); v.dist = Math.max(0.5, Math.min(W3.size * 3, v.dist * g0.d / Math.max(10, d))); const mx = (mid[0] - g0.m[0]) / 2, my = (mid[1] - g0.m[1]) / 2, k = v.dist / rect().height; v.tx -= (mx * Math.cos(v.az) + my * Math.sin(v.az)) * k; v.tz -= (-mx * Math.sin(v.az) + my * Math.cos(v.az)) * k; }
-        g0 = { d, m: mid };
+      if (!tp.has(e.pointerId) || !W3.scene) return; const [px, py, btn] = tp.get(e.pointerId); tp.set(e.pointerId, [e.clientX, e.clientY, btn]);
+      const dx = e.clientX - px, dy = e.clientY - py; moved += Math.abs(dx) + Math.abs(dy);
+      if (tp.size === 1) { if (btn === 2 || e.shiftKey) turn(dx, dy); else { manual(); pan(dx, dy); } return; }
+      if (tp.size === 2) {
+        const [a, b] = [...tp.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), ang = Math.atan2(b[1] - a[1], b[0] - a[0]), my = (a[1] + b[1]) / 2, mx = (a[0] + b[0]) / 2;
+        if (g0) {
+          manual(); const v = W3.view;
+          v.dist = Math.max(0.4, Math.min(W3.size * 3, v.dist * g0.d / Math.max(10, d)));
+          v.az -= ((ang - g0.ang + Math.PI * 3) % (Math.PI * 2) - Math.PI);                 // twist turns
+          v.el = Math.max(0.08, Math.min(1.45, v.el + (my - g0.my) * 0.006));                // slide up/down tilts
+        }
+        g0 = { d, ang, my, mx };
       }
     });
-    const up = (e) => { tp.delete(e.pointerId); g0 = null; };
+    const up = (e) => {
+      if (tp.size === 1 && tp.has(e.pointerId) && moved < 8) {                             // a tap: double-tap zooms in
+        const now = performance.now();
+        if (lastTap && now - lastTap.t < 350 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) { manual(); zoomTo(e.clientX, e.clientY, 0.4); lastTap = null; }
+        else lastTap = { t: now, x: e.clientX, y: e.clientY };
+      }
+      tp.delete(e.pointerId); g0 = null;
+    };
     cv3.addEventListener('pointerup', up); cv3.addEventListener('pointercancel', up);
-    cv3.addEventListener('wheel', (e) => { if (!W3.scene) return; e.preventDefault(); W3.view.dist = Math.max(0.5, Math.min(W3.size * 3, W3.view.dist * Math.exp(e.deltaY * 0.0015))); }, { passive: false });
+    $('w3Fishers').addEventListener('click', () => {      // close in on the west end of Fishers: Choc, Wilderness, the Race
+      if (!W3.scene || !S.ray) return; manual(); const v = W3.view, r = S.ray;
+      v.tx = (-71.985 - r.start[0]) * KX; v.tz = -(41.262 - r.start[1]) * KY; v.dist = 6; v.el = 0.55; v.az = 0.15;                // from the south, looking at the reef
+    });
+    cv3.addEventListener('wheel', (e) => { if (!W3.scene) return; e.preventDefault(); manual(); zoomTo(e.clientX, e.clientY, Math.exp(e.deltaY * 0.0015)); }, { passive: false });
     new ResizeObserver(() => { if (W3.rd && W3.cam) { const w = cv3.clientWidth, h = cv3.clientHeight; W3.rd.setSize(w, h, false); W3.cam.aspect = w / h; W3.cam.updateProjectionMatrix(); } }).observe(cv3);
     setInterval(() => { if (W3.on && S.ray && W3.built !== [S.ray.start, S.ray.th, S.ray.T].join() && !W3.busy) { W3.busy = true; W3.scene = null; w3Build().catch(() => { $('w3Note').textContent = 'This browser can\u2019t show the 3D view.'; }).finally(() => { W3.busy = false; }); } if (W3.on && (MAPV() || !S.ray)) W3.on = false; else if (!W3.on && !MAPV() && S.ray && !$('w3Box').hidden) w3Show(true); }, 800);
   }
 
-  window.CHOC.trip = { w3: W3, _raw: (T, lon, lat, th) => trace(T, lon, lat, th, false), state: S, aim: doAim, play, _miss: (T, lon, lat, th, spot) => miss(trace(T, lon, lat, th, false), spot), _aim: (spot, T, s) => aim(spot, T, s), trace: (T, lon, lat, th) => makeRay(T, [lon, lat], th),
+  window.CHOC.trip = { w3: W3, _aimed: () => (FC.d && fRow() != null ? fcAimed(FC.model, fRow(), FC.spot) : []), _at: (lon, lat) => fcAt(lon, lat, FC.model, fRow()),
+    _week: (i) => setWeek(i), _tapAt: (lon, lat) => { const { sc, x0, y0 } = proj(cam()); fcTap((lon * KX - x0) * sc, (-lat * KY - y0) * sc); }, _raw: (T, lon, lat, th) => trace(T, lon, lat, th, false), state: S, aim: doAim, play, _miss: (T, lon, lat, th, spot) => miss(trace(T, lon, lat, th, false), spot), _aim: (spot, T, s) => aim(spot, T, s), trace: (T, lon, lat, th) => makeRay(T, [lon, lat], th),
     skip: () => { if (S.ray) { S.dist = S.ray.len; S.phase = 'done'; S.playing = false; draw(); finish(); } }, setMode, fc: FC,
     _screen: (lon, lat) => { const { sc, x0, y0 } = proj(cam()); return [(lon * KX - x0) * sc, (-lat * KY - y0) * sc]; } };
 

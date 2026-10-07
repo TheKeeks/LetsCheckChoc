@@ -19,6 +19,26 @@ module.exports = {
     const sw = await page.evaluate(() => { const px = window.CHOC.trip.fc.px, g = window.CHOC.trip.fc.d.grids.reg; return { w: px.gfs_reg_sw.w, cells: g.lat[3] * g.lon[3] }; });
     assert.equal(sw.w, sw.cells * 3, 'three swell trains per cell');
 
+    // Tapping a dot shows that dot's own swell train, even where a bigger sea from another direction sits on top
+    // (it used to show the biggest sea, e.g. a 5 s NNW wind sea on a dot for a 7 s SE swell).
+    await page.click('#fcZoom button[data-v="reg"]');
+    const pick = await page.evaluate(async () => {
+      const t = window.CHOC.trip, n = t.fc.d.gfs.length, ang = (a, b) => Math.abs(((a - b) + 540) % 360 - 180);
+      for (let i = 0; i < n; i++) {
+        await t._week(i);
+        for (const c of t._aimed()) { const a = t._at(c.lon, c.lat); if (a && ang(a[2], c.D) > 40) return { i, lon: c.lon, lat: c.lat, h: c.h, T: c.T, D: c.D, sea: a }; }
+      }
+      return null;
+    });
+    if (pick) {
+      await page.evaluate((q) => window.CHOC.trip._tapAt(q.lon, q.lat), pick);
+      await page.waitForTimeout(300);
+      const lines = await page.evaluate(() => window.CHOC.trip.fc.pillLines);
+      log(`dot ${(pick.h * 3.28084).toFixed(1)} ft ${Math.round(pick.T)} s from ${Math.round(pick.D)}°, sea ${Math.round(pick.sea[2])}°: ${lines.join(' | ')}`);
+      assert.ok(lines[0].startsWith(`${(pick.h * 3.28084).toFixed(1)} ft · ${Math.round(pick.T)} s from`), 'card shows the dot\'s own swell');
+      assert.ok(lines.some((l) => /^One of the swells here/.test(l)), 'card notes the bigger sea there');
+    } else log('no hour with a dot under a different sea in this forecast');
+
     // No cutaway on the forecast.
     assert.ok(await page.evaluate(() => document.getElementById('cutBox').hidden), 'cutaway hidden on the forecast');
 
