@@ -4,6 +4,8 @@
 
 On an iPhone (Safari, and Chrome too, since every iPhone browser runs on Safari's engine), pinching the Swell Map's map zoomed the whole web page instead of the map. You saw a blurry, uniform dark-blue close-up of the ocean. A double-tap did the same. The map relied on the CSS `touch-action: none` setting to keep gestures for itself, and iPhone browsers ignore it; desktop browsers don't, which is why it never showed on a computer. The map and the 3D view now cancel the browser's own pinch (two-finger touch moves and Safari's gesture events) and double-tap zoom, only over the map itself. The layers panel, timeline and buttons on top still scroll and tap normally.
 
+The 3D view's help line now starts with the mouse controls: left-click and drag to pan, right-click and drag to rotate and tilt, scroll to zoom.
+
 Verified by a new e2e scenario, `w6-swell-map-iphone.js`, on a 390 px phone. It checks that a two-finger move, Safari's gesture event and a double-tap over the map are cancelled, and that a drag or quick taps on a panel button are not. It fails on the previous page and passes now. The full unit, e2e and Python suites pass. It can't be run in real iPhone Safari here, so please confirm on the phone.
 
 ## [Unreleased] — Swell Map: zooming in no longer turns the map dark
