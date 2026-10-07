@@ -120,6 +120,7 @@
       <button class="tab-btn active" data-tab="forecast" id="tab-btn-forecast">Forecast</button>
       <button class="tab-btn" data-tab="regression" id="tab-btn-regression">Regression</button>
       <button class="tab-btn" data-tab="surflog" id="tab-btn-surflog">Surf Log</button>
+      <button class="tab-btn" data-tab="research" id="tab-btn-research">Swell Map</button>
     </nav>
 
     <!-- ═══ TAB 1 — CURRENT CONDITIONS & FORECAST ═══ -->
@@ -594,6 +595,13 @@
       </section>
 
     </div><!-- end #view-surflog -->
+
+    <!-- ═══ TAB 4 — SWELL MAP (research/: the forecast, past-day and wave-trip map
+         plus the ten-year analysis). Its own page in a frame, loaded on first open. ═══ -->
+    <div id="view-research" style="display:none;">
+      <iframe id="research-frame" class="research-frame" title="Swell map and ten-year research" data-src="research/index.html" loading="lazy"></iframe>
+      <p class="research-open"><a href="research/index.html" target="_blank" rel="noopener">Open the swell map on its own page</a></p>
+    </div><!-- end #view-research -->
 
     <!-- ═══ MATCH DETAIL MODAL (photo viewer only) ═══ -->
     <div id="match-modal" class="modal-overlay" style="display:none;">
