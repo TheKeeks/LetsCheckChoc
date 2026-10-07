@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — Swell Map: forecast read at the buoy, the whole Atlantic in the past, wind arrows
+
+The Swell Map's Choc and Wilderness forecasts now read each model's swell at buoy 44097, off Block Island, the same point the ten-year history reads. They used to read it along the edge of the sea-floor survey map. Both are then run through the same ray model. A test on 177 past hours in 2021–25, using archived GFS-Wave runs, compared the two against what then arrived. Reading at the buoy came closer at every lead: a typical miss of 0.20 ft against 0.30 ft a day ahead, and it no longer runs a tenth of a foot high. Both rank the crew's 28 logged sessions about equally. The scorecard under the forecast was re-run the same way. The forecast snapshot in `research/fc/` is also fresh (GFS-Wave 7 Oct 2am run).
+
+The map is easier to read. Near Fishers, the rays show only the spot you picked, and each fades in from open water, so they no longer start on an unexplained line. A small diamond marks buoy 44097. Tapping any patch of water in the forecast traces that swell in, the same way the "headed our way" dots do, and says where it lands. This replaces the old "map edge model covers this" note. The moving streaks stay on when you zoom in to Fishers instead of fading out.
+
+The Past view now has wave data for the whole North Atlantic: every 2° and every 6 hours from the Copernicus reanalysis, under the existing detailed box from New Jersey to Georges Bank. Past and Forecast share the same Ocean, Region and Fishers views. Everywhere wind appears as text (map headline, day card, forecast table, tooltips), a small arrow points where the wind is blowing to. This adds about 38 MB to `research/`.
+
+Verified by a new e2e scenario, `w6-swell-map-explore.js`. It checks the wind arrow's direction and size, streaks at Fishers zoom, a fan of rays from a tap on open water, Past wave data mid-Atlantic, and the day card's arrows. It fails on the previous page and passes now. The full unit, e2e and Python suites pass.
+
 ## [Unreleased] — Swell Map: zooming in close and leaving Drop a wave no longer glitch
 
 Two glitches on the Swell Map tab. First, pinching far in on the Forecast or Past map went down to about half a kilometer across. The forecast grid and sea-floor survey have no detail at that scale, and the iPad had to stretch whole-ocean images to millions of pixels, so the map went blank or stuttered. Second, opening Drop a wave starts its demo wave after a few seconds. If you switched back to Forecast or Past before it started, the wave played on top of that map anyway, and the headline showed the wave's depth and speed instead of the forecast.

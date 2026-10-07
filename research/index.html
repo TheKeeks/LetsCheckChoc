@@ -242,6 +242,7 @@ html.hub-lock, html.hub-lock body { overflow: hidden; }
 .dec-day b { color: var(--fg); font-weight: 600; }
 .dec-day .ok { color: var(--offshore); }
 .dec-w { font-size: .82rem; }
+svg.warr, .chart svg.warr, .dec-heat svg.warr, .od-lanes svg.warr { display: inline-block; overflow: visible; width: .9em; height: .9em; vertical-align: -.1em; margin: 0 .2em 0 .1em; }
 .dec-go { justify-self: start; margin-top: 4px; background: var(--swell); color: #1a0d05; border-color: transparent; font-weight: 600; border-radius: 999px; padding: 7px 14px; }
 .trip-inset { position: absolute; z-index: 2; right: 10px; bottom: calc(var(--botH, 0px) + 10px); width: 34%; aspect-ratio: 1 / 1; max-width: 300px; border: 1px solid rgba(255,255,255,.35); border-radius: 8px; overflow: hidden; background: #0b1622; box-shadow: 0 6px 20px rgba(0,0,0,.45); }
 .trip-stage:not(.hub-wide) .trip-inset { width: 44%; }
@@ -319,9 +320,9 @@ body { margin: 0; }
             <li><b>Color</b> is wave height from the model you pick, swell and wind sea together.</li>
             <li><b>Moving streaks</b> show which way the swell travels. Longer-period swell moves faster.</li>
             <li><b>Pale dots</b> are open-ocean swell heading straight for the spot from an angle its reef can see. Tap one to trace its swell in: gray rays across its spread, and in orange the ray that reaches the spot, with when it arrives.</li>
-            <li><b>Near Fishers</b> the color gives way to Part 1's rays for each swell train.</li>
+            <li><b>Near Fishers</b> the color gives way to Part 1's rays: the path each swell train takes over the sea floor into the spot, colored by period. Each starts with a faint lead-in from open water.</li>
             <li><b>Timeline:</b> the spot's height from GFS-Wave (solid) and ECMWF (dashed). Night is shaded. Dots are the wind at the spot: green clean, yellow cross-shore, red onshore. Gray bars show when the far-off swell headed for the spot arrives.</li>
-            <li><b>The spot's height</b> comes from each model along the open edge of the survey map, weighted by where Part 1's landing rays cross that edge, then run through the reef's response to that period and direction.</li>
+            <li><b>The spot's height</b> is each model's swell at buoy 44097 (the white diamond off Block Island, the same point the ten-year history reads), run through the reef's response to that period and direction. Tested on 177 past hours, it came closer to what arrived than reading the models along the edge of the survey map.</li>
           </ul>
           <p class="hub-fine">GFS-Wave (NOAA): 0.16° near the coast and 0.25° offshore, with separate swell trains. ECMWF open data: 0.25°, total sea only (CC BY 4.0). Times are Eastern. The page shows the forecast from when it was last rebuilt; that time is under the timeline.</p>
         </div>
@@ -329,7 +330,7 @@ body { margin: 0; }
           <h3>Reading a past day</h3>
           <ul>
             <li><b>Pick a day</b> on the strip at the bottom (one bar per day of the month), with the arrows, the date box, or from the month calendar further down the page. Play steps through day by day.</li>
-            <li><b>Offshore color</b> is the Copernicus wave reanalysis (primary swell) during the spot's best 3 hours that day. Streaks move the way that swell traveled.</li>
+            <li><b>Offshore color</b> is the Copernicus wave reanalysis (primary swell) during the spot's best 3 hours that day: every 0.4° from New Jersey to Georges Bank, and every 2° (6-hourly) across the rest of the North Atlantic. Streaks move the way that swell traveled.</li>
             <li><b>On the survey map</b> the color is this page's ray model run on what buoy 44097 measured, the same model the forecast uses there. Tap the water for the modeled height.</li>
             <li><b>Rays near Fishers</b> are the swell trains the buoy measured at Choc's biggest hour. Turn on <b>Wind arrows</b> under Show for that day's wind at 17 points over the water.</li>
             <li><b>Bars:</b> the spot's best 3 hours each day. Orange is a good day: Choc's ratings model at 7/10 or better, or at Wilderness 3 ft and up with clean wind. Dots are the wind at the spot's best hours.</li>
@@ -534,13 +535,13 @@ body { margin: 0; }
   </figure>
   <figure class="chart">
     <div id="fcChart"></div>
-    <div class="legend"><span class="key"><span class="sw" style="background:var(--swell)"></span> Choc</span><span class="key"><span class="sw" style="background:#9be3ee;height:2px"></span> Wilderness</span><span class="key"><span class="sw" style="background:var(--fg-3);height:2px"></span> offshore, at the map edge</span><span class="key">solid GFS-Wave · dashed ECMWF</span></div>
+    <div class="legend"><span class="key"><span class="sw" style="background:var(--swell)"></span> Choc</span><span class="key"><span class="sw" style="background:#9be3ee;height:2px"></span> Wilderness</span><span class="key"><span class="sw" style="background:var(--fg-3);height:2px"></span> offshore, at buoy 44097</span><span class="key">solid GFS-Wave · dashed ECMWF</span></div>
     <figcaption>Hour by hour, Eastern time. Tap to see that hour in Part 1. The map at the top plays the same forecast over the ocean.</figcaption>
     <p id="fcAsOf2" class="fc-asof mono"></p>
   </figure>
   <figure class="chart">
     <div class="scroll"><table id="fcScore" class="fcs"></table></div>
-    <figcaption><strong>How far ahead can you trust it?</strong> For each of your 28 logged sessions since 2021, the GFS-Wave forecasts made 1, 2 and 3 days before, run through the same model and checked against what the buoy then showed arrived. "Orders your sessions" is how well it ranks them against your size ratings (1 is perfect). One day out is close to the buoy itself; by three days it runs about a quarter foot high and misses by about half a foot. ECMWF only keeps its last few days of forecasts open, so it can’t be scored back in time; its score builds up from now on.</figcaption>
+    <figcaption><strong>How far ahead can you trust it?</strong> For each of your 28 logged sessions since 2021, the GFS-Wave forecasts made 1, 2 and 3 days before, read at buoy 44097 and run through the same model and checked against what the buoy then showed arrived. "Orders your sessions" is how well it ranks them against your size ratings (1 is perfect). It runs at most a tenth of a foot high at any lead, and misses what arrived by about 0.3 ft a day out and 0.35 ft two or three days out. ECMWF only keeps its last few days of forecasts open, so it can’t be scored back in time; its score builds up from now on.</figcaption>
   </figure>
 </section>
 
@@ -728,8 +729,10 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const noon = 720 - 4 * SUN[0] - eot;
     return [day0 + (noon - 4 * h0) * 6e4, day0 + (noon + 4 * h0) * 6e4];
   }
+  // a small arrow pointing where the wind is blowing to (wind "from WNW" points ESE), for any wind text
+  const windArrow = (from) => (from == null || isNaN(from) ? '' : `<svg class="warr" viewBox="0 0 12 12" aria-hidden="true" style="transform:rotate(${Math.round((+from + 180) % 360)}deg)"><path d="M6 1 L9.6 10 L6 8 L2.4 10 Z" fill="currentColor"/></svg>`);
   const daylight = (ms) => { const [a, b] = sunWin(ms); return ms >= a + 18e5 && ms <= b - 18e5; };
-  window.CHOC = { st, D, MON, C, css, perColor, wSoft, BIG_E, OFF, HST, hCol, sunWin, daylight,
+  window.CHOC = { st, D, MON, C, css, perColor, wSoft, BIG_E, OFF, HST, hCol, sunWin, daylight, windArrow,
     onChange: f => listeners.push(f), onDay: f => dayListeners.push(f), jump,
     dayIndex: iso => (byIso.has(iso) ? byIso.get(iso) : -1),
     setDaylight: v => { st.daylight = v ? 1 : 0; listeners.forEach(f => f(st)); } };
@@ -1142,7 +1145,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   }
 
   // ── this week for both spots: GFS-Wave and ECMWF (fc/fc.json from fcpull.py), each run through the
-  // edge-weighted ray model. Times are Eastern whatever the viewer's device says.
+  // ray model, read at buoy 44097 like the history. Times are Eastern whatever the viewer's device says.
   window.CHOC.fcData = fetch('fc/fc.json').then(r => (r.ok ? r.json() : null)).catch(() => null);
   const ETF = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hourCycle: 'h23' });
   const etp = ms => { const o = {}; for (const p of ETF.formatToParts(new Date(ms))) o[p.type] = p.value; o.h = +o.hour % 24; return o; };
@@ -1176,7 +1179,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const idxAt = e => { const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * w; let bi = 0; ts.forEach((t, i) => { if (Math.abs(x(t) - px) < Math.abs(x(ts[bi]) - px)) bi = i; }); return bi; };
     const f1 = v => (v == null ? '–' : v.toFixed(1));
     hit.addEventListener('mousemove', e => { const i = idxAt(e); hl.setAttribute('x1', x(ts[i])); hl.setAttribute('x2', x(ts[i])); hl.setAttribute('opacity', 0.6);
-      window.CHOC.showTip(e, `<b>${fcLabel(ts[i])}</b><br>Choc <b>${f1(S.cg[i])}</b> GFS · <b>${f1(S.ce[i])}</b> ECMWF<br>Wilderness ${f1(S.wg[i])} · ${f1(S.we[i])} ft<br>offshore ${f1(S.off[i])} ft · wind ${g[i].wind[0]} kn from ${g[i].wind[1]}°<br><i>tap to see the swell rays</i>`); });
+      window.CHOC.showTip(e, `<b>${fcLabel(ts[i])}</b><br>Choc <b>${f1(S.cg[i])}</b> GFS · <b>${f1(S.ce[i])}</b> ECMWF<br>Wilderness ${f1(S.wg[i])} · ${f1(S.we[i])} ft<br>offshore ${f1(S.off[i])} ft · wind ${window.CHOC.windArrow(g[i].wind[1])}${g[i].wind[0]} kn from ${g[i].wind[1]}°<br><i>tap to see the swell rays</i>`); });
     hit.addEventListener('mouseleave', () => { hl.setAttribute('opacity', 0); window.CHOC.hideTip(); });
     hit.addEventListener('click', e => showHour(g[idxAt(e)]));
     // best daylight hour per Eastern day per spot (sunrise + 30 min to sunset - 30 min at Choc), by the two models' average
@@ -1212,7 +1215,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       if (!v) { out.innerHTML = `<p>No buoy data for ${k}.</p>`; return; }
       const [bpk, bdir, bper, ch, wi, chw, wiw, chh, wih] = v;
       const hr = h => h == null ? '' : ` from ${h % 12 || 12}${h < 12 ? 'am' : 'pm'}`;
-      const wind = (wd, nm) => wd ? `${wd[1]} kn from ${wd[0]}° · <span style="color:${wd[2] ? 'var(--offshore)' : 'var(--fg-2)'}">${wd[2] ? 'clean' : 'not clean'} for ${nm}</span>` : '—';
+      const wind = (wd, nm) => wd ? `${window.CHOC.windArrow(wd[0])}${wd[1]} kn from ${wd[0]}° · <span style="color:${wd[2] ? 'var(--offshore)' : 'var(--fg-2)'}">${wd[2] ? 'clean' : 'not clean'} for ${nm}</span>` : '—';
       out.innerHTML = `<table class="dct"><thead><tr><th>Spot</th><th class="num">Modeled best 3 h</th><th>Wind then</th></tr></thead><tbody>
         <tr><td>Choc</td><td class="num"><b>${ch} ft</b>${hr(chh)}</td><td>${wind(chw, 'Choc')}</td></tr>
         <tr><td>Wilderness</td><td class="num"><b>${wi} ft</b>${hr(wih)}</td><td>${wind(wiw, 'Wilderness')}</td></tr></tbody></table>
@@ -1265,7 +1268,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       hit.addEventListener('mousemove', e => window.CHOC.showTip(e, `<b>${m.month}</b><br>Choc 2.5 ft+: ${m.choc}%<br>Wilderness 2.5 ft+: ${m.wild}%<br>Wilderness works, Choc's wind doesn't: ${m.wild_day}%`)); hit.addEventListener('mouseleave', () => window.CHOC.hideTip()); });
     const tb = document.getElementById('wildTop');
     const shape = p => p == null ? '—' : p >= 0.5 ? '<span style="color:var(--offshore)">peels</span>' : p >= 0.25 ? 'mixed' : 'closes out';
-    if (tb) tb.innerHTML = '<thead><tr><th>Day</th><th class="num">Wilderness</th><th>Shape</th><th class="num">Choc</th><th class="num">Buoy</th><th>Wind at Wilderness</th></tr></thead><tbody>' + s.top.map(t => `<tr><td class="mono">${t.date}</td><td class="num">${t.wild} ft</td><td>${shape(t.peel)}</td><td class="num">${t.choc} ft</td><td class="num">${t.buoy} ft</td><td>${t.wind_ok ? '<span style="color:var(--offshore)">clean</span>' : 'not clean'}${t.wdir != null ? ' · from ' + t.wdir + '°' : ''}</td></tr>`).join('') + '</tbody>';
+    if (tb) tb.innerHTML = '<thead><tr><th>Day</th><th class="num">Wilderness</th><th>Shape</th><th class="num">Choc</th><th class="num">Buoy</th><th>Wind at Wilderness</th></tr></thead><tbody>' + s.top.map(t => `<tr><td class="mono">${t.date}</td><td class="num">${t.wild} ft</td><td>${shape(t.peel)}</td><td class="num">${t.choc} ft</td><td class="num">${t.buoy} ft</td><td>${t.wind_ok ? '<span style="color:var(--offshore)">clean</span>' : 'not clean'}${t.wdir != null ? ' · ' + window.CHOC.windArrow(t.wdir) + 'from ' + t.wdir + '°' : ''}</td></tr>`).join('') + '</tbody>';
   }
 
   kresp('choc'); thisWeek(); wildSection(); dayCheck();
@@ -1695,9 +1698,9 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     if (res.minW < rEff(T, 150)) return 'Wilderness';
     if (lat > 41.235 && lat < 41.305 && lon > -72.07 && lon < -71.90) return 'Fishers Island, ' + (dist([lon, lat], PEAK) / 1000).toFixed(1) + ' km from Choc';
     if (res.how === 'edge' && lon < -72.3 && lat > 40.95) return 'on up Long Island Sound';
-    if (res.how === 'edge') return 'off the edge of the map';
     let best = null, bd = 1e12;
     for (const p of PLACES) { const d = dist([lon, lat], [p[2], p[1]]); if (d < bd) { bd = d; best = p[0]; } }
+    if (res.how === 'edge') return 'on past ' + best;           // it leaves the detailed sea floor: say which way it went
     return bd < 6000 ? best : 'near ' + best;
   }
   const dist = (a, b) => Math.hypot((a[0] - b[0]) * 111320 * Math.cos(a[1] * D2R), (a[1] - b[1]) * 110950);
@@ -2214,8 +2217,8 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   const SPOT = { choc: { name: 'Choc', pt: PEAK, off: 335, tol: 60 }, wild: { name: 'Wilderness', pt: [(W1[0] + W2[0]) / 2, (W1[1] + W2[1]) / 2], off: 40, tol: 70 } };
   const FTm = 3.28084, perCol = (T, a) => (window.CHOC.perColor ? window.CHOC.perColor(T, a) : `rgba(240,138,75,${a})`);
   const MNAME = { gfs: 'GFS-Wave', ec: 'ECMWF' };
+  const BUOY44097 = [-71.127, 40.969];                       // CDIP 154: the forecast and the history both read the swell here
   // the three "Go to" views: a center and an amount of map (degrees), shown at whatever shape the screen is
-  const PASTBOX = { c: [-70.6, 40.0], span: [9.4, 4.6] };
   const ZOOMS = { ocean: { c: [-55, 36], span: [70, 46] }, reg: { c: [-70, 39.1], span: [13, 8.2] }, fi: { c: [-71.86, 41.17], span: [0.8, 0.4] } };
   const fcData = (window.CHOC && window.CHOC.fcData) || json('fc/fc.json');
   // ocean-wide backdrop and land masks (ETOPO 2022: 6' for the ocean, 30" for the coast)
@@ -2301,6 +2304,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   }
   const gridB = (Gd) => [Gd.lon[0] - Gd.lon[2] / 2, Gd.lon[1] + Gd.lon[2] / 2, Gd.lat[1] - Gd.lat[2] / 2, Gd.lat[0] + Gd.lat[2] / 2];
   const fieldAlpha = (W) => 0.72 * (1 - ramp(W, 220, 90));       // the field gives way to the rays near Fishers
+  const streakAlpha = (W) => Math.max(0.42, fieldAlpha(W));      // the streaks stay at every zoom, a little fainter close in
 
   // ── swell traveling at Choc: great-circle course from each open-ocean cell, and whether the reef sees that direction
   function gcKm(a, b) { const p1 = a[1] * D2R, p2 = b[1] * D2R, dl = (b[0] - a[0]) * D2R; return 6371 * Math.acos(Math.min(1, Math.sin(p1) * Math.sin(p2) + Math.cos(p1) * Math.cos(p2) * Math.cos(dl))); }
@@ -2361,8 +2365,8 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const i = FC.i, g = FC.d.gfs[i], e = ecRow(i), t = Date.parse(g.t), sp = FC.spot, c = spotFt(FC.model, i), wk = windKind(g.wind);
     $('tripPhase').textContent = `${fcWhen(t)} · ${SPOT[sp].name} ${c == null ? '–' : c.toFixed(1) + ' ft'}`;
     const main = FC.model === 'gfs' ? [...g.trains].sort((a, b) => b[sp] - a[sp])[0] : e;
-    $('tripLine').textContent = `GFS ${g[sp].toFixed(1)} · ECMWF ${e ? e[sp].toFixed(1) : '–'} ft` + (main ? ` · ${Math.round(main.T)} s from ${compass(main.D)}` : '') +
-      ` · wind ${g.wind[0]} kn ${compass(g.wind[1])}, ${windWord(wk)}`;
+    $('tripLine').innerHTML = `GFS ${g[sp].toFixed(1)} · ECMWF ${e && e[sp] != null ? e[sp].toFixed(1) : '–'} ft` + (main ? ` · ${Math.round(main.T)} s from ${compass(main.D)}` : '') +
+      ` · wind ${window.CHOC.windArrow(g.wind[1])}${g.wind[0]} kn ${compass(g.wind[1])}, ${windWord(wk)}`;
     $('tripPow').hidden = true;
   }
 
@@ -2423,17 +2427,33 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     if (ra > 0) {
       const XW = (xk) => X(WB[0] + xk / KX), YW = (xk, yk) => Y(0, WB[3] - yk / KY);
       ctx.save(); ctx.globalAlpha = ra; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      const tag = FC.spot === 'wild' ? 'w' : 'c';               // only the rays that reach the spot picked
       for (const q of [...FC.cur].sort((a, b) => a.ft - b.ft)) {
         if (!q.rays) continue;
         const wdt = Math.max(1, Math.min(5, 0.6 + q.ft * 0.45));
         for (const ray of q.rays) {
-          if (!/[cw]/.test(ray.h)) continue; const p = ray.p;
+          if (!ray.h.includes(tag)) continue; const p = ray.p; if (p.length < 4) continue;
+          // the traced part starts where the detailed sea floor begins; before that the swell came straight
+          // in from open water, so a fading lead-in along its starting heading shows where it came from
+          const k2 = Math.min(p.length - 2, 8), dx = p[k2] - p[0], dy = p[k2 + 1] - p[1], dl = Math.hypot(dx, dy) || 1;
+          const sx = p[0] / 100, sy = p[1] / 100, bx = sx - dx / dl * 70, by = sy - dy / dl * 70;
+          const gx0 = XW(bx), gy0 = YW(bx, by), gx1 = XW(sx), gy1 = YW(sx, sy), gr = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
+          gr.addColorStop(0, perCol(q.T, 0)); gr.addColorStop(1, perCol(q.T, 0.9));
+          ctx.beginPath(); ctx.moveTo(gx0, gy0); ctx.lineTo(gx1, gy1); ctx.strokeStyle = gr; ctx.lineWidth = wdt; ctx.stroke();
           ctx.beginPath();
           for (let k = 0; k < p.length; k += 2) { const xk = p[k] / 100, yk = p[k + 1] / 100; k ? ctx.lineTo(XW(xk), YW(xk, yk)) : ctx.moveTo(XW(xk), YW(xk, yk)); }
           ctx.strokeStyle = perCol(q.T, 0.9); ctx.lineWidth = wdt; ctx.stroke();
         }
       }
       ctx.restore();
+    }
+    // buoy 44097: where both the forecast and the history read the swell before the rays carry it in
+    if (v.W < 420 && !covered(X(BUOY44097[0]) - 8, Y(...BUOY44097) - 8, X(BUOY44097[0]) + 90, Y(...BUOY44097) + 8)) {
+      const bx = X(BUOY44097[0]), by = Y(...BUOY44097), al = Math.min(1, ramp(v.W, 420, 300));
+      ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(10,16,22,.85)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(bx, by - 5.5); ctx.lineTo(bx + 5.5, by); ctx.lineTo(bx, by + 5.5); ctx.lineTo(bx - 5.5, by); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.font = '11px "IBM Plex Mono", monospace'; ctx.textAlign = 'left'; ctx.shadowColor = 'rgba(0,0,0,.85)'; ctx.shadowBlur = 4; ctx.fillStyle = 'rgba(240,244,248,.92)';
+      ctx.fillText('buoy 44097', bx + 9, by + 4); ctx.restore();
     }
     // the spots: the one picked is labeled at every zoom, both near Fishers
     const c = PAST ? pastFt('choc') : spotFt(FC.model, FC.i, 'choc'), w = PAST ? pastFt('wild') : spotFt(FC.model, FC.i, 'wild'), near = v.W < 160, f1 = (q) => (q == null ? '–' : q.toFixed(1));
@@ -2475,12 +2495,11 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
         const sp = FC.spot, tgt = SPOT[sp].pt, nm = SPOT[sp].name;
         const toC = gcBrg([lon, lat], tgt), off = Math.abs((((s[2] + 180) % 360) - toC + 540) % 360 - 180), km = gcKm([lon, lat], tgt);
         const lines = [`${(s[0] * FTm).toFixed(1)} ft · ${Math.round(s[1])} s from ${compass(s[2])}`];
-        if (km < 150) lines.push('Close in: the map edge model covers this');
-        else if (FC.fan) {                                   // the traced rays: where they land, and when
+        if (FC.fan) {                                   // the traced rays: where they land, and when
           const F = FC.fan, m = F.rays.find((r) => r.off === 0);
           if (F.searching) lines.push(`Tracing the ray into ${nm}…`);
           else if (F.hit) { lines.push(`Ray into ${nm} (orange) arrives ~${fcWhen(F.t0 + F.hit.mins * 6e4)}`); lines.push(`Gray: the rest of its spread, 1° apart`); }
-          else { lines.push(`No ray in this swell's spread reaches ${nm}`); lines.push(`The sea floor bends it ${/^(near|on|off)/.test(m.land) ? '' : 'to '}${m.land}`); }
+          else { lines.push(`No ray in this swell's spread reaches ${nm}`); lines.push(m.land === 'out to sea' ? 'It runs out to sea' : `The sea floor bends it ${/^(near|on|off)/.test(m.land) ? '' : 'to '}${m.land}`); }
         }
         else if (off <= 10 && s[1] >= 7 && reefSees(s[1], gcBrg(tgt, [lon, lat]), sp) >= 0.12) lines.push(`Headed for ${nm} · arrives ~${fcWhen(t0 + km * 1000 / (G * s[1] / (4 * Math.PI)) * 1000)}`);
         else lines.push(off <= 10 ? `Headed our way, but ${nm}'s reef is blind to that angle` : `Not headed for ${nm} (${Math.round(off)}° off)`);
@@ -2499,7 +2518,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   function fxFrame() {
     if (!MAPV() || !PT.vis || reduce || !FC.show.flow) { PT.run = false; fxClear(); return; }
     requestAnimationFrame(fxFrame);
-    const v = S.cam, { sc, x0, y0 } = proj(v), fa = fieldAlpha(v.W), key = [v.cx, v.cy, v.W, cw, chh, FC.model, S.phase].join();
+    const v = S.cam, { sc, x0, y0 } = proj(v), fa = streakAlpha(v.W), key = [v.cx, v.cy, v.W, cw, chh, FC.model, S.phase].join();
     fxc.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (key !== PT.key) { PT.key = key; fxc.clearRect(0, 0, cw, chh); for (const p of PT.list) p.age = 1e9; }
     if (fa < 0.05) { fxc.clearRect(0, 0, cw, chh); return; }
@@ -2519,7 +2538,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   }
   function fxStatic() {                                      // reduced motion: still streamlines in place of moving ones
     fxClear(); if (!MAPV() || !FC.show.flow) return;
-    const v = S.cam, { sc, x0, y0 } = proj(v), fa = fieldAlpha(v.W), flow = flowFn(); if (fa < 0.05 || !flow) return;
+    const v = S.cam, { sc, x0, y0 } = proj(v), fa = streakAlpha(v.W), flow = flowFn(); if (fa < 0.05 || !flow) return;
     fxc.setTransform(dpr, 0, 0, dpr, 0, 0); fxc.beginPath();
     for (let gy = 14, r = 0; gy < chh; gy += 24, r++) for (let gx = 12 + (r % 2) * 12; gx < cw; gx += 24) {
       let x = gx, y = gy; if (!flow((x / sc + x0) / KX, -(y / sc + y0) / KY)) continue; fxc.moveTo(x, y);
@@ -2596,12 +2615,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
 
   function fcZoom(z) {
     FC.zoom = z; for (const b of document.querySelectorAll('#fcZoom button')) b.setAttribute('aria-pressed', String(b.dataset.v === z));
-    // the past has offshore data only from New Jersey to Georges Bank: its Region and Ocean views fit that box
-    const Z = S.phase === 'past' && z !== 'fi' ? PASTBOX : ZOOMS[z], p = P(...Z.c); S.moved = false;
-    if (Z === PASTBOX && cw && chh) {                        // the whole data box, whatever the screen's shape
-      const a = P(Z.c[0] - Z.span[0] / 2, Z.c[1] - Z.span[1] / 2), b = P(Z.c[0] + Z.span[0] / 2, Z.c[1] + Z.span[1] / 2);
-      S.cam = fitBox(a, b, 1.02); draw(); return;
-    }
+    const Z = ZOOMS[z], p = P(...Z.c); S.moved = false;       // the past covers the same ocean as the forecast, so both use the same views
     if (cw && chh) {
       // the same area of map on any screen: a wide iPad sees further east and west, a phone further north and south
       const ins = insets(), aw = Math.max(60, cw - ins.right - 16), ah = Math.max(60, chh - ins.top - ins.bottom - 8), m = Math.min(cw, chh);
@@ -2619,8 +2633,10 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       let bd = 18; for (const c of fcAimed(FC.model, fRow(), FC.spot)) { const d = Math.hypot((c.lon * KX - x0) * sc - px, (-c.lat * KY - y0) * sc - py); if (d < bd) { bd = d; dot = c; } }
       if (dot) ll = [dot.lon, dot.lat];
     }
-    const at = atFn(); FC.pick = !same && at && at(ll[0], ll[1]) ? ll : null;
-    FC.fan = FC.pick && dot ? dotRays(dot) : null; draw();
+    const at = atFn(), here = !same && at ? at(ll[0], ll[1]) : null; FC.pick = here ? ll : null;
+    // any tap on the water traces that spot's swell in, not just the dots
+    const sw = dot || (S.phase === 'week' && Array.isArray(here) && here[1] >= 5 ? { lon: ll[0], lat: ll[1], h: here[0], T: here[1], D: here[2] } : null);
+    FC.fan = FC.pick && sw ? dotRays(sw) : null; draw();
   }
   // the swell at a dot, traced in: 21 rays across +-10 deg of its travel direction, 1 deg apart (real swell
   // spreads), straight on great circles over the deep ocean, then over the sea floor with the same tracer as
@@ -2677,7 +2693,6 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       S.phase = m; $('tripInsetBox').hidden = true; $('tripPow').hidden = true;
       // forecast and past share one camera: switching between them keeps the view exactly where it is
       if (!wasMap || !S.cam) { if (FC.cam) S.cam = FC.cam; else fcZoom(FC.zoom); }
-      if (m === 'past' && FC.zoom !== 'fi' && S.cam && S.cam.W > PASTBOX.span[0] * KX * Math.min(cw, chh) / Math.max(1, cw - INS.right) * 1.05) fcZoom(FC.zoom);
       if (m === 'week') {
         if (!FC.d) { $('tripPhase').textContent = 'Loading the forecast…'; $('tripLine').textContent = ''; draw(); return; }
         fcTimeline(); setWeek(FC.i);
@@ -2767,7 +2782,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   // survey map it is the page's ray model run on the buoy's swell trains (the same model the forecast
   // uses there); the rays near Fishers are those trains; arrows are the day's wind at 17 points.
   const DAYS = window.CHOC.D, CST = window.CHOC.st, MODEL = window.CHOC.model, MON = window.CHOC.MON;
-  const PS = { trains: [], f: null, fm: null, years: {}, iso: '', bestH: null, timer: 0, tok: 0, img: null, imgKey: '', asked: false };
+  const PS = { trains: [], f: null, fm: null, years: {}, o: null, om: null, oyears: {}, oimg: null, oimgKey: '', iso: '', bestH: null, timer: 0, tok: 0, img: null, imgKey: '', asked: false };
   MODEL.onUpdate(() => { if (MAPV() && !redrawSoon) { redrawSoon = true; requestAnimationFrame(() => { redrawSoon = false; draw(); }); } });
   function soundTrains() {
     if (S.phase === 'past') return PS.trains;
@@ -2781,12 +2796,12 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const f = MODEL.field(tr); return f ? f.cv : null;
   }
   function fieldImages() {                                   // [image, bounds] pairs for the offshore color
-    if (S.phase === 'past') { const im = pastImage(); return im ? [im] : []; }
+    if (S.phase === 'past') return [pastOceanImage(), pastImage()].filter(Boolean);   // ocean-wide underneath, the detailed box on top
     const row = fRow(); if (row == null || !FC.d) return [];
     return ['ocean', 'reg'].map((g) => [fcImage(FC.model, g, row), gridB(FC.d.grids[g])]).filter((q) => q[0]);
   }
   function flowFn() {
-    if (S.phase === 'past') return PS.f ? pastFlow : null;
+    if (S.phase === 'past') return PS.f || PS.o ? pastFlow : null;
     const row = fRow(); return row == null || !FC.d ? null : (lon, lat) => fcFlow(lon, lat, FC.model, row);
   }
   function atFn() {
@@ -2809,10 +2824,69 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     })();
     return null;
   }
+  // the ocean-wide layer: every 2 degrees over the North Atlantic, every 6 hours, primary swell only
+  // (one pixel per cell: height dm, period 0.1 s, from/2 deg; 255 = land)
+  function pastOceanYear(y) {
+    if (PS.oyears[y] !== undefined) return PS.oyears[y];
+    PS.oyears[y] = null;
+    for (const k of Object.keys(PS.oyears)) if (k !== y && Math.abs(+k - +y) > 1) delete PS.oyears[k];
+    (async () => {
+      PS.om = PS.om || await json('ocean/field/ocean_meta.json'); const mm = PS.om && PS.om.months[y]; if (!mm) return;
+      const im = await img(`ocean/field/ocean/${y}.png`); if (!im) return;
+      const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+      const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0);
+      PS.oyears[y] = { a: g.getImageData(0, 0, im.width, im.height).data, w: im.width, start: Date.parse(mm[0] + ':00Z'), n: mm[1] };
+      if (S.phase === 'past') setPast(CST.idx);
+    })();
+    return null;
+  }
+  function oceanVal(i, j, q) { const f = PS.o, NLO = PS.om.lon.length; return f.F.a[(f.row * f.F.w + i * NLO + j) * 4 + q]; }
+  function pastOceanImage() {
+    const f = PS.o; if (!f) return null;
+    const key = f.F.start + '_' + f.row; if (PS.oimgKey === key) return PS.oimg;
+    const fm = PS.om, NLA = fm.lat.length, NLO = fm.lon.length;
+    const c = document.createElement('canvas'); c.width = NLO; c.height = NLA;
+    const g = c.getContext('2d'), id = g.createImageData(NLO, NLA);
+    for (let i = 0; i < NLA; i++) for (let j = 0; j < NLO; j++) {
+      let h = oceanVal(i, j, 0);
+      if (h === 255) {                                      // coastal cells borrow their neighbors, so color reaches the shore
+        let sum = 0, n = 0;
+        for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) { const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= NLA || jj >= NLO) continue; const q = oceanVal(ii, jj, 0); if (q !== 255) { sum += q; n++; } }
+        if (!n) continue; h = sum / n;
+      }
+      const col = hCol(h / 10 * FTm), p = 4 * ((NLA - 1 - i) * NLO + j);
+      id.data[p] = col[0]; id.data[p + 1] = col[1]; id.data[p + 2] = col[2]; id.data[p + 3] = 255;
+    }
+    g.putImageData(id, 0, 0);
+    const dLa = fm.lat[1] - fm.lat[0], dLo = fm.lon[1] - fm.lon[0];
+    PS.oimg = [c, [fm.lon[0] - dLo / 2, fm.lon[NLO - 1] + dLo / 2, fm.lat[0] - dLa / 2, fm.lat[NLA - 1] + dLa / 2]]; PS.oimgKey = key;
+    return PS.oimg;
+  }
+  function oceanAt(lon, lat) {
+    if (!PS.o) return null;
+    const fm = PS.om, dLa = fm.lat[1] - fm.lat[0], dLo = fm.lon[1] - fm.lon[0];
+    const i = Math.round((lat - fm.lat[0]) / dLa), j = Math.round((lon - fm.lon[0]) / dLo);
+    if (i < 0 || j < 0 || i >= fm.lat.length || j >= fm.lon.length) return null;
+    const h = oceanVal(i, j, 0), T = oceanVal(i, j, 1), d = oceanVal(i, j, 2);
+    return h === 255 || T === 255 || d === 255 ? null : [h / 10, T / 10, d * 2];
+  }
+  function oceanFlow(lon, lat) {
+    if (!PS.o) return null;
+    const fm = PS.om, dLa = fm.lat[1] - fm.lat[0], dLo = fm.lon[1] - fm.lon[0], NLA = fm.lat.length, NLO = fm.lon.length;
+    const fi = (lat - fm.lat[0]) / dLa, fj = (lon - fm.lon[0]) / dLo;
+    if (fi < 0 || fj < 0 || fi > NLA - 1 || fj > NLO - 1) return null;
+    const i0 = Math.min(NLA - 2, Math.floor(fi)), j0 = Math.min(NLO - 2, Math.floor(fj)), a = fi - i0, b = fj - j0;
+    let w = 0, T = 0, sx = 0, sy = 0;
+    for (const [di, dj, ww] of [[0, 0, (1 - a) * (1 - b)], [0, 1, (1 - a) * b], [1, 0, a * (1 - b)], [1, 1, a * b]]) {
+      if (ww <= 0) continue; const t = oceanVal(i0 + di, j0 + dj, 1), d = oceanVal(i0 + di, j0 + dj, 2); if (t === 255 || d === 255) continue;
+      w += ww; T += ww * t / 10; sx += ww * Math.sin(d * 2 * D2R); sy += ww * Math.cos(d * 2 * D2R);
+    }
+    return w > 0.4 ? [T / w, Math.atan2(sx, sy) / D2R] : null;
+  }
   function pastVal(i, j, q) { const f = PS.f, NLO = PS.fm.lon.length; return f.F.a[(f.row * f.F.w + (i * NLO + j) * 3) * 4 + q]; }
   function pastImage() {
     const f = PS.f; if (!f) return null;
-    const key = f.F.start + '_' + f.row; if (PS.imgKey === key) return PS.img;
+    const key = f.F.start + '_' + f.row + (PS.o ? 'o' : ''); if (PS.imgKey === key) return PS.img;
     const fm = PS.fm, NLA = fm.lat.length, NLO = fm.lon.length;
     const c = document.createElement('canvas'); c.width = NLO; c.height = NLA;
     const g = c.getContext('2d'), id = g.createImageData(NLO, NLA);
@@ -2825,7 +2899,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       }
       const col = hCol(h / 10 * FTm), p = 4 * ((NLA - 1 - i) * NLO + j);
       id.data[p] = col[0]; id.data[p + 1] = col[1]; id.data[p + 2] = col[2];
-      id.data[p + 3] = i === 0 || j === 0 || i === NLA - 1 || j === NLO - 1 ? 70 : 255;   // soft outer edge: the reanalysis covers only this box
+      const ring = Math.min(i, j, NLA - 1 - i, NLO - 1 - j); id.data[p + 3] = PS.o ? [40, 120, 200][ring] || 255 : ring ? 255 : 70;   // soft outer edge: blends into the ocean-wide layer underneath
     }
     g.putImageData(id, 0, 0);
     const dLa = fm.lat[1] - fm.lat[0], dLo = fm.lon[1] - fm.lon[0];
@@ -2833,6 +2907,9 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     return PS.img;
   }
   function pastAt(lon, lat) {                                // [height m, period s, from deg] of the primary swell, or null
+    return pastAtBox(lon, lat) || oceanAt(lon, lat);
+  }
+  function pastAtBox(lon, lat) {
     if (!PS.f) return null;
     const fm = PS.fm, dLa = fm.lat[1] - fm.lat[0], dLo = fm.lon[1] - fm.lon[0];
     const i = Math.round((lat - fm.lat[0]) / dLa), j = Math.round((lon - fm.lon[0]) / dLo);
@@ -2840,7 +2917,9 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const h = pastVal(i, j, 0), T = pastVal(i, j, 1), d = pastVal(i, j, 2);
     return h === 255 || T === 255 || d === 255 ? null : [h / 10, T / 10, d * 2];
   }
-  function pastFlow(lon, lat) {                              // smooth [period, from] for the streaks
+  function pastFlow(lon, lat) { return pastFlowBox(lon, lat) || oceanFlow(lon, lat); }
+  function pastFlowBox(lon, lat) {                           // smooth [period, from] for the streaks
+    if (!PS.f) return null;
     const fm = PS.fm, dLa = fm.lat[1] - fm.lat[0], dLo = fm.lon[1] - fm.lon[0], NLA = fm.lat.length, NLO = fm.lon.length;
     const fi = (lat - fm.lat[0]) / dLa, fj = (lon - fm.lon[0]) / dLo;
     if (fi < 0 || fj < 0 || fi > NLA - 1 || fj > NLO - 1) return null;
@@ -2870,6 +2949,8 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const t = etMidnight(Date.parse(x.iso + 'T16:00:00Z')) + (PS.bestH != null ? PS.bestH + 1.5 : 12) * 36e5;
     const F = pastYear(String(x.y)); PS.f = null;
     if (F) { const k = Math.round((t - F.start) / 108e5); if (k >= 0 && k < F.n) PS.f = { F, row: k }; }
+    const O = pastOceanYear(String(x.y)); PS.o = null;
+    if (O) { const k = Math.round((t - O.start) / 216e5); if (k >= 0 && k < O.n) PS.o = { F: O, row: k }; }
     // the buoy's swell trains at Choc's biggest hour that day; a day without them uses the day's peak
     const tr = TRAINS[x.iso];
     PS.trains = tr && tr[1].length ? tr[1].map((q) => ({ ft: q[0], T: q[1], D: q[2] })) : x.hs ? [{ ft: x.hs, T: x.per, D: x.dir }] : [];
@@ -2886,8 +2967,8 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   function pastHud() {
     const x = DAYS[CST.idx], sp = FC.spot, ft = pastFt(sp), w = pastWind(CST.idx, sp);
     $('tripPhase').textContent = `${dateLong(x)} · ${SPOT[sp].name} ${ft == null ? '–' : ft.toFixed(1) + ' ft'}`;
-    $('tripLine').textContent = (x.hs != null ? `Buoy ${x.hs.toFixed(1)} ft · ${Math.round(x.per)} s from ${compass(x.dir)}` : 'No buoy reading') +
-      (w ? ` · wind ${Math.round(w[0])} kn ${compass(w[1])}, ${windWord(windKind(w, sp))}` : '') + (PS.bestH != null ? ` · best around ${h12((PS.bestH + 1) % 24)}` : '');
+    $('tripLine').innerHTML = (x.hs != null ? `Buoy ${x.hs.toFixed(1)} ft · ${Math.round(x.per)} s from ${compass(x.dir)}` : 'No buoy reading') +
+      (w ? ` · wind ${window.CHOC.windArrow(w[1])}${Math.round(w[0])} kn ${compass(w[1])}, ${windWord(windKind(w, sp))}` : '') + (PS.bestH != null ? ` · best around ${h12((PS.bestH + 1) % 24)}` : '');
     $('tripPow').hidden = true;
   }
   // a good day: Choc's ratings model at 7/10 or better (your log's scale); Wilderness has no ratings,
@@ -3330,7 +3411,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const box = document.getElementById('decDay'); if (!box) return;
     const x = D[st.idx]; if (!x || key(x.y, x.m) !== sel) { box.innerHTML = '<p>Tap a day for its details.</p>'; return; }
     const dl = st.daylight, v = DAYS2[x.iso], w = v && v[5], ww = v && v[6];
-    const wind = (q, nm) => (q && q[1] != null ? `${q[1]} kn from ${compass(q[0])} <span class="${q[2] ? 'ok' : ''}">${q[2] ? 'clean' : 'not clean'} at ${nm}</span>` : '');
+    const wind = (q, nm) => (q && q[1] != null ? `${window.CHOC.windArrow(q[0])}${q[1]} kn from ${compass(q[0])} <span class="${q[2] ? 'ok' : ''}">${q[2] ? 'clean' : 'not clean'} at ${nm}</span>` : '');
     box.innerHTML = `<div><b>${new Date(Date.UTC(x.y, x.m - 1, x.d, 12)).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</b></div>
       <div>Choc <b>${x.mh[dl].toFixed(1)} ft</b>${v && v[4] != null ? ` · Wilderness <b>${v[4].toFixed(1)} ft</b>` : ''} · buoy ${x.hs.toFixed(1)} ft, ${Math.round(x.per)} s from ${compass(x.dir)}${x.s[dl] != null ? ` · ratings model <b>${x.s[dl].toFixed(1)}/10</b>` : ''}</div>
       <div class="dec-w">${[wind(w, 'Choc'), wind(ww, 'Wilderness')].filter(Boolean).join(' · ')}</div>
