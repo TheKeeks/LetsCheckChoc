@@ -391,7 +391,7 @@ body { margin: 0; }
       <p id="w3Note" class="w3-note"></p>
       <div class="w3-bar"><button type="button" id="w3Play" class="hub-go">Pause</button><input type="range" id="w3Time" min="0" max="100" value="0" aria-label="Time since the wave left"><button type="button" id="w3Follow" aria-pressed="true">Follow</button><button type="button" id="w3Reset">Reset</button></div>
       <p id="w3Read" class="w3-read mono"></p>
-      <p class="w3-help">Drag to turn, pinch or scroll to zoom, two fingers (or shift-drag) to move; Follow keeps the wave in view. The band is your wave's front, 30 km wide, standing up as tall as the wave is there (heights and depths stretched, deep ocean squeezed); color is height, white where it's breaking. Faint lines are where each part of it went.</p>
+      <p class="w3-help">Drag to turn, pinch or scroll to zoom, two fingers (or shift-drag) to move; Follow keeps the wave in view. The band is your wave's front, 30 km wide: the colored top is the wave, as tall as it is there (color is height, white where it's breaking), and the pale curtain under it is the water column down to the sea floor beneath that part of the front. Depths are stretched 70 times (deeper than 60 m squeezed), the wave 4 times more than that. Faint lines are where each part of it went. Around Fishers and the Race the sea floor is drawn from the 16 m survey.</p>
     </div>
     <figcaption id="cutCap"></figcaption>
   </figure>
@@ -3313,15 +3313,43 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     }
     return { rays: out, SP, tmax: Math.max(...out.map((q) => (q.t.length ? q.t[q.t.length - 1] : 0))) };
   }
-  const vz = (depth) => -0.35 * Math.sqrt(Math.max(0, depth)) + (depth < 0 ? 0.25 : 0);   // km up: sqrt keeps the shelf visible next to the deep ocean
+  // one vertical scale for water and wave, stretched 70x: in proportion down to 60 m, then squeezed (log) so
+  // the deep ocean doesn't swallow the view. The wave above the water uses the same scale x 4.
+  const VZA = 0.07, WAVEX = 4;
+  const vz = (depth) => (depth <= 0 ? 0.12 : -VZA * (depth <= 60 ? depth : 60 * (1 + Math.log(depth / 60))));
+  // sharper sea floor (16 m) around Fishers, the Race and the mouth of the sound, loaded with the 3D view
+  const FINE = { m: null, a: null };
+  async function w3FineLoad() {
+    if (FINE.a || FINE.m === false) return;
+    const [m, im] = await Promise.all([json('ocean/fine16.json'), img('ocean/fine16.png')]);
+    if (!m || !im) { FINE.m = false; return; }
+    const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0);
+    const px = g.getImageData(0, 0, im.width, im.height).data, a = new Float32Array(m.rows * m.cols), wet = new Uint8Array(m.rows * m.cols);
+    for (let i = 0; i < a.length; i++) { a[i] = ((px[4 * i] << 8) | px[4 * i + 1]) / m.scale - m.off; wet[i] = px[4 * i + 2] > 127; }
+    FINE.m = m; FINE.a = a; FINE.wet = wet;
+  }
+  function fineDepth(lon, lat) {                             // [depth m, wet] from the 16 m tile, or null outside it
+    const m = FINE.m; if (!m || !FINE.a) return null;
+    const fx = (lon - m.left) * m.kmlon * 1000 / m.dx - 0.5, fy = (m.top - lat) * m.kmlat * 1000 / m.dx - 0.5;
+    if (fx < 0 || fy < 0 || fx > m.cols - 2 || fy > m.rows - 2) return null;
+    const j = Math.floor(fx), i = Math.floor(fy), u = fx - j, v = fy - i, A = FINE.a, C = m.cols;
+    const d = (A[i * C + j] * (1 - u) + A[i * C + j + 1] * u) * (1 - v) + (A[(i + 1) * C + j] * (1 - u) + A[(i + 1) * C + j + 1] * u) * v;
+    return [d, FINE.wet[Math.round(fy) * C + Math.round(fx)] > 0];
+  }
+  function depth3(lon, lat) {                                // [depth m, land?] from the sharpest data there
+    const f = fineDepth(lon, lat); if (f) return [f[0], !f[1]];
+    const d = depthAt(lon, lat), dep = d == null ? 0 : d, inW = GR.w && inWorld(lat, lon, 0);
+    return [dep, inW ? !wetW(...worldXY(lon, lat)) : dep <= 0.3];
+  }
   function w3Terrain(T3, box, n, inner) {
     const [x0, x1, z0, z1] = box, nx = n, nz = Math.max(8, Math.round(n * (z1 - z0) / (x1 - x0))), g = new T3.PlaneGeometry(x1 - x0, z1 - z0, nx - 1, nz - 1);
     g.rotateX(-Math.PI / 2); g.translate((x0 + x1) / 2, 0, (z0 + z1) / 2);
     const pos = g.attributes.position, col = new Float32Array(pos.count * 3), lon0 = S.ray.start[0], lat0 = S.ray.start[1];
     for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i), z = pos.getZ(i), lon = lon0 + x / KX, lat = lat0 - z / KY, d = depthAt(lon, lat);
-      const inW = GR.w && inWorld(lat, lon, 0), dep = d == null ? 0 : d, land = inW ? !wetW(...worldXY(lon, lat)) : dep <= 0.3, hole = inner && x > inner[0] && x < inner[1] && z > inner[2] && z < inner[3];
-      pos.setY(i, land ? 0.15 : vz(dep) - (hole ? 0.6 : 0));
+      const x = pos.getX(i), z = pos.getZ(i), lon = lon0 + x / KX, lat = lat0 - z / KY, [dep, land] = depth3(lon, lat);
+      const hole = inner && inner.some((q) => x > q[0] && x < q[1] && z > q[2] && z < q[3]);   // a sharper patch covers this: sink it out of the way
+      pos.setY(i, (land ? 0.12 : vz(dep)) - (hole ? 0.3 : 0));
       const c = land ? [0.42, 0.39, 0.33] : [0.25 + 0.45 * Math.exp(-dep / 12), 0.33 + 0.33 * Math.exp(-dep / 12), 0.42 + 0.12 * Math.exp(-dep / 30)];
       col[3 * i] = c[0]; col[3 * i + 1] = c[1]; col[3 * i + 2] = c[2];
     }
@@ -3332,9 +3360,9 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const r = S.ray; if (!r) return;
     const key = [r.start, r.th, r.T].join(); if (W3.built === key && W3.scene) return;
     $('w3Note').textContent = 'Loading 3D…';
-    const T3 = await w3Lib(); let F;
+    const T3 = await w3Lib(); await w3FineLoad(); let F;
     try { F = await w3Front(r); } catch (e) { return; }
-    W3.front = F; W3.built = key; W3.t = 0;
+    W3.front = F; W3.built = key; W3.t = 0; W3.drawn = '';
     // scene box: everything the rays cover, plus a margin
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
     for (const q of F.rays) for (let i = 0; i < q.x.length; i++) { x0 = Math.min(x0, q.x[i]); x1 = Math.max(x1, q.x[i]); z0 = Math.min(z0, q.z[i]); z1 = Math.max(z1, q.z[i]); }
@@ -3349,8 +3377,18 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     for (const q of F.rays) for (let i = 0; i < q.x.length; i++) if (q.h[i] < 40) { fx0 = Math.min(fx0, q.x[i]); fx1 = Math.max(fx1, q.x[i]); fz0 = Math.min(fz0, q.z[i]); fz1 = Math.max(fz1, q.z[i]); }
     let inner = null;
     if (fx1 > fx0) { const pad = 3; inner = [Math.max(x0, fx0 - pad), Math.min(x1, fx1 + pad), Math.max(z0, fz0 - pad), Math.min(z1, fz1 + pad)]; if (inner[1] - inner[0] > 45) inner[0] = inner[1] - 45; if (inner[3] - inner[2] > 45) inner[2] = inner[3] - 45; }
-    sc.add(w3Terrain(T3, [x0, x1, z0, z1], 220, inner ? [inner[0] + 0.5, inner[1] - 0.5, inner[2] + 0.5, inner[3] - 0.5] : null));
-    if (inner) sc.add(w3Terrain(T3, inner, 260, null));
+    // the 16 m tile, where it overlaps the scene
+    let fine = null;
+    if (FINE.m) {
+      const m = FINE.m, lon0 = r.start[0], lat0 = r.start[1], bx0 = (m.left - lon0) * KX, bx1 = (m.left + m.cols * m.dx / 1000 / m.kmlon - lon0) * KX;
+      const bz0 = -(m.top - lat0) * KY, bz1 = -(m.top - m.rows * m.dx / 1000 / m.kmlat - lat0) * KY;
+      const fb = [Math.max(x0, bx0 + 0.05), Math.min(x1, bx1 - 0.05), Math.max(z0, bz0 + 0.05), Math.min(z1, bz1 - 0.05)];
+      if (fb[1] - fb[0] > 1 && fb[3] - fb[2] > 1) fine = fb;
+    }
+    const shrink = (q) => [q[0] + 0.3, q[1] - 0.3, q[2] + 0.3, q[3] - 0.3];
+    sc.add(w3Terrain(T3, [x0, x1, z0, z1], 220, [inner, fine].filter(Boolean).map(shrink)));
+    if (inner) sc.add(w3Terrain(T3, inner, 320, fine ? [shrink(fine)] : null));
+    if (fine) sc.add(w3Terrain(T3, fine, Math.min(600, Math.round((fine[1] - fine[0]) / 0.03)), null));   // about 30-40 m between points
     const water = new T3.Mesh(new T3.PlaneGeometry(x1 - x0, z1 - z0), new T3.MeshBasicMaterial({ color: 0x3a7cb8, transparent: true, opacity: 0.22, depthWrite: false }));
     water.rotateX(-Math.PI / 2); water.position.set((x0 + x1) / 2, 0.02, (z0 + z1) / 2); sc.add(water);
     // the rays' tracks on the water, faint: where each bit of the front went
@@ -3364,11 +3402,15 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     band.setAttribute('color', new T3.BufferAttribute(new Float32Array((NR - 1) * 6 * 3), 3));
     W3.band = new T3.Mesh(band, new T3.MeshBasicMaterial({ vertexColors: true, side: T3.DoubleSide, transparent: true, opacity: 0.92 }));
     sc.add(W3.band);
+    // under it, the water column down to the sea floor beneath each part of the front
+    const colG = new T3.BufferGeometry(); colG.setAttribute('position', new T3.BufferAttribute(new Float32Array((NR - 1) * 6 * 3), 3));
+    W3.column = new T3.Mesh(colG, new T3.MeshBasicMaterial({ color: 0x7fb8e0, side: T3.DoubleSide, transparent: true, opacity: 0.38, depthWrite: false }));
+    sc.add(W3.column);
     const cam = new T3.PerspectiveCamera(45, w / h, 0.05, 5000);
     const size = Math.max(x1 - x0, z1 - z0);
     W3.view = { az: -0.5 + (r.th * D2R), el: 0.6, dist: size * 0.9, tx: (x0 + x1) / 2, tz: (z0 + z1) / 2 };
     W3.scene = sc; W3.cam = cam; W3.size = size; W3.box = [x0, x1, z0, z1];
-    W3.WZ = size * 0.012;                                    // km of band per meter of wave
+    W3.WZ = VZA * WAVEX;                                     // km of band per meter of wave
     $('w3Time').max = String(Math.round(F.tmax));
     $('w3Note').textContent = '';
     w3Loop();
@@ -3405,14 +3447,18 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       for (let j = 0; j < NR; j++) { if (isNaN(Hs[j])) continue; let s2 = 0, w2 = 0; for (let d = -4; d <= 4; d++) { const k = j + d; if (k < 0 || k >= NR || isNaN(Hs[k])) continue; const ww = 5 - Math.abs(d); s2 += ww * Hs[k]; w2 += ww; } H[j] = Math.min(s2 / w2, 0.78 * Math.max(0.3, P[3 * j + 2])); } }
     { let cx = 0, cz = 0, cd = 0, n = 0; for (let j = 0; j < NR; j++) if (!isNaN(H[j])) { cx += P[3 * j]; cz += P[3 * j + 1]; cd += P[3 * j + 2]; n++; }
       W3.mid = n ? [cx / n, cz / n, cd / n] : null; }
-    let nv = 0;
+    let nv = 0, nc = 0; const cpos = W3.column.geometry.attributes.position, bed = new Float32Array(NR);
+    for (let j = 0; j < NR; j++) if (!isNaN(H[j])) { const [dd, land] = depth3(r.start[0] + P[3 * j] / KX, r.start[1] - P[3 * j + 1] / KY); bed[j] = land ? 0 : vz(dd); }
     const colOf = (j) => { const brk = H[j] >= 0.78 * Math.max(0.3, P[3 * j + 2]) - 1e-6, c = brk ? [255, 255, 255] : hCol(H[j] * FTm); return [c[0] / 255, c[1] / 255, c[2] / 255]; };
     const put = (j, top) => { pos.setXYZ(nv, P[3 * j], 0.03 + (top ? H[j] * W3.WZ : 0), P[3 * j + 1]); col.setXYZ(nv, ...colOf(j)); nv++; };
     for (let j = 0; j < NR - 1; j++) {
       // a gap where neighbors have stopped or split far apart
       if (isNaN(H[j]) || isNaN(H[j + 1]) || Math.hypot(P[3 * j + 3] - P[3 * j], P[3 * j + 4] - P[3 * j + 1]) > 8) continue;   // more than 8 km apart: the front has torn
       put(j, 0); put(j, 1); put(j + 1, 0); put(j, 1); put(j + 1, 1); put(j + 1, 0);
+      const cq = (k, top) => { cpos.setXYZ(nc++, P[3 * k], top ? 0.02 : bed[k], P[3 * k + 1]); };
+      cq(j, 0); cq(j, 1); cq(j + 1, 0); cq(j, 1); cq(j + 1, 1); cq(j + 1, 0);
     }
+    W3.column.geometry.setDrawRange(0, nc); cpos.needsUpdate = true; W3.column.geometry.computeBoundingSphere();
     W3.band.geometry.setDrawRange(0, nv); pos.needsUpdate = true; col.needsUpdate = true; W3.band.geometry.computeBoundingSphere();
     const live = H.filter((v) => !isNaN(v) && v > 0), hi = live.length ? Math.max(...live) : 0;
     $('w3Read').textContent = `${fmtT(t)} after leaving · energy still moving ${e0 ? Math.round(100 * e1 / e0) : 0}% of the start · tallest part ${(hi * FTm).toFixed(1)} ft` + (broke ? ' · breaking' : '');
@@ -3425,11 +3471,14 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       W3.t += dt * slow * W3.front.tmax / 25; if (W3.t > W3.front.tmax) W3.t = 0;
     }
     if (W3.follow && W3.mid) {                               // keep the wave in view
-      const v = W3.view, k = W3.t < 1 ? 1 : 0.06; v.tx += (W3.mid[0] - v.tx) * k; v.tz += (W3.mid[1] - v.tz) * k;
-      const want = Math.max(12, Math.min(W3.size * 0.5, W3.mid[2] < 80 ? 45 : 90)); v.dist += (want - v.dist) * 0.03;
+      const v = W3.view, k = W3.t < 1 ? 1 : 0.06, want = Math.max(6, Math.min(W3.size * 0.5, W3.mid[2] < 30 ? 10 : W3.mid[2] < 80 ? 25 : 70));
+      const dx = W3.mid[0] - v.tx, dz = W3.mid[1] - v.tz, dd = want - v.dist;
+      if (Math.hypot(dx, dz) > 0.02 * v.dist) { v.tx += dx * k; v.tz += dz * k; }   // caught up: stop nudging, so a paused view sits still
+      if (Math.abs(dd) > 0.02 * v.dist) v.dist += dd * 0.03;
     }
     W3.last = ts || 0;
-    w3Frame(); w3Place(); W3.rd.render(W3.scene, W3.cam);
+    const key = [W3.t, W3.view.az, W3.view.el, W3.view.dist, W3.view.tx, W3.view.tz, W3.rd.domElement.width, W3.rd.domElement.height].join();
+    if (key !== W3.drawn) { W3.drawn = key; w3Frame(); w3Place(); W3.rd.render(W3.scene, W3.cam); }   // paused and still: nothing to draw
     requestAnimationFrame(w3Loop);
   }
   function w3Show(on) {

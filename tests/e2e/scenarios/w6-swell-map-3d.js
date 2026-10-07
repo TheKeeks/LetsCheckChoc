@@ -5,7 +5,7 @@
 
 module.exports = {
   name: 'Swell Map: 3D wave front over the sea floor in Drop a wave',
-  options: { viewport: { width: 1180, height: 820 } },
+  options: { viewport: { width: 1180, height: 820 }, timeoutMs: 240000 },   // software WebGL in CI is slow
   async run({ page, ctx, assert, log }) {
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
@@ -20,7 +20,7 @@ module.exports = {
     assert.ok(await page.isVisible('#w3Box'), '3D panel shown');
     assert.ok(!(await page.isVisible('#cutCv')), 'side view hidden');
     await page.waitForFunction(() => window.CHOC.trip.w3.scene || /can.t show/.test(document.getElementById('w3Note').textContent), null, { timeout: 90000 });
-    const gl = await page.evaluate(() => !!window.CHOC.trip.w3.scene);
+    const gl = await page.evaluate(() => { const w = window.CHOC.trip.w3; if (w.scene) { w.play = false; w.follow = false; } return !!w.scene; });   // paused: software WebGL only redraws on change
     log(`WebGL: ${gl}`);
     if (gl) {
       const f = await page.evaluate(() => ({ rays: window.CHOC.trip.w3.front.rays.length, tmax: window.CHOC.trip.w3.front.tmax }));
