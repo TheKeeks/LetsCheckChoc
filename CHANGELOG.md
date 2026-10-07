@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased] — Sound Check: the map no longer goes dark when you zoom in on an iPhone or iPad
+
+On iPhone and iPad, zooming the Sound Check map in even a little turned it a uniform dark blue. Desktop browsers were fine.
+
+The cause was memory. iPhone and iPad Safari limit how much memory all of a page's canvases may use together, about 224 MB on an iPhone. Past that, Safari gives new canvases nothing to draw with, and the map is left showing only its dark background. The page unpacked every image it reads numbers from through a brand-new canvas that was never released:
+- the forecast strips;
+- the ten-year swell fields;
+- the sea-floor depth grids;
+- the roughly 70 sea-floor model images that the first zoom toward Fishers starts loading.
+
+Together that came to about 245 MB.
+
+Now every image is unpacked through one shared scratch canvas, shrunk back to nothing after each read. The Past view and "the ocean that day" reuse one working canvas each instead of making a new one per step. If a phone still refuses a canvas, the map skips that one layer and keeps drawing the rest.
+
+Verified by a new e2e scenario, `w6-swell-map-canvas-memory.js`. It emulates Safari's limit in Chromium on an iPhone 13 screen, refusing new canvases once the page's canvases pass 224 MB, then pinches in toward Fishers and lets the sea-floor model load. Before the change the page peaked at 245 MB with 9 canvases refused. Now it peaks at 51 MB, refuses none, and the zoomed map keeps its colour. It can't be run in real iPhone Safari here, so please confirm on the phone and iPad.
+
 ## [Unreleased] — Sound Check: every logged session on the calendar, with the crew member's name; tab renamed
 
 The ten-year calendar showed only sessions that had photos. Now every surf-log session appears:
