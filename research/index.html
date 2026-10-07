@@ -2457,7 +2457,10 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   }
   const layer = document.createElement('canvas'), lctx = layer.getContext('2d');
   function fcField(x0, y0, sc, v) {
-    const fa = fieldAlpha(v.W); if (fa <= 0.01 || !FC.show.field || (S.phase === 'week' && !FC.d)) return;
+    // the color stays at full strength over open water at every zoom; only over the survey map (where the sea
+    // floor and Part 1's rays take over close in) does it fade as you zoom in. Fading it everywhere left open
+    // water off New Jersey or south of Block Island dark and empty when zoomed in.
+    const fa = fieldAlpha(v.W), full = fieldAlpha(1e9); if (!FC.show.field || (S.phase === 'week' && !FC.d)) return;
     const rw = Math.round(cw * dpr), rh = Math.round(chh * dpr); if (layer.width !== rw || layer.height !== rh) { layer.width = rw; layer.height = rh; }
     lctx.setTransform(dpr, 0, 0, dpr, 0, 0); lctx.clearRect(0, 0, cw, chh); lctx.imageSmoothingEnabled = true; lctx.imageSmoothingQuality = 'high';
     for (const [im, b] of fieldImages()) {
@@ -2465,7 +2468,13 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       blit(lctx, im, (p0[0] - x0) * sc, (p0[1] - y0) * sc, (p1[0] - p0[0]) * sc, (p1[1] - p0[1]) * sc);
     }
     landMask(lctx, x0, y0, sc);
-    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = fa; ctx.drawImage(layer, 0, 0); ctx.restore();
+    if (fa < full - 1e-3 && L.world) {                      // thin it out over the survey map only (its feathered mask)
+      const wl = -(x0 - TW.left * KX) * sc, wt = -(y0 + TW.top * KY) * sc;
+      lctx.globalCompositeOperation = 'destination-out'; lctx.globalAlpha = 1 - Math.max(0.4, fa / full);   // keep 40% of the color there too
+      blit(lctx, L.world, wl, wt, TW.W * TW.px_km * sc, TW.H * TW.px_km * sc);
+      lctx.globalCompositeOperation = 'source-over'; lctx.globalAlpha = 1;
+    }
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = full; ctx.drawImage(layer, 0, 0); ctx.restore();
   }
   function pill(x, y, lines, anchor) {                       // a small dark callout; anchor 'l' = box to the right of x
     FC.pillLines = lines;
