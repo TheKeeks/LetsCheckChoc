@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — Swell Map: the wave front in 3D
+
+Drop a wave's panel under the map now has a 3D view next to the side view. It shows the sea floor in 3D, with the depth stretched and the deep ocean squeezed so the shelf shows, and your wave's whole front moving across it. The front is a line of rays 30 km wide, one every 150 m, square to your wave and traced with the same tracer as the rest of the page. It stands up as a band as tall as the wave is at each point.
+
+You can watch it bend left and right around Montauk and Block Island, grow where the bottom bunches it up, shrink where it spreads out, tear apart, and stop where it reaches land or breaks (white). A readout gives the time since it left, the share of its starting energy still moving, and its tallest part. You can drag to turn, pinch or scroll to zoom, and use two fingers to move; Follow keeps the wave in view, and playback slows once it reaches the shelf. The height uses the page's existing math: shoaling times how far the neighboring rays have spread or bunched, with breaking at 0.78 times the depth. The 3D drawing library (three.js r128, MIT, `research/vendor/three.min.js`) loads only when 3D is first opened. The side view is now a plain 2D cross-section.
+
+Verified by a new e2e scenario, `w6-swell-map-3d.js`. It checks that the library isn't loaded up front, that 3D opens in Drop a wave, that the front is traced (200 rays), that the readout reports time, energy and height, and that the side view comes back. The full unit, e2e and Python suites pass.
+
 ## [Unreleased] — Swell Map: wave cutaway, dots for every swell, how the forecast is read
 
 Drop a wave now has a cross-section under the map. It shows your wave side-on, flat in 2D, over the real sea floor right under its last 300 m, 1 km or 5 km, for a 3, 6 or 10 ft swell. You can watch it get shorter, slow down and grow as the water shoals, then break once it is about 0.78 times as tall as the water is deep. Its height comes from shoaling plus how much the bottom focused or spread that ray, and the caption gives the numbers (wavelength, speed, breaking depth and height).

@@ -246,6 +246,14 @@ html.hub-lock, html.hub-lock body { overflow: hidden; }
 .cut-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 8px; }
 .cut-top .fr-cap { margin: 0 auto 0 0; }
 #cutCv { width: 100%; display: block; border-radius: 6px; }
+.w3 { position: relative; }
+#w3Cv { width: 100%; height: min(70vh, 520px); display: block; border-radius: 6px; touch-action: none; background: #0b1622; }
+.w3-note { position: absolute; left: 12px; top: 10px; margin: 0; color: var(--fg-2); font-size: .85rem; pointer-events: none; }
+.w3-bar { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
+.w3-bar input { flex: 1; }
+#w3Follow[aria-pressed="true"] { background: #23384a; color: var(--fg); }
+.w3-read { font-size: .78rem; color: var(--fg-2); margin: 6px 0 0; }
+.w3-help { font-size: .8rem; color: var(--fg-3); margin: 4px 0 0; }
 svg.warr, .chart svg.warr, .dec-heat svg.warr, .od-lanes svg.warr { display: inline-block; overflow: visible; width: .9em; height: .9em; vertical-align: -.1em; margin: 0 .2em 0 .1em; }
 .dec-go { justify-self: start; margin-top: 4px; background: var(--swell); color: #1a0d05; border-color: transparent; font-weight: 600; border-radius: 999px; padding: 7px 14px; }
 .trip-inset { position: absolute; z-index: 2; right: 10px; bottom: calc(var(--botH, 0px) + 10px); width: 34%; aspect-ratio: 1 / 1; max-width: 300px; border: 1px solid rgba(255,255,255,.35); border-radius: 8px; overflow: hidden; background: #0b1622; box-shadow: 0 6px 20px rgba(0,0,0,.45); }
@@ -373,10 +381,18 @@ body { margin: 0; }
     </div>
   </div>
   <figure class="chart cut" id="cutBox" hidden>
-    <div class="cut-top"><div class="fr-cap">Cross-section: your wave over the sea floor</div>
+    <div class="cut-top"><div class="fr-cap">Your wave over the sea floor</div>
+      <div class="seg" role="group" aria-label="View" id="cutView"><button type="button" data-v="side" aria-pressed="true">Side view</button><button type="button" data-v="3d" aria-pressed="false">3D</button></div>
       <div class="seg" role="group" aria-label="Swell height offshore" id="cutFt"><button type="button" data-v="3" aria-pressed="false">3 ft</button><button type="button" data-v="6" aria-pressed="true">6 ft</button><button type="button" data-v="10" aria-pressed="false">10 ft</button></div>
       <div class="seg" role="group" aria-label="How much of the trip" id="cutLen"><button type="button" data-v="0.3" aria-pressed="false">Last 300 m</button><button type="button" data-v="1" aria-pressed="true">1 km</button><button type="button" data-v="5" aria-pressed="false">5 km</button></div></div>
     <canvas id="cutCv" aria-label="The wave side-on over the sea floor along its last kilometers"></canvas>
+    <div id="w3Box" class="w3" hidden>
+      <canvas id="w3Cv" aria-label="3D view: the whole wave front crossing the sea floor"></canvas>
+      <p id="w3Note" class="w3-note"></p>
+      <div class="w3-bar"><button type="button" id="w3Play" class="hub-go">Pause</button><input type="range" id="w3Time" min="0" max="100" value="0" aria-label="Time since the wave left"><button type="button" id="w3Follow" aria-pressed="true">Follow</button><button type="button" id="w3Reset">Reset</button></div>
+      <p id="w3Read" class="w3-read mono"></p>
+      <p class="w3-help">Drag to turn, pinch or scroll to zoom, two fingers (or shift-drag) to move; Follow keeps the wave in view. The band is your wave's front, 30 km wide, standing up as tall as the wave is there (heights and depths stretched, deep ocean squeezed); color is height, white where it's breaking. Faint lines are where each part of it went.</p>
+    </div>
     <figcaption id="cutCap"></figcaption>
   </figure>
 </section>
@@ -3272,7 +3288,184 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     setInterval(cutSync, 600);
   }
 
-  window.CHOC.trip = { _raw: (T, lon, lat, th) => trace(T, lon, lat, th, false), state: S, aim: doAim, play, _miss: (T, lon, lat, th, spot) => miss(trace(T, lon, lat, th, false), spot), _aim: (spot, T, s) => aim(spot, T, s), trace: (T, lon, lat, th) => makeRay(T, [lon, lat], th),
+  // ── 3D: the whole wave front over the sea floor. A line of rays square to your wave (one every 150 m,
+  // 15 km either side of yours) is traced with the same tracer; at each moment the front is where those
+  // rays have got to, standing up off the water as a band whose height is the wave's height there:
+  // shoaling (group speed) times how far its neighbors have spread apart or bunched together (energy
+  // between two rays stays between them). Where it gets taller than 0.78 x the depth it breaks and that
+  // part of the front stops; rays that reach land stop too. Heights and depths are stretched to be seen.
+  const W3 = { on: false, lib: null, built: '', t: 0, play: true, follow: true, last: 0, view: { az: -0.5, el: 0.62, dist: 1, tx: 0, tz: 0 }, front: null };
+  function w3Lib() {
+    if (window.THREE) return Promise.resolve(window.THREE);
+    if (W3.lib) return W3.lib;
+    W3.lib = new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'vendor/three.min.js'; s.onload = () => ok(window.THREE); s.onerror = no; document.head.appendChild(s); });
+    return W3.lib;
+  }
+  async function w3Front(r) {                                // trace the front: [{t[], x[], z[], h[]}] per ray, km about the start
+    const HALF = 15, SP = 0.15, out = [], rad = (r.th + 90) * D2R, lon0 = r.start[0], lat0 = r.start[1];
+    for (let k = -HALF; k <= HALF + 1e-9; k += SP) {
+      const lon = lon0 + k * Math.sin(rad) / KX, lat = lat0 + k * Math.cos(rad) / KY;
+      const res = (depthAt(lon, lat) || 0) > 1 ? trace(r.T, lon, lat, r.th, true) : null, p = res ? res.pts : [];
+      const n = p.length / 4, ray = { t: new Float32Array(n), x: new Float32Array(n), z: new Float32Array(n), h: new Float32Array(n), k };
+      for (let i = 0; i < n; i++) { ray.x[i] = (p[4 * i] - lon0) * KX; ray.z[i] = -(p[4 * i + 1] - lat0) * KY; ray.h[i] = p[4 * i + 2]; ray.t[i] = p[4 * i + 3]; }
+      out.push(ray);
+      if (out.length % 12 === 0) { $('w3Note').textContent = `Tracing the wave front… ${Math.round(100 * (k + HALF) / (2 * HALF))}%`; await new Promise((ok) => setTimeout(ok, 0)); if (S.ray !== r || !W3.on) throw new Error('stale'); }
+    }
+    return { rays: out, SP, tmax: Math.max(...out.map((q) => (q.t.length ? q.t[q.t.length - 1] : 0))) };
+  }
+  const vz = (depth) => -0.35 * Math.sqrt(Math.max(0, depth)) + (depth < 0 ? 0.25 : 0);   // km up: sqrt keeps the shelf visible next to the deep ocean
+  function w3Terrain(T3, box, n, inner) {
+    const [x0, x1, z0, z1] = box, nx = n, nz = Math.max(8, Math.round(n * (z1 - z0) / (x1 - x0))), g = new T3.PlaneGeometry(x1 - x0, z1 - z0, nx - 1, nz - 1);
+    g.rotateX(-Math.PI / 2); g.translate((x0 + x1) / 2, 0, (z0 + z1) / 2);
+    const pos = g.attributes.position, col = new Float32Array(pos.count * 3), lon0 = S.ray.start[0], lat0 = S.ray.start[1];
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = pos.getZ(i), lon = lon0 + x / KX, lat = lat0 - z / KY, d = depthAt(lon, lat);
+      const inW = GR.w && inWorld(lat, lon, 0), dep = d == null ? 0 : d, land = inW ? !wetW(...worldXY(lon, lat)) : dep <= 0.3, hole = inner && x > inner[0] && x < inner[1] && z > inner[2] && z < inner[3];
+      pos.setY(i, land ? 0.15 : vz(dep) - (hole ? 0.6 : 0));
+      const c = land ? [0.42, 0.39, 0.33] : [0.25 + 0.45 * Math.exp(-dep / 12), 0.33 + 0.33 * Math.exp(-dep / 12), 0.42 + 0.12 * Math.exp(-dep / 30)];
+      col[3 * i] = c[0]; col[3 * i + 1] = c[1]; col[3 * i + 2] = c[2];
+    }
+    g.setAttribute('color', new T3.BufferAttribute(col, 3)); g.computeVertexNormals();
+    return new T3.Mesh(g, new T3.MeshLambertMaterial({ vertexColors: true }));
+  }
+  async function w3Build() {
+    const r = S.ray; if (!r) return;
+    const key = [r.start, r.th, r.T].join(); if (W3.built === key && W3.scene) return;
+    $('w3Note').textContent = 'Loading 3D…';
+    const T3 = await w3Lib(); let F;
+    try { F = await w3Front(r); } catch (e) { return; }
+    W3.front = F; W3.built = key; W3.t = 0;
+    // scene box: everything the rays cover, plus a margin
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (const q of F.rays) for (let i = 0; i < q.x.length; i++) { x0 = Math.min(x0, q.x[i]); x1 = Math.max(x1, q.x[i]); z0 = Math.min(z0, q.z[i]); z1 = Math.max(z1, q.z[i]); }
+    const m = 0.08 * Math.max(x1 - x0, z1 - z0) + 3; x0 -= m; x1 += m; z0 -= m; z1 += m;
+    const cv3 = $('w3Cv'), w = cv3.clientWidth, h = cv3.clientHeight;
+    if (!W3.rd) { W3.rd = new T3.WebGLRenderer({ canvas: cv3, antialias: true }); W3.rd.setPixelRatio(dpr); }
+    W3.rd.setSize(w, h, false);
+    const sc = new T3.Scene(); sc.background = new T3.Color(0x0b1622);
+    sc.add(new T3.HemisphereLight(0xcfe3f5, 0x2a2018, 0.85)); const sun = new T3.DirectionalLight(0xffffff, 0.6); sun.position.set(-1, 2, 1.2); sc.add(sun);
+    // sea floor: the whole box, plus a sharper patch where the rays meet the shallows (the last 35 km)
+    let fx0 = 1e9, fx1 = -1e9, fz0 = 1e9, fz1 = -1e9;
+    for (const q of F.rays) for (let i = 0; i < q.x.length; i++) if (q.h[i] < 40) { fx0 = Math.min(fx0, q.x[i]); fx1 = Math.max(fx1, q.x[i]); fz0 = Math.min(fz0, q.z[i]); fz1 = Math.max(fz1, q.z[i]); }
+    let inner = null;
+    if (fx1 > fx0) { const pad = 3; inner = [Math.max(x0, fx0 - pad), Math.min(x1, fx1 + pad), Math.max(z0, fz0 - pad), Math.min(z1, fz1 + pad)]; if (inner[1] - inner[0] > 45) inner[0] = inner[1] - 45; if (inner[3] - inner[2] > 45) inner[2] = inner[3] - 45; }
+    sc.add(w3Terrain(T3, [x0, x1, z0, z1], 220, inner ? [inner[0] + 0.5, inner[1] - 0.5, inner[2] + 0.5, inner[3] - 0.5] : null));
+    if (inner) sc.add(w3Terrain(T3, inner, 260, null));
+    const water = new T3.Mesh(new T3.PlaneGeometry(x1 - x0, z1 - z0), new T3.MeshBasicMaterial({ color: 0x3a7cb8, transparent: true, opacity: 0.22, depthWrite: false }));
+    water.rotateX(-Math.PI / 2); water.position.set((x0 + x1) / 2, 0.02, (z0 + z1) / 2); sc.add(water);
+    // the rays' tracks on the water, faint: where each bit of the front went
+    const tr = [];
+    F.rays.forEach((q, j) => { if (j % 4) return; for (let i = 1; i < q.x.length; i++) tr.push(q.x[i - 1], 0.05, q.z[i - 1], q.x[i], 0.05, q.z[i]); });
+    const tg = new T3.BufferGeometry(); tg.setAttribute('position', new T3.Float32BufferAttribute(tr, 3));
+    sc.add(new T3.LineSegments(tg, new T3.LineBasicMaterial({ color: 0xbfd6e8, transparent: true, opacity: 0.18 })));
+    // the front: a band of quads, rebuilt every frame
+    const NR = F.rays.length, band = new T3.BufferGeometry();     // two triangles per pair of neighbors still together
+    band.setAttribute('position', new T3.BufferAttribute(new Float32Array((NR - 1) * 6 * 3), 3));
+    band.setAttribute('color', new T3.BufferAttribute(new Float32Array((NR - 1) * 6 * 3), 3));
+    W3.band = new T3.Mesh(band, new T3.MeshBasicMaterial({ vertexColors: true, side: T3.DoubleSide, transparent: true, opacity: 0.92 }));
+    sc.add(W3.band);
+    const cam = new T3.PerspectiveCamera(45, w / h, 0.05, 5000);
+    const size = Math.max(x1 - x0, z1 - z0);
+    W3.view = { az: -0.5 + (r.th * D2R), el: 0.6, dist: size * 0.9, tx: (x0 + x1) / 2, tz: (z0 + z1) / 2 };
+    W3.scene = sc; W3.cam = cam; W3.size = size; W3.box = [x0, x1, z0, z1];
+    W3.WZ = size * 0.012;                                    // km of band per meter of wave
+    $('w3Time').max = String(Math.round(F.tmax));
+    $('w3Note').textContent = '';
+    w3Loop();
+  }
+  function w3Place() {
+    const v = W3.view, c = W3.cam;
+    c.position.set(v.tx + v.dist * Math.cos(v.el) * Math.sin(v.az), v.dist * Math.sin(v.el), v.tz + v.dist * Math.cos(v.el) * Math.cos(v.az));
+    c.lookAt(v.tx, 0, v.tz);
+  }
+  function w3Frame() {                                       // the front at time W3.t (minutes since it left)
+    const F = W3.front, r = S.ray, t = W3.t, H0 = CUT.ft / FTm, cg0 = G * r.T / (4 * Math.PI), NR = F.rays.length;
+    const P = new Float32Array(NR * 3).fill(NaN);
+    for (let j = 0; j < NR; j++) {
+      const q = F.rays[j], n = q.t.length; if (n < 2 || t > q.t[n - 1]) continue;
+      let lo = 0, hi = n - 1; while (hi - lo > 1) { const mI = (lo + hi) >> 1; if (q.t[mI] <= t) lo = mI; else hi = mI; }
+      const f = Math.min(1, Math.max(0, (t - q.t[lo]) / Math.max(1e-6, q.t[hi] - q.t[lo])));
+      P[3 * j] = q.x[lo] + (q.x[hi] - q.x[lo]) * f; P[3 * j + 1] = q.z[lo] + (q.z[hi] - q.z[lo]) * f; P[3 * j + 2] = q.h[lo] + (q.h[hi] - q.h[lo]) * f;
+    }
+    const pos = W3.band.geometry.attributes.position, col = W3.band.geometry.attributes.color, H = new Float32Array(NR);
+    let e0 = 0, e1 = 0, broke = 0;
+    for (let j = 0; j < NR; j++) {
+      if (isNaN(P[3 * j])) { H[j] = NaN; continue; }
+      // spacing to the neighbors still going: energy between two rays stays between them
+      // over two neighbors each side, so crossing rays don't make spikes
+      const nb = []; for (const d of [-3, -2, -1, 1, 2, 3]) { const k = j + d; if (k >= 0 && k < NR && !isNaN(P[3 * k])) nb.push(Math.hypot(P[3 * k] - P[3 * j], P[3 * k + 1] - P[3 * j + 1]) / Math.abs(d)); }
+      const b = nb.length ? nb.reduce((s, v) => s + v, 0) / nb.length : F.SP, dep = Math.max(0.3, P[3 * j + 2]);
+      let h = H0 * Math.sqrt(cg0 / cg(r.T, dep)) * Math.sqrt(Math.min(6, Math.max(0.02, F.SP / Math.max(0.01, b))));
+      if (h > 0.78 * dep) { h = 0.78 * dep; broke++; }
+      H[j] = nb.length ? h : 0;
+      e1 += H[j] * H[j] * cg(r.T, dep) * Math.min(b, 3 * F.SP);
+    }
+    for (let j = 0; j < NR; j++) e0 += H0 * H0 * cg0 * F.SP * (F.rays[j].t.length > 1 ? 1 : 0);
+    { const Hs = Float32Array.from(H);                       // a light running mean along the front
+      for (let j = 0; j < NR; j++) { if (isNaN(Hs[j])) continue; let s2 = 0, w2 = 0; for (let d = -4; d <= 4; d++) { const k = j + d; if (k < 0 || k >= NR || isNaN(Hs[k])) continue; const ww = 5 - Math.abs(d); s2 += ww * Hs[k]; w2 += ww; } H[j] = Math.min(s2 / w2, 0.78 * Math.max(0.3, P[3 * j + 2])); } }
+    { let cx = 0, cz = 0, cd = 0, n = 0; for (let j = 0; j < NR; j++) if (!isNaN(H[j])) { cx += P[3 * j]; cz += P[3 * j + 1]; cd += P[3 * j + 2]; n++; }
+      W3.mid = n ? [cx / n, cz / n, cd / n] : null; }
+    let nv = 0;
+    const colOf = (j) => { const brk = H[j] >= 0.78 * Math.max(0.3, P[3 * j + 2]) - 1e-6, c = brk ? [255, 255, 255] : hCol(H[j] * FTm); return [c[0] / 255, c[1] / 255, c[2] / 255]; };
+    const put = (j, top) => { pos.setXYZ(nv, P[3 * j], 0.03 + (top ? H[j] * W3.WZ : 0), P[3 * j + 1]); col.setXYZ(nv, ...colOf(j)); nv++; };
+    for (let j = 0; j < NR - 1; j++) {
+      // a gap where neighbors have stopped or split far apart
+      if (isNaN(H[j]) || isNaN(H[j + 1]) || Math.hypot(P[3 * j + 3] - P[3 * j], P[3 * j + 4] - P[3 * j + 1]) > 8) continue;   // more than 8 km apart: the front has torn
+      put(j, 0); put(j, 1); put(j + 1, 0); put(j, 1); put(j + 1, 1); put(j + 1, 0);
+    }
+    W3.band.geometry.setDrawRange(0, nv); pos.needsUpdate = true; col.needsUpdate = true; W3.band.geometry.computeBoundingSphere();
+    const live = H.filter((v) => !isNaN(v) && v > 0), hi = live.length ? Math.max(...live) : 0;
+    $('w3Read').textContent = `${fmtT(t)} after leaving · energy still moving ${e0 ? Math.round(100 * e1 / e0) : 0}% of the start · tallest part ${(hi * FTm).toFixed(1)} ft` + (broke ? ' · breaking' : '');
+    $('w3Time').value = String(Math.round(t));
+  }
+  function w3Loop(ts) {
+    if (!W3.on || !W3.scene) return;
+    if (ts != null && W3.play && !reduce) {                  // deep water goes by fast; over the shelf, slow down
+      const dt = W3.last ? Math.min(0.1, (ts - W3.last) / 1000) : 0, slow = W3.mid && W3.mid[2] < 80 ? 0.3 : 1;
+      W3.t += dt * slow * W3.front.tmax / 25; if (W3.t > W3.front.tmax) W3.t = 0;
+    }
+    if (W3.follow && W3.mid) {                               // keep the wave in view
+      const v = W3.view, k = W3.t < 1 ? 1 : 0.06; v.tx += (W3.mid[0] - v.tx) * k; v.tz += (W3.mid[1] - v.tz) * k;
+      const want = Math.max(12, Math.min(W3.size * 0.5, W3.mid[2] < 80 ? 45 : 90)); v.dist += (want - v.dist) * 0.03;
+    }
+    W3.last = ts || 0;
+    w3Frame(); w3Place(); W3.rd.render(W3.scene, W3.cam);
+    requestAnimationFrame(w3Loop);
+  }
+  function w3Show(on) {
+    W3.on = on; $('w3Box').hidden = !on; $('cutCv').hidden = on; $('cutLen').hidden = on;
+    for (const b of document.querySelectorAll('#cutView button')) b.setAttribute('aria-pressed', String((b.dataset.v === '3d') === on));
+    if (on) { w3Build().then(() => { if (W3.scene) { W3.last = 0; requestAnimationFrame(w3Loop); } }).catch(() => { $('w3Note').textContent = 'This browser can’t show the 3D view.'; }); }
+  }
+  if ($('w3Cv')) {
+    $('cutView').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) w3Show(b.dataset.v === '3d'); });
+    $('w3Play').addEventListener('click', () => { W3.play = !W3.play; $('w3Play').textContent = W3.play ? 'Pause' : 'Play'; });
+    $('w3Time').addEventListener('input', () => { W3.t = +$('w3Time').value; W3.play = false; $('w3Play').textContent = 'Play'; });
+    $('w3Reset').addEventListener('click', () => { W3.built = ''; W3.scene = null; W3.follow = true; $('w3Follow').setAttribute('aria-pressed', 'true'); w3Show(true); });
+    $('w3Follow').addEventListener('click', () => { W3.follow = !W3.follow; $('w3Follow').setAttribute('aria-pressed', String(W3.follow)); });
+    // drag to turn, two fingers (or shift-drag) to move, pinch or wheel to zoom
+    const cv3 = $('w3Cv'), tp = new Map(); let g0 = null;
+    const rect = () => cv3.getBoundingClientRect();
+    cv3.addEventListener('pointerdown', (e) => { cv3.setPointerCapture(e.pointerId); tp.set(e.pointerId, [e.clientX, e.clientY]); g0 = null; });
+    cv3.addEventListener('pointermove', (e) => {
+      if (!tp.has(e.pointerId) || !W3.scene) return; const [px, py] = tp.get(e.pointerId); tp.set(e.pointerId, [e.clientX, e.clientY]);
+      const v = W3.view, dx = e.clientX - px, dy = e.clientY - py;
+      if (tp.size === 1 && !e.shiftKey) { v.az -= dx * 0.006; v.el = Math.max(0.08, Math.min(1.45, v.el + dy * 0.005)); }
+      else if (tp.size === 1) { W3.follow = false; $('w3Follow').setAttribute('aria-pressed', 'false'); const k = v.dist / rect().height; v.tx -= (dx * Math.cos(v.az) + dy * Math.sin(v.az)) * k; v.tz -= (-dx * Math.sin(v.az) + dy * Math.cos(v.az)) * k; }
+      else if (tp.size === 2) {
+        const [a, b] = [...tp.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        if (g0) { W3.follow = false; $('w3Follow').setAttribute('aria-pressed', 'false'); v.dist = Math.max(0.5, Math.min(W3.size * 3, v.dist * g0.d / Math.max(10, d))); const mx = (mid[0] - g0.m[0]) / 2, my = (mid[1] - g0.m[1]) / 2, k = v.dist / rect().height; v.tx -= (mx * Math.cos(v.az) + my * Math.sin(v.az)) * k; v.tz -= (-mx * Math.sin(v.az) + my * Math.cos(v.az)) * k; }
+        g0 = { d, m: mid };
+      }
+    });
+    const up = (e) => { tp.delete(e.pointerId); g0 = null; };
+    cv3.addEventListener('pointerup', up); cv3.addEventListener('pointercancel', up);
+    cv3.addEventListener('wheel', (e) => { if (!W3.scene) return; e.preventDefault(); W3.view.dist = Math.max(0.5, Math.min(W3.size * 3, W3.view.dist * Math.exp(e.deltaY * 0.0015))); }, { passive: false });
+    new ResizeObserver(() => { if (W3.rd && W3.cam) { const w = cv3.clientWidth, h = cv3.clientHeight; W3.rd.setSize(w, h, false); W3.cam.aspect = w / h; W3.cam.updateProjectionMatrix(); } }).observe(cv3);
+    setInterval(() => { if (W3.on && S.ray && W3.built !== [S.ray.start, S.ray.th, S.ray.T].join() && !W3.busy) { W3.busy = true; W3.scene = null; w3Build().catch(() => { $('w3Note').textContent = 'This browser can\u2019t show the 3D view.'; }).finally(() => { W3.busy = false; }); } if (W3.on && (MAPV() || !S.ray)) W3.on = false; else if (!W3.on && !MAPV() && S.ray && !$('w3Box').hidden) w3Show(true); }, 800);
+  }
+
+  window.CHOC.trip = { w3: W3, _raw: (T, lon, lat, th) => trace(T, lon, lat, th, false), state: S, aim: doAim, play, _miss: (T, lon, lat, th, spot) => miss(trace(T, lon, lat, th, false), spot), _aim: (spot, T, s) => aim(spot, T, s), trace: (T, lon, lat, th) => makeRay(T, [lon, lat], th),
     skip: () => { if (S.ray) { S.dist = S.ray.len; S.phase = 'done'; S.playing = false; draw(); finish(); } }, setMode, fc: FC,
     _screen: (lon, lat) => { const { sc, x0, y0 } = proj(cam()); return [(lon * KX - x0) * sc, (-lat * KY - y0) * sc]; } };
 
