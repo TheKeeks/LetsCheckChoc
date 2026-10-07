@@ -32,6 +32,19 @@ module.exports = {
       log(rd);
       assert.match(rd, /after leaving · energy still moving \d+% of the start · tallest part [\d.]+ ft/);
       await ctx.screenshot('swell-map-3d');
+      // Follow tracks the part of the front headed for Choc, not the middle of the whole front: as that part
+      // lands, the view is over Choc (it used to drift off with the rest of the front)
+      const fol = await page.evaluate(async () => {
+        const w = window.CHOC.trip.w3, end = w.goal.t + 2;
+        w.t = Math.max(0, end - 0.5); w.follow = true;
+        for (let i = 0; i < 200; i++) await new Promise((ok) => requestAnimationFrame(ok));
+        const v = w.view, r = { goal: w.goal.name, near: w.goal.km, off: Math.hypot(v.tx - w.goal.x, v.tz - w.goal.z), mid: Math.hypot(w.mid ? w.mid[0] - w.goal.x : 0, w.mid ? w.mid[1] - w.goal.z : 0) };
+        w.follow = false; return r;
+      });
+      log(`follow: aimed at ${fol.goal}, closest ray ${fol.near.toFixed(2)} km; view ${fol.off.toFixed(2)} km from it (middle of front ${fol.mid.toFixed(1)} km)`);
+      assert.equal(fol.goal, 'Choc', 'follows toward Choc');
+      assert.ok(fol.off < 2, `follow view ends over Choc (${fol.off.toFixed(2)} km away)`);
+      await ctx.screenshot('swell-map-3d-follow-choc');
       // Fishers jumps in close; a double-tap zooms in further on the spot tapped; one-finger drag moves the view
       await page.click('#w3Fishers');
       await page.waitForTimeout(800);

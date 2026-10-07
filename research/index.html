@@ -379,7 +379,7 @@ body { margin: 0; }
           </ul>
           <p id="hubWave" class="hub-wave"></p>
           <details class="hub-more"><summary>How the power is counted</summary><p>A crest of rays 24 km wide, 100 m apart, leaves with your heading. Along the way we count how many pass within a wavelength-wide window of your wave (about 1.1 km at 8 s, 1.5 km at 12 s, 1.8 km at 16 s), since real waves smear out over about that width. At the shore the count is repeated for directions out to ±10° in 2.5° steps, weighted the way the main model spreads the buoy's swell, each centered on the part of the swell that heads for the spot. The likely range is the wider of the ray-counting noise and how much the answer moves between neighboring directions. The height figure adds shallowing, read at 4 m of water.</p></details>
-          <p class="hub-fine">Deep water is NOAA's ETOPO 2022 (about 1 km). On the survey map the ray runs on the same sea floor as the rest of this page, averaged to 64 m and smoothed over about 150 m, traced live in your browser. Times are at group speed, the speed wave energy travels. Bottom friction and breaking aren't modeled. The arrival close-up is a 2016 New York State aerial photo with your reef map.</p>
+          <p class="hub-fine">The bending is the same ray tracing as in "How does the model work?": crest speed from depth and period (linear dispersion), and the ray turns toward slower water by Snell's law, step by step. Deep water is NOAA's ETOPO 2022 (about 1 km, smoothed over about 1.2 km, 400 m steps, following the curve of the Earth). On the survey map the ray runs on the same sea floor as the rest of this page, averaged to 64 m and smoothed over about 150 m, in 32 m steps, traced live in your browser. Times are at group speed, the speed wave energy travels. Bottom friction and breaking aren't modeled. The arrival close-up is a 2016 New York State aerial photo with your reef map.</p>
         </div>
       </div>
       <div class="trip-inset" id="tripInsetBox" hidden><canvas id="tripInset" aria-label="Close-up of where the wave arrives, over a 2016 aerial photo with your reef map"></canvas><button type="button" class="trip-inset-x" id="tripInsetClose" aria-label="Hide the arrival close-up">×</button></div>
@@ -460,7 +460,12 @@ body { margin: 0; }
   <h3>How size and shape are worked out</h3>
   <ol>
     <li><strong>Send the swell in.</strong> A line of rays, 20 m apart, enters wherever the swell crosses the open-ocean edge of the map, square to the swell. Each ray carries the same share of energy.</li>
-    <li><strong>Let the sea floor bend them.</strong> Waves slow down in shallow water, so each ray turns toward the shallows, exactly as a wave would over NOAA's survey. Rays that hit land stop.</li>
+    <li><strong>Let the sea floor bend them.</strong> This is linear wave ray tracing (geometric optics, the standard refraction method in coastal engineering). Two rules:
+      <ul>
+        <li><b>Speed from depth.</b> A crest's speed <i>c</i> at each point comes from the swell's period <i>T</i> and the local depth <i>h</i> through the linear dispersion relation (Fenton and McKee's explicit form, within about 2% of the exact one). That is about 1.56·<i>T</i> m/s in deep water, slowing toward √(<i>g·h</i>) in the shallows. The deeper the water a wave can feel, the longer its period: 6 s swell starts slowing in about 28 m, 15 s swell in about 175 m.</li>
+        <li><b>Turn toward slower water.</b> This is Snell's law applied continuously. Over each step <i>ds</i> the ray turns by d<i>θ</i> = −(1/<i>c</i>)·(∂<i>c</i>/∂<i>n</i>)·<i>ds</i>, where ∂<i>c</i>/∂<i>n</i> is how fast the speed changes across the ray. When one end of a crest is in shallower, slower water, the crest swings toward it.</li>
+      </ul>
+      The depth is NOAA's survey (CUDEM), averaged to 144 m cells and smoothed over about 350 m, so the rays follow the shape of the bottom on the scale of a wavelength rather than single survey pixels. The step is 72 m. Rays that hit land stop. Left out: diffraction (energy spreading sideways into shadows, allowed for roughly by the wavelength-wide landing zones below), currents, wind and bottom friction.</li>
     <li><strong>Count who lands.</strong> Count the rays that pass through each spot's zone and compare with open water, where a patch that size would be crossed by a fixed number. More rays than that means the bottom funnels energy in; fewer means it spreads it out or blocks it. Waves also build a little as they slow down; both spots are measured at the same depth (4 m), so neither gets a boost from shallower water. The square root of all that is the share of the buoy's height that arrives: <b>size</b>.</li>
     <li><strong>Check the angle they arrive at.</strong> For every ray that lands, we measure the angle between it and the bottom contours where it gets there, from the 3–8 m survey. Square-on (under 30°) means the whole wave breaks at once and closes out; at an angle, it breaks progressively along the contours and peels. The share arriving at 30° or more is the <b>shape</b>. Surf scientists call this the peel angle. It says whether a wave can peel, not how fast or how good.</li>
   </ol>
@@ -3435,6 +3440,13 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const T3 = await w3Lib(); await w3FineLoad(); let F;
     try { F = await w3Front(r); } catch (e) { return; }
     W3.front = F; W3.built = key; W3.t = 0; W3.drawn = '';
+    // the part of the front the camera follows: the ray that gets closest to the spot it was aimed at
+    // (Choc unless it was aimed at Wilderness), not the middle of the whole 30 km front
+    { const g = /Wilderness/.test(S.note || '') ? SPOT.wild : SPOT.choc, gx = (g.pt[0] - r.start[0]) * KX, gz = -(g.pt[1] - r.start[1]) * KY;
+      let best = Infinity, bj = Math.floor(F.rays.length / 2), bi = 0;
+      F.rays.forEach((q, j) => { for (let i = 0; i < q.x.length; i++) { const d = Math.hypot(q.x[i] - gx, q.z[i] - gz); if (d < best) { best = d; bj = j; bi = i; } } });
+      const q = F.rays[bj];   // once it gets there the view stays put, even if that ray runs on along the shore
+      W3.lead = bj; W3.aimPt = null; W3.goal = { name: g.name, x: gx, z: gz, km: best, t: q.t.length ? q.t[bi] : 0, at: q.t.length ? [q.x[bi], q.z[bi], Math.max(0, q.h[bi])] : null }; }
     // scene box: everything the rays cover, plus a margin
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
     for (const q of F.rays) for (let i = 0; i < q.x.length; i++) { x0 = Math.min(x0, q.x[i]); x1 = Math.max(x1, q.x[i]); z0 = Math.min(z0, q.z[i]); z1 = Math.max(z1, q.z[i]); }
@@ -3521,6 +3533,11 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
       for (let j = 0; j < NR; j++) { if (isNaN(Hs[j])) continue; let s2 = 0, w2 = 0; for (let d = -4; d <= 4; d++) { const k = j + d; if (k < 0 || k >= NR || isNaN(Hs[k])) continue; const ww = 5 - Math.abs(d); s2 += ww * Hs[k]; w2 += ww; } H[j] = Math.min(s2 / w2, 0.78 * Math.max(0.3, P[3 * j + 2])); } }
     { let cx = 0, cz = 0, cd = 0, n = 0; for (let j = 0; j < NR; j++) if (!isNaN(H[j])) { cx += P[3 * j]; cz += P[3 * j + 1]; cd += P[3 * j + 2]; n++; }
       W3.mid = n ? [cx / n, cz / n, cd / n] : null; }
+    if (W3.goal && W3.goal.at && t >= W3.goal.t) W3.aimPt = W3.goal.at;
+    else { const L = W3.lead; let cx = 0, cz = 0, cd = 0, n = 0;   // the stretch of front headed for the spot (a few rays either side of the closest)
+      for (let j = Math.max(0, L - 3); j <= Math.min(NR - 1, L + 3); j++) if (!isNaN(P[3 * j])) { cx += P[3 * j]; cz += P[3 * j + 1]; cd += P[3 * j + 2]; n++; }
+      if (n) W3.aimPt = [cx / n, cz / n, cd / n];
+      else { const q = F.rays[L], k = q.t.length - 1; W3.aimPt = k >= 0 ? (t >= q.t[k] ? [q.x[k], q.z[k], Math.max(0, q.h[k])] : [q.x[0], q.z[0], q.h[0]]) : W3.mid; } }
     let nv = 0, nc = 0; const cpos = W3.column.geometry.attributes.position, bed = new Float32Array(NR);
     for (let j = 0; j < NR; j++) if (!isNaN(H[j])) { const [dd, land] = depth3(r.start[0] + P[3 * j] / KX, r.start[1] - P[3 * j + 1] / KY); bed[j] = land ? 0 : vz(dd); }
     const colOf = (j) => { const brk = H[j] >= 0.78 * Math.max(0.3, P[3 * j + 2]) - 1e-6, c = brk ? [255, 255, 255] : hCol(H[j] * FTm); return [c[0] / 255, c[1] / 255, c[2] / 255]; };
@@ -3541,12 +3558,13 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   function w3Loop(ts) {
     if (!W3.on || !W3.scene) return;
     if (ts != null && W3.play && !reduce) {                  // deep water goes by fast; over the shelf, slow down
-      const dt = W3.last ? Math.min(0.1, (ts - W3.last) / 1000) : 0, slow = W3.mid && W3.mid[2] < 80 ? 0.3 : 1;
+      const dt = W3.last ? Math.min(0.1, (ts - W3.last) / 1000) : 0, lp = W3.aimPt || W3.mid, slow = lp && lp[2] < 80 ? 0.3 : 1;
       W3.t += dt * slow * W3.front.tmax / 25; if (W3.t > W3.front.tmax) W3.t = 0;
     }
-    if (W3.follow && W3.mid) {                               // keep the wave in view
-      const v = W3.view, k = W3.t < 1 ? 1 : 0.06, want = Math.max(6, Math.min(W3.size * 0.5, W3.mid[2] < 30 ? 10 : W3.mid[2] < 80 ? 25 : 70));
-      const dx = W3.mid[0] - v.tx, dz = W3.mid[1] - v.tz, dd = want - v.dist;
+    const fp = W3.aimPt || W3.mid;
+    if (W3.follow && fp) {                                   // keep the part of the wave headed for the spot in view
+      const v = W3.view, k = W3.t < 1 ? 1 : 0.06, want = Math.max(6, Math.min(W3.size * 0.5, fp[2] < 30 ? 10 : fp[2] < 80 ? 25 : 70));
+      const dx = fp[0] - v.tx, dz = fp[1] - v.tz, dd = want - v.dist;
       if (Math.hypot(dx, dz) > 0.02 * v.dist) { v.tx += dx * k; v.tz += dz * k; }   // caught up: stop nudging, so a paused view sits still
       if (Math.abs(dd) > 0.02 * v.dist) v.dist += dd * 0.03;
     }
