@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased] — Swell Map: plainer titles
+
+The Swell Map page no longer opens with "When is it big at Choc?" in large type. It starts with the small "Chocomount research · Block Island buoy 44097 · 2016 – 2026" line and a one-sentence description of what it is. The heading is still there for screen readers, and the browser tab reads "Chocomount research". Section titles are drier:
+
+| Before | After |
+|---|---|
+| Swell on its way to Choc | Map: forecast, past days, single-wave trace |
+| What makes Choc and Wilderness good? | Conditions behind logged sessions |
+| What's it going to look like this week? | 7-day forecast |
+| Check a day you remember | Check a date |
+
+"How does the model work?" and "Good days, month by month" stay as they were, as does the site's "Swell Map" tab name. Wording only; the full e2e suite passes.
+
 ## [Unreleased] — Swell Map: log photos on the calendar, steadier 3D controls, plainer wording
 
 The ten-year calendar now shows the crew's surf-log photos. When the Swell Map runs inside the site's tab, it uses the site's existing Firebase sign-in to read the `surf_logs` collection (read only; it never writes). A small camera marks each month and each calendar day that has photos. Opening a month lists its photos, and a chosen day shows its own in the day card. Only plain https photo links are used. Opened on its own (or in a preview), the page has no Firebase connection and simply shows no photos.

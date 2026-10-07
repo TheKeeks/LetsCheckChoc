@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>When Is It Big at Choc?</title>
+<title>Chocomount research</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap">
 <style>
@@ -244,6 +244,7 @@ html.hub-lock, html.hub-lock body { overflow: hidden; }
 .dec-day b { color: var(--fg); font-weight: 600; }
 .dec-day .ok { color: var(--offshore); }
 .dec-w { font-size: .82rem; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 svg.dec-cam, .chart svg.dec-cam { width: 12px; height: 9px; display: inline-block; vertical-align: -1px; overflow: visible; }
 .dec-d { position: relative; }
 .chart .dec-d svg.dec-cam { position: absolute; right: 3px; top: 3px; width: 10px; height: 8px; }
@@ -297,14 +298,14 @@ body { margin: 0; }
 
 <div class="wrap">
 <header>
+  <h1 class="vh">Chocomount research</h1>
   <div class="eyebrow">Chocomount research · Block Island buoy 44097 · 2016 – 2026</div>
-  <h1>When is it big at Choc?</h1>
-  <p class="lede">Ten years of buoy data run through a swell model built on NOAA's sea-floor survey, checked against your surf log. Three questions:</p>
-  <ol class="qs"><li><a href="#how-h">How does the model work?</a> Pick a swell and see how much of it reaches Choc or Wilderness.</li><li><a href="#good-h">What makes Choc and Wilderness good?</a> Seasons, wind, tide and your ratings.</li><li><a href="#week-h">What's it going to look like this week?</a></li></ol>
+  <p class="lede">Hourly swell at Block Island buoy 44097 since 2016, carried to Chocomount and Wilderness with a refraction model built on NOAA's sea-floor survey and checked against the surf log.</p>
+  <ol class="qs"><li><a href="#how-h">How does the model work?</a> Pick a swell and see how much of it reaches Choc or Wilderness.</li><li><a href="#good-h">Conditions behind logged sessions</a>: seasons, wind, tide and ratings.</li><li><a href="#week-h">7-day forecast</a></li></ol>
 </header>
 <section aria-labelledby="trip-h">
   <div class="eyebrow">The map</div>
-  <h2 id="trip-h">Swell on its way to Choc</h2>
+  <h2 id="trip-h">Map: forecast, past days, single-wave trace</h2>
   <p>This week's swell from the open Atlantic to the reef from two forecast models, or any day since 2016. Open <strong>Layers</strong> to switch to the past, change the model, the spot or what's drawn, or drop your own wave and follow it in over the sea floor.</p>
   <div class="hub">
     <div class="trip-stage" id="tripStage">
@@ -428,7 +429,7 @@ body { margin: 0; }
   </figure>
 <figure class="chart" id="odWrap">
     <h3>What the ocean was doing on <span id="odDay">…</span></h3>
-    <p id="odHint" class="od-hint">This follows the day picked on the map’s Past view or in the calendar above. You can also pick any date in “Check a day you remember” further down.</p>
+    <p id="odHint" class="od-hint">This follows the day picked on the map’s Past view or in the calendar above. You can also pick any date in “Check a date” further down.</p>
     <p>Three independent looks at the same day: two buoys that measured it and a wave model that fills in the ocean between them. Each arrow is one swell train in one hour, pointing where it was traveling; higher up means longer period, bigger arrow means bigger swell. The bottom row is what each source says reached Choc.</p>
     <div id="odLanes" class="od-lanes"></div>
     <div class="od-map"><canvas id="odMap" aria-label="Map of the model's primary swell offshore at the chosen time"></canvas></div>
@@ -472,7 +473,7 @@ body { margin: 0; }
 
 <section aria-labelledby="good-h">
   <div class="eyebrow">Part 2</div>
-  <h2 id="good-h">What makes Choc and Wilderness good?</h2>
+  <h2 id="good-h">Conditions behind logged sessions</h2>
 </section>
 <section aria-labelledby="ans-h">
   <div class="eyebrow">The answer so far</div>
@@ -561,7 +562,7 @@ body { margin: 0; }
   <p><strong>The clearest case: 4 January 2018</strong>, the bomb cyclone. The buoy read 13.8 ft at 7 s from the NNE, which barely reaches Choc (2.1 ft). Underneath was 12.8 ft at 10.5 s from the ESE (121°), which reached Choc at 7.1 ft. Pick that date below to see it.</p>
 </section>
 <section aria-labelledby="dc-h">
-  <h2 id="dc-h">Check a day you remember</h2>
+  <h2 id="dc-h">Check a date</h2>
   <figure class="chart">
     <h3>Check any day, May 2016 – Oct 2026</h3>
     <label class="rl">Date <input type="date" id="dcDate" value="2024-04-04" min="2016-05-13" max="2026-10-04"></label>
@@ -572,7 +573,7 @@ body { margin: 0; }
 
 <section aria-labelledby="week-h">
   <div class="eyebrow">Part 3</div>
-  <h2 id="week-h">What's it going to look like this week?</h2>
+  <h2 id="week-h">7-day forecast</h2>
   <figure class="chart">
     <div class="scroll"><table id="fcDays"></table></div>
     <figcaption>Best daylight hour each day (from half an hour after sunrise to half an hour before sunset), the average of the two models (each model underneath). "Clean" means the forecast wind suits that spot. Tap a cell to see that hour's swell as rays in Part 1.</figcaption>
@@ -3625,7 +3626,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
 })();
 
 // ── WHAT WAS THE OCEAN DOING (day panels) ───────────────────────────────────
-// For the date picked in "Check a day you remember": the swell trains measured hour by hour at
+// For the date picked in "Check a date": the swell trains measured hour by hour at
 // Block Island (CDIP 154) and at Montauk (44017, to Feb 2023) or the Long Island buoy (44025),
 // the Copernicus wave model's primary swell, secondary swell and wind sea offshore, what each
 // source says reached Choc, and a map of the model's swell field at one time step.
