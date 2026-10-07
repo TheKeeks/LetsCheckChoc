@@ -373,7 +373,7 @@ body { margin: 0; }
     </div>
   </div>
   <figure class="chart cut" id="cutBox" hidden>
-    <div class="cut-top"><div class="fr-cap">Cutaway: your wave over the sea floor</div>
+    <div class="cut-top"><div class="fr-cap">Cross-section: your wave over the sea floor</div>
       <div class="seg" role="group" aria-label="Swell height offshore" id="cutFt"><button type="button" data-v="3" aria-pressed="false">3 ft</button><button type="button" data-v="6" aria-pressed="true">6 ft</button><button type="button" data-v="10" aria-pressed="false">10 ft</button></div>
       <div class="seg" role="group" aria-label="How much of the trip" id="cutLen"><button type="button" data-v="0.3" aria-pressed="false">Last 300 m</button><button type="button" data-v="1" aria-pressed="true">1 km</button><button type="button" data-v="5" aria-pressed="false">5 km</button></div></div>
     <canvas id="cutCv" aria-label="The wave side-on over the sea floor along its last kilometers"></canvas>
@@ -3147,16 +3147,15 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   }).observe(stage);
 
   window.CHOC = window.CHOC || {};
-  // ── CUTAWAY: the dropped wave side-on, over the real sea floor under its last few km. A strip of sea
-  // floor (the survey under the ray, plus a little either side so the contours show) seen at an angle, cut
-  // open along the near edge. The wave on top is linear theory along the ray: its length from the depth
+  // ── CUTAWAY: the dropped wave side-on, a flat cross-section along the ray over the survey's sea floor
+  // under its last stretch. The wave on top is linear theory along the ray: its length from the depth
   // (dispersion), its height growing with shoaling (group speed) and with how much the bottom focused or
   // spread it (the ray's power count), and it breaks once it is about 0.78 times as tall as the water is deep.
   const CUT = { len: 1, ft: 6, key: '', prof: null, bed: null, t: 0, run: false, vis: false };
   const cutCv = $('cutCv'), cutCtx = cutCv ? cutCv.getContext('2d') : null;
   function cutProfile(r) {
-    const Lkm = Math.min(CUT.len, r.len), NA = 150, JM = 4, out = { Lkm, NA, JM, h: [], bed: [], H: [], k: [], ph: [], c: [], ib: -1 };
-    const across = Lkm * 1000 * 0.07 / JM;                    // strip width: about 14% of its length
+    const Lkm = Math.min(CUT.len, r.len), NA = 150, JM = 0, out = { Lkm, NA, JM, h: [], bed: [], H: [], k: [], ph: [], c: [], ib: -1 };
+    const across = 0;                                        // flat section: just the line under the ray
     for (let a = 0; a < NA; a++) {
       const dd = r.len - Lkm + Lkm * a / (NA - 1), p = sample(r, dd), hd = headingAt(r, Math.max(dd, 0.06), 0.06) * D2R;
       const row = [];
@@ -3207,6 +3206,10 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
         b.fillStyle = `rgb(${base.map((v) => Math.round(v * lit)).join(',')})`;
         b.beginPath(); b.moveTo(...q[0]); for (const p of q.slice(1)) b.lineTo(...p); b.closePath(); b.fill();
       }
+      // the ground under the section line, sand at the top fading down
+      b.beginPath(); for (let a = 0; a < NA; a++) { const p = XY(a, 0, -P.bed[a][0]); a ? b.lineTo(...p) : b.moveTo(...p); }
+      b.lineTo(XY(NA - 1, 0, -zmax - 3)[0], h - bot + 6); b.lineTo(XY(0, 0, -zmax - 3)[0], h - bot + 6); b.closePath();
+      const sg = b.createLinearGradient(0, XY(0, 0, 0)[1], 0, h - bot); sg.addColorStop(0, '#8a7a5c'); sg.addColorStop(1, '#2a2620'); b.fillStyle = sg; b.fill();
       CUT.bed = c;
     }
     g.drawImage(CUT.bed, 0, 0, w, h);
@@ -3218,22 +3221,6 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     };
     const E = Array.from({ length: NA }, (_, a) => (P.h[a] > 0.05 || a <= P.ib ? eta(a) : null));
     const last = E.findIndex((e, a) => e == null && a > 0), end = last < 0 ? NA - 1 : last - 1;
-    // surface: back edge to front edge, see-through so the floor shows
-    g.beginPath();
-    for (let a = 0; a <= end; a++) { const p = XY(a, JM, E[a]); a ? g.lineTo(...p) : g.moveTo(...p); }
-    for (let a = end; a >= 0; a--) g.lineTo(...XY(a, -JM, E[a]));
-    g.closePath(); g.fillStyle = 'rgba(52,120,175,0.42)'; g.fill();
-    // crest lines across the strip, and foam once it has broken
-    for (let a = 1; a < end; a++) {
-      if (!(E[a] > E[a - 1] && E[a] >= E[a + 1] && E[a] > 0)) continue;
-      const broken = P.ib >= 0 && a >= P.ib;
-      g.strokeStyle = broken ? 'rgba(255,255,255,.95)' : 'rgba(225,240,250,.8)'; g.lineWidth = broken ? 3 : 1.6;
-      g.beginPath(); g.moveTo(...XY(a, -JM, E[a])); g.lineTo(...XY(a, JM, E[a])); g.stroke();
-      if (broken) {                                          // whitewater spilling down the front of a broken crest
-        g.fillStyle = 'rgba(255,255,255,.35)';
-        for (let j = -JM; j <= JM; j += 2) { const [x, y] = XY(a, j, E[a]); g.beginPath(); g.ellipse(x + 4, y + 3, 9, 4, 0, 0, 7); g.fill(); }
-      }
-    }
     // the cut face: water column between the surface and the floor along the near edge
     g.beginPath();
     for (let a = 0; a <= end; a++) { const p = XY(a, -JM, E[a]); a ? g.lineTo(...p) : g.moveTo(...p); }
@@ -3244,9 +3231,14 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     g.strokeStyle = '#d9c7a0'; g.lineWidth = 2; g.stroke();
     g.beginPath(); for (let a = 0; a <= end; a++) { const p = XY(a, -JM, E[a]); a ? g.lineTo(...p) : g.moveTo(...p); }
     g.strokeStyle = 'rgba(240,248,252,.95)'; g.lineWidth = 1.6; g.stroke();
+    for (let a = 1; a < end; a++) {                          // whitewater spilling down the front of each broken crest
+      if (!(P.ib >= 0 && a >= P.ib && E[a] > E[a - 1] && E[a] >= E[a + 1] && E[a] > 0)) continue;
+      const [x, y] = XY(a, 0, E[a]); g.fillStyle = 'rgba(255,255,255,.55)';
+      for (let k = 0; k < 4; k++) { g.beginPath(); g.ellipse(x + 3 + k * 4, y + 2 + k * 2.5, 6 - k, 3, 0, 0, 7); g.fill(); }
+    }
     // breaking point
     g.font = '11px "IBM Plex Mono", monospace'; g.fillStyle = 'rgba(231,237,242,.9)'; g.textAlign = 'center';
-    if (P.ib >= 0) { const [bx, by] = XY(P.ib, -JM, P.H[P.ib] * 0.6); g.fillStyle = '#f08a4b'; g.fillText('breaks here', bx, by - 14); g.beginPath(); g.moveTo(bx, by - 10); g.lineTo(bx, by); g.strokeStyle = '#f08a4b'; g.lineWidth = 1.5; g.stroke(); }
+    if (P.ib >= 0) { const [bx, by] = XY(P.ib, -JM, P.H[P.ib] * 0.6); g.fillStyle = '#f08a4b'; g.textAlign = bx > w - 50 ? 'right' : 'center'; g.fillText('breaks here', bx > w - 50 ? bx + 6 : bx, by - 14); g.beginPath(); g.moveTo(bx, by - 10); g.lineTo(bx, by); g.strokeStyle = '#f08a4b'; g.lineWidth = 1.5; g.stroke(); }
     // depth scale on the left, distance under the cut face
     g.textAlign = 'right'; g.fillStyle = 'rgba(231,237,242,.7)';
     const zst = zmax > 25 ? 10 : zmax > 10 ? 5 : 2;
@@ -3262,7 +3254,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   function cutCaption() {
     const P = CUT.prof, r = S.ray, i0 = 0, i1 = P.ib >= 0 ? P.ib : P.h.findIndex((x, a) => a > 0 && x <= 0.05) - 1;
     const e = i1 > 0 ? i1 : P.NA - 1, L = (a) => 2 * Math.PI / P.k[a], kmh = (a) => P.c[a] * 3.6;
-    const zmax = Math.max(4, Math.min(60, Math.max(...P.h) * 1.05)), V = `Wave height and depth share one scale, stretched about ${Math.max(2, Math.round((P.Lkm * 1000) / (zmax * 4)))} times against distance. The sea floor is the survey under your ray and ${Math.round(P.Lkm * 70)} m either side of it.`;
+    const zmax = Math.max(4, Math.min(60, Math.max(...P.h) * 1.05)), V = `Wave height and depth share one scale, stretched about ${Math.max(2, Math.round((P.Lkm * 1000) / (zmax * 4)))} times against distance. The sea floor is the survey right under your ray.`;
     $('cutCap').textContent = `A ${CUT.ft} ft, ${r.T} s swell on your ray. Over the last ${P.Lkm < 1 ? Math.round(P.Lkm * 1000) + ' m' : P.Lkm + ' km'} its wavelength goes from ${Math.round(L(i0))} m to ${Math.round(L(e))} m and it slows from ${Math.round(kmh(i0))} to ${Math.round(kmh(e))} km/h, ` +
       (P.ib >= 0 ? `then breaks in ${P.h[P.ib].toFixed(1)} m of water at about ${(P.H[P.ib] * FTm).toFixed(1)} ft (it breaks once it's about 0.78 times as tall as the water is deep). ` : `and it doesn't break before the ray stops. `) +
       `Height comes from shoaling plus how much the bottom focused or spread it along the way${r.pw ? '' : ' (still counting that; shoaling only for now)'}. ${V}`;

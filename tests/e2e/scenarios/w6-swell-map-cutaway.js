@@ -32,7 +32,7 @@ module.exports = {
     const m = cap.match(/wavelength goes from (\d+) m to (\d+) m/);
     assert.ok(+m[2] < +m[1], 'waves get shorter as they reach shallow water');
 
-    // Last 300 m: the wave is drawn (canvas has bright surface pixels) and the caption follows.
+    // Last 300 m: the wave is drawn (canvas has a bright surface line) and the caption follows.
     await page.click('#cutLen button[data-v="0.3"]');
     await page.waitForTimeout(800);
     assert.match(await page.$eval('#cutCap', n => n.textContent), /last 300 m/);
