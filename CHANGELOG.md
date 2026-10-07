@@ -1,5 +1,34 @@
 # Changelog
 
+## [Unreleased] — Swell Map: plainer titles
+
+The Swell Map page no longer opens with "When is it big at Choc?" in large type. It is now titled **Sound Check** (a nod to Long Island Sound and to LetsCheckChoc), at a modest size, above the small "Chocomount research · Block Island buoy 44097 · 2016 – 2026" line and a one-sentence description of what it is. The browser tab reads "Sound Check · Chocomount research". Section titles are drier:
+
+| Before | After |
+|---|---|
+| Swell on its way to Choc | Map: forecast, past days, single-wave trace |
+| What makes Choc and Wilderness good? | Conditions behind logged sessions |
+| What's it going to look like this week? | 7-day forecast |
+| Check a day you remember | Check a date |
+
+"How does the model work?" and "Good days, month by month" stay as they were, as does the site's "Swell Map" tab name. Wording only; the full e2e suite passes.
+
+## [Unreleased] — Swell Map: log photos on the calendar, steadier 3D controls, plainer wording
+
+The ten-year calendar now shows the crew's surf-log photos. When the Swell Map runs inside the site's tab, it uses the site's existing Firebase sign-in to read the `surf_logs` collection (read only; it never writes). A small camera marks each month and each calendar day that has photos. Opening a month lists its photos, and a chosen day shows its own in the day card. Only plain https photo links are used. Opened on its own (or in a preview), the page has no Firebase connection and simply shows no photos.
+
+The 3D view's two-finger gestures now work like Google Earth. Each gesture locks into one mode: pinch-and-twist (zoom about the fingers and turn with them), or both fingers sliding up or down to tilt. Each step applies only the change since the last one. Before, all three fired at once and the twist turned the view the wrong way, which made it feel janky. A compass in the corner shows north: drag it to turn and tilt, tap it to face north.
+
+Smaller changes:
+- **Ratings tile:** the "Yes / Not yet" tile in the ratings model now states the typical miss on the latest sessions against always guessing the average.
+- **Wilderness table:** the shape column is removed.
+- **What's next:** rewritten for where the project is now.
+- **Drop a wave readout:** now reads "Energy along the crest: N% of where it started", with what the bottom did, in the body font.
+- **Side view:** a line shows that same energy along the profile.
+- **Check a day you remember:** a new "Show the ocean that day" button opens that date in the map's Past view.
+
+Verified by a new e2e scenario, `w6-swell-map-photos.js` (cameras, month and day photos, a rejected non-https link, the ocean-that-day button, the plainer tile, no shape column), and `w6-swell-map-3d.js` (now also the compass). The full unit, e2e and Python suites pass. Two-finger gestures were checked with simulated touches: slide only tilts, pinch only zooms, twist only turns, the same way as the fingers.
+
 ## [Unreleased] — Swell Map: map-style 3D controls, double-tap zoom, easier exploring around Fishers
 
 The 3D view now handles like a map. One finger (or the mouse) drags the sea floor, and two fingers pinch to zoom, twist to turn and slide up or down to tilt (on a computer, right- or shift-drag turns and tilts). A double-tap zooms in on the spot you tapped, and a new **Fishers** button jumps to a close view of the west end of the island. The vertical stretch now eases off as you zoom in, from 70 times from afar to about 9 times over the reef, so the bottom keeps its real shape up close instead of turning into cliffs. The sea floor is colored by depth (sand, teal, blue, navy) so shoals and channels stand out. On the flat map, a double-tap also zooms in where you tap.
