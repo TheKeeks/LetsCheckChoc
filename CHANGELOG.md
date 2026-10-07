@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — Swell Map: wave cutaway, dots for every swell, how the forecast is read
+
+Drop a wave now has a cutaway under the map. It shows your wave side-on over the real sea floor under its last 300 m, 1 km or 5 km, for a 3, 6 or 10 ft swell. You can watch it get shorter, slow down and grow as the water shoals, then break once it is about 0.78 times as tall as the water is deep. Its height comes from shoaling plus how much the bottom focused or spread that ray, and the caption gives the numbers (wavelength, speed, breaking depth and height).
+
+The forecast's "headed our way" dots now check every GFS-Wave swell train in each patch of ocean, not just the biggest. A secondary swell aimed at the spot now shows even when a bigger swell from another direction sits on top of it (for example a 12 s ESE swell under an 8 s east swell). Some coastal forecast cells had a wave height but no swell direction, so they showed color but read as "no data" and could never show a dot. They now take the wind sea's period and direction. A new "How the forecast is tied to Choc and Wilderness" section under Behind the numbers explains that the forecast is read at buoy 44097, why, how that was chosen, and what it can miss.
+
+Verified by a new e2e scenario, `w6-swell-map-cutaway.js`. It checks that all three swell trains are loaded for the dots, that the cutaway stays hidden on the forecast and appears in Drop a wave, that waves shorten toward shore, that the 300 m view draws the wave, and that the cutaway hides again on return. The full unit, e2e and Python suites pass.
+
 ## [Unreleased] — Swell Map: forecast read at the buoy, the whole Atlantic in the past, wind arrows
 
 The Swell Map's Choc and Wilderness forecasts now read each model's swell at buoy 44097, off Block Island, the same point the ten-year history reads. They used to read it along the edge of the sea-floor survey map. Both are then run through the same ray model. A test on 177 past hours in 2021–25, using archived GFS-Wave runs, compared the two against what then arrived. Reading at the buoy came closer at every lead: a typical miss of 0.20 ft against 0.30 ft a day ahead, and it no longer runs a tenth of a foot high. Both rank the crew's 28 logged sessions about equally. The scorecard under the forecast was re-run the same way. The forecast snapshot in `research/fc/` is also fresh (GFS-Wave 7 Oct 2am run).
