@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased] — Swell Map: zooming in no longer turns the map dark
+
+Zooming in on the Swell Map's forecast (or past) map faded the wave-height color out everywhere below about 200 km across. That fade was meant only to let the sea-floor relief and the rays show near Fishers, but over open water (off New Jersey, south of Block Island) there was nothing underneath, so the map went dark. The color now stays at full strength over open water at every zoom. Over the survey map it fades as before, but keeps 40% so the area near Choc doesn't look empty either.
+
+Verified by `w6-swell-map-zoom.js`, which double-taps in to about 28 km over open water and checks that the map is still lit (mean brightness 115 now, 36 before). The full unit, e2e and Python suites pass.
+
 ## [Unreleased] — Swell Map: plainer titles
 
 The Swell Map page no longer opens with "When is it big at Choc?" in large type. It is now titled **Sound Check** (a nod to Long Island Sound and to LetsCheckChoc), at a modest size, above the small "Chocomount research · Block Island buoy 44097 · 2016 – 2026" line and a one-sentence description of what it is. The browser tab reads "Sound Check · Chocomount research". Section titles are drier:

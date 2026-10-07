@@ -37,6 +37,13 @@ module.exports = {
     log(`double-tap: ${Wb.toFixed(0)} -> ${Wa.toFixed(0)} km across`);
     assert.ok(Wa < Wb * 0.6, 'double-tap zooms the map in');
 
+    // Zoomed in over open water the wave-height color stays (it used to fade out everywhere, leaving the map dark).
+    for (let k = 0; k < 3; k++) { await page.mouse.dblclick(cb.x + cb.width * 0.3, cb.y + cb.height * 0.6); await page.waitForTimeout(400); }
+    await page.waitForTimeout(600);
+    const lum = await T(() => { const c = document.querySelector('#tripStage canvas'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let s = 0, n = 0; for (let i = 0; i < d.length; i += 64) { s += d[i] + d[i + 1] + d[i + 2]; n += 3; } return s / n; });
+    log(`zoomed in to ${(await T(() => window.CHOC.trip.state.cam.W)).toFixed(0)} km over open water: mean brightness ${lum.toFixed(0)}`);
+    assert.ok(lum > 60, `map keeps its color zoomed in (brightness ${lum.toFixed(0)})`);
+
     // Drop a wave, then straight back to the forecast while its wave is still starting up.
     await T(() => window.CHOC.trip.setMode('drop'));
     await page.waitForTimeout(4000);
