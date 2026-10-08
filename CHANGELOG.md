@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — Sound Check: the map no longer goes dark after a two-finger pinch
+
+On a phone or iPad, the Sound Check map went dark after zooming in, and stayed dark. The new error note caught it on an iPhone: "TypeError: The provided value is non-finite" from the line that draws the swell lines near Fishers.
+
+The cause was the pinch itself. Two fingers zoom the map. When one finger lifted and the other kept moving, the page carried on with the pinch as if it were a one-finger drag. A pinch has no starting point for a drag, so the map's position became "not a number". From then on the map drew nothing at any zoom: no ocean colors, no land, no labels. Once zoomed in close enough for the swell lines to show (under about 320 km across), every redraw also threw that error.
+
+Now the finger left on the map pans on from where it is, like any map app, and lifting it is never taken for a tap. The pan and the zoom also refuse any position that isn't a number, and the map doesn't draw while it has no height. A computer with a mouse or trackpad never takes this path, because they never put two pointers on the map; a touchscreen computer would.
+
+Verified by a new e2e scenario, `w6-swell-map-pinch-lift.js`. On a phone-sized touch screen it pinches in about 5×, lifts one finger and drags the other 60 px right and 30 px down. It then checks that the map keeps a real position, that the zoom is unchanged and the map followed the finger, that the map is drawn, and that no error appears. On the page before this change it fails with the same error the iPhone showed; Chromium words it "Failed to execute 'createLinearGradient' … non-finite". Full suites: `npm test`, `npm run test:e2e` and `npm run test:py` pass. No Firebase or rules changes.
+
 ## [Unreleased] — Sound Check: much lighter on memory when you zoom in, and a visible note when something breaks
 
 Zooming in on the Sound Check map took the page down on the iPad, and now on a computer too, with nothing on screen to say why. In Chrome on a desktop the page never failed in testing, at any zoom or window size. What it did do was hold about 0.75 GB of memory as soon as it loaded and about 0.95 GB once zoomed in near the reef. That is around the point where iPad Safari kills a tab. Safari can't be run here, so this targets what was measured.

@@ -2069,7 +2069,7 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   const hudBottom = () => INS.top;
   const ramp = (W, hi, lo) => Math.max(0, Math.min(1, (hi - W) / (hi - lo)));
   function draw() {
-    if (!cw) return;
+    if (!cw || !chh) return;
     tileFrame++;                                             // one pass (the map and its inset) is one frame for the tile cache
     INS = insets(); RECTS = overlayRects();
     INSET = false; render(cam());
@@ -2303,10 +2303,13 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
   // ── pointer: tap = drop, drag dot = move, drag arrow = aim, drag elsewhere = pan, pinch / wheel = zoom
   const ptrs = new Map(); let drag = null;
   function localXY(e) { const b = cv.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; }
+  // a map position that isn't a number draws nothing (and makes some canvas calls throw), so none is ever kept
+  const finite = (...a) => a.every(Number.isFinite);
   function zoomAt(px, py, f) {
     const v = S.cam, { sc, x0, y0 } = proj(v); const wx = px / sc + x0, wy = py / sc + y0;
-    v.W = Math.max(MAPV() ? MAPMIN : 0.6, Math.min(MAPV() ? 9000 : 1400, v.W * f)); const s2 = Math.min(cw, chh) / v.W;
-    v.cx = wx - (px - cw / 2) / s2; v.cy = wy - (py - chh / 2) / s2; S.moved = true; draw();
+    const W = Math.max(MAPV() ? MAPMIN : 0.6, Math.min(MAPV() ? 9000 : 1400, v.W * f)), s2 = Math.min(cw, chh) / W;
+    const cx = wx - (px - cw / 2) / s2, cy = wy - (py - chh / 2) / s2; if (!finite(W, cx, cy)) return;
+    v.W = W; v.cx = cx; v.cy = cy; S.moved = true; draw();
   }
   const MAPMIN = 3;                                          // km across: the forecast grid and survey tiles hold no more detail than this
   const panMode = () => S.phase === 'setup' || MAPV();
@@ -2352,11 +2355,14 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
     const v = cam(), { sc, x0, y0 } = proj(v); const X = (lon) => (lon * KX - x0) * sc, Y = (lon, lat) => (-lat * KY - y0) * sc;
     if (drag.kind === 'aim') { S.th = (Math.atan2(px - X(S.start[0]), -(py - Y(...S.start))) / D2R + 360) % 360; S.note = ''; retrace(); }
     else if (drag.kind === 'move') { const ll = unproject(px, py); if ((depthAt(...ll) || 0) > 1) { S.start = ll; S.note = ''; retrace(); } }
-    else { S.cam.cx = drag.cx - (px - drag.sx) / sc; S.cam.cy = drag.cy - (py - drag.sy) / sc; S.moved = true; draw(); }
+    else { const cx = drag.cx - (px - drag.sx) / sc, cy = drag.cy - (py - drag.sy) / sc; if (finite(cx, cy)) { S.cam.cx = cx; S.cam.cy = cy; S.moved = true; draw(); } }
   });
   const up = (e) => {
     if (!ptrs.has(e.pointerId)) return;
     ptrs.delete(e.pointerId);
+    // one finger of a pinch lifted: the other pans on from where it is now. It used to carry on with the pinch's
+    // drag, which has no starting point for a pan, and that left the map's position NaN and the map blank.
+    if (drag && drag.kind === 'pinch' && ptrs.size === 1) { const [px, py] = [...ptrs.values()][0]; drag = { kind: 'pan', x: px, y: py, sx: px, sy: py, t: -Infinity, cx: S.cam.cx, cy: S.cam.cy }; }   // t: the end of a pinch is never a tap
     if (drag && drag.kind === 'pan' && ptrs.size === 0 && S.phase === 'setup') {
       const [px, py] = localXY(e);
       if (Math.hypot(px - drag.sx, py - drag.sy) < 6 && performance.now() - drag.t < 500) {      // a tap: drop the wave here
