@@ -1,5 +1,8 @@
 // Fishers Bracelet (bracelet/): the 3D designer opens on its own address, draws
 // the gold wire on the ghost wrist, and the spec sheet follows the sliders.
+// Total wire length and the gold cost at today's spot price head the spec;
+// the live price (gold-api.com) is emulated here, then cut off to check the
+// page falls back to the price saved with it.
 // Screenshots (3/4, Map, Circle, Hook, mid-trace, phone) land in
 // tests/e2e/artifacts/ so the owner can see the model from CI.
 'use strict';
@@ -8,6 +11,14 @@ module.exports = {
   name: 'Bracelet: 3D wire on the wrist, spec follows the sliders',
   options: { viewport: { width: 1180, height: 820 }, timeoutMs: 180000 },   // software WebGL in CI is slow
   async run({ page, ctx, assert, log }) {
+    const LIVE = { XAU: 4000, XAG: 50 };
+    let priceMode = 'ok';
+    await ctx.route(/api\.gold-api\.com\/price\/(XAU|XAG)/, route => {
+      if (priceMode === 'abort') return route.abort();
+      const sym = route.request().url().match(/(XAU|XAG)/)[1];
+      return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' },
+        body: JSON.stringify({ currency: 'USD', price: LIVE[sym], symbol: sym, updatedAt: '2026-10-01T15:00:00Z' }) });
+    });
     await ctx.open('/bracelet/index.html');
     await page.waitForFunction(() => window.BRACELET && window.BRACELET.model && window.BRACELET.frames > 2, null, { timeout: 60000 });
     const gl = await page.evaluate(() => window.BRACELET.webgl);
@@ -21,8 +32,48 @@ module.exports = {
     assert.match(s.Wrist, /^158\.8 mm \(6\.25 in\)/);
     assert.match(s.Wire, /^3\.00 mm round · 18k yellow gold/);
     assert.match(s.Hook, /North Hill/);
-    assert.match(s['Gold weight'], /^\d\d\.\d g/);
-    const g0 = parseFloat(s['Gold weight']);
+    const head = () => page.evaluate(() => ({
+      total: document.getElementById('sTotal').textContent, totalIn: document.getElementById('sTotalIn').textContent,
+      weight: document.getElementById('sWeight').textContent, cost: document.getElementById('sCost').textContent,
+      costNote: document.getElementById('sCostNote').textContent, note: document.getElementById('priceNote').textContent,
+      input: document.getElementById('price').value, stage: document.getElementById('stageSum').textContent
+    }));
+    const usd = t => Number(t.replace(/[^0-9.]/g, ''));
+
+    // Total wire length and gold cost, priced at the live spot price.
+    await page.waitForFunction(() => window.BRACELET.price().source === 'live', null, { timeout: 15000 });
+    let h = await head();
+    log(JSON.stringify(h));
+    assert.match(h.total, /^\d{3} mm$/, 'total wire in mm');
+    assert.match(h.totalIn, /^\d+\.\d in · \d+\.\d cm$/, 'and in inches and cm');
+    assert.equal(Math.round(parseFloat(h.total)), Math.round(await page.evaluate(() => window.BRACELET.model.lengths.totalMm)));
+    assert.match(h.weight, /^\d\d\.\d g$/);
+    const c0 = await page.evaluate(() => window.BRACELET.cost());
+    assert.equal(Math.round(c0.usd), Math.round(c0.fineGrams / 31.1035 * 4000), '18k: 75% gold at $4,000/oz');
+    assert.equal(usd(h.cost), Math.round(c0.usd), 'cost shown in whole dollars');
+    assert.match(h.costNote, /g pure at \$4,000\/oz/);
+    assert.match(h.note, /^Live spot price, Oct 1, 11:00 AM Eastern\.$/, 'live price, timed in Eastern');
+    assert.equal(h.input, '4000.00');
+    assert.match(h.stage, /^\d{3} mm wire · \d\d\.\d g · \$[\d,]+$/, 'running total on the 3D view');
+    const g0 = parseFloat(h.weight);
+
+    // Typing a price (say a jeweller's quote) reprices it; Today's price goes back.
+    await page.fill('#price', '5000');
+    await page.waitForFunction(() => window.BRACELET.price().source === 'manual', null, { timeout: 5000 });
+    h = await head();
+    assert.equal(usd(h.cost), Math.round(c0.fineGrams / 31.1035 * 5000), 'priced at the typed $5,000/oz');
+    assert.match(h.note, /^Your price/);
+    await page.click('#priceLive');
+    await page.waitForFunction(() => window.BRACELET.price().source === 'live' && window.BRACELET.price().usdPerOzt === 4000, null, { timeout: 15000 });
+
+    // Sterling is priced off silver.
+    await page.click('#metal button[data-v="silver"]');
+    await page.waitForFunction(() => /^Silver cost/.test(document.getElementById('sCostLbl').textContent), null, { timeout: 5000 });
+    h = await head();
+    assert.equal(h.input, '50.00', 'silver spot price');
+    assert.ok(usd(h.cost) < 100, `a sterling test piece is cheap (${h.cost})`);
+    await page.click('#metal button[data-v="18k"]');
+    await page.waitForFunction(() => /^Gold cost/.test(document.getElementById('sCostLbl').textContent), null, { timeout: 5000 });
     if (gl) {
       await page.waitForTimeout(500);
       await ctx.screenshot('quarter');
@@ -41,18 +92,27 @@ module.exports = {
     await slide('islandLenMm', 85);
     s = await spec();
     assert.match(s.Island, /^85 ×/, 'island length follows the slider');
-    assert.ok(parseFloat(s['Gold weight']) > g0, 'a longer island uses more gold');
+    h = await head();
+    assert.ok(parseFloat(h.weight) > g0 && usd(h.cost) > Math.round(c0.usd), 'a longer island uses more gold and costs more');
     await slide('wireDiaMm', 2);
-    s = await spec();
-    assert.ok(parseFloat(s['Gold weight']) < g0 * 0.6, `2 mm wire is much lighter (${s['Gold weight']})`);
+    h = await head();
+    assert.ok(parseFloat(h.weight) < g0 * 0.6, `2 mm wire is much lighter (${h.weight})`);
 
     // The Race Point stop moves the hook; the spec says where it catches.
     await page.click('#hookStops button:last-child');
     await page.waitForFunction(() => /Race Point/.test(document.getElementById('sHook').textContent), null, { timeout: 10000 });
 
-    // Settings survive a reload (per-viewer convenience).
+    // Settings survive a reload (per-viewer convenience). This time the live
+    // price can't load (as in a published artifact): the page uses the price
+    // saved with it, newer than the stored Oct 1 quote, and says so.
+    priceMode = 'abort';
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => window.BRACELET && window.BRACELET.model, null, { timeout: 60000 });
+    await page.waitForFunction(() => window.BRACELET && window.BRACELET.model && window.BRACELET.priceLoading === false, null, { timeout: 60000 });
+    const saved = await page.evaluate(() => ({ p: window.BRACELET.price(), note: document.getElementById('priceNote').textContent }));
+    log(JSON.stringify(saved));
+    assert.equal(saved.p.source, 'saved');
+    assert.ok(saved.p.usdPerOzt > 1000, 'a real saved gold price');
+    assert.match(saved.note, /^Spot price on Oct 7, 8:50 PM Eastern\. The live price can.t load here/);
     const kept = await page.evaluate(() => window.BRACELET.params);
     assert.equal(kept.islandLenMm, 85);
     assert.equal(kept.wireDiaMm, 2);
@@ -67,6 +127,8 @@ module.exports = {
     const txt = await page.evaluate(() => window.BRACELET.text());
     assert.match(txt, /hooks on at North Hill/);
     assert.match(txt, /"wristCircMm":158\.75/);
+    assert.match(txt, /Total wire \d{3} mm \(\d+\.\d in\)/);
+    assert.match(txt, /Gold cost \$[\d,]+: \d+\.\d g pure at \$4,116\.40\/oz \(spot Oct 7, 8:50 PM ET\), metal only/);
 
     if (gl) {
       for (const v of ['top', 'end', 'hook']) {

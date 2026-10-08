@@ -62,7 +62,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--gold-hi); o
 .btn.gold { border-color: transparent; background: var(--gold-hi); color: #1c1407; }
 .trace-cap { position: absolute; left: 50%; bottom: 44px; transform: translateX(-50%); padding: 7px 14px; border-radius: 999px; background: var(--tag-bg); border: 1px solid var(--line); font-weight: 500; white-space: nowrap; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis; }
 .nogl { position: absolute; inset: 0; margin: auto; height: fit-content; max-width: 30em; padding: 0 24px; text-align: center; color: var(--muted); }
-.hint { position: absolute; left: 0; right: 0; bottom: 12px; margin: 0; text-align: center; font-size: 12px; color: var(--muted); pointer-events: none; padding: 0 16px; }
+.hint { position: absolute; left: 0; right: 0; bottom: 12px; margin: 0; text-align: right; font-size: 12px; color: var(--muted); pointer-events: none; padding: 0 16px; }
 .labels { position: absolute; inset: 0; pointer-events: none; }
 .tag { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 6px; transform: translate(-4px, -50%); transition: opacity .2s; white-space: nowrap; }
 .tag i { width: 7px; height: 7px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 2px var(--tag-bg); flex: none; }
@@ -80,6 +80,21 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--gold-hi); o
 .sub { margin: 8px 0 0; color: var(--muted); max-width: 34em; }
 .panel h2 { margin: 0 0 10px; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 
+.headline { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--line); margin-bottom: 0; }
+.headline > div { padding: 10px 10px 12px 0; min-width: 0; }
+.headline > div + div { padding-left: 10px; border-left: 1px solid var(--line); }
+.headline span { display: block; font-size: 12px; color: var(--muted); }
+.headline b { display: block; font: 600 25px/1.1 var(--f-display); font-variant-numeric: lining-nums tabular-nums; margin-top: 3px; white-space: nowrap; }
+.headline small { display: block; font: 400 11.5px/1.35 var(--f-num); color: var(--muted); margin-top: 3px; overflow-wrap: anywhere; }
+.headline .cost b { color: var(--gold); }
+.price-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.price-row .cur { font: 500 16px var(--f-num); color: var(--muted); }
+#price { font: 500 16px var(--f-num); font-variant-numeric: tabular-nums; width: 8.5em; max-width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+#price:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 1px; }
+.price-row .btn { backdrop-filter: none; background: transparent; }
+#priceNote[data-src="manual"] { color: var(--gold); }
+.stage-sum { flex-basis: 100%; display: flex; pointer-events: none !important; }
+.stage-sum span { font: 500 12px var(--f-num); font-variant-numeric: tabular-nums; padding: 5px 10px; border-radius: 999px; background: var(--tag-bg); border: 1px solid var(--line); }
 .spec { display: grid; gap: 0; border-top: 1px solid var(--line); }
 .spec .row { display: grid; grid-template-columns: 7.2em minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: baseline; }
 .spec .row > span { font-size: 12px; color: var(--muted); }
@@ -148,6 +163,7 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
         <button type="button" data-view="hook" aria-pressed="false">Hook</button>
       </div>
       <button type="button" class="btn gold" id="trace">Trace the wire</button>
+      <div class="stage-sum" aria-hidden="true"><span id="stageSum"></span></div>
     </div>
     <div class="trace-cap" id="traceCap" hidden></div>
     <p class="nogl" id="noGL" hidden>This browser can't draw 3D (WebGL is off), so only the spec and the flat pattern are shown.</p>
@@ -162,15 +178,32 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
 
     <section aria-label="Spec">
       <h2>Spec</h2>
+      <div class="headline">
+        <div><span>Total wire</span><b id="sTotal">–</b><small id="sTotalIn"></small></div>
+        <div><span>Weight</span><b id="sWeight">–</b><small id="sWeightOz"></small></div>
+        <div class="cost"><span id="sCostLbl">Gold cost</span><b id="sCost">–</b><small id="sCostNote"></small></div>
+      </div>
       <div class="spec">
-        <div class="row big"><span>Gold weight</span><b id="sWeight">–</b></div>
         <div class="row"><span>Wire</span><b id="sWire">–</b></div>
-        <div class="row"><span>Wire length</span><b id="sLen">–</b></div>
+        <div class="row"><span>Wire by part</span><b id="sLen">–</b></div>
         <div class="row"><span>Wrist</span><b id="sWrist">–</b></div>
         <div class="row"><span>Island</span><b id="sIsland">–</b></div>
         <div class="row"><span>Circle</span><b id="sRing">–</b></div>
         <div class="row"><span>Hook</span><b id="sHook">–</b></div>
         <div class="row"><span>Touch points</span><b id="sSpots">–</b></div>
+      </div>
+    </section>
+
+    <section aria-label="Price">
+      <h2>Price</h2>
+      <div class="field">
+        <div class="top"><label for="price" id="priceLbl">Gold price per troy ounce</label></div>
+        <div class="price-row">
+          <span class="cur">$</span><input type="number" id="price" min="1" step="0.01" inputmode="decimal">
+          <button type="button" class="btn" id="priceLive">Today's price</button>
+        </div>
+        <p class="note" id="priceNote" role="status"></p>
+        <p class="note">The cost is the pure gold in the wire at that price. A jeweller adds the cost of drawing the wire, their labour and markup.</p>
       </div>
     </section>
 
@@ -246,7 +279,7 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
       <textarea id="copyBox" readonly hidden aria-label="Design details"></textarea>
     </section>
 
-    <p class="credit">Coastline © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>. Weights are for solid round wire: 14k 13.07, 18k 15.58, 22k 17.80, sterling 10.36 g/cm³.</p>
+    <p class="credit">Coastline © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>. Weights are for solid round wire: 14k 13.07, 18k 15.58, 22k 17.80, sterling 10.36 g/cm³. Fine metal: 14k 58.5%, 18k 75%, 22k 91.6%, sterling 92.5%. Live spot prices from <a href="https://gold-api.com" target="_blank" rel="noopener">gold-api.com</a>.</p>
   </aside>
 </div>
 
@@ -462,15 +495,100 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
     });
   }
 
+  // ── Spot price ─────────────────────────────────────────
+  // Effective price per metal: the viewer's own figure if they typed one,
+  // else the latest live price, else the price saved with the page. Live
+  // prices come from gold-api.com (free, no key); a published artifact can't
+  // reach it, so there the saved price shows with its date.
+  var PRICE_STORE = 'fishers-bracelet:price:v1';
+  var PRICE_URL = { gold: 'https://api.gold-api.com/price/XAU', silver: 'https://api.gold-api.com/price/XAG' };
+  var prices = loadPrices();
+  var liveNow = { gold: false, silver: false };   // fetched on this visit
+  function loadPrices() {
+    var s = null;
+    try { s = JSON.parse(localStorage.getItem(PRICE_STORE) || 'null'); } catch (e) { s = null; }
+    s = s && typeof s === 'object' ? s : {};
+    return { live: s.live || {}, manual: s.manual || {} };
+  }
+  function savePrices() { try { localStorage.setItem(PRICE_STORE, JSON.stringify(prices)); } catch (e) { /* private mode */ } }
+  function priceFor(base) {
+    var man = prices.manual[base];
+    if (man > 0) return { usdPerOzt: man, source: 'manual' };
+    var live = prices.live[base], saved = G.PRICE_SAVED[base];
+    if (live && live.usdPerOzt > 0 && (liveNow[base] || Date.parse(live.asOf) > Date.parse(saved.asOf))) {
+      return { usdPerOzt: live.usdPerOzt, asOf: live.asOf, source: liveNow[base] ? 'live' : 'stored' };
+    }
+    return { usdPerOzt: saved.usdPerOzt, asOf: saved.asOf, source: 'saved' };
+  }
+  function fetchPrice(base) {
+    var ctl = window.AbortController ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 8000);
+    return fetch(PRICE_URL[base], { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (j) {
+        var usd = Number(j && j.price);
+        if (!(usd > 0)) throw new Error('no price');
+        prices.live[base] = { usdPerOzt: usd, asOf: j.updatedAt || new Date().toISOString() };
+        liveNow[base] = true;
+        savePrices();
+      })
+      .finally(function () { clearTimeout(timer); });
+  }
+  function refreshPrices() {
+    BRACELET.priceLoading = true;
+    return Promise.all(['gold', 'silver'].map(function (b) { return fetchPrice(b).catch(function () { /* keep the stored or saved price */ }); }))
+      .then(function () { BRACELET.priceLoading = false; if (model) writeSpec(); });
+  }
+  var money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+  var money2 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  function eastern(iso) {
+    return new Date(iso).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+  function writePrice(base, pr) {
+    var input = document.getElementById('price');
+    document.getElementById('priceLbl').textContent = (base === 'silver' ? 'Silver' : 'Gold') + ' price per troy ounce';
+    if (document.activeElement !== input) input.value = pr.usdPerOzt.toFixed(2);
+    var note = document.getElementById('priceNote');
+    note.dataset.src = pr.source;
+    note.textContent = pr.source === 'manual' ? 'Your price. Tap Today’s price to go back to the market.'
+      : pr.source === 'live' ? 'Live spot price, ' + eastern(pr.asOf) + ' Eastern.'
+      : 'Spot price on ' + eastern(pr.asOf) + ' Eastern. The live price can’t load here, so type today’s if it has moved.';
+  }
+  document.getElementById('price').addEventListener('input', function (e) {
+    var v = Number(e.target.value);
+    var base = G.METALS[params.metal].base;
+    if (v > 0) { prices.manual[base] = Math.round(v * 100) / 100; savePrices(); writeSpec(); }
+  });
+  document.getElementById('price').addEventListener('change', function () { writeSpec(); });
+  document.getElementById('priceLive').addEventListener('click', function () {
+    var base = G.METALS[params.metal].base;
+    delete prices.manual[base];
+    savePrices();
+    document.getElementById('price').blur();
+    writeSpec();
+    refreshPrices();
+  });
+
   // ── Spec sheet ─────────────────────────────────────────
   function fmt(x, d) { return x.toFixed(d == null ? 0 : d); }
   function writeSpec() {
     var p = params, m = model;
     var grams = G.grams(m, p.metal);
     var metal = G.METALS[p.metal];
-    document.getElementById('sWeight').innerHTML = fmt(grams, 1) + ' g<small>' + fmt(grams / G_PER_OZT, 2) + ' ozt</small>';
+    var pr = priceFor(metal.base);
+    var cost = G.metalCost(m, p.metal, pr.usdPerOzt);
+    var L = m.lengths.totalMm;
+    document.getElementById('sTotal').textContent = fmt(L) + ' mm';
+    document.getElementById('sTotalIn').textContent = fmt(L / MM_PER_IN, 1) + ' in · ' + fmt(L / 10, 1) + ' cm';
+    document.getElementById('sWeight').textContent = fmt(grams, 1) + ' g';
+    document.getElementById('sWeightOz').textContent = fmt(grams / G_PER_OZT, 2) + ' ozt ' + p.metal.replace('silver', 'sterling');
+    document.getElementById('sCostLbl').textContent = (metal.base === 'silver' ? 'Silver' : 'Gold') + ' cost';
+    document.getElementById('sCost').textContent = money.format(cost.usd);
+    document.getElementById('sCostNote').textContent = fmt(cost.fineGrams, 1) + ' g pure at ' + money.format(pr.usdPerOzt) + '/oz';
+    document.getElementById('stageSum').textContent = fmt(L) + ' mm wire · ' + fmt(grams, 1) + ' g · ' + money.format(cost.usd);
+    writePrice(metal.base, pr);
     document.getElementById('sWire').textContent = fmt(p.wireDiaMm, 2) + ' mm round · ' + metal.label;
-    document.getElementById('sLen').textContent = fmt(m.lengths.totalMm) + ' mm (' + fmt(m.lengths.totalMm / MM_PER_IN, 1) + ' in): outline ' + fmt(m.lengths.outlineMm) + ', circle ' + fmt(m.lengths.ringMm) + ', hook ' + fmt(m.lengths.hookMm);
+    document.getElementById('sLen').textContent = 'outline ' + fmt(m.lengths.outlineMm) + ' mm, circle ' + fmt(m.lengths.ringMm) + ' mm, hook ' + fmt(m.lengths.hookMm) + ' mm';
     document.getElementById('sWrist').textContent = fmt(p.wristCircMm, 1) + ' mm (' + fmt(p.wristCircMm / MM_PER_IN, 2) + ' in) round, ' + fmt(m.ring.innerDiaMm, 1) + ' mm across';
     document.getElementById('sIsland').textContent = fmt(m.island.lengthMm) + ' × ' + fmt(m.island.widthMm, 1) + ' mm, turned ' + fmt(Math.abs(m.hook.turnDeg)) + '° to level the hook';
     document.getElementById('sRing').textContent = fmt(m.ring.lenMm) + ' mm of wire, flat and round, ' + fmt(m.ring.centreDiaMm, 1) + ' mm across the wire centre';
@@ -570,12 +688,16 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
   // ── Copy the design (to paste into a Claude session or send to a jeweller) ──
   function designText() {
     var p = params, m = model;
+    var metal = G.METALS[p.metal], pr = priceFor(metal.base);
+    var cost = G.metalCost(m, p.metal, pr.usdPerOzt);
+    var priceWhen = pr.source === 'manual' ? 'my price' : (pr.source === 'live' ? 'live spot ' : 'spot ') + eastern(pr.asOf) + ' ET';
     return [
       'Fishers Bracelet design',
       'Wrist ' + fmt(p.wristCircMm, 1) + ' mm (' + fmt(p.wristCircMm / MM_PER_IN, 2) + ' in) · wire ' + fmt(p.wireDiaMm, 2) + ' mm ' + G.METALS[p.metal].label,
       'Island ' + fmt(m.island.lengthMm) + ' × ' + fmt(m.island.widthMm, 1) + ' mm on the wrist · smoothing ' + fmt(p.smoothMm, 2) + ' mm',
       'Circle ' + fmt(m.ring.lenMm) + ' mm, hooks on at ' + m.hook.landmark + ' · free end ' + fmt(p.startGapMm, 1) + ' mm along the north shore',
-      'Wire length ' + fmt(m.lengths.totalMm) + ' mm (' + fmt(m.lengths.totalMm / MM_PER_IN, 1) + ' in) · weight ' + fmt(G.grams(m, p.metal), 1) + ' g',
+      'Total wire ' + fmt(m.lengths.totalMm) + ' mm (' + fmt(m.lengths.totalMm / MM_PER_IN, 1) + ' in) · weight ' + fmt(G.grams(m, p.metal), 1) + ' g',
+      (metal.base === 'silver' ? 'Silver' : 'Gold') + ' cost ' + money.format(cost.usd) + ': ' + fmt(cost.fineGrams, 1) + ' g pure at ' + money2.format(pr.usdPerOzt) + '/oz (' + priceWhen + '), metal only',
       'Touch points: ' + m.spots.length,
       'Settings: ' + JSON.stringify(p)
     ].join('\n');
@@ -799,6 +921,10 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
     set: function (p) { params = G.normalize(Object.assign({}, params, p)); rebuild(); save(); },
     view: setView,
     webgl: !!renderer,
+    priceLoading: false,
+    price: function () { return priceFor(G.METALS[params.metal].base); },
+    cost: function () { return G.metalCost(model, params.metal, priceFor(G.METALS[params.metal].base).usdPerOzt); },
+    refreshPrices: function () { return refreshPrices(); },
     text: function () { return designText(); }
   };
 
@@ -807,5 +933,6 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
   rebuild();
   setView('quarter', true);
   requestAnimationFrame(frame);
+  refreshPrices();
 })();
 </script>

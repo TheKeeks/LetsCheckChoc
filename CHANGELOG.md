@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — Fishers Bracelet: total wire length and the gold cost at today's price
+
+The bracelet's spec sheet showed the gold weight. The wire's length was buried in a breakdown line, and nothing said what the piece would cost. The spec now opens with three figures: total wire (279 mm, which is 11.0 in or 27.9 cm, for the default design), weight (30.8 g of 18k) and gold cost. The same three figures also sit in a small readout on the 3D view, so they stay in sight while you move the sliders on a phone or iPad.
+
+The gold cost is the pure gold in the wire at the spot price. That means 75% of the weight for 18k, 58.5% for 14k and 91.6% for 22k; sterling (92.5% silver) is priced off silver. For the default 18k design at $4,116 an ounce, that is about $3,050. It counts the metal only: a jeweller adds the cost of drawing the wire, their labour and markup, and the page says so.
+
+The page fetches the live spot price from gold-api.com, which is free and needs no key, and shows when it was quoted, in Eastern time. A published artifact is not allowed to reach other sites. There, and whenever the live price can't load, the page uses the price saved with it ($4,116.40 for gold and $60.00 for silver, quoted at 8:50 pm Eastern on Oct 7, 2026) and says how old it is. You can type your own price, such as a jeweller's quote; "Today's price" goes back to the market price. Copy design now includes the total wire, the cost and the price it was worked out at.
+
+Verified by a new unit test in `tests/unit/bracelet-geometry.test.js`. It checks the pure-gold cost formula, the hallmark purities, that silver is priced off silver, that the cost scales with price and wire size, and that the saved price is dated. `tests/e2e/scenarios/bracelet-designer.js` now emulates the live price at $4,000/oz. It checks the headline figures, the cost in whole dollars, the Eastern-time label, a typed price and the way back to the live price, sterling at the silver price, and that the cost grows with a longer island. It then cuts the live price off and reloads to check the page falls back to the saved price and labels it.
+
 ## [Unreleased] — Fishers Bracelet: a 3D model of the gold-wire island bracelet to play with
 
 A new side page, `bracelet/`, models a bracelet made from one solid gold wire, 3 mm thick, on a see-through 6.25 in (158.75 mm) wrist. It is not linked from the forecast. The wire follows the real coastline (OpenStreetMap). It starts with a free end at the East End and runs west along the north shore, past West Harbor and North Hill and Silver Eel, to Race Point. It comes back east along the south shore, past Wilderness and Chocomount, to the East End. There it carries on into a perfect circle round the back of the wrist, and ends in a hook that goes over the outline wire at North Hill.

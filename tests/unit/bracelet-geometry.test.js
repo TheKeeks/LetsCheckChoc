@@ -120,6 +120,26 @@ test('island length and wire weight', () => {
   assert.ok(longer.lengths.outlineMm > L.outlineMm && longer.lengths.ringMm < L.ringMm, 'a longer island trades circle for outline');
 });
 
+test('gold cost: the pure gold in the wire at the spot price', () => {
+  const m = build();
+  // 18k is 75% gold: grams × 0.75 ÷ 31.1035 g/ozt × $/ozt.
+  const c = G.metalCost(m, '18k', 4116.40);
+  near(c.fineGrams, G.grams(m, '18k') * 0.75, 1e-9, 'pure gold in 18k');
+  near(c.usd, c.fineGrams / 31.1035 * 4116.40, 1e-9, 'priced per troy ounce');
+  assert.ok(c.usd > 2500 && c.usd < 3700, `18k default at $4,116/oz is ~$3,000 (${c.usd.toFixed(0)})`);
+  assert.equal(c.base, 'gold');
+  // Purity by hallmark; sterling is priced off silver.
+  assert.deepEqual(['14k', '18k', '22k', 'silver'].map(k => G.METALS[k].purity), [0.585, 0.75, 0.916, 0.925]);
+  assert.equal(G.metalCost(m, 'silver', 60).base, 'silver');
+  assert.ok(G.metalCost(m, '14k', 4116.40).usd < c.usd && c.usd < G.metalCost(m, '22k', 4116.40).usd, 'higher karat costs more');
+  // Cost scales with the price and with the wire: twice the price, twice the cost.
+  near(G.metalCost(m, '18k', 8232.80).usd, 2 * c.usd, 1e-6, 'linear in price');
+  assert.ok(G.metalCost(build({ wireDiaMm: 2 }), '18k', 4116.40).usd < c.usd * 0.5, 'a 2 mm wire is under half the gold');
+  // The price saved with the page is a real recent quote, dated.
+  assert.ok(G.PRICE_SAVED.gold.usdPerOzt > 1000 && !isNaN(Date.parse(G.PRICE_SAVED.gold.asOf)));
+  assert.ok(G.PRICE_SAVED.silver.usdPerOzt > 5 && !isNaN(Date.parse(G.PRICE_SAVED.silver.asOf)));
+});
+
 test('smoothing rounds off the coves a 3 mm wire cannot follow', () => {
   const raw = build({ smoothMm: 0 });
   const smooth = build({ smoothMm: 4 });

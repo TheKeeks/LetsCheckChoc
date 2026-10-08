@@ -47,12 +47,23 @@
     startGapMm: [0, 15]
   };
 
-  // Densities in g/cm³ (common alloys). Colours are linear-ish base colours for a metal shader.
+  // Densities in g/cm³ (common alloys). purity is the fine-metal share by weight
+  // (hallmarks 585, 750, 916, 925); base is which spot price applies.
   var METALS = {
-    '14k': { label: '14k yellow gold', density: 13.07, color: 0xd6a756 },
-    '18k': { label: '18k yellow gold', density: 15.58, color: 0xe9b95a },
-    '22k': { label: '22k yellow gold', density: 17.80, color: 0xf2bf4c },
-    silver: { label: 'Sterling silver (test piece)', density: 10.36, color: 0xd9dcdf }
+    '14k': { label: '14k yellow gold', density: 13.07, purity: 0.585, base: 'gold' },
+    '18k': { label: '18k yellow gold', density: 15.58, purity: 0.750, base: 'gold' },
+    '22k': { label: '22k yellow gold', density: 17.80, purity: 0.916, base: 'gold' },
+    silver: { label: 'Sterling silver (test piece)', density: 10.36, purity: 0.925, base: 'silver' }
+  };
+
+  var G_PER_OZT = 31.1035;   // grams in a troy ounce, the unit spot prices are quoted in
+
+  // Spot prices saved with the page, used when the live price can't load (a
+  // published artifact may not fetch other sites). From gold-api.com on
+  // 2026-10-08 00:50 UTC (8:50 pm Oct 7 Eastern); Kitco closed Oct 7 at $4,107.10.
+  var PRICE_SAVED = {
+    gold: { usdPerOzt: 4116.40, asOf: '2026-10-08T00:50:54Z' },
+    silver: { usdPerOzt: 60.00, asOf: '2026-10-08T00:50:53Z' }
   };
 
   // Named stops on the hook slider, north to south down the west end.
@@ -463,10 +474,23 @@
     return volMm3 / 1000 * metal.density;
   }
 
+  // What the metal in the wire is worth at a spot price (US$ per troy ounce of
+  // pure gold or silver). Metal only: no wire-making, labour or markup.
+  function metalCost(model, metalKey, usdPerOzt) {
+    var key = METALS[metalKey] ? metalKey : model.params.metal;
+    var metal = METALS[key] || METALS['18k'];
+    var g = grams(model, key);
+    var fine = g * metal.purity;
+    var ozt = fine / G_PER_OZT;
+    return { base: metal.base, purity: metal.purity, grams: g, fineGrams: fine, fineOzt: ozt, usd: ozt * usdPerOzt };
+  }
+
   var api = {
     DEFAULTS: DEFAULTS,
     LIMITS: LIMITS,
     METALS: METALS,
+    G_PER_OZT: G_PER_OZT,
+    PRICE_SAVED: PRICE_SAVED,
     HOOK_STOPS: HOOK_STOPS,
     hookStops: hookStops,
     STEP: STEP,
@@ -479,7 +503,8 @@
     crossingsAt: crossingsAt,
     wrap: wrap,
     build: build,
-    grams: grams
+    grams: grams,
+    metalCost: metalCost
   };
   root.BraceletGeom = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
