@@ -656,7 +656,7 @@ body { margin: 0; }
         <tr><td>Swell the app saved with each log (forecast pin)</td><td class="num">0.70 (0.41–0.88)</td><td class="num">—</td></tr>
       </tbody>
     </table></div>
-    <figcaption>Rank correlation with your 28 logged sessions (best 3 hours of the session day; bootstrap range in brackets). Size is what a swell model should predict, and there the new default is clearly best. Your "completely flat" day (12 Sep 2022) comes out at 2.1 ft at Choc although the buoy peaked at 4.6 ft, and 14 Oct 2022 comes out at 6.9 ft (best 3 hours of each day). Feeding it into the ratings model lifts the share of your size rating explained to 61%. Still not modeled: wind-chop made inside the sound, tidal currents, tide level over the reef, friction, and proper diffraction.</figcaption>
+    <figcaption>Rank correlation with your 28 logged sessions (best 3 hours of the session day; bootstrap range in brackets). Size is what a swell model should predict, and there the new default is clearly best. Your "completely flat" day (12 Sep 2022) comes out at 2.1 ft at Choc although the buoy peaked at 4.6 ft, and 14 Oct 2022 comes out at 6.9 ft (best 3 hours of each day). Feeding it into the ratings model lifts the share of your size rating explained to <span id="sizeR2">63%</span>. Still not modeled: wind-chop made inside the sound, tidal currents, tide level over the reef, friction, and proper diffraction.</figcaption>
   </figure>
 </details>
 <details class="more"><summary>Swell period of big hours</summary>
@@ -1126,6 +1126,8 @@ const WIND={"start":"2016-01-01","base":[[-23,6],[-26,6],[-30,-4],[-7,26],[-2,23
 
   // ══ MODEL SECTION ══════════════════════════════════════════════════════
   const MODEL = DATA.model;
+  // the comparison caption quotes the size model's share explained: read it from the same results as the panel
+  { const s = document.getElementById('sizeR2'); if (s) s.textContent = Math.round(MODEL.targets.size.loo_r2 * 100) + '%'; }
   const TNAME = { avg: 'overall rating', size: 'size rating', ride: 'ride rating', wind_q: 'wind rating' };
   let target = 'avg';
   document.querySelectorAll('#targetSeg [data-t]').forEach(b => b.addEventListener('click', () => {
