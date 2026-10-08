@@ -1,5 +1,31 @@
 # Changelog
 
+## [Unreleased] — Sound Check: say what share of Choc's energy each swell brought
+
+The calendar's day card and the map's past-day headline described a day with one line: "buoy 13.7 ft, 18 s from S". That reads like one swell. On a mixed day it describes none: the height is all of the buoy's swells combined, and the period and direction belong only to its most energetic part. On 22 Aug 2025 that line stood for three swells:
+- a 9.1 ft, 17 s groundswell from 167°;
+- a 7.3 ft, 8 s swell from 109°;
+- 6.4 ft of 5 s NNE chop.
+
+The forecast headline did the same with its single biggest swell. The split into separate swells was only shown under "Check a date".
+
+Now every place that shows a day's swell says what share of the spot's energy each swell brought, at the spot's biggest hour:
+- the calendar card and "Check a date" list each swell with its share (58%, 38% and 4% for 22 Aug 2025);
+- the map's headline does the same, for past days and for the forecast. On a phone it names only the biggest share, so it stays two lines;
+- the buoy's figure is labelled "all swells combined";
+- directions are given in degrees as well as compass words.
+
+For Choc, the card and "Check a date" also say how much of its energy came from outside the 115–158° window: directions with no straight path to the reef, so it bent around Montauk or Block Island. The page now carries this share for every day, worked out from the buoy's spectrum with the same model and hour as the swell split (`bend_days.json`, built offline like the other tables).
+
+Three statements were corrected:
+- **The 14 Oct 2022 tile** said the session's swell came from 172°, "a direction a hand-drawn window would have thrown out". That was the noon reading. By the 5:40 pm session the swell had swung back to about 150–158°, at the window's edge. The tile now uses 29 Aug 2023: one swell, 5.4 ft at 11 s from 165°, during two sessions rated size 6, with 58% of Choc's energy coming from outside the window.
+- **The period caption** under "Each spot's window" said short swell is cut off south of about 190°. Per the model, short swell still brings about half its height from 165–175° and fades to a fifth to a third by 200°. Long-period swell keeps about half from every southerly direction.
+- **The comparison caption** said 14 Oct 2022 came out at 6.7 ft. The current model gives 6.9 ft for the best 3 hours.
+
+A new tile in "One swell or two?" states the ten-year result. On the 784 days when the model has Choc at 3 ft or more, the swell doing the work came from inside the window on 40% of them, from south of it on 45% (mostly 160–190° at about 10 s) and from east of it on 15%.
+
+Verified by a new e2e scenario, `w6-swell-map-swell-shares.js`. It checks 22 Aug 2025 (the three shares and "44% … from outside the window") on the calendar card, the map headline and "Check a date". It also checks 29 Aug 2023 (97% from one swell, 63% bent in at Choc's biggest hour), the forecast headline and the corrected text. It fails on the previous page and passes now. `w6-swell-map-iphone.js` now also checks that the phone headline names only the biggest share and fits in two lines.
+
 ## [Unreleased] — Sound Check: the map no longer goes dark when you zoom in on an iPhone or iPad
 
 On iPhone and iPad, zooming the Sound Check map in even a little turned it a uniform dark blue. Desktop browsers were fine.
