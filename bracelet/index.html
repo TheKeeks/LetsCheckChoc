@@ -52,6 +52,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--gold-hi); o
 /* ── Stage ── */
 .stage { position: relative; min-width: 0; overflow: hidden; background: radial-gradient(120% 90% at 50% 30%, var(--stage-a), var(--stage-b)); }
 #view { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+#flatStage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: radial-gradient(120% 90% at 50% 30%, var(--stage-a), var(--stage-b)); }
+.stage.flat-mode #view, .stage.flat-mode .labels { visibility: hidden; }
+.stage.flat-mode .hint { display: none; }
 #view:active { cursor: grabbing; }
 .stage-bar { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; pointer-events: none; }
 .stage-bar > * { pointer-events: auto; }
@@ -111,7 +114,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--gold-hi); o
 .field label { font-weight: 600; font-size: 13px; }
 .field output { font: 500 13px var(--f-num); font-variant-numeric: tabular-nums; color: var(--gold); text-align: right; }
 .field .note { font-size: 12px; color: var(--muted); margin: 0; }
-.stops { position: relative; height: 16px; font-size: 11px; color: var(--muted); }
+.stops { position: relative; height: 30px; font-size: 11px; color: var(--muted); }
+.stops button:nth-child(2) { top: 14px; }
 .stops button { position: absolute; top: 0; transform: translateX(-50%); border: 0; background: none; padding: 0 2px; cursor: pointer; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .stops button:first-child { transform: none; }
 .stops button:last-child { transform: translateX(-100%); }
@@ -137,7 +141,10 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .actions .btn { backdrop-filter: none; background: transparent; }
 #copyBox { width: 100%; min-height: 120px; font: 12px/1.4 var(--f-num); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; resize: vertical; }
-#copyMsg { font-size: 12px; color: var(--ok); align-self: center; }
+#copyMsg, #dlMsg { font-size: 12px; color: var(--ok); align-self: center; }
+a.btn { text-decoration: none; color: inherit; display: inline-block; }
+a.btn.gold { color: #1c1407; }
+.jnote { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
 .credit { font-size: 11px; color: var(--muted); margin: 0; }
 .credit a { color: inherit; }
 
@@ -154,13 +161,15 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
 <div class="app">
   <section class="stage" id="stage" aria-label="3D model of the bracelet on a wrist">
     <canvas id="view"></canvas>
+    <canvas id="flatStage" hidden aria-label="The wire laid flat, before the tail is wrapped round the wrist"></canvas>
     <div class="labels" id="labels" aria-hidden="true"></div>
     <div class="stage-bar">
       <div class="seg" role="group" aria-label="Camera">
         <button type="button" data-view="quarter" aria-pressed="true">3/4</button>
         <button type="button" data-view="top" aria-pressed="false">Map</button>
         <button type="button" data-view="end" aria-pressed="false">Circle</button>
-        <button type="button" data-view="hook" aria-pressed="false">Hook</button>
+        <button type="button" data-view="clasp" aria-pressed="false">Clasp</button>
+        <button type="button" data-view="flat" aria-pressed="false">Flat</button>
       </div>
       <button type="button" class="btn gold" id="trace">Trace the wire</button>
       <div class="stage-sum" aria-hidden="true"><span id="stageSum"></span></div>
@@ -173,7 +182,7 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
   <aside class="panel">
     <header>
       <h1>Fishers <em>Bracelet</em></h1>
-      <p class="sub">One solid wire. It traces Fishers Island on top of the wrist, then runs as a perfect circle round the back and hooks on at the west end.</p>
+      <p class="sub">One solid wire. It traces Fishers Island on top of the wrist, closes the island at the East End, then runs as a perfect circle round the back and comes up to a small ball that sits on North Hill.</p>
     </header>
 
     <section aria-label="Spec">
@@ -189,8 +198,8 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
         <div class="row"><span>Wrist</span><b id="sWrist">–</b></div>
         <div class="row"><span>Island</span><b id="sIsland">–</b></div>
         <div class="row"><span>Circle</span><b id="sRing">–</b></div>
-        <div class="row"><span>Hook</span><b id="sHook">–</b></div>
-        <div class="row"><span>Touch points</span><b id="sSpots">–</b></div>
+        <div class="row"><span>Clasp</span><b id="sHook">–</b></div>
+        <div class="row"><span>Solder points</span><b id="sSpots">–</b></div>
       </div>
     </section>
 
@@ -229,15 +238,10 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
           <p class="note">Coves and points smaller than this get rounded off, so the wire can actually bend to them.</p>
         </div>
         <div class="field">
-          <div class="top"><label for="hookSlide">Hook point</label><output id="o-hookSlide" for="hookSlide"></output></div>
+          <div class="top"><label for="hookSlide">Where the ball sits</label><output id="o-hookSlide" for="hookSlide"></output></div>
           <input type="range" id="hookSlide" min="0" max="1" step="0.01">
           <div class="stops" id="hookStops"></div>
-          <p class="note">The island turns so the East End lines up with the hook, which keeps the circle flat and perfectly round.</p>
-        </div>
-        <div class="field">
-          <div class="top"><label for="startGapMm">Free end at the East End</label><output id="o-startGapMm" for="startGapMm"></output></div>
-          <input type="range" id="startGapMm" min="0" max="15" step="0.5">
-          <p class="note">How far along the north shore the wire starts, leaving room for the circle to leave the East End.</p>
+          <p class="note">The island turns so the East End lines up with the ball, which keeps the circle flat and perfectly round.</p>
         </div>
         <div class="field">
           <div class="top"><label id="metalLbl">Metal</label></div>
@@ -256,16 +260,26 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
     <section class="flat" aria-label="Flat pattern">
       <h2>Flat pattern</h2>
       <canvas id="flat" width="660" height="253"></canvas>
-      <p id="flatNote">The wire laid flat before it is curved round the wrist, drawn to scale.</p>
+      <p id="flatNote">The wire laid flat before the tail is curved round the wrist, drawn to scale. Tap Flat above to see it large.</p>
     </section>
 
     <section aria-label="Show">
       <h2>Show</h2>
       <div class="checks">
         <label><input type="checkbox" id="showWrist" checked> Wrist</label>
-        <label><input type="checkbox" id="showNames" checked> Place names</label>
-        <label><input type="checkbox" id="showSpots" checked> Touch points</label>
+        <label><input type="checkbox" id="showNames"> Place names</label>
         <label><input type="checkbox" id="spin"> Turntable</label>
+      </div>
+    </section>
+
+    <section aria-label="For the jeweller">
+      <h2>For the jeweller</h2>
+      <p class="note jnote">Plans in Spanish: a real-size flat drawing of this design, how to make it, and a note asking for a quote.</p>
+      <div class="actions">
+        <a class="btn gold" id="openPlans" href="jeweler.html">Open the plans</a>
+        <button type="button" class="btn" id="dlPdf">Download PDF</button>
+        <button type="button" class="btn" id="dlSvg">Download drawing (SVG)</button>
+        <span id="dlMsg" role="status"></span>
       </div>
     </section>
 
@@ -287,6 +301,7 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
 <script src="vendor/OrbitControls.js"></script>
 <script src="fishers-outline.js"></script>
 <script src="geometry.js"></script>
+<script src="plans.js"></script>
 <script>
 (function () {
   'use strict';
@@ -372,7 +387,7 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
 
   // ── Scene objects ──────────────────────────────────────
   var metalMat = new THREE.MeshStandardMaterial({ metalness: 1, roughness: 0.24, envMapIntensity: 1.15 });
-  var wireMesh = null, capA = null, capB = null;
+  var wireMesh = null, capA = null, capB = null;   // capA: the start's rounded end, fused into the East End; capB: the clasp ball
   var bead = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
   bead.visible = false;
   scene.add(bead);
@@ -385,9 +400,6 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
   });
   var wrist = new THREE.Group();
   scene.add(wrist);
-  var spotGroup = new THREE.Group();
-  scene.add(spotGroup);
-  var spotMat = new THREE.MeshBasicMaterial({ color: 0xff5a3c, transparent: true, opacity: 0.5, depthWrite: false });
 
   var WRIST_LEN = 120;   // mm of arm shown
 
@@ -423,10 +435,11 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
     if (wireMesh) { wireMesh.geometry.dispose(); wireMesh.geometry = geo; }
     else { wireMesh = new THREE.Mesh(geo, metalMat); scene.add(wireMesh); }
     var capGeo = new THREE.SphereGeometry(r, 28, 18);
-    if (!capA) { capA = new THREE.Mesh(capGeo, metalMat); capB = new THREE.Mesh(capGeo, metalMat); scene.add(capA, capB); }
-    else { capA.geometry.dispose(); capA.geometry = capGeo; capB.geometry = capGeo; }
+    var ballGeo = new THREE.SphereGeometry(model.clasp.ballR, 36, 24);
+    if (!capA) { capA = new THREE.Mesh(capGeo, metalMat); capB = new THREE.Mesh(ballGeo, metalMat); scene.add(capA, capB); }
+    else { capA.geometry.dispose(); capB.geometry.dispose(); capA.geometry = capGeo; capB.geometry = ballGeo; }
     capA.position.copy(pts[0]);
-    capB.position.copy(pts[pts.length - 1]);
+    capB.position.fromArray(model.clasp.ballPos);
     bead.scale.setScalar(r * 0.75);
 
     var look = METAL_LOOK[params.metal];
@@ -436,16 +449,9 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
     buildWrist(model);
     wrist.visible = document.getElementById('showWrist').checked;
 
-    while (spotGroup.children.length) spotGroup.children.pop().geometry.dispose();
-    model.spots.forEach(function (sp) {
-      var m = new THREE.Mesh(new THREE.SphereGeometry(r * 1.6, 20, 14), spotMat);
-      m.position.set(sp.pos[0], sp.pos[1], sp.pos[2]);
-      spotGroup.add(m);
-    });
-    spotGroup.visible = document.getElementById('showSpots').checked;
-
     buildTags();
     drawFlat();
+    if (stageMode === 'flat') drawFlatStage();
     writeSpec();
     BRACELET.model = model;
     BRACELET.builds++;
@@ -454,12 +460,13 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
   // ── Place-name tags ────────────────────────────────────
   var tagsEl = document.getElementById('labels');
   var tags = [];
+  var TAGGED = ['East End', 'North Hill', 'Silver Eel', 'Race Point'];
   function buildTags() {
     tagsEl.textContent = '';
     tags = [];
     model.landmarks.forEach(function (lm) {
-      var isHook = lm.name === model.hook.landmark;
-      addTag(lm.name, lm.pos, lm.name === 'East End' || lm.name === 'Chocomount' || lm.name === 'Wilderness' ? '' : 'left', isHook ? 'hook' : '');
+      if (TAGGED.indexOf(lm.name) < 0) return;
+      addTag(lm.name, lm.pos, lm.name === 'East End' ? '' : 'left', lm.name === model.clasp.landmark ? 'hook' : '');
     });
     var handZ = params.north === 'hand' ? -1 : 1;
     addTag('hand', [model.wristRadius + 3, 0, handZ * WRIST_LEN / 2], '', 'end');
@@ -587,16 +594,15 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
     document.getElementById('sCostNote').textContent = fmt(cost.fineGrams, 1) + ' g pure at ' + money.format(pr.usdPerOzt) + '/oz';
     document.getElementById('stageSum').textContent = fmt(L) + ' mm wire · ' + fmt(grams, 1) + ' g · ' + money.format(cost.usd);
     writePrice(metal.base, pr);
+    plansLink();
     document.getElementById('sWire').textContent = fmt(p.wireDiaMm, 2) + ' mm round · ' + metal.label;
-    document.getElementById('sLen').textContent = 'outline ' + fmt(m.lengths.outlineMm) + ' mm, circle ' + fmt(m.lengths.ringMm) + ' mm, hook ' + fmt(m.lengths.hookMm) + ' mm';
+    document.getElementById('sLen').textContent = 'island ' + fmt(m.lengths.outlineMm) + ' mm, circle ' + fmt(m.lengths.ringMm) + ' mm, clasp ' + fmt(m.lengths.claspMm + m.lengths.ballMm) + ' mm (with the ball)';
     document.getElementById('sWrist').textContent = fmt(p.wristCircMm, 1) + ' mm (' + fmt(p.wristCircMm / MM_PER_IN, 2) + ' in) round, ' + fmt(m.ring.innerDiaMm, 1) + ' mm across';
-    document.getElementById('sIsland').textContent = fmt(m.island.lengthMm) + ' × ' + fmt(m.island.widthMm, 1) + ' mm, turned ' + fmt(Math.abs(m.hook.turnDeg)) + '° to level the hook';
+    document.getElementById('sIsland').textContent = fmt(m.island.lengthMm) + ' × ' + fmt(m.island.widthMm, 1) + ' mm, turned ' + fmt(Math.abs(m.clasp.turnDeg)) + '° to level the clasp';
     document.getElementById('sRing').textContent = fmt(m.ring.lenMm) + ' mm of wire, flat and round, ' + fmt(m.ring.centreDiaMm, 1) + ' mm across the wire centre';
-    document.getElementById('sHook').textContent = 'catches the outline at ' + m.hook.landmark;
-    var n = m.spots.length, overlap = m.spots.filter(function (s) { return s.gapMm < 0; }).length;
-    document.getElementById('sSpots').innerHTML = n === 0
-      ? 'none <span class="pill ok">clear</span>'
-      : n + (overlap ? ' (' + overlap + ' overlapping)' : '') + ' <span class="pill warn">solder or smooth</span>';
+    document.getElementById('sHook').textContent = fmt(m.clasp.ballDiaMm, 1) + ' mm ball, comes up from under the wrist and sits on ' + m.clasp.landmark;
+    var n = m.spots.length;
+    document.getElementById('sSpots').textContent = 'the East End joint' + (n ? ', plus ' + n + (n === 1 ? ' place' : ' places') + ' the outline touches itself' : '');
     writeOutputs();
   }
 
@@ -606,8 +612,7 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
     wireDiaMm: function (v) { return fmt(v, 2) + ' mm'; },
     islandLenMm: function (v) { return fmt(v) + ' mm'; },
     smoothMm: function (v) { return v === 0 ? 'off' : fmt(v, 2) + ' mm'; },
-    hookSlide: function () { return model ? model.hook.landmark : ''; },
-    startGapMm: function (v) { return fmt(v, 1) + ' mm'; }
+    hookSlide: function () { return model ? model.clasp.landmark : ''; }
   };
   function setFill(el) {
     var f = (el.value - el.min) / (el.max - el.min) * 100;
@@ -670,12 +675,8 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
     stopsEl.appendChild(b);
   });
 
-  ['showWrist', 'showSpots'].forEach(function (id) {
-    document.getElementById(id).addEventListener('change', function () {
-      wrist.visible = document.getElementById('showWrist').checked;
-      spotGroup.visible = document.getElementById('showSpots').checked;
-    });
-  });
+  document.getElementById('showWrist').addEventListener('change', function (e) { wrist.visible = e.target.checked; });
+  document.getElementById('showNames').addEventListener('change', function () { drawFlatStage(); });
   document.getElementById('spin').addEventListener('change', function (e) { controls.autoRotate = e.target.checked; });
 
   document.getElementById('reset').addEventListener('click', function () {
@@ -695,10 +696,10 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
       'Fishers Bracelet design',
       'Wrist ' + fmt(p.wristCircMm, 1) + ' mm (' + fmt(p.wristCircMm / MM_PER_IN, 2) + ' in) · wire ' + fmt(p.wireDiaMm, 2) + ' mm ' + G.METALS[p.metal].label,
       'Island ' + fmt(m.island.lengthMm) + ' × ' + fmt(m.island.widthMm, 1) + ' mm on the wrist · smoothing ' + fmt(p.smoothMm, 2) + ' mm',
-      'Circle ' + fmt(m.ring.lenMm) + ' mm, hooks on at ' + m.hook.landmark + ' · free end ' + fmt(p.startGapMm, 1) + ' mm along the north shore',
+      'Island closed at the East End (start soldered end-on) · circle ' + fmt(m.ring.lenMm) + ' mm · ' + fmt(m.clasp.ballDiaMm, 1) + ' mm ball clasp sits on ' + m.clasp.landmark,
       'Total wire ' + fmt(m.lengths.totalMm) + ' mm (' + fmt(m.lengths.totalMm / MM_PER_IN, 1) + ' in) · weight ' + fmt(G.grams(m, p.metal), 1) + ' g',
       (metal.base === 'silver' ? 'Silver' : 'Gold') + ' cost ' + money.format(cost.usd) + ': ' + fmt(cost.fineGrams, 1) + ' g pure at ' + money2.format(pr.usdPerOzt) + '/oz (' + priceWhen + '), metal only',
-      'Touch points: ' + m.spots.length,
+      'Solder points: the East End joint' + (m.spots.length ? ' + ' + m.spots.length + ' where the outline touches itself' : ''),
       'Settings: ' + JSON.stringify(p)
     ].join('\n');
   }
@@ -718,69 +719,167 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
     } catch (e) { fallback(); }
   });
 
-  // ── Flat pattern ───────────────────────────────────────
+  // ── For the jeweller: plans page, PDF and drawing ─────
+  // The PDF is built here from this design (bracelet/plans.js + jsPDF), so it
+  // always matches what's on screen. jsPDF loads once the page is idle, so a
+  // tap on Download saves straight away.
+  var P = window.BraceletPlans;
+  var jspdfLoading = null;
+  function loadJsPDF() {
+    if (window.jspdf) return Promise.resolve(window.jspdf.jsPDF);
+    if (!jspdfLoading) {
+      jspdfLoading = new Promise(function (res, rej) {
+        var sc = document.createElement('script');
+        sc.src = 'vendor/jspdf.umd.min.js';
+        sc.onload = function () { res(window.jspdf.jsPDF); };
+        sc.onerror = function () { jspdfLoading = null; rej(new Error('jsPDF did not load')); };
+        document.head.appendChild(sc);
+      });
+    }
+    return jspdfLoading;
+  }
+  function dlMsg(t) { document.getElementById('dlMsg').textContent = t; }
+  function saved(name) {
+    return function (how) { BRACELET.lastDownload = name; dlMsg(how === 'saved' ? 'Saved ' + name + '.' : 'Downloading ' + name + '.'); };
+  }
+  function notSaved(e) { dlMsg(e && e.code === 'declined' ? 'Not saved.' : 'This view can\u2019t save files. Open the plans and use the PDF there.'); }
+  document.getElementById('dlPdf').addEventListener('click', function () {
+    dlMsg('Making the PDF\u2026');
+    loadJsPDF().then(function (ctor) { return P.saveFile(P.FILE.pdf, P.pdf(model, 'es', ctor).output('blob')); }).then(saved(P.FILE.pdf), notSaved);
+  });
+  document.getElementById('dlSvg').addEventListener('click', function () {
+    P.saveFile(P.FILE.svg, P.svg(model, 'es')).then(saved(P.FILE.svg), notSaved);
+  });
+  function plansLink() { document.getElementById('openPlans').href = 'jeweler.html#d=' + encodeURIComponent(JSON.stringify(params)); }
+
+  // ── Flat views ─────────────────────────────────────────
+  // The piece laid flat, as the jeweller bends it before the tail is wrapped
+  // round the wrist. The panel shows the island with a stub of the tail; the
+  // stage's Flat view shows the whole piece, tail and ball, to scale. Both
+  // follow Trace the wire.
   var flatCanvas = document.getElementById('flat');
+  var flatStage = document.getElementById('flatStage');
+  var stageMode = '3d';
   function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
-  function drawFlat() {
+  function paintFlat(cv, full, progress) {
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var cw = flatCanvas.clientWidth || 320, ch = flatCanvas.clientHeight || 120;
-    flatCanvas.width = Math.round(cw * dpr);
-    flatCanvas.height = Math.round(ch * dpr);
-    var ctx = flatCanvas.getContext('2d');
+    var cw = cv.clientWidth || 320, ch = cv.clientHeight || 120;
+    if (cv.width !== Math.round(cw * dpr)) cv.width = Math.round(cw * dpr);
+    if (cv.height !== Math.round(ch * dpr)) cv.height = Math.round(ch * dpr);
+    var ctx = cv.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cw, ch);
-    var m = model, f = m.flat;
-    var stub = 14;   // mm of the straight circle wire to show before the break
+    var m = model, fp = m.flatPiece, r = m.wireRadius, dia = m.params.wireDiaMm;
     var u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
     m.loop.forEach(function (q) { u0 = Math.min(u0, q[0]); u1 = Math.max(u1, q[0]); v0 = Math.min(v0, q[1]); v1 = Math.max(v1, q[1]); });
-    var uMax = m.ring.from + stub;
-    var pad = 10, bottom = 22;
-    var sc = Math.min((cw - 2 * pad) / (uMax - u0 + m.wireRadius * 2), (ch - pad - bottom) / (v1 - v0 + m.wireRadius * 2));
-    var ox = pad + m.wireRadius * sc - u0 * sc;
-    var oy = pad + m.wireRadius * sc + v1 * sc;
+    var uMax = full ? fp.ball[0] + fp.ballR : m.ring.from + 14;
+    var padX = full ? 28 : 10, padTop = full ? Math.min(110, ch * 0.3) : 10, padBot = full ? 64 : 22;
+    var spanU = uMax - u0 + 2 * r, spanV = v1 - v0 + 2 * r;
+    var sc = Math.min((cw - 2 * padX) / spanU, (ch - padTop - padBot) / spanV);
+    var ox = padX + (cw - 2 * padX - spanU * sc) / 2 + (r - u0) * sc;
+    var oy = padTop + (ch - padTop - padBot - spanV * sc) / 2 + (r + v1) * sc;
     function X(u) { return ox + u * sc; }
     function Y(v) { return oy - v * sc; }
-    var gold = cssVar('--gold-hi'), ink = cssVar('--ink'), muted = cssVar('--muted'), warn = cssVar('--warn');
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    function path(stroke, width) {
+    var gold = cssVar('--gold-hi'), ink = cssVar('--ink'), muted = cssVar('--muted'), line = cssVar('--line');
+    var pts = fp.pts, cum = [0];
+    for (var i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    var total = cum[cum.length - 1];
+    var upto = progress == null ? total : progress * total;
+    var tip = null;
+    function stroke(limit, color, width, dash) {
       ctx.beginPath();
-      var started = false;
-      for (var i = 0; i < f.length; i++) {
-        if (f[i][0] > uMax) break;
-        if (!started) { ctx.moveTo(X(f[i][0]), Y(f[i][1])); started = true; } else ctx.lineTo(X(f[i][0]), Y(f[i][1]));
+      ctx.setLineDash(dash || []);
+      for (var k = 0; k < pts.length; k++) {
+        var q = pts[k];
+        if (cum[k] > limit) {
+          var a = pts[k - 1], t = (limit - cum[k - 1]) / (cum[k] - cum[k - 1]);
+          q = [a[0] + (q[0] - a[0]) * t, a[1] + (q[1] - a[1]) * t];
+        }
+        if (q[0] > uMax) { q = [uMax, q[1]]; }
+        if (k === 0) ctx.moveTo(X(q[0]), Y(q[1])); else ctx.lineTo(X(q[0]), Y(q[1]));
+        tip = q;
+        if (cum[k] > limit || q[0] >= uMax) break;
       }
-      ctx.strokeStyle = stroke;
+      ctx.strokeStyle = color;
       ctx.lineWidth = width;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (progress != null) stroke(total, line, Math.max(1, dia * sc * 0.4), [4, 4]);
+    stroke(upto, gold, Math.max(1.5, dia * sc));
+    stroke(upto, ink, full ? 1 : 0.8);
+    var done = progress == null || progress >= 0.999;
+    var small = cw < 620;
+    ctx.font = (full ? (small ? '12px ' : '13px ') : '11px ') + cssVar('--f-ui');
+    ctx.fillStyle = muted;
+    if (full) {
+      if (done) {
+        ctx.beginPath();
+        ctx.arc(X(fp.ball[0]), Y(fp.ball[1]), Math.max(2.5, fp.ballR * sc), 0, Math.PI * 2);
+        ctx.fillStyle = gold;
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = ink;
+        ctx.stroke();
+      }
+      // What the jeweller needs to see: the joint, where the ball lands, the tail.
+      var note = function (at, dx, dy, txt, align) {
+        var x = X(at[0]), y = Y(at[1]);
+        ctx.strokeStyle = muted;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx, y + dy); ctx.stroke();
+        ctx.fillStyle = ink;
+        ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.textAlign = align;
+        ctx.fillText(txt, x + dx + (align === 'right' ? -4 : 4), y + dy + 4);
+      };
+      var lift = Math.max(26, (v1 - m.ring.v) * sc + 20);
+      var drop = Math.max(30, (m.ring.v - v0) * sc + 22);
+      note(fp.joint, 18, -lift, small ? 'East End joint' : 'East End: the start is soldered end-on to the passing wire', 'left');
+      note(fp.northHill, 10, drop, small ? 'Ball sits on ' + m.clasp.landmark : m.clasp.landmark + ': the ball sits here once the tail is wrapped', 'left');
+      ctx.fillStyle = muted;
+      ctx.textAlign = 'center';
+      var tailMid = (fp.joint[0] + fp.tailEnd[0]) / 2;
+      ctx.fillText('tail ' + fmt(fp.tailLenMm) + ' mm' + (small ? '' : ': wraps round under the wrist into the circle'), X(tailMid), Y(m.ring.v) + Math.max(18, dia * sc + 12));
+      if (document.getElementById('showNames').checked) {
+        ctx.textAlign = 'right';
+        model.landmarks.forEach(function (lm) {
+          if (lm.name !== 'Race Point' && lm.name !== 'Silver Eel') return;
+          ctx.fillText(lm.name, X(lm.flat[0]) - dia * sc - 6, Y(lm.flat[1]) + 4);
+        });
+      }
+    } else {
+      // Break mark and the rest of the tail as words.
+      var bx = X(uMax) + 4, by = Y(m.ring.v);
+      ctx.strokeStyle = muted;
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(bx, by - 6); ctx.lineTo(bx + 4, by + 6); ctx.moveTo(bx + 5, by - 6); ctx.lineTo(bx + 9, by + 6); ctx.stroke();
+      ctx.fillStyle = muted;
+      ctx.textAlign = 'right';
+      ctx.fillText('+' + fmt(fp.tailEnd[0] - uMax) + ' mm straight, then the ball', cw - 10, ch - 6);
+    }
+    if (progress != null && progress < 1 && tip) {
+      ctx.beginPath();
+      ctx.arc(X(tip[0]), Y(tip[1]), Math.max(3, r * sc * 1.1), 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = ink;
       ctx.stroke();
     }
-    path(gold, Math.max(1.5, m.params.wireDiaMm * sc));
-    path(ink, 0.8);
-    // Break mark and the rest of the circle as words.
-    var bx = X(uMax) + 4, by = Y(m.ring.v);
-    ctx.strokeStyle = muted;
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(bx, by - 6); ctx.lineTo(bx + 4, by + 6); ctx.moveTo(bx + 5, by - 6); ctx.lineTo(bx + 9, by + 6); ctx.stroke();
-    ctx.fillStyle = muted;
-    ctx.font = '11px ' + cssVar('--f-ui');
-    ctx.textAlign = 'right';
-    ctx.fillText('+' + fmt(m.ring.lenMm - stub) + ' mm straight, then the hook', cw - pad, ch - 6);
-    // Hook point and free end.
-    ctx.strokeStyle = ink;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(X(m.hook.u), Y(m.hook.v), Math.max(3, m.params.wireDiaMm * sc * 0.9), 0, Math.PI * 2); ctx.stroke();
-    // Touch points.
-    ctx.strokeStyle = warn;
-    m.spots.forEach(function (sp) { ctx.beginPath(); ctx.arc(X(sp.at[0]), Y(sp.at[1]), Math.max(4, m.params.wireDiaMm * sc * 1.2), 0, Math.PI * 2); ctx.stroke(); });
     // 10 mm scale bar.
     ctx.strokeStyle = ink;
     ctx.lineWidth = 1.5;
-    var sx = pad, sy = ch - 9;
+    var sx = full ? padX : 10, sy = ch - (full ? 22 : 9);
     ctx.beginPath(); ctx.moveTo(sx, sy - 4); ctx.lineTo(sx, sy); ctx.lineTo(sx + 10 * sc, sy); ctx.lineTo(sx + 10 * sc, sy - 4); ctx.stroke();
     ctx.fillStyle = ink;
     ctx.textAlign = 'left';
     ctx.fillText('10 mm', sx + 10 * sc + 6, sy + 1);
   }
+  function drawFlat(progress) { paintFlat(flatCanvas, false, progress == null ? null : progress); }
+  function drawFlatStage(progress) { if (stageMode === 'flat') paintFlat(flatStage, true, progress == null ? null : progress); }
 
   // ── Views ──────────────────────────────────────────────
   var tween = null;
@@ -793,8 +892,8 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
     var rc = model.centreRadius;
     if (name === 'top') return { pos: [0, rc + 160 * k, 5], tgt: [0, rc * 0.6, 0] };
     if (name === 'end') return { pos: [0, 10, 230 * k], tgt: [0, 0, 0] };
-    if (name === 'hook') {
-      var h = model.hook.pos;
+    if (name === 'clasp') {
+      var h = model.clasp.seat;
       var dir = new THREE.Vector3(h[0], h[1], 0).normalize();
       return { pos: [h[0] + dir.x * 105 * k - 25, h[1] + dir.y * 105 * k + 30, h[2] + 70 * k], tgt: [h[0] * 0.8, h[1] * 0.8, h[2]] };
     }
@@ -802,6 +901,10 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
   }
   function setView(name, instant) {
     document.querySelectorAll('[data-view]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.view === name)); });
+    stageMode = name === 'flat' ? 'flat' : '3d';
+    stage.classList.toggle('flat-mode', stageMode === 'flat');
+    flatStage.hidden = stageMode !== 'flat';
+    if (stageMode === 'flat') { tween = null; drawFlatStage(trace ? trace.e : null); return; }
     var pose = viewPose(name);
     var to = { pos: new THREE.Vector3().fromArray(pose.pos), tgt: new THREE.Vector3().fromArray(pose.tgt) };
     if (instant || reduceMotion) {
@@ -821,7 +924,7 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
     document.querySelectorAll('[data-view]').forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
   });
 
-  // ── Trace the wire: draw it from the free end to the hook ──
+  // ── Trace the wire: draw it from the East End to the clasp ball ──
   var trace = null;
   var traceCap = document.getElementById('traceCap');
   function traceSteps() {
@@ -832,16 +935,15 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
       { at: lm['North Hill'] - 25, text: 'North Hill' },
       { at: lm['Silver Eel'] - 10, text: 'Silver Eel' },
       { at: lm['Race Point'] - 10, text: 'Round Race Point' },
-      { at: lm['Race Point'] + 25, text: 'East along the south shore, past Wilderness' },
-      { at: lm['Chocomount'] - 10, text: 'Chocomount' },
-      { at: model.index.junctionStart, text: 'Back to the East End, and on into the circle' },
-      { at: model.index.ringStart + 40, text: 'A perfect circle round the back of the wrist' },
-      { at: model.index.hookStart - 15, text: 'The hook catches the outline at ' + model.hook.landmark }
+      { at: lm['Race Point'] + 25, text: 'East along the south shore' },
+      { at: model.index.jointIndex - 8, text: 'Back at the East End: the wire meets its own start in one soldered joint' },
+      { at: model.index.ringStart + 40, text: 'On into a perfect circle round the back of the wrist' },
+      { at: model.index.claspStart - 15, text: 'Up from under the wrist: the ball sits on ' + model.clasp.landmark }
     ].sort(function (a, b) { return a.at - b.at; });
   }
   document.getElementById('trace').addEventListener('click', function () {
-    setView('quarter');
-    trace = { t0: performance.now() + 450, dur: reduceMotion ? 1 : 11000, steps: traceSteps() };
+    if (stageMode !== 'flat') setView('quarter');
+    trace = { t0: performance.now() + 450, dur: reduceMotion ? 1 : 11000, steps: traceSteps(), e: 0 };
     capB.visible = false;
     traceCap.hidden = false;
     BRACELET.tracing = true;
@@ -849,14 +951,17 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
   function stepTrace(now) {
     if (!trace) return;
     var p = Math.max(0, Math.min(1, (now - trace.t0) / trace.dur));
-    // Ease in and out so the start and the hook get a moment.
+    // Ease in and out so the start and the clasp get a moment.
     var e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+    trace.e = e;
     var segs = Math.max(1, Math.floor(e * tubeSegs));
     wireMesh.geometry.setDrawRange(0, segs * radialSegs * 6);
     var idx = Math.min(model.wire.length - 1, Math.floor(e * (model.wire.length - 1)));
     var q = model.wire[idx];
     bead.position.set(q[0], q[1], q[2]);
-    bead.visible = p < 1;
+    bead.visible = p < 1 && stageMode !== 'flat';
+    drawFlat(e);
+    drawFlatStage(e);
     var text = trace.steps[0].text;
     trace.steps.forEach(function (s) { if (idx >= s.at) text = s.text; });
     if (traceCap.textContent !== text) traceCap.textContent = text;
@@ -865,6 +970,8 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
       capB.visible = true;
       trace = null;
       BRACELET.tracing = false;
+      drawFlat();
+      drawFlatStage();
       setTimeout(function () { if (!trace) traceCap.hidden = true; }, 2500);
     }
   }
@@ -873,7 +980,7 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
   function applyTheme() {
     ghostMat.uniforms.uColor.value.set(cssVar('--ghost') || '#34506b');
     scene.fog.color.set(cssVar('--stage-b') || '#d2dbe2').convertSRGBToLinear();
-    if (model) drawFlat();
+    if (model) { drawFlat(); drawFlatStage(); }
   }
   if (window.matchMedia) {
     var mq = matchMedia('(prefers-color-scheme: dark)');
@@ -887,7 +994,7 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
     if (renderer) renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    if (model) drawFlat();
+    if (model) { drawFlat(); drawFlatStage(); }
   }
   if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
   window.addEventListener('resize', resize);
@@ -920,6 +1027,9 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
     get params() { return Object.assign({}, params); },
     set: function (p) { params = G.normalize(Object.assign({}, params, p)); rebuild(); save(); },
     view: setView,
+    camera: function (pos, tgt) { setView('quarter', true); camera.position.fromArray(pos); controls.target.fromArray(tgt); controls.update(); },
+    get stageMode() { return stageMode; },
+    lastDownload: null,
     webgl: !!renderer,
     priceLoading: false,
     price: function () { return priceFor(G.METALS[params.metal].base); },
@@ -934,5 +1044,6 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
   setView('quarter', true);
   requestAnimationFrame(frame);
   refreshPrices();
+  setTimeout(function () { loadJsPDF().catch(function () { /* retried on tap */ }); }, 1500);
 })();
 </script>

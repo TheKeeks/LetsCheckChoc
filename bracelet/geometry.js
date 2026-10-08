@@ -1,14 +1,17 @@
 // Fishers Bracelet geometry: pure functions, no DOM, no three.js.
 //
 // The piece is ONE round wire. Its route, as the owner described it:
-//   1. a free end at the East End;
+//   1. it starts at the East End (Wicopesset end);
 //   2. west along the north shore (West Harbor, North Hill, Hay Harbor,
 //      Silver Eel) to Race Point;
-//   3. round Race Point and east along the south shore (Wilderness,
-//      Chocomount) back to the East End;
-//   4. on past the East End into a perfect circle round the back of the wrist;
-//   5. a hook at the end of the circle that catches the outline at the west
-//      end, at North Hill.
+//   3. round Race Point and east along the south shore back to the East End,
+//      where it touches its own start: the start is soldered end-on to the
+//      passing wire, so the island is a closed outline and the joint is one
+//      wire thick (no doubling);
+//   4. the same wire carries on east from that joint into a perfect circle
+//      round the back of the wrist;
+//   5. the circle comes up from under the wrist and ends in a small ball that
+//      sits on the outline at North Hill: the clasp.
 //
 // Units: kilometres on the map, millimetres on the wrist. The design is laid
 // out flat ("unrolled": u runs round the wrist, east positive; v runs along
@@ -32,8 +35,7 @@
     wireDiaMm: 3,
     islandLenMm: 65,       // East End to Race Point, measured round the wrist
     smoothMm: 3,           // coastline wiggles smaller than about this are rounded off
-    hookSlide: 0,          // where the hook catches the west end: 0 = North Hill … 1 = Race Point
-    startGapMm: 4,         // how far along the north shore the free end starts
+    hookSlide: 0,          // where the clasp ball sits on the west end: 0 = North Hill … 1 = Race Point
     metal: '18k',
     north: 'hand'          // which way north faces when worn (labels only: the piece is the same)
   };
@@ -43,9 +45,10 @@
     wireDiaMm: [1, 5],
     islandLenMm: [35, 110],
     smoothMm: [0, 8],
-    hookSlide: [0, 1],
-    startGapMm: [0, 15]
+    hookSlide: [0, 1]
   };
+
+  var BALL_PER_DIA = 0.7;   // clasp ball radius as a share of the wire diameter (Ø 4.2 mm on 3 mm wire)
 
   // Densities in g/cm³ (common alloys). purity is the fine-metal share by weight
   // (hallmarks 585, 750, 916, 925); base is which spot price applies.
@@ -369,25 +372,49 @@
     marks.forEach(function (m) { m.pt = ctr(m.pt); });
     uE -= cu; uH -= cu; ringV -= cv;
 
-    // 7. The flat route: free end → north shore → Race Point → south shore → East End → circle.
-    var gapN = Math.round(p.startGapMm / STEP);
+    // 7. The flat route. The wire starts AT the East End tip T, runs the north
+    //    shore west, rounds Race Point, comes back east along the south shore
+    //    and passes back through T, where its own start is soldered to it
+    //    end-on. From T the same wire carries straight on east into the circle.
     var blend = Math.max(3, 1.5 * p.wireDiaMm);
     var blendN = Math.round(blend / STEP);
+    var T = loop[0];
+    var A = loop[n - blendN];
+    var tA = unit(sub(loop[(n - blendN + 1) % n], loop[n - blendN - 1]));
+    var B = [uE + blend, ringV];            // due east of T: the circle keeps T's height
+    var dAT = unit(sub(T, A));
+    var tT = unit([dAT[0] + 1, dAT[1]]);    // through T halfway between the south shore's heading and due east
+    var m1 = dist(A, T), m2 = dist(T, B);
+    var into = hermite(A, [tA[0] * m1, tA[1] * m1], T, [tT[0] * m1, tT[1] * m1], Math.max(3, Math.round(m1 * 1.3 / STEP)));
+    var outOf = hermite(T, [tT[0] * m2, tT[1] * m2], B, [m2, 0], Math.max(3, Math.round(m2 * 1.3 / STEP)));
+    var passing = into.concat([T], outOf);
+    // The start meets the passing wire end-on: trim it back to where its
+    // centre is most of a radius off the passing wire, so its rounded end sits
+    // in the side of that wire instead of running alongside it into the tip.
+    function offPassing(q) {
+      var d = Infinity;
+      for (var pi = 0; pi < passing.length; pi++) d = Math.min(d, dist(q, passing[pi]));
+      return d;
+    }
+    var want = 0.75 * r, startIdx = 0, dPrev = 0, dHere = offPassing(loop[0]);
+    while (dHere < want && startIdx < n / 4) { startIdx++; dPrev = dHere; dHere = offPassing(loop[startIdx]); }
     var flat = [];
-    var outlineStart = Math.min(gapN, iRP - 1);
-    for (var a = outlineStart; a <= n - blendN; a++) flat.push(loop[a % n]);
-    // Ease off the south shore, round the East End and into the circle.
-    var A = loop[(n - blendN) % n];
-    var tA = unit(sub(loop[(n - blendN + 1) % n], loop[(n - blendN - 1) % n]));
-    var B = [uE + blend, ringV];
-    var m = dist(A, B) * 1.2;
-    var junction = hermite(A, [tA[0] * m, tA[1] * m], B, [m, 0], Math.max(4, Math.round(dist(A, B) * 1.3 / STEP)));
+    if (startIdx > 0 && dHere > dPrev) {
+      // Between samples: start exactly where the end sits that far off.
+      var k0 = (want - dPrev) / (dHere - dPrev), q0 = loop[startIdx - 1], q1 = loop[startIdx];
+      flat.push([q0[0] + (q1[0] - q0[0]) * k0, q0[1] + (q1[1] - q0[1]) * k0]);
+    }
+    var lead = flat.length;   // 1 when the start sits between samples
+    for (var a = startIdx; a <= n - blendN; a++) flat.push(loop[a]);
     var junctionStart = flat.length;
-    flat = flat.concat(junction);
+    flat = flat.concat(into);
+    var jointIndex = flat.length;
+    flat.push([T[0], T[1]]);
+    flat = flat.concat(outOf);
     var ringStart = flat.length;
-    // The circle: constant v, from just past the East End round the back to the hook.
-    var hookR = p.wireDiaMm + 0.1;                       // hook wire centre to outline wire centre
-    var lead = hookR * Math.cos(30 * DEG) + 2 * p.wireDiaMm;  // the hook starts lifting this far out
+    // The circle: constant v, from just past the East End round the back to the clasp.
+    var hookR = p.wireDiaMm + 0.1;                            // clasp wire centre to outline wire centre as it crosses
+    var lead = hookR * Math.cos(30 * DEG) + 2 * p.wireDiaMm;  // the clasp starts lifting this far out
     var uRingEnd = uH + cc - lead;
     for (var u = B[0]; u <= uRingEnd; u += STEP) flat.push([u, ringV]);
     flat.push([uRingEnd, ringV]);
@@ -402,34 +429,44 @@
     // 8. Wrap onto the wrist.
     var wire = flat.map(function (f) { return wrap(f[0], f[1], rc); });
 
-    // 9. The hook: lifts off the skin, arcs over the outline wire at the hook
-    //    point and comes back down on the far side.
+    // 9. The clasp: the circle comes up from under the wrist, lifts off the
+    //    skin, rises over the outline wire at North Hill and ends in a small
+    //    ball sitting on top of it, a little inside the island, so the pull of
+    //    the circle keeps it seated.
     var thH = uH / rc;
     var C3 = wrap(uH, ringV, rc);
     var tv = [Math.cos(thH), -Math.sin(thH), 0];   // round the wrist, eastward
     var nv = [Math.sin(thH), Math.cos(thH), 0];    // straight out from the skin
-    function arcPt(alpha) {
-      return [0, 1, 2].map(function (i) { return C3[i] + hookR * (Math.cos(alpha) * tv[i] + Math.sin(alpha) * nv[i]); });
+    function around(alpha, rad) {
+      return [0, 1, 2].map(function (i) { return C3[i] + rad * (Math.cos(alpha) * tv[i] + Math.sin(alpha) * nv[i]); });
     }
-    var a0 = 150 * DEG;
+    var a0 = 150 * DEG, a1 = 95 * DEG, aBall = 70 * DEG;
+    var ballR = BALL_PER_DIA * p.wireDiaMm;
     var start3 = wire[wire.length - 1];
-    var arc0 = arcPt(a0);
+    var arc0 = around(a0, hookR);
     var dirIn = [0, 1, 2].map(function (i) { return Math.sin(a0) * tv[i] - Math.cos(a0) * nv[i]; });
     var chord = Math.hypot(arc0[0] - start3[0], arc0[1] - start3[1], arc0[2] - start3[2]);
     var thS = uRingEnd / rc;
-    var tS = [Math.cos(thS), -Math.sin(thS), 0];   // the circle's own heading where the hook starts
-    var hook = hermite3(start3, tS.map(function (c) { return c * chord; }), arc0, dirIn.map(function (c) { return c * chord; }), Math.max(6, Math.round(chord * 1.5 / STEP)));
-    hook.push(arc0);
-    var arcSteps = Math.max(12, Math.round(hookR * a0 / STEP));
-    for (var t = 1; t <= arcSteps; t++) hook.push(arcPt(a0 - a0 * t / arcSteps));
-    var hookLen = 0;
+    var tS = [Math.cos(thS), -Math.sin(thS), 0];   // the circle's own heading where the clasp starts
+    var clasp = hermite3(start3, tS.map(function (c) { return c * chord; }), arc0, dirIn.map(function (c) { return c * chord; }), Math.max(6, Math.round(chord * 1.5 / STEP)));
+    clasp.push(arc0);
+    var arcSteps = Math.max(6, Math.round(hookR * (a0 - a1) / STEP));
+    for (var t = 1; t <= arcSteps; t++) clasp.push(around(a0 - (a0 - a1) * t / arcSteps, hookR));
+    var claspLen = 0;
     var prev = start3;
-    hook.forEach(function (pt) { hookLen += Math.hypot(pt[0] - prev[0], pt[1] - prev[1], pt[2] - prev[2]); prev = pt; });
-    var hookStart = wire.length;
-    wire = wire.concat(hook);
+    clasp.forEach(function (pt) { claspLen += Math.hypot(pt[0] - prev[0], pt[1] - prev[1], pt[2] - prev[2]); prev = pt; });
+    var ballPos = around(aBall, r + ballR);        // resting on the outline wire
+    var claspStart = wire.length;
+    wire = wire.concat(clasp);
+    // The ball is balled up from the wire's own end: count it as wire.
+    var ballMm = (4 / 3) * Math.PI * Math.pow(ballR, 3) / (Math.PI * r * r);
 
-    // 10. Tight spots along the flat route (the hook is meant to touch, so it is left out).
-    var spots = tightSpots(flat, s, p.wireDiaMm + 0.5, 2 * p.wireDiaMm + 1, p.wireDiaMm).map(function (sp) {
+    // 10. Places the outline touches itself (solder points). The East End joint
+    //     is soldered by design, so it is reported on its own, not here.
+    var jointClear = 2.5 * p.wireDiaMm;
+    var spots = tightSpots(flat, s, p.wireDiaMm + 0.5, 2 * p.wireDiaMm + 1, p.wireDiaMm).filter(function (sp) {
+      return dist(flat[sp.i], T) > jointClear && dist(flat[sp.j], T) > jointClear;
+    }).map(function (sp) {
       sp.pos = wrap(sp.at[0], sp.at[1], rc + r);
       return sp;
     });
@@ -442,25 +479,43 @@
       else if (mk.shore === 'south') idx = nearestIndex(loop, mk.pt, iRP, n);
       else idx = nearestIndex(loop, mk.pt);
       var f = loop[idx];
-      // Where the wire passes it, counting from the free end (East End: where the circle leaves).
-      var wi = mk.name === 'East End' ? junctionStart : clamp(idx - outlineStart, 0, junctionStart);
+      // Where the wire passes it, counting from the start at the East End.
+      var wi = clamp(idx - startIdx + lead, 0, junctionStart);
       return { name: mk.name, flat: f, pos: wrap(f[0], f[1], rc + r + 0.5), loopIndex: idx, wireIndex: wi };
     });
 
-    var totalLen = outlineLen + ringLen + hookLen;
+    // 12. The piece laid flat, as the jeweller bends it before the tail is
+    //     wrapped round the wrist: the island, then the tail straight east from
+    //     the East End (circle plus clasp wire), ending in the ball.
+    var tailLen = ringLen + claspLen;
+    var tailEnd = [uRingEnd + claspLen, ringV];
+    var flatPiece = {
+      pts: flat.concat([tailEnd]),
+      joint: [T[0], T[1]],
+      tailFrom: B[0],
+      tailEnd: tailEnd,
+      tailLenMm: tailLen,
+      ball: [tailEnd[0] + ballR * 0.6, ringV],
+      ballR: ballR,
+      northHill: [uH, ringV]
+    };
+
+    var totalLen = outlineLen + ringLen + claspLen + ballMm;
     var islandW = maxV - minV;
     return {
       params: p,
       wristRadius: R,
       wireRadius: r,
       centreRadius: rc,
-      wire: wire,                // [x, y, z] mm, free end first, hook tip last
-      flat: flat,                // [u, v] mm, the unrolled route up to where the hook lifts
+      wire: wire,                // [x, y, z] mm, from the East End round the island, the circle, up to the clasp ball
+      flat: flat,                // [u, v] mm, the unrolled route up to where the clasp lifts
+      flatPiece: flatPiece,
       loop: loop,                // the smoothed outline, flat, starting at the East End tip
-      index: { outlineStart: outlineStart, junctionStart: junctionStart, ringStart: ringStart, ringEnd: ringEnd, hookStart: hookStart, raceLoop: iRP },
+      index: { startLoop: startIdx, jointIndex: jointIndex, junctionStart: junctionStart, ringStart: ringStart, ringEnd: ringEnd, claspStart: claspStart, raceLoop: iRP },
+      joint: { flat: [T[0], T[1]], pos: wrap(T[0], T[1], rc) },
       ring: { v: ringV, from: B[0], to: uRingEnd, uEast: uE, uHook: uH, lenMm: ringLen, innerDiaMm: 2 * R, centreDiaMm: 2 * rc },
-      hook: { u: uH, v: ringV, pos: C3, landmark: hookName, offMm: hookDist, turnDeg: phi / DEG },
-      lengths: { outlineMm: outlineLen, ringMm: ringLen, hookMm: hookLen, totalMm: totalLen },
+      clasp: { u: uH, v: ringV, seat: C3, ballPos: ballPos, ballR: ballR, ballDiaMm: 2 * ballR, landmark: hookName, offMm: hookDist, turnDeg: phi / DEG },
+      lengths: { outlineMm: outlineLen, ringMm: ringLen, claspMm: claspLen, ballMm: ballMm, totalMm: totalLen },
       island: { lengthMm: maxU - minU, widthMm: islandW },
       spots: spots,
       landmarks: landmarks
@@ -490,6 +545,7 @@
     LIMITS: LIMITS,
     METALS: METALS,
     G_PER_OZT: G_PER_OZT,
+    BALL_PER_DIA: BALL_PER_DIA,
     PRICE_SAVED: PRICE_SAVED,
     HOOK_STOPS: HOOK_STOPS,
     hookStops: hookStops,

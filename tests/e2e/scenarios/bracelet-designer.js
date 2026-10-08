@@ -2,9 +2,12 @@
 // the gold wire on the ghost wrist, and the spec sheet follows the sliders.
 // Total wire length and the gold cost at today's spot price head the spec;
 // the live price (gold-api.com) is emulated here, then cut off to check the
-// page falls back to the price saved with it.
-// Screenshots (3/4, Map, Circle, Hook, mid-trace, phone) land in
-// tests/e2e/artifacts/ so the owner can see the model from CI.
+// page falls back to the price saved with it. The island closes at the East
+// End and the circle ends in a small ball on North Hill; place names start
+// off and there are no touch-point markers. Trace the wire runs on the Flat
+// view; the jeweller's plans download as PDF and SVG, and open on their own
+// page in Spanish. Screenshots (3/4, Map, Circle, Clasp, Flat, mid-trace,
+// phone, plans) land in tests/e2e/artifacts/ so the owner can see them from CI.
 'use strict';
 
 module.exports = {
@@ -19,19 +22,23 @@ module.exports = {
       return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' },
         body: JSON.stringify({ currency: 'USD', price: LIVE[sym], symbol: sym, updatedAt: '2026-10-01T15:00:00Z' }) });
     });
+    // Downloads are blob: URLs, which have no host: the runner's external
+    // router would abort them, so let them through here.
+    await ctx.route(u => u.protocol === 'blob:', route => route.continue());
     await ctx.open('/bracelet/index.html');
     await page.waitForFunction(() => window.BRACELET && window.BRACELET.model && window.BRACELET.frames > 2, null, { timeout: 60000 });
     const gl = await page.evaluate(() => window.BRACELET.webgl);
     log(`WebGL: ${gl}`);
     assert.deepEqual([...new Set(ctx.unhandled)], [], 'everything it needs ships with the page (three.js is vendored)');
 
-    // The default design is the one described: 6.25 in wrist, 3 mm wire, hooked at North Hill.
+    // The default design is the one described: 6.25 in wrist, 3 mm wire, the ball on North Hill.
     const spec = () => page.evaluate(() => Object.fromEntries([...document.querySelectorAll('.spec .row')].map(r => [r.firstElementChild.textContent.trim(), r.lastElementChild.textContent.replace(/\s+/g, ' ').trim()])));
     let s = await spec();
     log(JSON.stringify(s));
     assert.match(s.Wrist, /^158\.8 mm \(6\.25 in\)/);
     assert.match(s.Wire, /^3\.00 mm round · 18k yellow gold/);
-    assert.match(s.Hook, /North Hill/);
+    assert.match(s.Clasp, /^4\.2 mm ball, comes up from under the wrist and sits on North Hill$/);
+    assert.match(s['Solder points'], /^the East End joint/);
     const head = () => page.evaluate(() => ({
       total: document.getElementById('sTotal').textContent, totalIn: document.getElementById('sTotalIn').textContent,
       weight: document.getElementById('sWeight').textContent, cost: document.getElementById('sCost').textContent,
@@ -79,9 +86,14 @@ module.exports = {
       await ctx.screenshot('quarter');
     }
 
-    // Labels sit on the island.
+    // Place names start off; turned on, only the four that matter; no touch-point markers at all.
+    assert.equal(await page.isChecked('#showNames'), false, 'place names off by default');
+    assert.equal(await page.evaluate(() => document.getElementById('labels').hidden), true);
+    assert.equal(await page.$('#showSpots'), null, 'no touch-point toggle');
+    await page.check('#showNames');
     const names = await page.$$eval('#labels .tag span', els => els.map(e => e.textContent));
-    for (const n of ['East End', 'North Hill', 'Silver Eel', 'Race Point', 'Chocomount']) assert.ok(names.includes(n), `label ${n}`);
+    assert.deepEqual(names.filter(n => n !== 'hand' && n !== 'elbow'), ['East End', 'North Hill', 'Silver Eel', 'Race Point']);
+    await page.uncheck('#showNames');
 
     // Sliders drive the model: a longer island adds wire, a thinner wire weighs less.
     const builds0 = await page.evaluate(() => window.BRACELET.builds);
@@ -98,7 +110,7 @@ module.exports = {
     h = await head();
     assert.ok(parseFloat(h.weight) < g0 * 0.6, `2 mm wire is much lighter (${h.weight})`);
 
-    // The Race Point stop moves the hook; the spec says where it catches.
+    // The Race Point stop moves the ball; the spec says where it sits.
     await page.click('#hookStops button:last-child');
     await page.waitForFunction(() => /Race Point/.test(document.getElementById('sHook').textContent), null, { timeout: 10000 });
 
@@ -125,36 +137,61 @@ module.exports = {
     await page.click('#copy');
     await page.waitForFunction(() => document.getElementById('copyMsg').textContent.length > 0, null, { timeout: 5000 });
     const txt = await page.evaluate(() => window.BRACELET.text());
-    assert.match(txt, /hooks on at North Hill/);
+    assert.match(txt, /Island closed at the East End \(start soldered end-on\)/);
+    assert.match(txt, /4\.2 mm ball clasp sits on North Hill/);
     assert.match(txt, /"wristCircMm":158\.75/);
     assert.match(txt, /Total wire \d{3} mm \(\d+\.\d in\)/);
     assert.match(txt, /Gold cost \$[\d,]+: \d+\.\d g pure at \$4,116\.40\/oz \(spot Oct 7, 8:50 PM ET\), metal only/);
 
     if (gl) {
-      for (const v of ['top', 'end', 'hook']) {
+      for (const v of ['top', 'end', 'clasp']) {
         await page.evaluate(name => window.BRACELET.view(name, true), v);
         await page.waitForTimeout(400);
-        await ctx.screenshot(v === 'top' ? 'map' : v === 'end' ? 'circle' : 'hook');
+        await ctx.screenshot(v === 'top' ? 'map' : v === 'end' ? 'circle' : 'clasp');
       }
-      // Trace the wire: the caption walks the route in the described order.
-      await page.click('#trace');
-      const seen = [];
-      for (let i = 0; i < 80 && seen.length < 9; i++) {
-        await page.waitForTimeout(250);
-        const c = await page.evaluate(() => document.getElementById('traceCap').textContent);
-        if (c && seen[seen.length - 1] !== c) seen.push(c);
-        if (i === 18) await ctx.screenshot('trace');
-        if (!(await page.evaluate(() => window.BRACELET.tracing))) break;
-      }
-      log('trace: ' + seen.join(' → '));
-      const want = ['Starts at the East End', 'North Hill', 'Silver Eel', 'Round Race Point', 'East along the south shore', 'Chocomount', 'Back to the East End', 'A perfect circle', 'The hook catches the outline at North Hill'];
-      const idx = seen.map(c => want.findIndex(w => c.startsWith(w))).filter(i => i >= 0);
-      assert.ok(idx.every((v, i) => i === 0 || v > idx[i - 1]), `trace captions follow the route in order: ${seen.join(' → ')}`);
-      assert.ok(idx.length >= want.length - 2, `most stops shown (${idx.length}/${want.length})`);
-      assert.equal(idx[idx.length - 1], want.length - 1, 'ends at the hook');
     } else {
       assert.ok(await page.isVisible('#noGL'), 'says why the stage is empty');
     }
+
+    // Flat view: the piece laid flat before the tail wraps, on the stage.
+    await page.click('[data-view="flat"]');
+    assert.equal(await page.evaluate(() => window.BRACELET.stageMode), 'flat');
+    assert.ok(await page.isVisible('#flatStage'), 'flat drawing shown on the stage');
+    await page.waitForTimeout(300);
+    await ctx.screenshot('flat');
+    // Trace the wire on the flat view: the caption walks the route in the described order.
+    await page.click('#trace');
+    assert.equal(await page.evaluate(() => window.BRACELET.stageMode), 'flat', 'tracing keeps the flat view');
+    const seen = [];
+    for (let i = 0; i < 80 && seen.length < 8; i++) {
+      await page.waitForTimeout(250);
+      const c = await page.evaluate(() => document.getElementById('traceCap').textContent);
+      if (c && seen[seen.length - 1] !== c) seen.push(c);
+      if (i === 22) await ctx.screenshot('trace-flat');
+      if (!(await page.evaluate(() => window.BRACELET.tracing))) break;
+    }
+    log('trace: ' + seen.join(' → '));
+    const want = ['Starts at the East End', 'North Hill', 'Silver Eel', 'Round Race Point', 'East along the south shore', 'Back at the East End', 'On into a perfect circle', 'Up from under the wrist: the ball sits on North Hill'];
+    const idx = seen.map(c => want.findIndex(w => c.startsWith(w))).filter(i => i >= 0);
+    assert.ok(idx.every((v, i) => i === 0 || v > idx[i - 1]), `trace captions follow the route in order: ${seen.join(' → ')}`);
+    assert.ok(idx.length >= want.length - 2, `most stops shown (${idx.length}/${want.length})`);
+    assert.equal(idx[idx.length - 1], want.length - 1, 'ends with the ball on North Hill');
+    assert.doesNotMatch(seen.join(' '), /Chocomount|Wilderness/);
+    await page.click('[data-view="quarter"]');
+    assert.equal(await page.evaluate(() => window.BRACELET.stageMode), '3d');
+
+    // For the jeweller: the PDF and the drawing download, built from this design.
+    async function download(selector) {
+      const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.click(selector)]);
+      return { name: dl.suggestedFilename(), bytes: require('fs').readFileSync(await dl.path()) };
+    }
+    const pdf = await download('#dlPdf');
+    assert.equal(pdf.name, 'plano-pulsera-fishers.pdf');
+    assert.equal(pdf.bytes.slice(0, 5).toString(), '%PDF-');
+    assert.ok(pdf.bytes.toString('latin1').includes('Recueza el alambre'), 'the Spanish instructions are in it');
+    const svgFile = await download('#dlSvg');
+    assert.equal(svgFile.name, 'plano-pulsera-fishers.svg');
+    assert.match(svgFile.bytes.toString('utf8'), /^<svg [^>]*width="279.4mm"/);
     assert.deepEqual(ctx.pageErrors.map(e => e.message), []);
 
     // Phone width: stage on top, panel below, nothing wider than the screen.
@@ -163,5 +200,31 @@ module.exports = {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     assert.ok(overflow <= 0, `no sideways scroll on a phone (${overflow}px)`);
     if (gl) await ctx.screenshot('phone');
+
+    // The plans page, a separate file, opened from the designer with this design.
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await page.evaluate(() => window.BRACELET.set({ islandLenMm: 72 }));
+    const href = await page.getAttribute('#openPlans', 'href');
+    assert.match(href, /^jeweler\.html#d=/);
+    await page.goto(ctx.url('/bracelet/' + href));
+    await page.waitForFunction(() => window.JEWELER && document.querySelector('#sheet svg'), null, { timeout: 30000 });
+    const plans = await page.evaluate(() => ({
+      island: window.JEWELER.params.islandLenMm, lang: document.documentElement.lang,
+      steps: [...document.querySelectorAll('#steps li')].map(li => li.textContent),
+      msg: document.getElementById('message').value, svg: document.querySelector('#sheet svg').outerHTML.length
+    }));
+    assert.equal(plans.island, 72, 'the plans show the design from the designer');
+    assert.equal(plans.lang, 'es');
+    assert.ok(plans.steps.length >= 10 && plans.steps.some(t => /unión en T/.test(t)) && plans.steps.some(t => /tribulete/.test(t)), 'Spanish how-to');
+    assert.match(plans.msg, /¿Podría cotizar/);
+    await ctx.screenshot('plans');
+    const jp = await download('#pdf');
+    assert.equal(jp.name, 'plano-pulsera-fishers.pdf');
+    assert.equal(jp.bytes.slice(0, 5).toString(), '%PDF-');
+    await page.click('[data-lang="en"]');
+    assert.match(await page.textContent('#steps li:nth-child(6)'), /T joint/);
+    const en = await download('#pdf');
+    assert.equal(en.name, 'fishers-bracelet-plans.pdf');
+    assert.deepEqual(ctx.pageErrors.map(e => e.message), []);
   }
 };
