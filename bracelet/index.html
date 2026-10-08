@@ -1,0 +1,938 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fishers Bracelet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a full-bleed 3D stage (the wrist on a jeweller's bench) beside a spec-sheet panel; on phones the stage sits on top. */
+:root {
+  --bg: #e7ebee;
+  --panel: #f5f7f8;
+  --ink: #16212b;
+  --muted: #5b6975;
+  --line: #d2d9de;
+  --gold: #946414;
+  --gold-hi: #d4a23f;
+  --warn: #b5402a;
+  --ok: #2d7650;
+  --stage-a: #f6f8f9;
+  --stage-b: #d2dbe2;
+  --ghost: #34506b;
+  --tag-bg: rgba(245, 247, 248, 0.86);
+  --f-display: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
+  --f-ui: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-num: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a1117; --panel: #0f1922; --ink: #e5eaed; --muted: #8b9aa6; --line: #22313d;
+    --gold: #e0b155; --gold-hi: #f2cb76; --warn: #ff7e60; --ok: #6ccb97;
+    --stage-a: #1a2733; --stage-b: #04080b; --ghost: #a8c2d9; --tag-bg: rgba(15, 25, 34, 0.8);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0a1117; --panel: #0f1922; --ink: #e5eaed; --muted: #8b9aa6; --line: #22313d;
+  --gold: #e0b155; --gold-hi: #f2cb76; --warn: #ff7e60; --ok: #6ccb97;
+  --stage-a: #1a2733; --stage-b: #04080b; --ghost: #a8c2d9; --tag-bg: rgba(15, 25, 34, 0.8);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.45 var(--f-ui); -webkit-font-smoothing: antialiased; }
+[hidden] { display: none !important; }
+button, input { font: inherit; color: inherit; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
+
+.app { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 372px; }
+
+/* ── Stage ── */
+.stage { position: relative; min-width: 0; overflow: hidden; background: radial-gradient(120% 90% at 50% 30%, var(--stage-a), var(--stage-b)); }
+#view { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+#view:active { cursor: grabbing; }
+.stage-bar { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; pointer-events: none; }
+.stage-bar > * { pointer-events: auto; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; background: var(--tag-bg); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); padding: 3px; gap: 2px; }
+.seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 999px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.btn { border: 1px solid var(--line); background: var(--tag-bg); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); border-radius: 999px; padding: 8px 14px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.btn.gold { border-color: transparent; background: var(--gold-hi); color: #1c1407; }
+.trace-cap { position: absolute; left: 50%; bottom: 44px; transform: translateX(-50%); padding: 7px 14px; border-radius: 999px; background: var(--tag-bg); border: 1px solid var(--line); font-weight: 500; white-space: nowrap; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis; }
+.nogl { position: absolute; inset: 0; margin: auto; height: fit-content; max-width: 30em; padding: 0 24px; text-align: center; color: var(--muted); }
+.hint { position: absolute; left: 0; right: 0; bottom: 12px; margin: 0; text-align: right; font-size: 12px; color: var(--muted); pointer-events: none; padding: 0 16px; }
+.labels { position: absolute; inset: 0; pointer-events: none; }
+.tag { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 6px; transform: translate(-4px, -50%); transition: opacity .2s; white-space: nowrap; }
+.tag i { width: 7px; height: 7px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 2px var(--tag-bg); flex: none; }
+.tag span { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; background: var(--tag-bg); }
+.tag.left { flex-direction: row-reverse; transform: translate(calc(-100% + 4px), -50%); }
+.tag.hook span { color: var(--gold); }
+.tag.end span { font-weight: 500; letter-spacing: .02em; text-transform: none; color: var(--muted); }
+.tag.end i { display: none; }
+.tag.back { opacity: .28; }
+
+/* ── Panel ── */
+.panel { min-width: 0; overflow-y: auto; background: var(--panel); border-left: 1px solid var(--line); padding-block: 22px 28px; padding-inline: 22px; display: flex; flex-direction: column; gap: 22px; }
+.panel h1 { font: 600 34px/1 var(--f-display); letter-spacing: .005em; margin: 0; text-wrap: balance; }
+.panel h1 em { font-style: italic; font-weight: 500; color: var(--gold); }
+.sub { margin: 8px 0 0; color: var(--muted); max-width: 34em; }
+.panel h2 { margin: 0 0 10px; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+
+.headline { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--line); margin-bottom: 0; }
+.headline > div { padding: 10px 10px 12px 0; min-width: 0; }
+.headline > div + div { padding-left: 10px; border-left: 1px solid var(--line); }
+.headline span { display: block; font-size: 12px; color: var(--muted); }
+.headline b { display: block; font: 600 25px/1.1 var(--f-display); font-variant-numeric: lining-nums tabular-nums; margin-top: 3px; white-space: nowrap; }
+.headline small { display: block; font: 400 11.5px/1.35 var(--f-num); color: var(--muted); margin-top: 3px; overflow-wrap: anywhere; }
+.headline .cost b { color: var(--gold); }
+.price-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.price-row .cur { font: 500 16px var(--f-num); color: var(--muted); }
+#price { font: 500 16px var(--f-num); font-variant-numeric: tabular-nums; width: 8.5em; max-width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+#price:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 1px; }
+.price-row .btn { backdrop-filter: none; background: transparent; }
+#priceNote[data-src="manual"] { color: var(--gold); }
+.stage-sum { flex-basis: 100%; display: flex; pointer-events: none !important; }
+.stage-sum span { font: 500 12px var(--f-num); font-variant-numeric: tabular-nums; padding: 5px 10px; border-radius: 999px; background: var(--tag-bg); border: 1px solid var(--line); }
+.spec { display: grid; gap: 0; border-top: 1px solid var(--line); }
+.spec .row { display: grid; grid-template-columns: 7.2em minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+.spec .row > span { font-size: 12px; color: var(--muted); }
+.spec .row > b { font: 500 13px/1.35 var(--f-num); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+.spec .big b { font: 600 22px/1.1 var(--f-display); font-variant-numeric: lining-nums tabular-nums; }
+.spec .big small { font: 400 12px var(--f-num); color: var(--muted); margin-left: 6px; }
+.pill { display: inline-block; font: 600 11px/1 var(--f-ui); letter-spacing: .04em; padding: 4px 8px; border-radius: 999px; vertical-align: 1px; margin-left: 6px; }
+.pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.pill.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+
+.ctl { display: grid; gap: 16px; }
+.field { display: grid; gap: 6px; }
+.field .top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.field label { font-weight: 600; font-size: 13px; }
+.field output { font: 500 13px var(--f-num); font-variant-numeric: tabular-nums; color: var(--gold); text-align: right; }
+.field .note { font-size: 12px; color: var(--muted); margin: 0; }
+.stops { position: relative; height: 16px; font-size: 11px; color: var(--muted); }
+.stops button { position: absolute; top: 0; transform: translateX(-50%); border: 0; background: none; padding: 0 2px; cursor: pointer; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.stops button:first-child { transform: none; }
+.stops button:last-child { transform: translateX(-100%); }
+
+input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; background: transparent; margin: 0; cursor: pointer; }
+input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--gold-hi) var(--fill, 50%), var(--line) var(--fill, 50%)); }
+input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--line); }
+input[type="range"]::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--gold-hi); }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 24px; margin-top: -10px; border-radius: 50%; background: var(--panel); border: 2px solid var(--gold-hi); box-shadow: 0 1px 4px rgba(0, 0, 0, .25); }
+input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--panel); border: 2px solid var(--gold-hi); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { border: 1px solid var(--line); background: transparent; border-radius: 999px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+.chips button[aria-pressed="true"] { border-color: var(--gold-hi); background: color-mix(in srgb, var(--gold-hi) 18%, transparent); font-weight: 600; }
+
+.flat canvas { display: block; width: 100%; height: auto; aspect-ratio: 3 / 1.15; max-width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+.flat p { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+
+.checks { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.checks label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; cursor: pointer; }
+.checks input { width: 18px; height: 18px; accent-color: var(--gold-hi); margin: 0; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.actions .btn { backdrop-filter: none; background: transparent; }
+#copyBox { width: 100%; min-height: 120px; font: 12px/1.4 var(--f-num); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; resize: vertical; }
+#copyMsg { font-size: 12px; color: var(--ok); align-self: center; }
+.credit { font-size: 11px; color: var(--muted); margin: 0; }
+.credit a { color: inherit; }
+
+@media (max-width: 820px) {
+  .app { display: block; height: auto; min-height: 100%; }
+  .stage { position: sticky; top: env(safe-area-inset-top, 0px); height: 54vh; min-height: 300px; z-index: 2; border-bottom: 1px solid var(--line); }
+  .panel { border-left: 0; overflow: visible; padding-inline: 16px; }
+  .hint { display: none; }
+  .trace-cap { bottom: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .tag { transition: none; } }
+</style>
+
+<div class="app">
+  <section class="stage" id="stage" aria-label="3D model of the bracelet on a wrist">
+    <canvas id="view"></canvas>
+    <div class="labels" id="labels" aria-hidden="true"></div>
+    <div class="stage-bar">
+      <div class="seg" role="group" aria-label="Camera">
+        <button type="button" data-view="quarter" aria-pressed="true">3/4</button>
+        <button type="button" data-view="top" aria-pressed="false">Map</button>
+        <button type="button" data-view="end" aria-pressed="false">Circle</button>
+        <button type="button" data-view="hook" aria-pressed="false">Hook</button>
+      </div>
+      <button type="button" class="btn gold" id="trace">Trace the wire</button>
+      <div class="stage-sum" aria-hidden="true"><span id="stageSum"></span></div>
+    </div>
+    <div class="trace-cap" id="traceCap" hidden></div>
+    <p class="nogl" id="noGL" hidden>This browser can't draw 3D (WebGL is off), so only the spec and the flat pattern are shown.</p>
+    <p class="hint">Drag to turn · pinch or scroll to zoom · two-finger drag to pan</p>
+  </section>
+
+  <aside class="panel">
+    <header>
+      <h1>Fishers <em>Bracelet</em></h1>
+      <p class="sub">One solid wire. It traces Fishers Island on top of the wrist, then runs as a perfect circle round the back and hooks on at the west end.</p>
+    </header>
+
+    <section aria-label="Spec">
+      <h2>Spec</h2>
+      <div class="headline">
+        <div><span>Total wire</span><b id="sTotal">–</b><small id="sTotalIn"></small></div>
+        <div><span>Weight</span><b id="sWeight">–</b><small id="sWeightOz"></small></div>
+        <div class="cost"><span id="sCostLbl">Gold cost</span><b id="sCost">–</b><small id="sCostNote"></small></div>
+      </div>
+      <div class="spec">
+        <div class="row"><span>Wire</span><b id="sWire">–</b></div>
+        <div class="row"><span>Wire by part</span><b id="sLen">–</b></div>
+        <div class="row"><span>Wrist</span><b id="sWrist">–</b></div>
+        <div class="row"><span>Island</span><b id="sIsland">–</b></div>
+        <div class="row"><span>Circle</span><b id="sRing">–</b></div>
+        <div class="row"><span>Hook</span><b id="sHook">–</b></div>
+        <div class="row"><span>Touch points</span><b id="sSpots">–</b></div>
+      </div>
+    </section>
+
+    <section aria-label="Price">
+      <h2>Price</h2>
+      <div class="field">
+        <div class="top"><label for="price" id="priceLbl">Gold price per troy ounce</label></div>
+        <div class="price-row">
+          <span class="cur">$</span><input type="number" id="price" min="1" step="0.01" inputmode="decimal">
+          <button type="button" class="btn" id="priceLive">Today's price</button>
+        </div>
+        <p class="note" id="priceNote" role="status"></p>
+        <p class="note">The cost is the pure gold in the wire at that price. A jeweller adds the cost of drawing the wire, their labour and markup.</p>
+      </div>
+    </section>
+
+    <section aria-label="Shape">
+      <h2>Shape</h2>
+      <div class="ctl">
+        <div class="field">
+          <div class="top"><label for="wristCircMm">Wrist size</label><output id="o-wristCircMm" for="wristCircMm"></output></div>
+          <input type="range" id="wristCircMm" min="130" max="200" step="0.5">
+        </div>
+        <div class="field">
+          <div class="top"><label for="wireDiaMm">Wire thickness</label><output id="o-wireDiaMm" for="wireDiaMm"></output></div>
+          <input type="range" id="wireDiaMm" min="1" max="5" step="0.25">
+        </div>
+        <div class="field">
+          <div class="top"><label for="islandLenMm">Island length</label><output id="o-islandLenMm" for="islandLenMm"></output></div>
+          <input type="range" id="islandLenMm" min="35" max="110" step="1">
+          <p class="note">Race Point to the East End, measured round the wrist.</p>
+        </div>
+        <div class="field">
+          <div class="top"><label for="smoothMm">Smoothing</label><output id="o-smoothMm" for="smoothMm"></output></div>
+          <input type="range" id="smoothMm" min="0" max="8" step="0.25">
+          <p class="note">Coves and points smaller than this get rounded off, so the wire can actually bend to them.</p>
+        </div>
+        <div class="field">
+          <div class="top"><label for="hookSlide">Hook point</label><output id="o-hookSlide" for="hookSlide"></output></div>
+          <input type="range" id="hookSlide" min="0" max="1" step="0.01">
+          <div class="stops" id="hookStops"></div>
+          <p class="note">The island turns so the East End lines up with the hook, which keeps the circle flat and perfectly round.</p>
+        </div>
+        <div class="field">
+          <div class="top"><label for="startGapMm">Free end at the East End</label><output id="o-startGapMm" for="startGapMm"></output></div>
+          <input type="range" id="startGapMm" min="0" max="15" step="0.5">
+          <p class="note">How far along the north shore the wire starts, leaving room for the circle to leave the East End.</p>
+        </div>
+        <div class="field">
+          <div class="top"><label id="metalLbl">Metal</label></div>
+          <div class="chips" id="metal" role="group" aria-labelledby="metalLbl"></div>
+        </div>
+        <div class="field">
+          <div class="top"><label id="northLbl">Worn with north toward the</label></div>
+          <div class="chips" id="north" role="group" aria-labelledby="northLbl">
+            <button type="button" data-v="hand">Hand</button>
+            <button type="button" data-v="elbow">Elbow</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="flat" aria-label="Flat pattern">
+      <h2>Flat pattern</h2>
+      <canvas id="flat" width="660" height="253"></canvas>
+      <p id="flatNote">The wire laid flat before it is curved round the wrist, drawn to scale.</p>
+    </section>
+
+    <section aria-label="Show">
+      <h2>Show</h2>
+      <div class="checks">
+        <label><input type="checkbox" id="showWrist" checked> Wrist</label>
+        <label><input type="checkbox" id="showNames" checked> Place names</label>
+        <label><input type="checkbox" id="showSpots" checked> Touch points</label>
+        <label><input type="checkbox" id="spin"> Turntable</label>
+      </div>
+    </section>
+
+    <section aria-label="Save">
+      <h2>Keep this design</h2>
+      <div class="actions">
+        <button type="button" class="btn" id="copy">Copy design</button>
+        <button type="button" class="btn" id="reset">Reset</button>
+        <span id="copyMsg" role="status"></span>
+      </div>
+      <textarea id="copyBox" readonly hidden aria-label="Design details"></textarea>
+    </section>
+
+    <p class="credit">Coastline © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>. Weights are for solid round wire: 14k 13.07, 18k 15.58, 22k 17.80, sterling 10.36 g/cm³. Fine metal: 14k 58.5%, 18k 75%, 22k 91.6%, sterling 92.5%. Live spot prices from <a href="https://gold-api.com" target="_blank" rel="noopener">gold-api.com</a>.</p>
+  </aside>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="vendor/OrbitControls.js"></script>
+<script src="fishers-outline.js"></script>
+<script src="geometry.js"></script>
+<script>
+(function () {
+  'use strict';
+  var G = window.BraceletGeom;
+  var STORE = 'fishers-bracelet:v1';
+  var MM_PER_IN = 25.4, G_PER_OZT = 31.1035;
+  var reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Metal looks: base reflectance in sRGB (converted to linear for the shader).
+  var METAL_LOOK = {
+    '14k': { color: 0xf0cf98, rough: 0.26 },
+    '18k': { color: 0xf7d488, rough: 0.24 },
+    '22k': { color: 0xfdd57a, rough: 0.22 },
+    silver: { color: 0xf2f1ee, rough: 0.2 }
+  };
+
+  // ── Design state ───────────────────────────────────────
+  var params = G.normalize(load());
+  function load() { try { return JSON.parse(localStorage.getItem(STORE) || 'null') || {}; } catch (e) { return {}; } }
+  function save() { try { localStorage.setItem(STORE, JSON.stringify(params)); } catch (e) { /* private mode */ } }
+
+  // ── Renderer, camera, controls ─────────────────────────
+  var stage = document.getElementById('stage');
+  var canvas = document.getElementById('view');
+  // Without WebGL the spec sheet and flat pattern still work; the stage says why it's empty.
+  var renderer = null;
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    renderer.setClearColor(0x000000, 0);
+  } catch (e) {
+    renderer = null;
+    document.getElementById('noGL').hidden = false;
+  }
+
+  var scene = new THREE.Scene();
+  // Depth fade: the far side of the wrist recedes into the background, so the
+  // circle behind the arm doesn't read as a bar across the island. Retuned
+  // to the camera distance every frame.
+  scene.fog = new THREE.Fog(0xd2dbe2, 100, 300);
+  var camera = new THREE.PerspectiveCamera(30, 1, 1, 3000);
+  var controls = new THREE.OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.09;
+  controls.minDistance = 45;
+  controls.maxDistance = 700;
+  controls.autoRotateSpeed = 1.2;
+
+  // A soft studio, rendered once into an environment map so the metal has
+  // something to reflect: a bright strip overhead, two side softboxes.
+  if (renderer) (function studio() {
+    var env = new THREE.Scene();
+    var g = new THREE.BoxGeometry(20, 20, 20);
+    var cols = [], pos = g.attributes.position;
+    for (var i = 0; i < pos.count; i++) {
+      var y = pos.getY(i) / 10;           // -1 … 1
+      var c = 0.05 + 0.5 * Math.max(0, y + 0.2);
+      cols.push(c, c * 0.98, c * 0.95);
+    }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    env.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.BackSide, vertexColors: true })));
+    function panel(w, h, x, y, z, k) {
+      var m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(k, k, k * 0.97), side: THREE.DoubleSide }));
+      m.position.set(x, y, z);
+      m.lookAt(0, 0, 0);
+      env.add(m);
+    }
+    panel(14, 3, 0, 9.5, 0, 4.0);
+    panel(3, 9, -9.5, 1.5, 3, 2.6);
+    panel(3, 7, 9.5, 2, -3, 1.8);
+    panel(8, 1.5, 0, 0, 9.5, 1.2);
+    panel(8, 1.2, 0, -2, -9.5, 0.7);
+    var pm = new THREE.PMREMGenerator(renderer);
+    scene.environment = pm.fromScene(env, 0.03).texture;
+    pm.dispose();
+  })();
+  var key = new THREE.DirectionalLight(0xffffff, 0.6);
+  key.position.set(60, 140, 90);
+  scene.add(key);
+
+  // ── Scene objects ──────────────────────────────────────
+  var metalMat = new THREE.MeshStandardMaterial({ metalness: 1, roughness: 0.24, envMapIntensity: 1.15 });
+  var wireMesh = null, capA = null, capB = null;
+  var bead = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  bead.visible = false;
+  scene.add(bead);
+
+  var ghostMat = new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color() }, uBase: { value: 0.06 }, uRim: { value: 0.42 } },
+    vertexShader: 'varying vec3 vN; varying vec3 vV; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
+    fragmentShader: 'uniform vec3 uColor; uniform float uBase; uniform float uRim; varying vec3 vN; varying vec3 vV; void main(){ float f = 1.0 - abs(dot(normalize(vN), normalize(vV))); gl_FragColor = vec4(uColor, uBase + uRim * pow(f, 2.2)); }',
+    transparent: true, depthWrite: false, side: THREE.DoubleSide
+  });
+  var wrist = new THREE.Group();
+  scene.add(wrist);
+  var spotGroup = new THREE.Group();
+  scene.add(spotGroup);
+  var spotMat = new THREE.MeshBasicMaterial({ color: 0xff5a3c, transparent: true, opacity: 0.5, depthWrite: false });
+
+  var WRIST_LEN = 120;   // mm of arm shown
+
+  function buildWrist(model) {
+    while (wrist.children.length) {
+      var c = wrist.children.pop();
+      c.geometry.dispose();
+      if (c.material !== ghostMat) c.material.dispose();
+    }
+    var R = model.wristRadius;
+    var cyl = new THREE.CylinderGeometry(R, R, WRIST_LEN, 128, 1, true);
+    cyl.rotateX(Math.PI / 2);   // arm along Z
+    wrist.add(new THREE.Mesh(cyl, ghostMat));
+    var lineMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.35 });
+    lineMat.color = ghostMat.uniforms.uColor.value;
+    [-WRIST_LEN / 2, WRIST_LEN / 2].forEach(function (z) {
+      var pts = [];
+      for (var i = 0; i < 128; i++) { var a = i / 128 * Math.PI * 2; pts.push(new THREE.Vector3(R * Math.sin(a), R * Math.cos(a), z)); }
+      wrist.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), lineMat));
+    });
+  }
+
+  var model = null;
+  var tubeSegs = 0, radialSegs = 18;
+
+  function rebuild() {
+    model = G.build(params);
+    var r = model.wireRadius;
+    var pts = model.wire.map(function (q) { return new THREE.Vector3(q[0], q[1], q[2]); });
+    var curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
+    tubeSegs = Math.min(4000, pts.length * 2);
+    var geo = new THREE.TubeGeometry(curve, tubeSegs, r, radialSegs, false);
+    if (wireMesh) { wireMesh.geometry.dispose(); wireMesh.geometry = geo; }
+    else { wireMesh = new THREE.Mesh(geo, metalMat); scene.add(wireMesh); }
+    var capGeo = new THREE.SphereGeometry(r, 28, 18);
+    if (!capA) { capA = new THREE.Mesh(capGeo, metalMat); capB = new THREE.Mesh(capGeo, metalMat); scene.add(capA, capB); }
+    else { capA.geometry.dispose(); capA.geometry = capGeo; capB.geometry = capGeo; }
+    capA.position.copy(pts[0]);
+    capB.position.copy(pts[pts.length - 1]);
+    bead.scale.setScalar(r * 0.75);
+
+    var look = METAL_LOOK[params.metal];
+    metalMat.color.setHex(look.color).convertSRGBToLinear();
+    metalMat.roughness = look.rough;
+
+    buildWrist(model);
+    wrist.visible = document.getElementById('showWrist').checked;
+
+    while (spotGroup.children.length) spotGroup.children.pop().geometry.dispose();
+    model.spots.forEach(function (sp) {
+      var m = new THREE.Mesh(new THREE.SphereGeometry(r * 1.6, 20, 14), spotMat);
+      m.position.set(sp.pos[0], sp.pos[1], sp.pos[2]);
+      spotGroup.add(m);
+    });
+    spotGroup.visible = document.getElementById('showSpots').checked;
+
+    buildTags();
+    drawFlat();
+    writeSpec();
+    BRACELET.model = model;
+    BRACELET.builds++;
+  }
+
+  // ── Place-name tags ────────────────────────────────────
+  var tagsEl = document.getElementById('labels');
+  var tags = [];
+  function buildTags() {
+    tagsEl.textContent = '';
+    tags = [];
+    model.landmarks.forEach(function (lm) {
+      var isHook = lm.name === model.hook.landmark;
+      addTag(lm.name, lm.pos, lm.name === 'East End' || lm.name === 'Chocomount' || lm.name === 'Wilderness' ? '' : 'left', isHook ? 'hook' : '');
+    });
+    var handZ = params.north === 'hand' ? -1 : 1;
+    addTag('hand', [model.wristRadius + 3, 0, handZ * WRIST_LEN / 2], '', 'end');
+    addTag('elbow', [model.wristRadius + 3, 0, -handZ * WRIST_LEN / 2], '', 'end');
+  }
+  function addTag(text, pos, side, cls) {
+    var el = document.createElement('div');
+    el.className = 'tag ' + (side || '') + ' ' + (cls || '');
+    var dot = document.createElement('i');
+    var sp = document.createElement('span');
+    sp.textContent = text;
+    el.appendChild(dot);
+    el.appendChild(sp);
+    tagsEl.appendChild(el);
+    var v = new THREE.Vector3(pos[0], pos[1], pos[2]);
+    var nrm = new THREE.Vector3(pos[0], pos[1], 0).normalize();
+    tags.push({ el: el, pos: v, nrm: nrm, end: cls === 'end' });
+  }
+  var tmpV = new THREE.Vector3(), tmpD = new THREE.Vector3();
+  function placeTags() {
+    var show = document.getElementById('showNames').checked;
+    tagsEl.hidden = !show;
+    if (!show) return;
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    tags.forEach(function (t) {
+      tmpV.copy(t.pos).project(camera);
+      var x = (tmpV.x * 0.5 + 0.5) * w, y = (-tmpV.y * 0.5 + 0.5) * h;
+      t.el.style.left = x.toFixed(1) + 'px';
+      t.el.style.top = y.toFixed(1) + 'px';
+      var facing = t.end ? 1 : tmpD.copy(camera.position).sub(t.pos).normalize().dot(t.nrm);
+      t.el.classList.toggle('back', facing < 0.08);
+      t.el.hidden = tmpV.z > 1;
+    });
+  }
+
+  // ── Spot price ─────────────────────────────────────────
+  // Effective price per metal: the viewer's own figure if they typed one,
+  // else the latest live price, else the price saved with the page. Live
+  // prices come from gold-api.com (free, no key); a published artifact can't
+  // reach it, so there the saved price shows with its date.
+  var PRICE_STORE = 'fishers-bracelet:price:v1';
+  var PRICE_URL = { gold: 'https://api.gold-api.com/price/XAU', silver: 'https://api.gold-api.com/price/XAG' };
+  var prices = loadPrices();
+  var liveNow = { gold: false, silver: false };   // fetched on this visit
+  function loadPrices() {
+    var s = null;
+    try { s = JSON.parse(localStorage.getItem(PRICE_STORE) || 'null'); } catch (e) { s = null; }
+    s = s && typeof s === 'object' ? s : {};
+    return { live: s.live || {}, manual: s.manual || {} };
+  }
+  function savePrices() { try { localStorage.setItem(PRICE_STORE, JSON.stringify(prices)); } catch (e) { /* private mode */ } }
+  function priceFor(base) {
+    var man = prices.manual[base];
+    if (man > 0) return { usdPerOzt: man, source: 'manual' };
+    var live = prices.live[base], saved = G.PRICE_SAVED[base];
+    if (live && live.usdPerOzt > 0 && (liveNow[base] || Date.parse(live.asOf) > Date.parse(saved.asOf))) {
+      return { usdPerOzt: live.usdPerOzt, asOf: live.asOf, source: liveNow[base] ? 'live' : 'stored' };
+    }
+    return { usdPerOzt: saved.usdPerOzt, asOf: saved.asOf, source: 'saved' };
+  }
+  function fetchPrice(base) {
+    var ctl = window.AbortController ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 8000);
+    return fetch(PRICE_URL[base], { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (j) {
+        var usd = Number(j && j.price);
+        if (!(usd > 0)) throw new Error('no price');
+        prices.live[base] = { usdPerOzt: usd, asOf: j.updatedAt || new Date().toISOString() };
+        liveNow[base] = true;
+        savePrices();
+      })
+      .finally(function () { clearTimeout(timer); });
+  }
+  function refreshPrices() {
+    BRACELET.priceLoading = true;
+    return Promise.all(['gold', 'silver'].map(function (b) { return fetchPrice(b).catch(function () { /* keep the stored or saved price */ }); }))
+      .then(function () { BRACELET.priceLoading = false; if (model) writeSpec(); });
+  }
+  var money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+  var money2 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  function eastern(iso) {
+    return new Date(iso).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+  function writePrice(base, pr) {
+    var input = document.getElementById('price');
+    document.getElementById('priceLbl').textContent = (base === 'silver' ? 'Silver' : 'Gold') + ' price per troy ounce';
+    if (document.activeElement !== input) input.value = pr.usdPerOzt.toFixed(2);
+    var note = document.getElementById('priceNote');
+    note.dataset.src = pr.source;
+    note.textContent = pr.source === 'manual' ? 'Your price. Tap Today’s price to go back to the market.'
+      : pr.source === 'live' ? 'Live spot price, ' + eastern(pr.asOf) + ' Eastern.'
+      : 'Spot price on ' + eastern(pr.asOf) + ' Eastern. The live price can’t load here, so type today’s if it has moved.';
+  }
+  document.getElementById('price').addEventListener('input', function (e) {
+    var v = Number(e.target.value);
+    var base = G.METALS[params.metal].base;
+    if (v > 0) { prices.manual[base] = Math.round(v * 100) / 100; savePrices(); writeSpec(); }
+  });
+  document.getElementById('price').addEventListener('change', function () { writeSpec(); });
+  document.getElementById('priceLive').addEventListener('click', function () {
+    var base = G.METALS[params.metal].base;
+    delete prices.manual[base];
+    savePrices();
+    document.getElementById('price').blur();
+    writeSpec();
+    refreshPrices();
+  });
+
+  // ── Spec sheet ─────────────────────────────────────────
+  function fmt(x, d) { return x.toFixed(d == null ? 0 : d); }
+  function writeSpec() {
+    var p = params, m = model;
+    var grams = G.grams(m, p.metal);
+    var metal = G.METALS[p.metal];
+    var pr = priceFor(metal.base);
+    var cost = G.metalCost(m, p.metal, pr.usdPerOzt);
+    var L = m.lengths.totalMm;
+    document.getElementById('sTotal').textContent = fmt(L) + ' mm';
+    document.getElementById('sTotalIn').textContent = fmt(L / MM_PER_IN, 1) + ' in · ' + fmt(L / 10, 1) + ' cm';
+    document.getElementById('sWeight').textContent = fmt(grams, 1) + ' g';
+    document.getElementById('sWeightOz').textContent = fmt(grams / G_PER_OZT, 2) + ' ozt ' + p.metal.replace('silver', 'sterling');
+    document.getElementById('sCostLbl').textContent = (metal.base === 'silver' ? 'Silver' : 'Gold') + ' cost';
+    document.getElementById('sCost').textContent = money.format(cost.usd);
+    document.getElementById('sCostNote').textContent = fmt(cost.fineGrams, 1) + ' g pure at ' + money.format(pr.usdPerOzt) + '/oz';
+    document.getElementById('stageSum').textContent = fmt(L) + ' mm wire · ' + fmt(grams, 1) + ' g · ' + money.format(cost.usd);
+    writePrice(metal.base, pr);
+    document.getElementById('sWire').textContent = fmt(p.wireDiaMm, 2) + ' mm round · ' + metal.label;
+    document.getElementById('sLen').textContent = 'outline ' + fmt(m.lengths.outlineMm) + ' mm, circle ' + fmt(m.lengths.ringMm) + ' mm, hook ' + fmt(m.lengths.hookMm) + ' mm';
+    document.getElementById('sWrist').textContent = fmt(p.wristCircMm, 1) + ' mm (' + fmt(p.wristCircMm / MM_PER_IN, 2) + ' in) round, ' + fmt(m.ring.innerDiaMm, 1) + ' mm across';
+    document.getElementById('sIsland').textContent = fmt(m.island.lengthMm) + ' × ' + fmt(m.island.widthMm, 1) + ' mm, turned ' + fmt(Math.abs(m.hook.turnDeg)) + '° to level the hook';
+    document.getElementById('sRing').textContent = fmt(m.ring.lenMm) + ' mm of wire, flat and round, ' + fmt(m.ring.centreDiaMm, 1) + ' mm across the wire centre';
+    document.getElementById('sHook').textContent = 'catches the outline at ' + m.hook.landmark;
+    var n = m.spots.length, overlap = m.spots.filter(function (s) { return s.gapMm < 0; }).length;
+    document.getElementById('sSpots').innerHTML = n === 0
+      ? 'none <span class="pill ok">clear</span>'
+      : n + (overlap ? ' (' + overlap + ' overlapping)' : '') + ' <span class="pill warn">solder or smooth</span>';
+    writeOutputs();
+  }
+
+  // ── Controls ───────────────────────────────────────────
+  var SLIDERS = {
+    wristCircMm: function (v) { return fmt(v, 1) + ' mm · ' + fmt(v / MM_PER_IN, 2) + ' in'; },
+    wireDiaMm: function (v) { return fmt(v, 2) + ' mm'; },
+    islandLenMm: function (v) { return fmt(v) + ' mm'; },
+    smoothMm: function (v) { return v === 0 ? 'off' : fmt(v, 2) + ' mm'; },
+    hookSlide: function () { return model ? model.hook.landmark : ''; },
+    startGapMm: function (v) { return fmt(v, 1) + ' mm'; }
+  };
+  function setFill(el) {
+    var f = (el.value - el.min) / (el.max - el.min) * 100;
+    el.style.setProperty('--fill', f + '%');
+  }
+  function writeOutputs() {
+    Object.keys(SLIDERS).forEach(function (k) {
+      var el = document.getElementById(k);
+      el.value = params[k];
+      setFill(el);
+      document.getElementById('o-' + k).textContent = SLIDERS[k](Number(params[k]));
+    });
+    markChips('metal', params.metal);
+    markChips('north', params.north);
+  }
+  var pending = false;
+  function schedule() {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(function () { pending = false; rebuild(); save(); });
+  }
+  Object.keys(SLIDERS).forEach(function (k) {
+    var el = document.getElementById(k);
+    el.addEventListener('input', function () {
+      params[k] = Number(el.value);
+      setFill(el);
+      document.getElementById('o-' + k).textContent = SLIDERS[k](params[k]);
+      schedule();
+    });
+  });
+
+  var metalBox = document.getElementById('metal');
+  Object.keys(G.METALS).forEach(function (k) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.v = k;
+    b.textContent = k === 'silver' ? 'Silver test' : k;
+    metalBox.appendChild(b);
+  });
+  function markChips(id, v) {
+    document.querySelectorAll('#' + id + ' button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.v === v)); });
+  }
+  ['metal', 'north'].forEach(function (id) {
+    document.getElementById(id).addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      params[id] = b.dataset.v;
+      markChips(id, b.dataset.v);
+      schedule();
+    });
+  });
+
+  var stopsEl = document.getElementById('hookStops');
+  G.hookStops().forEach(function (st) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = st.name;
+    b.style.left = (st.at * 100) + '%';
+    b.addEventListener('click', function () { params.hookSlide = Math.round(st.at * 100) / 100; schedule(); writeOutputs(); });
+    stopsEl.appendChild(b);
+  });
+
+  ['showWrist', 'showSpots'].forEach(function (id) {
+    document.getElementById(id).addEventListener('change', function () {
+      wrist.visible = document.getElementById('showWrist').checked;
+      spotGroup.visible = document.getElementById('showSpots').checked;
+    });
+  });
+  document.getElementById('spin').addEventListener('change', function (e) { controls.autoRotate = e.target.checked; });
+
+  document.getElementById('reset').addEventListener('click', function () {
+    params = G.normalize({});
+    rebuild();
+    save();
+    setView('quarter');
+  });
+
+  // ── Copy the design (to paste into a Claude session or send to a jeweller) ──
+  function designText() {
+    var p = params, m = model;
+    var metal = G.METALS[p.metal], pr = priceFor(metal.base);
+    var cost = G.metalCost(m, p.metal, pr.usdPerOzt);
+    var priceWhen = pr.source === 'manual' ? 'my price' : (pr.source === 'live' ? 'live spot ' : 'spot ') + eastern(pr.asOf) + ' ET';
+    return [
+      'Fishers Bracelet design',
+      'Wrist ' + fmt(p.wristCircMm, 1) + ' mm (' + fmt(p.wristCircMm / MM_PER_IN, 2) + ' in) · wire ' + fmt(p.wireDiaMm, 2) + ' mm ' + G.METALS[p.metal].label,
+      'Island ' + fmt(m.island.lengthMm) + ' × ' + fmt(m.island.widthMm, 1) + ' mm on the wrist · smoothing ' + fmt(p.smoothMm, 2) + ' mm',
+      'Circle ' + fmt(m.ring.lenMm) + ' mm, hooks on at ' + m.hook.landmark + ' · free end ' + fmt(p.startGapMm, 1) + ' mm along the north shore',
+      'Total wire ' + fmt(m.lengths.totalMm) + ' mm (' + fmt(m.lengths.totalMm / MM_PER_IN, 1) + ' in) · weight ' + fmt(G.grams(m, p.metal), 1) + ' g',
+      (metal.base === 'silver' ? 'Silver' : 'Gold') + ' cost ' + money.format(cost.usd) + ': ' + fmt(cost.fineGrams, 1) + ' g pure at ' + money2.format(pr.usdPerOzt) + '/oz (' + priceWhen + '), metal only',
+      'Touch points: ' + m.spots.length,
+      'Settings: ' + JSON.stringify(p)
+    ].join('\n');
+  }
+  document.getElementById('copy').addEventListener('click', function () {
+    var text = designText();
+    var box = document.getElementById('copyBox');
+    var msg = document.getElementById('copyMsg');
+    box.value = text;
+    function fallback() {
+      box.hidden = false;
+      box.focus();
+      box.select();
+      msg.textContent = 'Select the text below and copy it.';
+    }
+    try {
+      navigator.clipboard.writeText(text).then(function () { box.hidden = true; msg.textContent = 'Copied.'; }, fallback);
+    } catch (e) { fallback(); }
+  });
+
+  // ── Flat pattern ───────────────────────────────────────
+  var flatCanvas = document.getElementById('flat');
+  function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function drawFlat() {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var cw = flatCanvas.clientWidth || 320, ch = flatCanvas.clientHeight || 120;
+    flatCanvas.width = Math.round(cw * dpr);
+    flatCanvas.height = Math.round(ch * dpr);
+    var ctx = flatCanvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cw, ch);
+    var m = model, f = m.flat;
+    var stub = 14;   // mm of the straight circle wire to show before the break
+    var u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    m.loop.forEach(function (q) { u0 = Math.min(u0, q[0]); u1 = Math.max(u1, q[0]); v0 = Math.min(v0, q[1]); v1 = Math.max(v1, q[1]); });
+    var uMax = m.ring.from + stub;
+    var pad = 10, bottom = 22;
+    var sc = Math.min((cw - 2 * pad) / (uMax - u0 + m.wireRadius * 2), (ch - pad - bottom) / (v1 - v0 + m.wireRadius * 2));
+    var ox = pad + m.wireRadius * sc - u0 * sc;
+    var oy = pad + m.wireRadius * sc + v1 * sc;
+    function X(u) { return ox + u * sc; }
+    function Y(v) { return oy - v * sc; }
+    var gold = cssVar('--gold-hi'), ink = cssVar('--ink'), muted = cssVar('--muted'), warn = cssVar('--warn');
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    function path(stroke, width) {
+      ctx.beginPath();
+      var started = false;
+      for (var i = 0; i < f.length; i++) {
+        if (f[i][0] > uMax) break;
+        if (!started) { ctx.moveTo(X(f[i][0]), Y(f[i][1])); started = true; } else ctx.lineTo(X(f[i][0]), Y(f[i][1]));
+      }
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = width;
+      ctx.stroke();
+    }
+    path(gold, Math.max(1.5, m.params.wireDiaMm * sc));
+    path(ink, 0.8);
+    // Break mark and the rest of the circle as words.
+    var bx = X(uMax) + 4, by = Y(m.ring.v);
+    ctx.strokeStyle = muted;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(bx, by - 6); ctx.lineTo(bx + 4, by + 6); ctx.moveTo(bx + 5, by - 6); ctx.lineTo(bx + 9, by + 6); ctx.stroke();
+    ctx.fillStyle = muted;
+    ctx.font = '11px ' + cssVar('--f-ui');
+    ctx.textAlign = 'right';
+    ctx.fillText('+' + fmt(m.ring.lenMm - stub) + ' mm straight, then the hook', cw - pad, ch - 6);
+    // Hook point and free end.
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(X(m.hook.u), Y(m.hook.v), Math.max(3, m.params.wireDiaMm * sc * 0.9), 0, Math.PI * 2); ctx.stroke();
+    // Touch points.
+    ctx.strokeStyle = warn;
+    m.spots.forEach(function (sp) { ctx.beginPath(); ctx.arc(X(sp.at[0]), Y(sp.at[1]), Math.max(4, m.params.wireDiaMm * sc * 1.2), 0, Math.PI * 2); ctx.stroke(); });
+    // 10 mm scale bar.
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 1.5;
+    var sx = pad, sy = ch - 9;
+    ctx.beginPath(); ctx.moveTo(sx, sy - 4); ctx.lineTo(sx, sy); ctx.lineTo(sx + 10 * sc, sy); ctx.lineTo(sx + 10 * sc, sy - 4); ctx.stroke();
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'left';
+    ctx.fillText('10 mm', sx + 10 * sc + 6, sy + 1);
+  }
+
+  // ── Views ──────────────────────────────────────────────
+  var tween = null;
+  function fitScale() {
+    var a = canvas.clientWidth / Math.max(1, canvas.clientHeight);
+    return a < 1.15 ? Math.pow(1.15 / a, 0.85) : 1;
+  }
+  function viewPose(name) {
+    var k = fitScale();
+    var rc = model.centreRadius;
+    if (name === 'top') return { pos: [0, rc + 160 * k, 5], tgt: [0, rc * 0.6, 0] };
+    if (name === 'end') return { pos: [0, 10, 230 * k], tgt: [0, 0, 0] };
+    if (name === 'hook') {
+      var h = model.hook.pos;
+      var dir = new THREE.Vector3(h[0], h[1], 0).normalize();
+      return { pos: [h[0] + dir.x * 105 * k - 25, h[1] + dir.y * 105 * k + 30, h[2] + 70 * k], tgt: [h[0] * 0.8, h[1] * 0.8, h[2]] };
+    }
+    return { pos: [70 * k, 190 * k, 150 * k], tgt: [0, 8, 0] };
+  }
+  function setView(name, instant) {
+    document.querySelectorAll('[data-view]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.view === name)); });
+    var pose = viewPose(name);
+    var to = { pos: new THREE.Vector3().fromArray(pose.pos), tgt: new THREE.Vector3().fromArray(pose.tgt) };
+    if (instant || reduceMotion) {
+      camera.position.copy(to.pos);
+      controls.target.copy(to.tgt);
+      controls.update();
+      tween = null;
+      return;
+    }
+    tween = { t0: performance.now(), dur: 700, fromPos: camera.position.clone(), fromTgt: controls.target.clone(), to: to };
+  }
+  document.querySelectorAll('[data-view]').forEach(function (b) {
+    b.addEventListener('click', function () { setView(b.dataset.view); });
+  });
+  controls.addEventListener('start', function () {
+    tween = null;
+    document.querySelectorAll('[data-view]').forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
+  });
+
+  // ── Trace the wire: draw it from the free end to the hook ──
+  var trace = null;
+  var traceCap = document.getElementById('traceCap');
+  function traceSteps() {
+    var lm = {};
+    model.landmarks.forEach(function (l) { lm[l.name] = l.wireIndex; });
+    return [
+      { at: 0, text: 'Starts at the East End, heading west along the north shore' },
+      { at: lm['North Hill'] - 25, text: 'North Hill' },
+      { at: lm['Silver Eel'] - 10, text: 'Silver Eel' },
+      { at: lm['Race Point'] - 10, text: 'Round Race Point' },
+      { at: lm['Race Point'] + 25, text: 'East along the south shore, past Wilderness' },
+      { at: lm['Chocomount'] - 10, text: 'Chocomount' },
+      { at: model.index.junctionStart, text: 'Back to the East End, and on into the circle' },
+      { at: model.index.ringStart + 40, text: 'A perfect circle round the back of the wrist' },
+      { at: model.index.hookStart - 15, text: 'The hook catches the outline at ' + model.hook.landmark }
+    ].sort(function (a, b) { return a.at - b.at; });
+  }
+  document.getElementById('trace').addEventListener('click', function () {
+    setView('quarter');
+    trace = { t0: performance.now() + 450, dur: reduceMotion ? 1 : 11000, steps: traceSteps() };
+    capB.visible = false;
+    traceCap.hidden = false;
+    BRACELET.tracing = true;
+  });
+  function stepTrace(now) {
+    if (!trace) return;
+    var p = Math.max(0, Math.min(1, (now - trace.t0) / trace.dur));
+    // Ease in and out so the start and the hook get a moment.
+    var e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+    var segs = Math.max(1, Math.floor(e * tubeSegs));
+    wireMesh.geometry.setDrawRange(0, segs * radialSegs * 6);
+    var idx = Math.min(model.wire.length - 1, Math.floor(e * (model.wire.length - 1)));
+    var q = model.wire[idx];
+    bead.position.set(q[0], q[1], q[2]);
+    bead.visible = p < 1;
+    var text = trace.steps[0].text;
+    trace.steps.forEach(function (s) { if (idx >= s.at) text = s.text; });
+    if (traceCap.textContent !== text) traceCap.textContent = text;
+    if (p >= 1) {
+      wireMesh.geometry.setDrawRange(0, Infinity);
+      capB.visible = true;
+      trace = null;
+      BRACELET.tracing = false;
+      setTimeout(function () { if (!trace) traceCap.hidden = true; }, 2500);
+    }
+  }
+
+  // ── Theme ──────────────────────────────────────────────
+  function applyTheme() {
+    ghostMat.uniforms.uColor.value.set(cssVar('--ghost') || '#34506b');
+    scene.fog.color.set(cssVar('--stage-b') || '#d2dbe2').convertSRGBToLinear();
+    if (model) drawFlat();
+  }
+  if (window.matchMedia) {
+    var mq = matchMedia('(prefers-color-scheme: dark)');
+    if (mq.addEventListener) mq.addEventListener('change', applyTheme);
+  }
+  new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // ── Size and loop ──────────────────────────────────────
+  function resize() {
+    var w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
+    if (renderer) renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    if (model) drawFlat();
+  }
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
+  window.addEventListener('resize', resize);
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (tween) {
+      var t = Math.min(1, (now - tween.t0) / tween.dur);
+      var e = 1 - Math.pow(1 - t, 3);
+      camera.position.lerpVectors(tween.fromPos, tween.to.pos, e);
+      controls.target.lerpVectors(tween.fromTgt, tween.to.tgt, e);
+      if (t >= 1) tween = null;
+    }
+    stepTrace(now);
+    controls.update();
+    var d = camera.position.distanceTo(controls.target);
+    scene.fog.near = d - 15;
+    scene.fog.far = d + 130;
+    if (renderer) renderer.render(scene, camera);
+    placeTags();
+    BRACELET.frames++;
+  }
+
+  // Hooks for tests and for a later Claude session poking at the page.
+  var BRACELET = window.BRACELET = {
+    frames: 0,
+    builds: 0,
+    tracing: false,
+    model: null,
+    get params() { return Object.assign({}, params); },
+    set: function (p) { params = G.normalize(Object.assign({}, params, p)); rebuild(); save(); },
+    view: setView,
+    webgl: !!renderer,
+    priceLoading: false,
+    price: function () { return priceFor(G.METALS[params.metal].base); },
+    cost: function () { return G.metalCost(model, params.metal, priceFor(G.METALS[params.metal].base).usdPerOzt); },
+    refreshPrices: function () { return refreshPrices(); },
+    text: function () { return designText(); }
+  };
+
+  applyTheme();
+  resize();
+  rebuild();
+  setView('quarter', true);
+  requestAnimationFrame(frame);
+  refreshPrices();
+})();
+</script>
