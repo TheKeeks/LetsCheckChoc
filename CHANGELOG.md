@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased] — Sound Check: much lighter on memory when you zoom in, and a visible note when something breaks
+
+Zooming in on the Sound Check map took the page down on the iPad, and now on a computer too, with nothing on screen to say why. In Chrome on a desktop the page never failed in testing, at any zoom or window size. What it did do was hold about 0.75 GB of memory as soon as it loaded and about 0.95 GB once zoomed in near the reef. That is around the point where iPad Safari kills a tab. Safari can't be run here, so this targets what was measured.
+
+Most of that memory came from three places:
+- **The sea-floor model.** It started on the map's very first draw, even though it is only drawn once you zoom in, and fetched all 68 of its high-resolution images straight away (about 200 MB). It now starts when you zoom in, fetches only the images the swells on show need, and keeps at most 24.
+- **The map tiles.** Each is 1024 px square, about 4 MB decoded plus the browser's scaled copies. Up to 90 stayed in memory. The page now keeps the 12 used most recently, and never drops a tile that is still on screen, so a big screen never re-fetches what it shows.
+- **The two 2016 aerial photos of the reefs.** They are fetched only the first time you zoom in close, at 2048 px instead of about 3900 px. That is still sharper than the screen at the closest zoom.
+
+Measured in Chrome on a Retina-sized window:
+- at load, 742 MB before and 463 MB after;
+- zoomed in and panning around the reef, a peak of 929 MB before and 756 MB after;
+- on a 2560 × 1440 window, 978 MB before and 771 MB after.
+
+The same tiles are fetched, none are fetched again while the map sits still, and the map looks the same.
+
+Two more changes:
+- **Error notes.** The page now says when something breaks. A script error shows its message and line on the page, and a page the browser killed and reloaded says so on the next load, with how far the map was zoomed in. The crew use phones and iPads with no developer tools, so before this a failure left no trace.
+- **Trackpad pinch in Safari on a Mac.** Safari sends a pinch as gesture events rather than ctrl+scroll. The page has blocked those since the iPhone pinch fix, so the page itself wouldn't zoom, but it didn't zoom the map with them either. It now does, on trackpads only; iPad pinches still go through the touch handlers.
+
+Verified by a new e2e scenario, `w6-swell-map-memory.js`. It checks:
+- the reload note and that it clears after an ordinary reload;
+- the error note;
+- that nothing from the sea-floor model or the photos is fetched at load;
+- that a trackpad pinch of 2× halves the map's width;
+- that zooming in at Choc fetches 12 of the 68 sea-floor images and the 2048 px photos, holds 12 tiles and re-fetches nothing while still;
+- that the map is drawn.
+
+It fails on the previous page and passes now. The unit suite (16), all 37 e2e scenarios and the Python tests pass. Real iPad and Mac Safari can't be run here, so please confirm on both.
+
 ## [Unreleased] — Fishers Bracelet: total wire length and the gold cost at today's price
 
 The bracelet's spec sheet showed the gold weight. The wire's length was buried in a breakdown line, and nothing said what the piece would cost. The spec now opens with three figures: total wire (279 mm, which is 11.0 in or 27.9 cm, for the default design), weight (30.8 g of 18k) and gold cost. The same three figures also sit in a small readout on the 3D view, so they stay in sight while you move the sliders on a phone or iPad.
