@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — Fishers Bracelet: a 3D model of the gold-wire island bracelet to play with
+
+A new side page, `bracelet/`, models a bracelet made from one solid gold wire, 3 mm thick, on a see-through 6.25 in (158.75 mm) wrist. It is not linked from the forecast. The wire follows the real coastline (OpenStreetMap). It starts with a free end at the East End and runs west along the north shore, past West Harbor and North Hill and Silver Eel, to Race Point. It comes back east along the south shore, past Wilderness and Chocomount, to the East End. There it carries on into a perfect circle round the back of the wrist, and ends in a hook that goes over the outline wire at North Hill.
+
+The island is turned about 14° on the wrist, so the East End sits level with North Hill. That is what keeps the circle flat and perfectly round: it leaves the island and comes back at the same height on the arm. Sliders change the wrist size, wire thickness, island length and smoothing (how small a cove the wire still follows). A hook slider moves the hook from North Hill down the west end to Silver Eel or Race Point. The spec sheet updates as you go. It shows the gold weight (14k, 18k, 22k, or sterling for a test piece), the wire length, the island size, and the touch points, where the 3 mm wire would run into itself and need soldering or more smoothing. A flat pattern shows the wire laid out to scale before it is bent round the wrist. "Trace the wire" draws the route in order, naming each place as it passes. "Copy design" gives a text summary to paste into a later session or send to a jeweller.
+
+As drawn by default (65 mm island, 3 mm smoothing), the bracelet takes about 279 mm of wire: 163 mm of outline, 101 mm of circle and 15 mm of hook. That is about 30.8 g in 18k or 25.8 g in 14k. It has two touch points: the narrow neck near the East End and the mouth of Hay Harbor.
+
+Verified by a new unit file and a new e2e scenario. `tests/unit/bracelet-geometry.test.js` checks the route order (East End, North Hill, Silver Eel, Race Point, south shore, East End, circle, hook). It checks that every point of the circle sits at one radius in one plane and passes under the wrist, that the hook sits on the outline at North Hill and never dips into the wrist, the weights, and the hook stops. That test caught the hook cutting about half a millimetre into the wrist, which was fixed before commit. `tests/e2e/scenarios/bracelet-designer.js` opens the page and checks that the sliders drive the spec and that settings survive a reload. It also checks that the trace captions follow the route and that nothing scrolls sideways on a phone. It saves screenshots (3/4, Map, Circle, Hook, mid-trace, phone) to the CI artifacts.
+
 ## [Unreleased] — Sound Check: the map no longer goes dark when you zoom in on an iPhone or iPad
 
 On iPhone and iPad, zooming the Sound Check map in even a little turned it a uniform dark blue. Desktop browsers were fine.
