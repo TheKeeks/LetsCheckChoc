@@ -24,6 +24,54 @@ Verified by:
 - A new `tests/unit/bracelet-plans.test.js`. It checks the drawing is 1:1 on Letter landscape, the Spanish labels and steps (in making order, without Chocomount or Wilderness), the note to the jeweller and the two-page PDF, and fails if the committed PDF or SVG drift from the code.
 - `tests/e2e/scenarios/bracelet-designer.js`. It checks place names start off and the label set, that the touch-point toggle is gone, the Flat view, and the trace on the Flat view in route order. It also downloads the PDF and SVG, and opens the plans page with a changed design in Spanish and English. Screenshots of the clasp, the flat view, the mid-trace flat view and the plans page go to the CI artifacts.
 
+## [Unreleased] — Sound Check: the model-comparison caption quotes the ratings model's current 63%
+
+Under the table that compares the model with simpler measures, the caption said that feeding the model into the ratings model "lifts the share of your size rating explained to 61%". The ratings panel further up shows 0.63, because it reads the saved results of the current model. The 61% had been typed in by hand from an older version.
+
+The caption now reads the same saved number as the panel (63%), so the two can't disagree again when the model is refit.
+
+Verified by a new e2e scenario, `w6-swell-map-r2-caption.js`. It reads the size R² in the ratings panel and checks that the caption quotes the same percentage. It fails on the current page (61 against 63) and passes now. The 13 Sound Check scenarios, `npm test` and `npm run test:py` pass. No Firebase or rules changes.
+
+## [Unreleased] — Sound Check: the map no longer goes dark after a two-finger pinch
+
+On a phone or iPad, the Sound Check map went dark after zooming in, and stayed dark. The new error note caught it on an iPhone: "TypeError: The provided value is non-finite" from the line that draws the swell lines near Fishers.
+
+The cause was the pinch itself. Two fingers zoom the map. When one finger lifted and the other kept moving, the page carried on with the pinch as if it were a one-finger drag. A pinch has no starting point for a drag, so the map's position became "not a number". From then on the map drew nothing at any zoom: no ocean colors, no land, no labels. Once zoomed in close enough for the swell lines to show (under about 320 km across), every redraw also threw that error.
+
+Now the finger left on the map pans on from where it is, like any map app, and lifting it is never taken for a tap. The pan and the zoom also refuse any position that isn't a number, and the map doesn't draw while it has no height. A computer with a mouse or trackpad never takes this path, because they never put two pointers on the map; a touchscreen computer would.
+
+Verified by a new e2e scenario, `w6-swell-map-pinch-lift.js`. On a phone-sized touch screen it pinches in about 5×, lifts one finger and drags the other 60 px right and 30 px down. It then checks that the map keeps a real position, that the zoom is unchanged and the map followed the finger, that the map is drawn, and that no error appears. On the page before this change it fails with the same error the iPhone showed; Chromium words it "Failed to execute 'createLinearGradient' … non-finite". Full suites: `npm test`, `npm run test:e2e` and `npm run test:py` pass. No Firebase or rules changes.
+
+## [Unreleased] — Sound Check: much lighter on memory when you zoom in, and a visible note when something breaks
+
+Zooming in on the Sound Check map took the page down on the iPad, and now on a computer too, with nothing on screen to say why. In Chrome on a desktop the page never failed in testing, at any zoom or window size. What it did do was hold about 0.75 GB of memory as soon as it loaded and about 0.95 GB once zoomed in near the reef. That is around the point where iPad Safari kills a tab. Safari can't be run here, so this targets what was measured.
+
+Most of that memory came from three places:
+- **The sea-floor model.** It started on the map's very first draw, even though it is only drawn once you zoom in, and fetched all 68 of its high-resolution images straight away (about 200 MB). It now starts when you zoom in, fetches only the images the swells on show need, and keeps at most 24.
+- **The map tiles.** Each is 1024 px square, about 4 MB decoded plus the browser's scaled copies. Up to 90 stayed in memory. The page now keeps the 12 used most recently, and never drops a tile that is still on screen, so a big screen never re-fetches what it shows.
+- **The two 2016 aerial photos of the reefs.** They are fetched only the first time you zoom in close, at 2048 px instead of about 3900 px. That is still sharper than the screen at the closest zoom.
+
+Measured in Chrome on a Retina-sized window:
+- at load, 742 MB before and 463 MB after;
+- zoomed in and panning around the reef, a peak of 929 MB before and 756 MB after;
+- on a 2560 × 1440 window, 978 MB before and 771 MB after.
+
+The same tiles are fetched, none are fetched again while the map sits still, and the map looks the same.
+
+Two more changes:
+- **Error notes.** The page now says when something breaks. A script error shows its message and line on the page, and a page the browser killed and reloaded says so on the next load, with how far the map was zoomed in. The crew use phones and iPads with no developer tools, so before this a failure left no trace.
+- **Trackpad pinch in Safari on a Mac.** Safari sends a pinch as gesture events rather than ctrl+scroll. The page has blocked those since the iPhone pinch fix, so the page itself wouldn't zoom, but it didn't zoom the map with them either. It now does, on trackpads only; iPad pinches still go through the touch handlers.
+
+Verified by a new e2e scenario, `w6-swell-map-memory.js`. It checks:
+- the reload note and that it clears after an ordinary reload;
+- the error note;
+- that nothing from the sea-floor model or the photos is fetched at load;
+- that a trackpad pinch of 2× halves the map's width;
+- that zooming in at Choc fetches 12 of the 68 sea-floor images and the 2048 px photos, holds 12 tiles and re-fetches nothing while still;
+- that the map is drawn.
+
+It fails on the previous page and passes now. The unit suite (16), all 37 e2e scenarios and the Python tests pass. Real iPad and Mac Safari can't be run here, so please confirm on both.
+
 ## [Unreleased] — Fishers Bracelet: total wire length and the gold cost at today's price
 
 The bracelet's spec sheet showed the gold weight. The wire's length was buried in a breakdown line, and nothing said what the piece would cost. The spec now opens with three figures: total wire (279 mm, which is 11.0 in or 27.9 cm, for the default design), weight (30.8 g of 18k) and gold cost. The same three figures also sit in a small readout on the 3D view, so they stay in sight while you move the sliders on a phone or iPad.
