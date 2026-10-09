@@ -4316,7 +4316,9 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     if (!user) await auth.signInAnonymously();
     return fb.firestore();
   }
-  (async () => {
+  // the page's own read of the surf log; done (or given up) when this settles, so tests hand the calendar their own
+  // photos after it rather than have it replace them
+  window.CHOC.logLoaded = (async () => {
     let fs = null;
     try {
       let P = null; try { P = window.parent !== window && window.parent.fbFirestore ? window.parent : null; } catch (e) { P = null; }   // another origin: no access

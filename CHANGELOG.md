@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased] — Sound Check: photos test waits for the page's own surf-log read
+
+`w6-swell-map-photos.js` hands the calendar its own photos, but the page also reads the surf log itself on load. When that read finished after the test's photos went in, it replaced them and the test found none. That happened on a fast CI runner during #151. The page now exposes that read as `CHOC.logLoaded`, and the test waits for it before adding photos.
+
+Reproduced locally by taking the delays out of the Firebase stub: without the wait the test fails the way CI did, and with the wait it passes. Visitors are not affected, since only tests add photos this way.
+
 ## [Unreleased] — Sound Check: readouts as short 1°/2° swell lines
 
 The owner found the historical lookup and the map full of boxes of explanation, and asked for short lines instead: primary swell, secondary swell, with 1° and 2° as the labels. The swell mix was written as sentences everywhere it appeared. The calendar card said "Where Choc's swell came from at its biggest hour (4am): 58% from groundswell of 9.1 ft at 17 s from SSE (167°) · …", and the map headline ran it all into one line.
