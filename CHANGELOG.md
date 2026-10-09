@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — Sound Check: the model-comparison caption quotes the ratings model's current 63%
+
+Under the table that compares the model with simpler measures, the caption said that feeding the model into the ratings model "lifts the share of your size rating explained to 61%". The ratings panel further up shows 0.63, because it reads the saved results of the current model. The 61% had been typed in by hand from an older version.
+
+The caption now reads the same saved number as the panel (63%), so the two can't disagree again when the model is refit.
+
+Verified by a new e2e scenario, `w6-swell-map-r2-caption.js`. It reads the size R² in the ratings panel and checks that the caption quotes the same percentage. It fails on the current page (61 against 63) and passes now. The 13 Sound Check scenarios, `npm test` and `npm run test:py` pass. No Firebase or rules changes.
+
 ## [Unreleased] — Sound Check: the map no longer goes dark after a two-finger pinch
 
 On a phone or iPad, the Sound Check map went dark after zooming in, and stayed dark. The new error note caught it on an iPhone: "TypeError: The provided value is non-finite" from the line that draws the swell lines near Fishers.
