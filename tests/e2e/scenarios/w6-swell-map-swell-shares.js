@@ -55,8 +55,8 @@ module.exports = {
 
     // Corrected text: the 14 Oct 2022 tile quoted the noon swell (172°), not the session; the period caption
     // overstated how hard Montauk cuts off short swell; the ten-year source of Choc's 3 ft+ days is stated.
-    const how = await txt('#how-h + p ~ .takeaways');
-    assert.ok(!/172°/.test(how) && /29 Aug 2023/.test(how), 'Part 1 tile uses a session the swell really came from outside the window');
+    const how = await txt('#q2Takes');
+    assert.ok(!/172°/.test(how) && /29 Aug 2023/.test(how), 'Question 2 tile uses a session the swell really came from outside the window');
     assert.match(await page.evaluate(() => document.body.textContent), /only long-period swell gets in/);
     assert.match(await page.evaluate(() => document.body.textContent), /40%of the 784 days|40% ?of the 784 days/);
     assert.deepEqual(errors, [], 'no page errors');

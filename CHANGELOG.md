@@ -1,5 +1,29 @@
 # Changelog
 
+## [Unreleased] — Sound Check: organized around its two research questions
+
+The page never said what it was trying to answer, and the evidence for its two findings was scattered. The result that most of Choc's surf comes from outside the swell window was a single tile inside "One swell or two?". The chart of how much swell reaches Choc by direction and period was folded away under Behind the numbers. The model-versus-buoy comparison was a number in a tile and a collapsed table. Wilderness sat in the middle of the Choc story.
+
+The page now leads with the two questions it answers: "What makes the surf good at Choc?" and "How real is the swell window?". Each gets a one-line answer at the top that links down to it. The order is the map, how the model works, Question 1, Question 2, ten years month by month, the 7-day forecast, Wilderness, then Behind the numbers. Nothing was removed. Every chart, tool and table is still there, under the question it supports.
+
+Each question opens with its answer as a chart:
+- **Question 1, "Size at the reef beats size at the buoy".** Two panels plot your 28 sessions, the buoy's height against the model's height at Choc. The model picks the bigger of two sessions 87% of the time, the buoy 77%. It is followed by the ratings model and the seasons.
+- **Question 2, "Most of Choc's 3 ft+ days come from outside the window".** Of 784 days, 40% got their swell through the window, 45% from south of it and 15% from east of it. It is followed by the direction-and-period chart (now out of its collapsed box, with the window shaded and a phone-sized drawing), the swell trains, the 29 Aug 2023 example and Check a date.
+
+The numbers in the header answers are computed from the same data as the charts, so the two can't drift apart. Pointers that said "Part 1/2/3" now name the section.
+
+Verified by a new e2e scenario, `w6-swell-map-questions.js`. It checks:
+- the section order;
+- that the header answers quote the charts' numbers (87%/77%; 40%/45% of 784 days);
+- one dot per session in each panel;
+- the three window rows (120, 312 and 352 days);
+- that the direction chart is no longer collapsed;
+- that the moved tiles sit under their questions;
+- that no "Part 1/2/3" text is left;
+- that a question card jumps to its section.
+
+It fails on the current page and passes now. `w6-swell-map-swell-shares.js` now finds the 29 Aug 2023 tile under Question 2. The full suites pass. No Firebase or rules changes.
+
 ## [Unreleased] — Fishers Bracelet: export the plans after changing the settings, place names stay off
 
 The owner wants to export the jeweller's plans from the site itself, after changing the settings, and wants place names off by default.
