@@ -1465,9 +1465,18 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     window.CHOC.frSet(m.dir, m.T, state.label);
   }
 
-  // ── this week for both spots: GFS-Wave and ECMWF (fc/fc.json from fcpull.py), each run through the
+  // ── this week for both spots: GFS-Wave and ECMWF (scripts/forecast/fcpull.py), each run through the
   // ray model, read at buoy 44097 like the history. Times are Eastern whatever the viewer's device says.
-  window.CHOC.fcData = fetch('fc/fc.json').then(r => (r.ok ? r.json() : null)).catch(() => null);
+  // The latest pull lives on the fc-data branch, refreshed every few hours by .github/workflows/update-forecast.yml;
+  // fc/ is the copy that ships with the page. The newer of the two wins (a pull that can't be reached in 6 s
+  // doesn't count), and its field images are read from the same place (d._base).
+  const FC_LIVE = 'https://raw.githubusercontent.com/TheKeeks/LetsCheckChoc/fc-data/fc/';
+  const fcGet = (base, ms) => {
+    const ac = typeof AbortController === 'function' ? new AbortController() : null, t = ac && ms ? setTimeout(() => ac.abort(), ms) : 0;
+    return fetch(base + 'fc.json', { cache: 'no-cache', signal: ac ? ac.signal : undefined }).then(r => (r.ok ? r.json() : null))
+      .then(d => (d && d.made ? Object.assign(d, { _base: base }) : null)).catch(() => null).finally(() => clearTimeout(t));
+  };
+  window.CHOC.fcData = Promise.all([fcGet(FC_LIVE, 6000), fcGet('fc/')]).then(([live, here]) => (live && (!here || live.made > here.made) ? live : here));
   const ETF = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hourCycle: 'h23' });
   const etp = ms => { const o = {}; for (const p of ETF.formatToParts(new Date(ms))) o[p.type] = p.value; o.h = +o.hour % 24; return o; };
   const hr12 = h => `${h % 12 || 12}${h < 12 ? 'am' : 'pm'}`;
@@ -1822,7 +1831,8 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     const L0 = G * T * T / (2 * Math.PI), L = L0 * Math.pow(Math.tanh(Math.pow(2 * Math.PI * Math.sqrt(20 / G) / T, 1.5)), 2 / 3);
     return Math.max(r0, 0.5 * Math.sqrt(L * 15000));
   }
-  const img = (src) => new Promise((r) => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = src; });
+  const img = (src) => new Promise((r) => { const i = new Image(); if (/^https?:/.test(src)) i.crossOrigin = 'anonymous';   // another site's image: its pixels stay readable (it sends CORS)
+    i.onload = () => r(i); i.onerror = () => r(null); i.src = src; });
   const json = (u) => fetch(u).then((r) => r.ok ? r.json() : null).catch(() => null);
   async function png16(u) {                          // depth PNG: red = high byte, green = low byte
     const im = await img(u); if (!im) throw new Error(u);
@@ -2644,7 +2654,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   function fcPx(model, g) {
     const k = model + '_' + g; if (k in FC.px) return FC.px[k];
     FC.px[k] = null;
-    img(`fc/field_${k}.png`).then((im) => {
+    img(`${(FC.d && FC.d._base) || 'fc/'}field_${k}.png`).then((im) => {   // from the same place as the forecast's numbers
       if (!im) return;
       FC.px[k] = { w: im.width, a: window.CHOC.pixels(im) };
       FC.aim = {}; FC.arr = {};

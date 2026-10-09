@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased] — Sound Check: the 7-day forecast stays current
+
+On Friday the Sound Check forecast still read "As of Wed Oct 7, 11:58am ET". The GFS-Wave and ECMWF pull behind it (run through the ray model to Choc and Wilderness) had been run by hand and committed with the page as a snapshot. Nothing ever ran it again.
+
+The pull now lives in the repo as `scripts/forecast/fcpull.py`, with its two inputs; it reads the page's own ray tables in `research/fr/`. A new workflow, `.github/workflows/update-forecast.yml`, runs it every 3 hours and publishes the result to an `fc-data` branch. GFS-Wave runs land 4–5 hours after 00/06/12/18Z. The workflow also runs as soon as it lands on `main`, and can be started by hand from the Actions tab.
+
+The branch holds only the latest pull, replaced each time. A pull is about 3 MB of field images, so committing it to `main` every few hours would add gigabytes a year to the repo the site is served from.
+
+The page reads that pull from raw.githubusercontent.com and shows whichever is newer: the published pull, or the copy that ships with it in `research/fc/`. The field images come from the same place as the numbers. If GitHub can't be reached within 6 s, the page uses the shipped copy, and the as-of line under the timeline shows its real age. The shipped copy is refreshed in this change: the 12Z runs of 9 Oct.
+
+If a pull fails (no complete model run, or a download error), nothing is published. The page keeps the last good pull, and GitHub emails the owner, as with the buoy bot. CI skips the `fc-data` branch.
+
+Verified by:
+- **A new e2e scenario, `w6-swell-map-forecast-fresh.js`.** It serves a pull a day newer than the shipped copy and checks that the page uses it, numbers and field images both, and names it in the as-of line. It also checks that an older pull doesn't replace the shipped copy, and that the shipped copy is used when GitHub can't be reached. It fails on the current page, which read "As of Wed Oct 7", and passes now.
+- **`scripts/test_fcpull.py`.** It checks which model run gets picked: the newest complete run, falling back when the newest is still coming in, and failing when nothing has been published for two days. It also checks that the swell window holds: a 12 s swell from 136° reaches Choc more than 1.5 times bigger than from 60° or 220°.
+- **The pull itself.** It ran from the repo and gave byte-identical output to the hand-run version. The publish step was dry-run locally.
+
+The e2e runner serves no pull by default (`net.fcLive`), so the other scenarios still use the shipped copy. No Firebase or rules changes.
+
 ## [Unreleased] — Sound Check: photos test waits for the page's own surf-log read
 
 `w6-swell-map-photos.js` hands the calendar its own photos, but the page also reads the surf log itself on load. When that read finished after the test's photos went in, it replaced them and the test found none. That happened on a fast CI runner during #151. The page now exposes that read as `CHOC.logLoaded`, and the test waits for it before adding photos.

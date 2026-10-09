@@ -129,7 +129,10 @@ const DEFAULT_NET = {
   firebase: 'stub',        // gstatic firebasejs → firebase-stub.js | 'abort' | 'hang'
   fonts: 'ok',             // Google Fonts → empty CSS
   tiles: 'ok',             // map tiles → 1×1 PNG
-  windy: 'ok'              // Windy embeds → blank page
+  windy: 'ok',             // Windy embeds → blank page
+  fcLive: 'none'           // Sound Check forecast's latest pull (raw.githubusercontent.com …/fc-data/):
+                           // 'none' = not published yet (404), so research/ uses the copy that ships
+                           // with it | 'abort' | 'hang' | (url, request) => descriptor
 };
 
 // Same-origin files pinned to fixtures: the bot rewrites data/buoy.json and
@@ -300,6 +303,15 @@ function makeExternalRouter(ctx) {
       if (/(^|\.)basemaps\.cartocdn\.com$|(^|\.)tile\.openstreetmap\.org$/.test(host)) {
         if (net.tiles === 'abort') return await route.abort('connectionfailed');
         return await fulfill(route, { status: 200, headers: { 'content-type': 'image/png', 'access-control-allow-origin': '*' }, body: PNG_1PX });
+      }
+
+      if (host === 'raw.githubusercontent.com' && u.pathname.startsWith('/TheKeeks/LetsCheckChoc/fc-data/')) {
+        const mode = net.fcLive;
+        if (typeof mode === 'function') return await applyMode(route, mode, 'fcLive', net, url, null);
+        if (mode === 'abort') return await route.abort('connectionfailed');
+        if (mode === 'hang') { await hang(); return await route.abort('timedout'); }
+        if (mode !== 'none') throw new Error('net.fcLive: unknown mode ' + mode);
+        return await fulfill(route, { status: 404, headers: { 'content-type': 'text/plain', 'access-control-allow-origin': '*' }, body: '404: Not Found' });
       }
 
       if (/(^|\.)windy\.com$/.test(host)) {
