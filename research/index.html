@@ -72,9 +72,12 @@ select { font: 0.85rem var(--body); background: var(--rule); color: var(--fg); b
 #scErr[hidden] { display: none; }
 #scErr b { color: #fff; }
 #scErr button { position: absolute; top: 6px; right: 8px; border: 0; background: none; color: #f6e9ea; font-size: 22px; line-height: 1; cursor: pointer; padding: 4px; }
-.tr-bent { margin: 10px 0 0; font-size: .84rem; color: var(--fg-2); line-height: 1.45; }
-.dec-mix { margin-top: 6px; font-size: .86rem; color: var(--fg-2); line-height: 1.5; }
-.dec-mix b { color: var(--fg); }
+/* readouts: short "label value" lines (1° and 2° swell, wind, buoy) instead of sentences */
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 8px 0 0; font-size: .86rem; line-height: 1.4; color: var(--fg); }
+.kv dt { font-family: var(--mono); font-size: .74rem; color: var(--fg-3); padding-top: .1rem; white-space: nowrap; }
+.kv dd { margin: 0; min-width: 0; }
+.kv dt.kv-h { grid-column: 1 / -1; text-transform: uppercase; letter-spacing: .06em; font-size: .66rem; padding-top: 2px; }
+ul.tight { margin: 6px 0; padding-left: 18px; } ul.tight li { margin: 2px 0; } ul.tight li::marker { color: var(--fg-3); }
 .tr-k { display: flex; gap: 18px; font-size: .8rem; color: var(--fg-3); }
 .tr-k span { position: relative; padding-left: 22px; } .tr-k i { width: 16px; height: 10px; top: 3px; } .tr-k i.r { height: 6px; top: 5px; }
 .dct { min-width: 0; } .dct td, .dct th { white-space: normal; }
@@ -201,7 +204,10 @@ html.hub-lock, html.hub-lock body { overflow: hidden; }
 .hub-info ul { gap: 7px; padding-left: 1.1em; font-size: .84rem; }
 .hub-info li b { color: var(--fg); font-weight: 600; }
 .hub-info p { font-size: .84rem; }
-.hub-fine, .hub-info p.hub-fine { font-size: .74rem; color: var(--fg-3); }
+.hub-fine, .hub-info p.hub-fine, .hub-info ul.hub-fine { font-size: .74rem; color: var(--fg-3); }
+.hub-info ul.hub-fine { gap: 3px; }
+.hub-info .hub-wave .kv { margin: 0; }
+.dc-go { margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .hub-wave:empty { display: none; }
 .hub-wave { color: var(--fg); border-left: 2px solid var(--swell); padding-left: 10px; }
 .hub-more summary { cursor: pointer; color: var(--fg); font-size: .84rem; }
@@ -390,40 +396,59 @@ body { margin: 0; }
         <div class="hub-ic" data-mode="week">
           <h3>Reading the forecast</h3>
           <ul>
-            <li><b>Color</b> is wave height from the model you pick, swell and wind sea together.</li>
-            <li><b>Moving streaks</b> show which way the swell travels. Longer-period swell moves faster.</li>
-            <li><b>Pale dots</b> are open-ocean swell heading straight for the spot from an angle its reef can see. Tap one to trace its swell in: gray rays across its spread, and in orange the ray that reaches the spot, with when it arrives.</li>
-            <li><b>Near Fishers</b> the color gives way to the model's rays (see How the model works): the path each swell train takes over the sea floor into the spot, colored by period. Each starts with a faint lead-in from open water.</li>
-            <li><b>Timeline:</b> the spot's height from GFS-Wave (solid) and ECMWF (dashed). Night is shaded. Dots are the wind at the spot: green clean, yellow cross-shore, red onshore. Gray bars show when the far-off swell headed for the spot arrives.</li>
-            <li><b>The spot's height</b> is each model's swell at buoy 44097 (the white diamond off Block Island, the same point the ten-year history reads), run through the reef's response to that period and direction. Tested on 177 past hours, it came closer to what arrived than reading the models along the edge of the survey map.</li>
+            <li><b>Color:</b> wave height from the model you pick, swell and wind sea together.</li>
+            <li><b>Streaks:</b> which way the swell travels. Longer period moves faster.</li>
+            <li><b>Pale dots:</b> open-ocean swell aimed at the spot from an angle its reef can see. Tap one: orange is the ray that reaches the spot, with when; gray is the rest of its spread.</li>
+            <li><b>Near Fishers:</b> the model's rays over the sea floor into the spot, colored by period.</li>
+            <li><b>Timeline:</b> GFS-Wave solid, ECMWF dashed, night shaded. Dots: wind at the spot (green clean, yellow cross-shore, red onshore). Gray bars: far-off swell arriving.</li>
+            <li><b>Spot height:</b> each model's swell at buoy 44097 (white diamond), run through the reef's response. On 177 past hours it beat reading the models at the survey map's edge.</li>
           </ul>
-          <p class="hub-fine">GFS-Wave (NOAA): 0.16° near the coast and 0.25° offshore, with separate swell trains. ECMWF open data: 0.25°, total sea only (CC BY 4.0). Times are Eastern. The page shows the forecast from when it was last rebuilt; that time is under the timeline.</p>
+          <ul class="hub-fine">
+            <li>GFS-Wave (NOAA): 0.16° near the coast, 0.25° offshore, separate swells.</li>
+            <li>ECMWF open data: 0.25°, total sea only (CC BY 4.0).</li>
+            <li>Times are Eastern. The forecast is as of the time under the timeline.</li>
+          </ul>
         </div>
         <div class="hub-ic" data-mode="past" hidden>
           <h3>Reading a past day</h3>
           <ul>
-            <li><b>Pick a day</b> on the strip at the bottom (one bar per day of the month), with the arrows, the date box, or from the month calendar further down the page. Play steps through day by day.</li>
-            <li><b>Offshore color</b> is the Copernicus wave reanalysis (primary swell) during the spot's best 3 hours that day: every 0.4° from New Jersey to Georges Bank, and every 2° (6-hourly) across the rest of the North Atlantic. Streaks move the way that swell traveled.</li>
-            <li><b>On the survey map</b> the color is this page's ray model run on what buoy 44097 measured, the same model the forecast uses there. Tap the water for the modeled height.</li>
-            <li><b>Rays near Fishers</b> are the swell trains the buoy measured at Choc's biggest hour. Turn on <b>Wind arrows</b> under Show for that day's wind at 17 points over the water.</li>
-            <li><b>Bars:</b> the spot's best 3 hours each day. Orange is a good day: Choc's ratings model at 7/10 or better, or at Wilderness 3 ft and up with clean wind. Dots are the wind at the spot's best hours.</li>
+            <li><b>Pick a day:</b> the bars at the bottom, the arrows, the date box, or the calendar further down. Play steps day by day.</li>
+            <li><b>Offshore color:</b> Copernicus reanalysis 1° swell over the spot's best 3 hours (every 0.4° near the coast, 2° across the North Atlantic). Streaks show which way it traveled.</li>
+            <li><b>Survey map:</b> this page's ray model on what buoy 44097 measured. Tap the water for the height.</li>
+            <li><b>Rays near Fishers:</b> the buoy's swells at Choc's biggest hour. <b>Wind arrows</b> (under Show): that day's wind at 17 points.</li>
+            <li><b>Bars:</b> the spot's best 3 hours each day. Orange is a good day: Choc's ratings model 7/10+, or Wilderness 3 ft+ with clean wind. Dots: the wind then.</li>
           </ul>
-          <p class="hub-fine">The forecast and past views share the camera, colors and layers, so switching between them keeps the map exactly where it is. Buoy 44097 gaps are filled from Montauk buoy 44017 (until February 2023). Wind is ECMWF at 17 over-water points (ERA5 for 2016). Contains modified Copernicus Marine Service information.</p>
+          <ul class="hub-fine">
+            <li>Forecast and past share the camera, colors and layers.</li>
+            <li>Buoy 44097 gaps filled from Montauk 44017 (until Feb 2023). Wind: ECMWF at 17 over-water points (ERA5 for 2016).</li>
+            <li>Contains modified Copernicus Marine Service information.</li>
+          </ul>
         </div>
         <div class="hub-ic" data-mode="drop" hidden>
           <h3>Drop a wave</h3>
+          <div id="hubWave" class="hub-wave"></div>
           <ul>
-            <li><b>Tap the ocean</b> to start a wave there, drag the white ring to aim it, then press Play. Tap the map to pause.</li>
-            <li><b>Aim at Choc or Wilderness</b> finds the heading whose ray gets closest to the takeoff peak on your reef map. From some starts no ray gets there, and it says how close the best one comes. <b>At Montauk</b> does the same for Ditch Plains.</li>
-            <li><b>Compare two places:</b> under the map, pick 50 km and press Keep to compare, then aim the same swell somewhere else. The kept wave's sea floor and energy stay on the side view as dashed lines, lined up at the shore.</li>
-            <li><b>White ticks</b> mark each half hour of travel. They bunch up where the wave slows down.</li>
-            <li><b>The sea floor funnels swell into the window.</b> The model's rays that reach Choc start out from anywhere between 62° and 205°, yet all arrive at the reef from between 129° and 157°.</li>
-            <li><b>Power per meter of crest</b> compares the shore with the start. Under 100% the sea floor spread the swell out; over 100% the shoals focused it. From deep water, read it as a rough size: a few percent or a few tens of percent.</li>
-            <li><b>Depth lines:</b> thin ones are 50, 100 and 200 m; dashed ones are 1,000 to 4,000 m.</li>
+            <li><b>Tap the ocean</b> to start a wave, drag the white ring to aim, press Play. Tap the map to pause.</li>
+            <li><b>At Choc, Wilderness, Montauk:</b> the heading that gets closest to the takeoff peak (Ditch Plains at Montauk), or how close the best one gets.</li>
+            <li><b>Compare two places:</b> pick 50 km under the map, press Keep to compare, aim the same swell elsewhere. The kept wave stays dashed.</li>
+            <li><b>White ticks:</b> each half hour of travel. They bunch up where the wave slows.</li>
+            <li><b>Funnel:</b> rays that reach Choc start from 62°–205° but all arrive from 129°–157°.</li>
+            <li><b>Energy per meter of crest:</b> the shore against the start. Under 100% the bottom spread it out, over 100% it focused it. From deep water, a rough size only.</li>
+            <li><b>Depth lines:</b> thin 50, 100 and 200 m; dashed 1,000–4,000 m.</li>
           </ul>
-          <p id="hubWave" class="hub-wave"></p>
-          <details class="hub-more"><summary>How the power is counted</summary><p>A crest of rays 24 km wide, 100 m apart, leaves with your heading. Along the way we count how many pass within a wavelength-wide window of your wave (about 1.1 km at 8 s, 1.5 km at 12 s, 1.8 km at 16 s), since real waves smear out over about that width. At the shore the count is repeated for directions out to ±10° in 2.5° steps, weighted the way the main model spreads the buoy's swell, each centered on the part of the swell that heads for the spot. The likely range is the wider of the ray-counting noise and how much the answer moves between neighboring directions. The height figure adds shallowing, read at 4 m of water.</p></details>
-          <p class="hub-fine">The bending is the same ray tracing as in "How does the model work?": crest speed from depth and period (linear dispersion), and the ray turns toward slower water by Snell's law, step by step. Deep water is NOAA's ETOPO 2022 (about 1 km, smoothed over about 1.2 km, 400 m steps, following the curve of the Earth). On the survey map the ray runs on the same sea floor as the rest of this page, averaged to 64 m and smoothed over about 150 m, in 32 m steps, traced live in your browser. Times are at group speed, the speed wave energy travels. Bottom friction and breaking aren't modeled. The arrival close-up is a 2016 New York State aerial photo with your reef map.</p>
+          <details class="hub-more"><summary>How the energy is counted</summary><ul>
+            <li>A crest of rays 24 km wide, 100 m apart, leaves with your heading.</li>
+            <li>Along the way: rays within a wavelength-wide window of your wave (about 1.1 km at 8 s, 1.5 km at 12 s, 1.8 km at 16 s), since real waves smear out over about that width.</li>
+            <li>At the shore: the count again for directions out to ±10° in 2.5° steps, weighted like the main model's spread, each on the part of the swell headed for the spot.</li>
+            <li>Likely range: the wider of the ray-counting noise and the change between neighboring directions.</li>
+            <li>Height adds shallowing, read at 4 m of water.</li>
+          </ul></details>
+          <ul class="hub-fine">
+            <li>Ray tracing as in "How does the model work?": crest speed from depth and period, turning toward slower water (Snell's law).</li>
+            <li>Deep water: NOAA ETOPO 2022 (about 1 km, smoothed over 1.2 km, 400 m steps on the curved Earth). Survey map: 64 m, smoothed over 150 m, 32 m steps, traced live.</li>
+            <li>Times at group speed, how fast wave energy travels. No bottom friction or breaking.</li>
+            <li>Arrival close-up: 2016 New York State aerial photo with your reef map.</li>
+          </ul>
         </div>
       </div>
       <div class="trip-inset" id="tripInsetBox" hidden><canvas id="tripInset" aria-label="Close-up of where the wave arrives, over a 2016 aerial photo with your reef map"></canvas><button type="button" class="trip-inset-x" id="tripInsetClose" aria-label="Hide the arrival close-up">×</button></div>
@@ -618,13 +643,23 @@ body { margin: 0; }
   </figure>
 <figure class="chart" id="odWrap">
     <h3>What the ocean was doing on <span id="odDay">…</span></h3>
-    <p id="odHint" class="od-hint">This follows the day picked on the map’s Past view or in the calendar above. You can also pick any date in “Check a date” above.</p>
-    <p>Three independent looks at the same day: two buoys that measured it and a wave model that fills in the ocean between them. Each arrow is one swell train in one hour, pointing where it was traveling; higher up means longer period, bigger arrow means bigger swell. The bottom row is what each source says reached Choc.</p>
+    <p id="odHint" class="od-hint">Follows the day picked on the map’s Past view, in the calendar or in “Check a date”.</p>
+    <ul class="tight">
+      <li><b>Rows:</b> two buoys that measured the day, and a wave model filling in the ocean between them.</li>
+      <li><b>Arrows:</b> one swell in one hour, pointing where it traveled. Higher up = longer period, bigger = bigger swell.</li>
+      <li><b>Bottom row:</b> what each source says reached Choc.</li>
+    </ul>
     <div id="odLanes" class="od-lanes"></div>
     <div class="od-map"><canvas id="odMap" aria-label="Map of the model's primary swell offshore at the chosen time"></canvas></div>
     <label class="rl">Map time <input id="odT" type="range" min="0" max="7" step="1" value="4"> <b id="odTl" class="mono"></b></label>
-    <p id="odNote" class="od-note"></p>
-    <figcaption>Buoys: Block Island 44097 (CDIP 154) every hour; Montauk 44017 until it was pulled in February 2023, then the Long Island buoy 44025 (which has gaps in 2024–25). Model: Copernicus Marine global wave reanalysis (WAVERYS, 0.2°) and, after July 2026, its live analysis, every 3 hours, split into primary swell, secondary swell and wind sea. Map color is the model's primary swell height, arrows its direction, longer for longer period. Checked against your surf log, the ray model fed by the Block Island buoy predicts your size ratings best (0.85, against 0.72–0.76 for the model alone and up to 0.82 for blends), so the rest of this page stays on the buoy. Contains modified Copernicus Marine Service information.</figcaption>
+    <div id="odNote" class="od-note"></div>
+    <figcaption><ul class="tight">
+      <li><b>Buoys:</b> Block Island 44097 (CDIP 154), hourly. Montauk 44017 until it was pulled in Feb 2023, then Long Island 44025 (gaps in 2024–25).</li>
+      <li><b>Model:</b> Copernicus Marine wave reanalysis (WAVERYS, 0.2°), its live analysis after July 2026. Every 3 h, split into 1° swell, 2° swell and wind sea.</li>
+      <li><b>Map:</b> color is the model's 1° swell height; arrows its direction, longer for longer period.</li>
+      <li><b>Why the rest of the page uses the buoy:</b> fed by Block Island, the ray model predicts your size ratings best (0.85; the model alone 0.72–0.76; blends up to 0.82).</li>
+      <li>Contains modified Copernicus Marine Service information.</li>
+    </ul></figcaption>
   </figure>
 </section>
 
@@ -1360,7 +1395,6 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   const FT = 3.28084, rad = Math.PI / 180;
   const SPOTNAME = { choc: 'Choc', wild: 'Wilderness' };
   const SPREAD = { swell: 15, secondary: 10, wind: 3, manual: 15, ground: 15, mid: 10 };
-  const TRAIN_NAME = { swell: 'primary swell', secondary: 'secondary swell', wind: 'wind waves', manual: 'swell', ground: 'groundswell', mid: 'swell' };
   let SPOT = 'choc';
 
   // ── model core: response kernels from backward ray tracing (per spot, per period, per offshore degree)
@@ -1399,9 +1433,8 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     list.forEach((q, i) => { q.pct = fl[i]; });
     return list.sort((a, b) => b.share - a.share);
   }
-  const kindName = (T) => (T >= 11 ? 'groundswell' : T >= 8 ? 'swell' : 'wind waves');
   window.CHOC.swell = {
-    comp, shares, kindName,
+    comp, shares,
     // the buoy's swells at the spot's biggest hour that day, with each one's share there; bent = share of Choc's
     // energy that came from outside the 115-158 deg window (no straight path in: it bent around Montauk or Block)
     day(iso, spot) {
@@ -1410,16 +1443,18 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
       if (!list.length) return null;
       return { hr: t[w ? 2 : 0], trains: shares(list), bent: !w && BENT[iso] != null ? BENT[iso] : null };
     },
-    // one line: "58% 17 s SSE (167°), 38% 8 s ESE (109°), 4% the rest"
-    line(trains, max) {
-      const m = max || 3, top = trains.filter((q) => q.pct > 0).slice(0, m), rest = 100 - top.reduce((s, q) => s + q.pct, 0);
-      if (top.length === 1 && rest === 0) { const q = top[0]; return `all from one swell, ${Math.round(q.T)} s from ${comp(q.D)} (${Math.round(q.D)}°)`; }
-      return top.map((q) => `${q.pct}% ${Math.round(q.T)} s ${comp(q.D)} (${Math.round(q.D)}°)`).join(', ') + (rest > 0 ? `, ${rest}% the rest` : '');
+    // The readouts are short lines, one swell each, the way a surf report writes them: "1° 9.1 ft @ 17 s SSE 167°".
+    // 1° is the primary swell (the biggest share of the spot's energy), 2° the secondary, and so on.
+    sw: (q) => `${(+q.ft).toFixed(1)} ft @ ${Math.round(q.T)} s ${comp(q.D)} ${Math.round(q.D)}°`,
+    // [[tag, text]] for a kv list: "9.1 ft @ 17 s SSE 167° → 58% of Choc", then "→ 38%" on the rest
+    rows(trains, max, name) {
+      return trains.filter((q) => q.pct > 0).slice(0, max || 3).map((q, i) => [`${i + 1}°`,
+        `${window.CHOC.swell.sw(q)} → ${q.pct >= 100 ? 'all' : q.pct + '%'}${i === 0 && name ? ' of ' + name : ''}`]);
     },
-    // the phone headline: only the biggest share, "58% from 17 s SSE"
-    brief(trains) { const q = trains[0]; if (!q) return ''; return `${q.pct >= 100 ? 'all' : q.pct + '%'} from ${Math.round(q.T)} s ${comp(q.D)}`; },
-    bentText: (b) => `${b}% of it came from outside the 115–158° window, where there is no straight path to the reef: it bent around Montauk or Block Island to get there`,
+    bentRow: (b) => ['Bent in', `${b}% from outside the 115–158° window`],   // around Montauk or Block Island: no straight path in
   };
+  // a list of short "label value" lines; a row with no value is a small heading over the lines below it
+  window.CHOC.kv = (rows, cls) => `<dl class="kv${cls ? ' ' + cls : ''}">${rows.filter(Boolean).map(([k, v]) => (v == null ? `<dt class="kv-h">${k}</dt>` : `<dt>${k}</dt><dd>${v}</dd>`)).join('')}</dl>`;
   // a swell picked elsewhere on the page (a forecast hour, a remembered day) is shown in Part 1's
   // forward-ray figure: its strongest train
   const state = { trains: null, label: '' };
@@ -1502,30 +1537,35 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
       const [bpk, bdir, bper, ch, wi, chw, wiw, chh, wih] = v;
       const hr = h => h == null ? '' : ` from ${h % 12 || 12}${h < 12 ? 'am' : 'pm'}`;
       const wind = (wd, nm) => wd ? `${window.CHOC.windArrow(wd[0])}${wd[1]} kn from ${wd[0]}° · <span style="color:${wd[2] ? 'var(--offshore)' : 'var(--fg-2)'}">${wd[2] ? 'clean' : 'not clean'} for ${nm}</span>` : '—';
+      // the buoy's spectrum at Choc's biggest hour, split into trains: 1° (primary) is the biggest share of Choc's
+      // energy, 2° the next, each with what reaches Choc and Wilderness
+      const tr = TRAINS[k], list = tr && tr[1].length ? tr[1] : null, hh = tr ? tr[0] : null, kindOf = T => T >= 11 ? 'ground' : T >= 8 ? 'mid' : 'wind';
+      const am = (h) => `${h % 12 || 12}${h < 12 ? 'am' : 'pm'}`;
+      let trs = '';
+      if (list) {
+        const mx = Math.max(...list.map(x => x[0]));
+        const sh = window.CHOC.swell.shares(list.map((x, i) => ({ ft: x[0], T: x[1], D: x[2], at: x[3], i })));
+        trs = `<div class="trs"><div class="trs-h">Swells at ${am(hh)}, Choc's biggest hour</div>` +
+          sh.map((q, n) => { const x = list[q.i];
+            return `<div class="tr"><div class="tr-l"><b>${n + 1}°</b> ${window.CHOC.swell.sw(q)}</div>
+              <div class="tr-bar"><i style="width:${(x[0] / mx * 100).toFixed(0)}%"></i><i class="r" style="width:${(x[3] / mx * 100).toFixed(0)}%"></i></div>
+              <div class="tr-r">→ Choc <b>${x[3]} ft</b> (<b>${q.pct}%</b>) · Wilderness ${x[4]} ft</div></div>`; }).join('') +
+          `<div class="tr-k"><span><i></i> at the buoy</span><span><i class="r"></i> what reaches Choc</span></div></div>`;
+      }
       out.innerHTML = `<table class="dct"><thead><tr><th>Spot</th><th class="num">Modeled best 3 h</th><th>Wind then</th></tr></thead><tbody>
         <tr><td>Choc</td><td class="num"><b>${ch} ft</b>${hr(chh)}</td><td>${wind(chw, 'Choc')}</td></tr>
-        <tr><td>Wilderness</td><td class="num"><b>${wi} ft</b>${hr(wih)}</td><td>${wind(wiw, 'Wilderness')}</td></tr></tbody></table>
-        <p class="mono" style="font-size:.8rem">Buoy at its peak, all swells combined: ${bpk} ft (most energetic period ${bper ?? '—'} s, from ${bdir ?? '—'}°)${bdir != null ? ' · <button type="button" id="dcLoad">See this swell\'s rays</button>' : ''} · <button type="button" id="dcOcean">Show the ocean that day</button></p>`;
+        <tr><td>Wilderness</td><td class="num"><b>${wi} ft</b>${hr(wih)}</td><td>${wind(wiw, 'Wilderness')}</td></tr></tbody></table>` + trs +
+        window.CHOC.kv([list && BENT[k] != null ? window.CHOC.swell.bentRow(BENT[k]) : null,
+          ['Buoy', `${bpk} ft at its peak, all swells${bper != null && bdir != null ? ` (${Math.round(bper)} s, ${bdir}°)` : ''}`]]) +
+        `<p class="dc-go">${bdir != null ? `<button type="button" id="dcLoad">${list && list.length > 1 ? 'See these swells\' rays' : 'See this swell\'s rays'}</button> ` : ''}<button type="button" id="dcOcean">Show the ocean that day</button></p>`;
       const oc = document.getElementById('dcOcean'); if (oc) oc.addEventListener('click', () => { if (window.CHOC.showPast) window.CHOC.showPast(k); });   // the map's Past view: the whole Atlantic that day
-      const tr = TRAINS[k], b = document.getElementById('dcLoad');
-      if (tr && tr[1].length) {
-        // the buoy's spectrum at Choc's biggest hour, split into trains
-        const list = tr[1], hh = tr[0], kindOf = T => T >= 11 ? 'ground' : T >= 8 ? 'mid' : 'wind';
-        const mx = Math.max(...list.map(x => x[0]));
-        b.textContent = list.length > 1 ? 'See these trains\' rays' : 'See this swell\'s rays';
-        const pc = {}; window.CHOC.swell.shares(list.map((x, i) => ({ at: x[3], i }))).forEach((q) => { pc[q.i] = q.pct; });   // each swell's share of Choc's energy
-        b.closest('p').insertAdjacentHTML('beforebegin', `<div class="trs"><div class="trs-h">The buoy at ${hh % 12 || 12}${hh < 12 ? 'am' : 'pm'} (Choc's biggest hour), split into its separate swells</div>` +
-          list.map((x, i) => { const nm = TRAIN_NAME[kindOf(x[1])];
-            return `<div class="tr"><div class="tr-l"><b>${nm[0].toUpperCase() + nm.slice(1)}</b> ${x[0]} ft · ${x[1]} s · from ${compass(x[2])} (${x[2]}°)</div>
-              <div class="tr-bar"><i style="width:${(x[0] / mx * 100).toFixed(0)}%"></i><i class="r" style="width:${(x[3] / mx * 100).toFixed(0)}%"></i></div>
-              <div class="tr-r">→ <b>${x[3]} ft</b> at Choc, <b>${pc[i]}%</b> of its energy · ${x[4]} ft at Wilderness</div></div>`; }).join('') +
-          `<div class="tr-k"><span><i></i> at the buoy</span><span><i class="r"></i> what reaches Choc</span></div>` +
-          (BENT[k] != null ? `<p class="tr-bent">${window.CHOC.swell.bentText(BENT[k])}.</p>` : '') + `</div>`);
-        b.addEventListener('click', () => { state.trains = list.map(x => ({ kind: kindOf(x[1]), h: x[0] / FT, T: x[1], dir: x[2] })); state.label = `${k} ${hh % 12 || 12}${hh < 12 ? 'am' : 'pm'} (buoy)`; compute(); document.getElementById('how-h').scrollIntoView({ behavior: 'smooth' }); });
-      } else if (b) b.addEventListener('click', () => { state.trains = [{ kind: 'manual', h: bpk / FT, T: bper || 9, dir: bdir }]; state.label = `${k} (buoy peak)`; compute(); document.getElementById('how-h').scrollIntoView({ behavior: 'smooth' }); });
+      const b = document.getElementById('dcLoad'); if (!b) return;
+      if (list) b.addEventListener('click', () => { state.trains = list.map(x => ({ kind: kindOf(x[1]), h: x[0] / FT, T: x[1], dir: x[2] })); state.label = `${k} ${am(hh)} (buoy)`; compute(); document.getElementById('how-h').scrollIntoView({ behavior: 'smooth' }); });
+      else b.addEventListener('click', () => { state.trains = [{ kind: 'manual', h: bpk / FT, T: bper || 9, dir: bdir }]; state.label = `${k} (buoy peak)`; compute(); document.getElementById('how-h').scrollIntoView({ behavior: 'smooth' }); });
     };
     inp.addEventListener('change', show); show(); window.CHOC.dcShow = show;
   }
+
 
   // response chart (behind the numbers), follows the spot switch
   function kresp(spot) {
@@ -1708,16 +1748,17 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     const st = stats(T, D);
     const card = spot => {
       const s = st[spot], z = ZONE[spot], pct = Math.round(s.k * 100);
-      const p = s.peel, shape = p == null || s.cnt < 0.5 ? ['—', 'too few rays land to judge the shape'] :
-        p >= 0.5 ? ['peels', `${Math.round(p * 100)}% of what lands meets the bottom at an angle (30°+), so it should peel`] :
-        p >= 0.25 ? ['mixed', `${Math.round(p * 100)}% of what lands meets the bottom at an angle (30°+): some peel, some close out`] :
-        ['closes out', `only ${Math.round(p * 100)}% of what lands meets the bottom at an angle (30°+): mostly square-on, so it tends to close out`];
+      const p = s.peel, shape = p == null || s.cnt < 0.5 ? ['—', 'too few rays land to judge'] :
+        p >= 0.5 ? ['peels', `${Math.round(p * 100)}% meet the bottom at 30°+, so it should peel`] :
+        p >= 0.25 ? ['mixed', `${Math.round(p * 100)}% meet the bottom at 30°+: some peel, some close out`] :
+        ['closes out', `only ${Math.round(p * 100)}% meet the bottom at 30°+: mostly square-on, so it tends to close out`];
       return `<div class="fr-card" style="--zc: rgb(${z.col})"><div class="fr-n">${z.name}</div>
         <div class="fr-row"><div><div class="fr-k">Size</div><div class="fr-big">${pct}%<small> of the buoy's height</small></div></div>
         <div><div class="fr-k">Shape (experimental)</div><div class="fr-big fr-shape">${shape[0]}</div></div></div>
-        <div class="fr-l"><b>${s.cnt.toFixed(0)}</b> rays land in the zone, where open water would send <b>${s.base.toFixed(0)}</b> across a patch that size: <b>${s.ratio.toFixed(2)}×</b> the energy.
-        Height goes with the square root of energy (√${s.ratio.toFixed(2)} = ${Math.sqrt(s.ratio).toFixed(2)}), and waves build ${Math.round((Math.sqrt(s.shoal) - 1) * 100)}% as they slow to 4 m deep: ${Math.sqrt(s.ratio).toFixed(2)} × ${Math.sqrt(s.shoal).toFixed(2)} = <b>${pct}%</b>. So 4 ft at the buoy → <b>${(4 * s.k).toFixed(1)} ft</b>.</div>
-        <div class="fr-l">Shape: ${shape[1]}. This read is experimental: it doesn't yet see swell wrapping around a point (see Wilderness below).</div></div>`;
+        ${window.CHOC.kv([['Rays', `<b>${s.cnt.toFixed(0)}</b> land in the zone, against <b>${s.base.toFixed(0)}</b> in open water: <b>${s.ratio.toFixed(2)}×</b> the energy`],
+          ['Height', `√${s.ratio.toFixed(2)} = ${Math.sqrt(s.ratio).toFixed(2)}, × ${Math.sqrt(s.shoal).toFixed(2)} as it slows to 4 m deep = <b>${pct}%</b>`],
+          ['Example', `4 ft at the buoy → <b>${(4 * s.k).toFixed(1)} ft</b>`], ['Shape', shape[1]]], 'fr-kv')}
+        <div class="fr-l">Shape is experimental: it can't yet see swell wrapping around a point (see Wilderness).</div></div>`;
     };
     out.innerHTML = card('choc') + card('wild');
     document.getElementById('frDirV').textContent = `${D}° ${compass(D)}`; document.getElementById('frPerV').textContent = `${T} s`;
@@ -2367,7 +2408,9 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     const atEnd = S.phase !== 'play' || dd >= r.len - 1e-6, inf = r.pw.info;
     $('tripPowV').textContent = `${Math.round(p * 100)}% of where it started` + (atEnd ? ` · ${inf.hi < 0.9 ? 'the bottom spread it out' : inf.lo > 1.1 ? 'the bottom focused it' : 'about the same as it started'}` : '');
     $('tripPowH').textContent = '';
-    S.detail = `Energy per meter of crest at the shore: ${Math.round(pwAt(r, r.len) * 100)}% of the start (likely ${Math.round(inf.lo * 100)}–${Math.round(inf.hi * 100)}%): rays per ${inf.window} m of crest, ${inf.started} at the start and ${inf.arrived} at the shore, averaged over a ±10° spread of directions. With shallowing, the wave stands ×${hf.toFixed(2)} as tall in 4 m of water as it started` + (size ? `, so a ${size} ft swell at the start arrives at about ${(size * hf).toFixed(1)} ft.` : '.');
+    S.detail = [['Energy', `${Math.round(pwAt(r, r.len) * 100)}% of the start per meter of crest (likely ${Math.round(inf.lo * 100)}–${Math.round(inf.hi * 100)}%)`],
+      ['Height', `×${hf.toFixed(2)} in 4 m of water, with shallowing${size ? ` · ${size} ft → ${(size * hf).toFixed(1)} ft` : ''}`],
+      ['Rays', `${inf.started} per ${inf.window} m of crest at the start, ${inf.arrived} at the shore (±10° spread)`]];
     infoSync();
   }
   function hudSetup() {
@@ -2406,7 +2449,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   }
   function infoSync() {                                      // this wave's numbers, in the info card
     const el = $('hubWave'); if (!el) return;
-    el.textContent = !MAPV() && S.ray && S.ray.pw && S.detail ? (S.turnTxt && S.turnRay === S.ray ? S.turnTxt + ' ' : '') + S.detail : '';
+    el.innerHTML = !MAPV() && S.ray && S.ray.pw && S.detail ? window.CHOC.kv((S.turnTxt && S.turnRay === S.ray ? S.turnTxt : []).concat(S.detail)) : '';
   }
   function doAim(spot) {
     if (!GR.ok) return;
@@ -2545,9 +2588,9 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     const din = fromDeg(headingAt(r, Math.min(r.len, 25), 25)), dlast = fromDeg(headingAt(r, r.len, Math.min(0.6, r.len)));
     const turn = Math.round(((dlast - din + 540) % 360) - 180);
     S.turnRay = r;
-    S.turnTxt = `Landed: ${r.land}, after ${fmtT(tot)} and ${r.km} km. It started out coming from ${Math.round(din)}°.` +
-      (r.res.fine ? ` The sea floor turned it ${Math.abs(turn)}° on the way in, so it reached the shore from ${Math.round(dlast)}°.` : '');
-    S.turnShort = r.res.fine ? `The sea floor turned it ${Math.abs(turn)}°: it reached the shore from ${Math.round(dlast)}°.` : 'It never reached the survey map.';
+    S.turnTxt = [['Landed', `${r.land} · ${fmtT(tot)} · ${r.km} km`],
+      ['From', r.res.fine ? `${Math.round(din)}° at the start → ${Math.round(dlast)}° at the shore (the sea floor turned it ${Math.abs(turn)}°)` : `${Math.round(din)}° · never reached the survey map`]];
+    S.turnShort = r.res.fine ? `Turned ${Math.abs(turn)}° by the sea floor · reaches the shore from ${Math.round(dlast)}°` : 'Never reached the survey map';
     syncButtons(); infoSync();
     setTimeout(() => { if (S.phase === 'done') toSetup(true); }, 2500);
   }
@@ -2720,10 +2763,10 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     $('tripPhase').textContent = `${fcWhen(t)} · ${SPOT[sp].name} ${c == null ? '–' : c.toFixed(1) + ' ft'}`;
     // GFS splits the sea into swells: say what share of the spot's energy each brings. ECMWF gives only the total sea.
     const mix = FC.model === 'gfs' ? window.CHOC.swell.shares(g.trains.map((t) => ({ ft: t.ft, T: t.T, D: t.D, at: t[sp] || 0 }))) : null;
-    const nar = cw < 560, src = mix && mix.length ? (nar ? ` · ${SPOT[sp].name}: ${window.CHOC.swell.brief(mix)}` : ` · ${SPOT[sp].name}'s swell: ${window.CHOC.swell.line(mix, 2)}`)
-      : e ? ` · total sea ${Math.round(e.T)} s from ${compass(e.D)}${nar ? '' : ` (${Math.round(e.D)}°)`}` : '';
-    $('tripLine').innerHTML = `GFS ${g[sp].toFixed(1)} · ECMWF ${e && e[sp] != null ? e[sp].toFixed(1) : '–'} ft` + src +
-      ` · wind ${window.CHOC.windArrow(g.wind[1])}${g.wind[0]} kn ${compass(g.wind[1])}, ${windWord(wk)}`;
+    const nar = cw < 560, sw = mix && mix.length ? window.CHOC.swell.rows(mix, nar ? 1 : 2, nar ? null : SPOT[sp].name).map(([t, v]) => `${t} ${v}`)
+      : e && e.hs != null ? [`Total sea ${window.CHOC.swell.sw({ ft: e.hs, T: e.T, D: e.D })}`] : [];
+    const wl = `Wind ${window.CHOC.windArrow(g.wind[1])}${g.wind[0]} kn ${compass(g.wind[1])}, ${windWord(wk)}`;
+    $('tripLine').innerHTML = sw.concat([wl + (nar ? '' : ` · GFS ${g[sp].toFixed(1)} · ECMWF ${e && e[sp] != null ? e[sp].toFixed(1) : '–'} ft`)]).join('<br>');
     $('tripPow').hidden = true;
   }
 
@@ -2863,16 +2906,17 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
       else {
         const sp = FC.spot, tgt = SPOT[sp].pt, nm = SPOT[sp].name;
         const toC = gcBrg([lon, lat], tgt), off = Math.abs((((s[2] + 180) % 360) - toC + 540) % 360 - 180), km = gcKm([lon, lat], tgt);
-        const lines = [`${(s[0] * FTm).toFixed(1)} ft · ${Math.round(s[1])} s from ${compass(s[2])}`];
-        if (FC.dot && all && (Math.abs(((all[2] - s[2]) + 540) % 360 - 180) > 20 || Math.abs(all[1] - s[1]) > 1.5)) lines.push(`One of the swells here; the biggest sea is ${(all[0] * FTm).toFixed(1)} ft, ${Math.round(all[1])} s from ${compass(all[2])}`);
+        // short lines, a surf report's way: the swell, then whether (and when) it reaches the spot
+        const sw = (q) => `${(q[0] * FTm).toFixed(1)} ft @ ${Math.round(q[1])} s ${compass(q[2])}`, lines = [sw(s)];
+        if (FC.dot && all && (Math.abs(((all[2] - s[2]) + 540) % 360 - 180) > 20 || Math.abs(all[1] - s[1]) > 1.5)) lines.push(`Biggest sea here: ${sw(all)}`);
         if (FC.fan) {                                   // the traced rays: where they land, and when
           const F = FC.fan, m = F.rays.find((r) => r.off === 0);
-          if (F.searching) lines.push(`Tracing the ray into ${nm}…`);
-          else if (F.hit) { lines.push(`Ray into ${nm} (orange) arrives ~${fcWhen(F.t0 + F.hit.mins * 6e4)}`); lines.push(`Gray: the rest of its spread, 1° apart`); }
-          else { lines.push(`No ray in this swell's spread reaches ${nm}`); lines.push(m.land === 'out to sea' ? 'It runs out to sea' : `The sea floor bends it ${/^(near|on|off)/.test(m.land) ? '' : 'to '}${m.land}`); }
+          if (F.searching) lines.push(`Tracing it into ${nm}…`);
+          else if (F.hit) { lines.push(`Reaches ${nm} ~${fcWhen(F.t0 + F.hit.mins * 6e4)} (orange)`); lines.push('Gray: its spread, 1° apart'); }
+          else lines.push(`Misses ${nm}: ${m.land === 'out to sea' ? 'runs out to sea' : `bends ${/^(near|on|off)/.test(m.land) ? '' : 'to '}${m.land}`}`);
         }
         else if (off <= 10 && s[1] >= 7 && reefSees(s[1], gcBrg(tgt, [lon, lat]), sp) >= 0.12) lines.push(`Headed for ${nm} · arrives ~${fcWhen(t0 + km * 1000 / (G * s[1] / (4 * Math.PI)) * 1000)}`);
-        else lines.push(off <= 10 ? `Headed our way, but ${nm}'s reef is blind to that angle` : `Not headed for ${nm} (${Math.round(off)}° off)`);
+        else lines.push(off <= 10 ? `Headed our way · ${nm}'s reef can't see that angle` : `Not headed for ${nm} (${Math.round(off)}° off)`);
         pill(x, y, lines);
       }
     }
@@ -3336,9 +3380,12 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     const x = DAYS[CST.idx], sp = FC.spot, ft = pastFt(sp), w = pastWind(CST.idx, sp);
     $('tripPhase').textContent = `${dateLong(x)} · ${SPOT[sp].name} ${ft == null ? '–' : ft.toFixed(1) + ' ft'}`;
     const mx = window.CHOC.swell && window.CHOC.swell.day(x.iso, sp);   // the buoy's height is all its swells together: say what each brought
-    const SW = window.CHOC.swell, nar = cw < 560;            // a phone gets only the biggest share, so the headline stays two lines
-    $('tripLine').innerHTML = (x.hs != null ? `Buoy ${x.hs.toFixed(1)} ft, all swells` : 'No buoy reading') + (mx ? (nar ? ` · ${SPOT[sp].name}: ${SW.brief(mx.trains)}` : ` · ${SPOT[sp].name}'s swell: ${SW.line(mx.trains, 2)}`) : '') +
-      (w ? ` · wind ${window.CHOC.windArrow(w[1])}${Math.round(w[0])} kn ${compass(w[1])}, ${windWord(windKind(w, sp))}` : '') + (PS.bestH != null ? ` · best around ${h12((PS.bestH + 1) % 24)}` : '');
+    const SW = window.CHOC.swell, nar = cw < 560;            // a phone gets the primary swell only, so the headline stays two lines
+    const buoy = x.hs != null ? `Buoy ${x.hs.toFixed(1)} ft, all swells` : 'No buoy reading';
+    const lines = mx ? SW.rows(mx.trains, nar ? 1 : 2, nar ? null : SPOT[sp].name).map(([t, v]) => `${t} ${v}`) : [buoy];
+    lines.push([w ? `Wind ${window.CHOC.windArrow(w[1])}${Math.round(w[0])} kn ${compass(w[1])}, ${windWord(windKind(w, sp))}` : '',
+      PS.bestH != null ? `best ~${h12((PS.bestH + 1) % 24)}` : '', mx && !nar ? buoy : ''].filter(Boolean).join(' · '));
+    $('tripLine').innerHTML = lines.filter(Boolean).join('<br>');
     $('tripPow').hidden = true;
   }
   // a good day: Choc's ratings model at 7/10 or better (your log's scale); Wilderness has no ratings,
@@ -3405,7 +3452,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     const [lon, lat] = FC.pick, x = X(lon), y = Y(lon, lat), m = MODEL.heightAt(lon, lat), s = pastAt(lon, lat);
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 3, 0, 7); ctx.fill();
     if (m && m.h >= 0) pill(x, y, [`${m.h.toFixed(1)} ft modeled`, `${Math.round(m.depth)} m deep · from buoy 44097`]);
-    else if (s) pill(x, y, [`${(s[0] * FTm).toFixed(1)} ft · ${Math.round(s[1])} s from ${compass(s[2])}`, 'Copernicus model, primary swell']);
+    else if (s) pill(x, y, [`1° ${(s[0] * FTm).toFixed(1)} ft @ ${Math.round(s[1])} s ${compass(s[2])}`, 'Copernicus model']);
     else pill(x, y, ['No data here']);
   }
   window.CHOC.onDay((i) => { if (S.phase === 'past') setPast(i); });
@@ -4179,9 +4226,12 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     slider.oninput = paint; host._paint = paint; paint();
     // summary at Choc's best hour
     const pick = best != null ? hours.find((h) => h.h === best + 1) || hours.find((h) => h.h === best) : null;
-    const desc = (trs) => trs.filter((q) => q[0] >= 0.5).slice().sort((a, b) => b[0] - a[0]).slice(0, 3).map((q) => `${q[0]} ft ${q[1]} s from ${compass(q[2])}`).join(' + ') || 'flat';
+    // each source's swells, biggest first, one line per source: "1° 8.1 ft @ 14 s SSE · 2° 7.0 ft @ 6 s NE"
+    const desc = (trs) => trs.filter((q) => q[0] >= 0.5).slice().sort((a, b) => b[0] - a[0]).slice(0, 3).map((q, i) => `${i + 1}° ${(+q[0]).toFixed(1)} ft @ ${Math.round(q[1])} s ${compass(q[2])}`).join(' · ') || 'flat';
     const nearest3 = pick ? wmRows.reduce((a, r) => (!a || Math.abs(r.h - pick.h) < Math.abs(a.h - pick.h) ? r : a), null) : null;
-    document.getElementById('odNote').innerHTML = pick ? `<b>Around ${fmtH(pick.h)}</b> (Choc's best hours): Block Island ${bi[pick.utc] ? desc(bi[pick.utc]) : '—'} · ${ndbcSt === '44017' ? 'Montauk' : 'Long Island'} ${nb[pick.utc] ? desc(nb[pick.utc]) : '—'} · model ${nearest3 ? desc(nearest3.trains) : '—'}.` : '';
+    document.getElementById('odNote').innerHTML = pick ? window.CHOC.kv([[`Around ${fmtH(pick.h)}, Choc's best hours`, null],
+      ['Block Island', bi[pick.utc] ? desc(bi[pick.utc]) : '—'], [ndbcSt === '44017' ? 'Montauk' : 'Long Island', nb[pick.utc] ? desc(nb[pick.utc]) : '—'],
+      ['Model', nearest3 ? desc(nearest3.trains) : '—']]) : '';
   }
   load('ocean/atl_meta.json').then(async (m) => { const [im, mask] = await Promise.all([img('ocean/atlantic.jpg'), img('ocean/water_mask.png')]); if (m && im) { atl = { meta: m, im, mask }; host._paint && host._paint(); } });
   new ResizeObserver(() => host._paint && host._paint()).observe(cv);
@@ -4358,22 +4408,19 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
       return `<div class="dec-log">${head}${note}${pics}</div>`;
     }).join('');
   }
-  // where Choc's swell came from that day: each of the buoy's swells and its share of the energy reaching the reef
-  function mixHtml(iso) {
-    const S = window.CHOC.swell, mx = S && S.day(iso, 'choc'); if (!mx) return '';
-    const h = mx.hr % 12 || 12, ap = mx.hr < 12 ? 'am' : 'pm';
-    return `<div class="dec-mix">Where Choc's swell came from at its biggest hour (${h}${ap}): ${mx.trains.filter((q) => q.pct > 0).map((q) => `<b>${q.pct}%</b> from ${S.kindName(q.T)} of ${q.ft} ft at ${Math.round(q.T)} s from ${compass(q.D)} (${Math.round(q.D)}°)`).join(' · ')}.` +
-      (mx.bent != null ? ` ${S.bentText(mx.bent)}.` : '') + '</div>';
-  }
+  // the chosen day as short lines: the spots, each swell (1° primary = the biggest share of Choc's energy, 2° the
+  // next) at Choc's biggest hour, how much bent in from outside the window, the wind, the buoy
   function day() {                                         // the chosen day, if it falls in the month on show
     const box = document.getElementById('decDay'); if (!box) return;
     const x = D[st.idx]; if (!x || key(x.y, x.m) !== sel) { box.innerHTML = '<p>Tap a day for its details.</p>'; return; }
-    const dl = st.daylight, v = DAYS2[x.iso], w = v && v[5], ww = v && v[6];
-    const wind = (q, nm) => (q && q[1] != null ? `${window.CHOC.windArrow(q[0])}${q[1]} kn from ${compass(q[0])} <span class="${q[2] ? 'ok' : ''}">${q[2] ? 'clean' : 'not clean'} at ${nm}</span>` : '');
+    const dl = st.daylight, v = DAYS2[x.iso], w = v && v[5], ww = v && v[6], SW = window.CHOC.swell, mx = SW && SW.day(x.iso, 'choc');
+    const wind = (q, nm) => (q && q[1] != null ? `${nm} ${window.CHOC.windArrow(q[0])}${q[1]} kn ${compass(q[0])}, <span class="${q[2] ? 'ok' : ''}">${q[2] ? 'clean' : 'not clean'}</span>` : '');
+    const winds = [wind(w, 'Choc'), wind(ww, 'Wilderness')].filter(Boolean).join(' · ');
     box.innerHTML = `<div><b>${new Date(Date.UTC(x.y, x.m - 1, x.d, 12)).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</b></div>
-      <div>Choc <b>${x.mh[dl].toFixed(1)} ft</b>${v && v[4] != null ? ` · Wilderness <b>${v[4].toFixed(1)} ft</b>` : ''} · buoy ${x.hs.toFixed(1)} ft at its peak, all swells combined${x.s[dl] != null ? ` · ratings model <b>${x.s[dl].toFixed(1)}/10</b>` : ''}</div>
-      <div class="dec-w">${[wind(w, 'Choc'), wind(ww, 'Wilderness')].filter(Boolean).join(' · ')}</div>
-      ${mixHtml(x.iso)}
+      <div>Choc <b>${x.mh[dl].toFixed(1)} ft</b>${v && v[4] != null ? ` · Wilderness <b>${v[4].toFixed(1)} ft</b>` : ''}${x.s[dl] != null ? ` · ratings model <b>${x.s[dl].toFixed(1)}/10</b>` : ''}</div>
+      ${window.CHOC.kv([mx ? [`Swells at ${mx.hr % 12 || 12}${mx.hr < 12 ? 'am' : 'pm'}, Choc's biggest hour`, null] : null, ...(mx ? SW.rows(mx.trains, 3, 'Choc') : []),
+        mx && mx.bent != null ? SW.bentRow(mx.bent) : null, winds ? ['Wind', `<span class="dec-w">${winds}</span>`] : null,
+        ['Buoy', `${x.hs.toFixed(1)} ft at its peak, all swells`]], 'dec-kv')}
       <button type="button" id="decShow" class="dec-go">Open this day on the map</button>
       ${PH.log[x.iso] ? sessions(PH.log[x.iso], x.s[dl]) : ''}`;
     document.getElementById('decShow').addEventListener('click', () => window.CHOC.showPast(x.iso));

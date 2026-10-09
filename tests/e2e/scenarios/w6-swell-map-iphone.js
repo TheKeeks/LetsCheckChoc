@@ -29,12 +29,12 @@ module.exports = {
     });
     log(JSON.stringify(r));
     assert.deepEqual(r, { pinch: true, gesture: true, dblTapSecond: true, panelMove: false, buttonTaps: false }, 'page zoom blocked over the map only');
-    // On a phone the map's headline names only the biggest swell's share of Choc, so it stays two lines and clear of the map labels.
+    // On a phone the map's headline names only the primary swell (1°) and the wind, so it stays two lines and clear of the map labels.
     await page.evaluate(() => window.CHOC.showPast('2025-08-22'));
     await page.waitForTimeout(800);
-    const hud = await page.$eval('#tripLine', n => n.textContent.replace(/\s+/g, ' '));
-    log(hud);
-    assert.match(hud, /all swells · Choc: 58% from 17 s SSE · wind/, 'phone headline: the biggest share only');
+    const hud = await page.$eval('#tripLine', n => n.innerText.replace(/[ \t]+/g, ' '));
+    log(hud.replace(/\n/g, ' | '));
+    assert.match(hud, /^1° 9\.1 ft @ 17 s SSE 167° → 58%\nWind \d+ kn N, clean · best ~3am$/, 'phone headline: the primary swell, then the wind');
     assert.ok(await page.$eval('#tripLine', n => n.getBoundingClientRect().height < 3 * parseFloat(getComputedStyle(n).lineHeight || 20)), 'headline fits in two lines');
     assert.deepEqual(errors, [], 'no page errors');
   }

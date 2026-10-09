@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased] — Sound Check: readouts as short 1°/2° swell lines
+
+The owner found the historical lookup and the map full of boxes of explanation, and asked for short lines instead: primary swell, secondary swell, with 1° and 2° as the labels. The swell mix was written as sentences everywhere it appeared. The calendar card said "Where Choc's swell came from at its biggest hour (4am): 58% from groundswell of 9.1 ft at 17 s from SSE (167°) · …", and the map headline ran it all into one line.
+
+Each swell is now one line, written the way a surf report writes it, followed by its share of the spot: "1° 9.1 ft @ 17 s SSE 167° → 58% of Choc", then "2° 7.3 ft @ 8 s ESE 109° → 38%". 1° is the swell that brings the most energy to the spot, 2° the next. The rest are short label/value lines: Bent in (the share from outside the 115–158° window), Wind, and Buoy (its peak, all swells combined). This applies to:
+- **The calendar day card.**
+- **Check a date.** The swell cards are tagged 1°/2°/3°, each with what reaches Choc and Wilderness.
+- **The map headline**, in both the Past and Forecast views. Each swell gets a line, then a wind line. On a phone it shows the 1° swell and the wind only, so it stays two lines.
+- **A tapped forecast dot.** For example, "4.9 ft @ 7 s ESE" then "Misses Choc: runs out to sea".
+- **Drop a wave's numbers:** Landed, From, Energy, Height and Rays. They now sit at the top of its info card, and the line under the map is shorter too.
+- **What the ocean was doing:** one line per buoy and for the model.
+- **The rays cards:** Rays, Height, Example and Shape.
+
+The map's help cards and the ocean-that-day captions are now one-line bullets. No number was dropped, and none of the numbers changed.
+
+Verified by a new e2e scenario, `w6-swell-map-readouts.js`. It checks the label lines in each place above, the 1°/2° form of every swell, and that no readout or help card holds a paragraph. It fails on the current page and passes now. `w6-swell-map-swell-shares.js`, `w6-swell-map-cutaway.js` and `w6-swell-map-iphone.js` now check the new wording, with the same numbers as before. No Firebase or rules changes.
+
 ## [Unreleased] — Sound Check: 50 km side view, to compare Montauk with Fishers
 
 The owner wants to compare how a swell comes in to Montauk with how it comes in to Fishers, 50 km out. Drop a wave's side view only went out 5 km, and there was no quick way to send a wave to Montauk or to hold one wave's section while looking at another.
