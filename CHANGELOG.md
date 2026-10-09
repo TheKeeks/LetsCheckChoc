@@ -1,5 +1,41 @@
 # Changelog
 
+## [Unreleased] — Fishers Bracelet: export the plans after changing the settings, place names stay off
+
+The owner wants to export the jeweller's plans from the site itself, after changing the settings, and wants place names off by default.
+
+The plans are built from the design as it is at the moment of the tap. A new "Export plans" button on the 3D view saves the PDF without scrolling. The plans section now sits right under the spec, with Download PDF, Download drawing (SVG) and Open the plans page. On an iPad or iPhone, a "Share PDF" button opens the share sheet, so the PDF can go straight to the jeweller by Mail, Messages or WhatsApp, or to Files. The plans page has the same Share button. The PDF is made and handed over within the same tap, which iPad Safari needs before it allows a download or the share sheet.
+
+Place names start off on every visit, even when the browser brings a ticked box back after a reload or Back.
+
+The 3D view now redraws only when something changes: a drag, a slider, a camera move, the trace or the turntable. That spares the iPad's battery and keeps the software-drawn 3D used in testing responsive.
+
+Verified by `npm test` (206 pass). `tests/e2e/scenarios/bracelet-designer.js` now also changes the island length, the wire and the metal, then exports from the button on the 3D view and from the plans section. It checks that the PDF and the drawing carry the changed design and that the share sheet gets the PDF. It also ticks the place names, reloads, and checks they are off again. In this session one run passed those checks; the next stalled on a click on the 3/4 camera button after the trace. That still needs a look.
+
+## [Unreleased] — Fishers Bracelet: closed East End, ball clasp on North Hill, flat views and Spanish plans for the jeweller
+
+The owner asked for a round of changes to the bracelet, all made here.
+
+**The East End (Wicopesset end) is now closed.** Before, the wire started a few millimetres along the north shore and left a gap at the tip. Now the south shore comes back through the East End tip itself, and the wire's own start meets it there end-on: one soldered joint, one wire thick, with the start's rounded end set into the side of the passing wire. The two wires never run side by side, so nothing is doubled up. From the joint, the same wire carries straight on into the circle. The "free end" slider is gone.
+
+**The clasp is a small ball sitting on North Hill.** The circle comes up from under the wrist, rises over the outline wire at North Hill and ends in a ball 1.4 times the wire's thickness (4.2 mm on 3 mm wire). The ball sits on top of the outline, a little inside the island, where the pull of the circle holds it. The ball is counted as wire in the length, weight and cost. The camera button "Hook" is now "Clasp", and the slider is now "Where the ball sits" (North Hill, Silver Eel or Race Point).
+
+**Fewer marks on the model.** The red touch-point circles are gone from the 3D view and the flat pattern, along with their checkbox. The spec says in words where to solder: the East End joint, plus the places where the outline touches itself. Place names start switched off. Turned on, they show only East End, North Hill, Silver Eel and Race Point; Chocomount and Wilderness are no longer labelled, in the model or in the trace captions.
+
+**Flat views.** A new "Flat" camera button shows the whole piece laid flat on the stage, to scale, as it is bent before the tail wraps round the wrist: the island, the straight tail and the ball, with the joint and North Hill marked. "Trace the wire" now draws on the flat view too (and on the panel's flat pattern), with the captions following the route.
+
+**Plans for the jeweller, in Spanish.** A new page, `bracelet/jeweler.html`, opens from the designer with the current design and gives:
+- page 1: a real-size (1:1) flat drawing on US Letter landscape, with the sizes, a 50 mm scale bar to check the print, a spec table and a 1:1 side view of the wrapped bracelet;
+- page 2: how to make it, step by step: anneal; bend the north shore, then the south shore; solder the T joint at the East End without doubling; curve it on a 50.5 mm bracelet mandrel; ball the end;
+- a note asking the jeweller for a price and lead time.
+
+The page can download the plans as a PDF or as an SVG drawing, in Spanish or English. The designer has the same downloads under "For the jeweller". Both build the files from the design on screen (`bracelet/plans.js`, with jsPDF vendored), so they always match it. The standard design's plans are committed as `bracelet/plans/plano-pulsera-fishers.pdf` and `.svg`. `scripts/bracelet_plans.js` regenerates them, byte for byte.
+
+Verified by:
+- `tests/unit/bracelet-geometry.test.js`, rewritten for the new route. It checks the joint: the start touches the passing wire and they never run side by side beyond two wire widths, for 2, 3 and 4 mm wire. It checks the ball rests on the outline wire, clear of the skin, with the clasp wire never cutting through the outline. And it checks the flat piece is as long as the wrapped wire.
+- A new `tests/unit/bracelet-plans.test.js`. It checks the drawing is 1:1 on Letter landscape, the Spanish labels and steps (in making order, without Chocomount or Wilderness), the note to the jeweller and the two-page PDF, and fails if the committed PDF or SVG drift from the code.
+- `tests/e2e/scenarios/bracelet-designer.js`. It checks place names start off and the label set, that the touch-point toggle is gone, the Flat view, and the trace on the Flat view in route order. It also downloads the PDF and SVG, and opens the plans page with a changed design in Spanish and English. Screenshots of the clasp, the flat view, the mid-trace flat view and the plans page go to the CI artifacts.
+
 ## [Unreleased] — Sound Check: the model-comparison caption quotes the ratings model's current 63%
 
 Under the table that compares the model with simpler measures, the caption said that feeding the model into the ratings model "lifts the share of your size rating explained to 61%". The ratings panel further up shows 0.63, because it reads the saved results of the current model. The 61% had been typed in by hand from an older version.

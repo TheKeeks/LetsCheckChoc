@@ -1,0 +1,213 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plano para el joyero</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,500&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one column, a printable Letter-landscape sheet on a bench-top ground, the steps and the note to the jeweller below it. */
+:root {
+  --bg: #e7ebee;
+  --panel: #f5f7f8;
+  --ink: #16212b;
+  --muted: #5b6975;
+  --line: #d2d9de;
+  --gold: #946414;
+  --gold-hi: #d4a23f;
+  --ok: #2d7650;
+  --f-display: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
+  --f-ui: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #0a1117; --panel: #0f1922; --ink: #e5eaed; --muted: #8b9aa6; --line: #22313d; --gold: #e0b155; --gold-hi: #f2cb76; --ok: #6ccb97; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #0a1117; --panel: #0f1922; --ink: #e5eaed; --muted: #8b9aa6; --line: #22313d; --gold: #e0b155; --gold-hi: #f2cb76; --ok: #6ccb97; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--f-ui); -webkit-font-smoothing: antialiased; }
+[hidden] { display: none !important; }
+button, a { font: inherit; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-block: 18px 40px; padding-inline: 16px; display: grid; gap: 22px; }
+.bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; }
+.bar a.back { color: var(--muted); text-decoration: none; font-size: 14px; }
+h1 { font: 600 34px/1.05 var(--f-display); margin: 4px 0 0; text-wrap: balance; }
+h1 em { font-style: italic; font-weight: 500; color: var(--gold); }
+h2 { margin: 0 0 10px; font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.lang { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--panel); }
+.lang button { border: 0; background: transparent; padding: 6px 12px; border-radius: 999px; cursor: pointer; color: var(--muted); font-weight: 500; font-size: 13px; }
+.lang button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 9px 15px; cursor: pointer; font-size: 14px; font-weight: 600; }
+.btn.gold { border-color: transparent; background: var(--gold-hi); color: #1c1407; }
+#msgOut { font-size: 13px; color: var(--ok); }
+.paper { background: #fff; border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,.12), 0 8px 28px rgba(0,0,0,.10); overflow: hidden; max-width: 100%; }
+.paper svg { display: block; width: 100%; height: auto; }
+.scroll { overflow-x: auto; }
+.note { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+.cols { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; min-width: 0; }
+ol.steps { margin: 0; padding-left: 1.4em; display: grid; gap: 10px; }
+ol.steps li { padding-left: 4px; max-width: 68ch; }
+ol.steps li::marker { font-weight: 600; color: var(--gold); }
+dl.spec { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; font-size: 14px; }
+dl.spec dt { color: var(--muted); }
+dl.spec dd { margin: 0; font-variant-numeric: tabular-nums; }
+#message { width: 100%; min-height: 230px; font: 14px/1.5 var(--f-ui); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; resize: vertical; }
+@media (max-width: 760px) { .cols { grid-template-columns: 1fr; } h1 { font-size: 28px; } }
+@page { size: letter landscape; margin: 0; }
+@media print {
+  body { background: #fff; color: #000; }
+  .wrap { max-width: none; padding: 0; display: block; }
+  .bar, .actions, .no-print, .note.screen { display: none !important; }
+  .paper { box-shadow: none; border-radius: 0; width: 279.4mm; height: 215.9mm; }
+  .paper svg { width: 279.4mm; height: 215.9mm; }
+  .cols { display: block; break-before: page; padding: 12mm; }
+  .card { border: 0; background: #fff; padding: 0 0 8mm; }
+}
+</style>
+
+<div class="wrap">
+  <header class="bar">
+    <div>
+      <a class="back" id="back" href="index.html">&larr; <span data-t="back">Volver al diseño</span></a>
+      <h1 data-t="title">Plano para el <em>joyero</em></h1>
+    </div>
+    <div class="lang" role="group" aria-label="Idioma / Language">
+      <button type="button" data-lang="es" aria-pressed="true">Español</button>
+      <button type="button" data-lang="en" aria-pressed="false">English</button>
+    </div>
+  </header>
+
+  <div class="actions">
+    <button type="button" class="btn gold" id="pdf" data-t="pdf">Descargar PDF</button>
+    <button type="button" class="btn" id="share" data-t="share" hidden>Compartir PDF</button>
+    <button type="button" class="btn" id="svg" data-t="svg">Descargar dibujo (SVG)</button>
+    <button type="button" class="btn" id="print" data-t="print">Imprimir</button>
+    <span id="msgOut" role="status"></span>
+  </div>
+
+  <section aria-labelledby="sheetH">
+    <h2 id="sheetH" data-t="sheetH">Página 1 · plano a escala real</h2>
+    <div class="scroll"><div class="paper" id="sheet"></div></div>
+    <p class="note screen" data-t="scaleNote">Para que salga a escala real, imprima o abra el PDF al 100 % y compruebe que la barra de escala mide 50 mm.</p>
+  </section>
+
+  <div class="cols">
+    <section class="card" aria-labelledby="stepsH">
+      <h2 id="stepsH" data-t="stepsH">Página 2 · cómo hacerla</h2>
+      <ol class="steps" id="steps"></ol>
+    </section>
+    <div style="display:grid;gap:22px;min-width:0">
+      <section class="card" aria-labelledby="specH">
+        <h2 id="specH" data-t="specH">Datos</h2>
+        <dl class="spec" id="spec"></dl>
+      </section>
+      <section class="card no-print" aria-labelledby="msgH">
+        <h2 id="msgH" data-t="msgH">Mensaje para el joyero</h2>
+        <textarea id="message" readonly aria-labelledby="msgH"></textarea>
+        <div class="actions" style="margin-top:10px">
+          <button type="button" class="btn" id="copyMsg" data-t="copy">Copiar mensaje</button>
+        </div>
+        <p class="note" data-t="msgNote">Envíelo junto con el PDF para pedir precio y plazo.</p>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script src="fishers-outline.js"></script>
+<script src="geometry.js"></script>
+<script src="plans.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  var G = window.BraceletGeom, P = window.BraceletPlans;
+  var UI = {
+    es: { back: 'Volver al diseño', title: 'Plano para el <em>joyero</em>', pdf: 'Descargar PDF', share: 'Compartir PDF', shared: 'Compartido: ', svg: 'Descargar dibujo (SVG)', print: 'Imprimir',
+      sheetH: 'Página 1 · plano a escala real', scaleNote: 'Para que salga a escala real, imprima o abra el PDF al 100 % y compruebe que la barra de escala mide 50 mm.',
+      stepsH: 'Página 2 · cómo hacerla', specH: 'Datos', msgH: 'Mensaje para el joyero', copy: 'Copiar mensaje', msgNote: 'Envíelo junto con el PDF para pedir precio y plazo.',
+      copied: 'Mensaje copiado.', select: 'Seleccione el texto y cópielo.', saved: 'Guardado: ', down: 'Descargando: ', declined: 'No se guardó.', cant: 'Aquí no se pueden guardar archivos.', docTitle: 'Plano para el joyero' },
+    en: { back: 'Back to the design', title: 'Plans for the <em>jeweller</em>', pdf: 'Download PDF', share: 'Share PDF', shared: 'Shared: ', svg: 'Download drawing (SVG)', print: 'Print',
+      sheetH: 'Page 1 · real-size drawing', scaleNote: 'For real size, print or open the PDF at 100 % and check the scale bar measures 50 mm.',
+      stepsH: 'Page 2 · how to make it', specH: 'Spec', msgH: 'Note to the jeweller', copy: 'Copy note', msgNote: 'Send it with the PDF to ask for a price and lead time.',
+      copied: 'Note copied.', select: 'Select the text and copy it.', saved: 'Saved: ', down: 'Downloading: ', declined: 'Not saved.', cant: 'This view can’t save files.', docTitle: 'Plans for the jeweller' }
+  };
+
+  // The design: from the designer's link (#d=…), else what the designer last
+  // saved in this browser, else the standard design.
+  function design() {
+    var m = /[#&]d=([^&]+)/.exec(location.hash || '');
+    if (m) { try { return JSON.parse(decodeURIComponent(m[1])); } catch (e) { /* fall through */ } }
+    try { return JSON.parse(localStorage.getItem('fishers-bracelet:v1') || 'null') || {}; } catch (e) { return {}; }
+  }
+  var params = G.normalize(design());
+  var model = G.build(params);
+  var lang = 'es';
+  try { if (localStorage.getItem('fishers-bracelet:plans-lang') === 'en') lang = 'en'; } catch (e) { /* default */ }
+
+  function render() {
+    var t = UI[lang];
+    document.documentElement.lang = lang;
+    document.title = t.docTitle;
+    document.querySelectorAll('[data-t]').forEach(function (el) {
+      var k = el.getAttribute('data-t');
+      if (k === 'title') el.innerHTML = t.title; else el.textContent = t[k];
+    });
+    document.querySelectorAll('[data-lang]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.lang === lang)); });
+    document.getElementById('sheet').innerHTML = P.svg(model, lang);
+    var ol = document.getElementById('steps');
+    ol.textContent = '';
+    P.steps(model, lang).forEach(function (s) { var li = document.createElement('li'); li.textContent = s; ol.appendChild(li); });
+    var dl = document.getElementById('spec');
+    dl.textContent = '';
+    P.specRows(model, lang).forEach(function (row) {
+      var dt = document.createElement('dt'), dd = document.createElement('dd');
+      dt.textContent = row[0];
+      dd.textContent = row[1];
+      dl.appendChild(dt);
+      dl.appendChild(dd);
+    });
+    document.getElementById('message').value = P.message(model, lang);
+    document.getElementById('msgOut').textContent = '';
+  }
+
+  document.querySelectorAll('[data-lang]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      lang = b.dataset.lang;
+      try { localStorage.setItem('fishers-bracelet:plans-lang', lang); } catch (e) { /* per-visit only */ }
+      render();
+    });
+  });
+
+  function out(s) { document.getElementById('msgOut').textContent = s; }
+  function ok(name) { return function (how) { window.JEWELER.lastDownload = name; out((how === 'saved' ? UI[lang].saved : UI[lang].down) + name); }; }
+  function fail(e) { out(e && e.code === 'declined' ? UI[lang].declined : e && e.name === 'AbortError' ? '' : UI[lang].cant); }
+  function fileName(base) { return lang === 'es' ? base : base.replace('plano-pulsera-fishers', 'fishers-bracelet-plans'); }
+  document.getElementById('pdf').addEventListener('click', function () {
+    var name = fileName(P.FILE.pdf);
+    P.saveFile(name, P.pdf(model, lang).output('blob')).then(ok(name), fail);
+  });
+  var shareBtn = document.getElementById('share');
+  shareBtn.hidden = !P.canShareFiles();
+  shareBtn.addEventListener('click', function () {
+    var name = fileName(P.FILE.pdf);
+    P.shareFile(name, P.pdf(model, lang).output('blob'), lang === 'es' ? 'Pulsera Fishers Island' : 'Fishers Island bracelet', P.message(model, lang))
+      .then(function () { window.JEWELER.lastDownload = name; out(UI[lang].shared + name); }, fail);
+  });
+  document.getElementById('svg').addEventListener('click', function () {
+    var name = fileName(P.FILE.svg);
+    P.saveFile(name, P.svg(model, lang)).then(ok(name), fail);
+  });
+  document.getElementById('print').addEventListener('click', function () { window.print(); });
+  document.getElementById('copyMsg').addEventListener('click', function () {
+    var box = document.getElementById('message');
+    function fallback() { box.focus(); box.select(); out(UI[lang].select); }
+    try { navigator.clipboard.writeText(box.value).then(function () { out(UI[lang].copied); }, fallback); } catch (e) { fallback(); }
+  });
+
+  window.JEWELER = { model: model, params: params, get lang() { return lang; }, lastDownload: null };
+  render();
+})();
+</script>
