@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased] — Sound Check: 50 km side view, to compare Montauk with Fishers
+
+The owner wants to compare how a swell comes in to Montauk with how it comes in to Fishers, 50 km out. Drop a wave's side view only went out 5 km, and there was no quick way to send a wave to Montauk or to hold one wave's section while looking at another.
+
+Drop a wave now has:
+- **At Montauk**, next to At Choc and At Wilderness. It aims the swell at Ditch Plains.
+- **50 km** in the side view. The depth scale goes as deep as the water on the section; the short views still stop at 60 m. At this scale the crests are only a few pixels apart, so the wave is drawn as a band from trough to crest instead of as single crests. Where the ray is still past the survey map's edge, the caption says the sea floor there comes from the coarser ocean-wide map (about 1 km).
+- **Keep to compare.** It holds the wave you're looking at. Aim the same swell somewhere else, and the kept wave's sea floor and energy line stay on the side view as dashed lines, lined up at the shore, with its path dashed on the map. A legend says which is which. The caption compares the two: average depth over the section, energy left at the end, and breaking height.
+
+From the default start, about 240 km south of Montauk, a 6 ft, 12 s swell aimed at Ditch Plains crosses water 41 m deep on average over the last 50 km. It ends with 156% of the energy it started with and breaks at about 9.4 ft. Aimed at Choc, it crosses 35 m on average, ends with 15% and breaks at about 3.7 ft.
+
+Two fixes came with this. Before, each view looked for the break only at its own points, and the 5 km view's points are 33 m apart. So for the same wave it put the break in shallower water than the close-ups did: 2.3 ft at Choc where 300 m and 1 km said 3.5–3.6 ft. The 50 km view's points are 83 m apart, so it would have done worse. Every view now looks for the break every 5 m and places it between the last two looks, so all four views give the same answer (3.7 ft at Choc). The "stretched about N times" figure in the caption is now computed from the drawing's real scales; it used to be a rough guess. On phones, the energy label at the top of the side view was cut off and is now shortened to fit.
+
+Verified by a new e2e scenario, `w6-swell-map-cutaway-50km.js`. It aims at Montauk, opens 50 km, keeps the wave and aims at Choc. It then checks:
+- that the comparison caption and legend are right and the dashed line is drawn;
+- that the 300 m, 1 km, 5 km and 50 km views agree on both breaks;
+- that Clear removes the comparison.
+
+It fails on the current page and passes now. No Firebase or rules changes.
+
 ## [Unreleased] — Sound Check: organized around its two research questions
 
 The page never said what it was trying to answer, and the evidence for its two findings was scattered. The result that most of Choc's surf comes from outside the swell window was a single tile inside "One swell or two?". The chart of how much swell reaches Choc by direction and period was folded away under Behind the numbers. The model-versus-buoy comparison was a number in a tile and a collapsed table. Wilderness sat in the middle of the Choc story.
