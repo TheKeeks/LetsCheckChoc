@@ -12,7 +12,7 @@
 
 module.exports = {
   name: 'Bracelet: 3D wire on the wrist, spec follows the sliders',
-  options: { viewport: { width: 1180, height: 820 }, timeoutMs: 180000 },   // software WebGL in CI is slow
+  options: { viewport: { width: 1180, height: 820 }, timeoutMs: 300000 },   // software WebGL in CI is slow
   async run({ page, ctx, assert, log }) {
     const LIVE = { XAU: 4000, XAG: 50 };
     let priceMode = 'ok';
@@ -25,6 +25,11 @@ module.exports = {
     // Downloads are blob: URLs, which have no host: the runner's external
     // router would abort them, so let them through here.
     await ctx.route(u => u.protocol === 'blob:', route => route.continue());
+    // An iPad-style share sheet: record what the page hands to it.
+    await page.addInitScript(() => {
+      navigator.canShare = d => !!(d && d.files && d.files.length);
+      navigator.share = d => { window.__shared = d.files.map(f => ({ name: f.name, size: f.size, type: f.type })).concat(window.__shared || []); return Promise.resolve(); };
+    });
     await ctx.open('/bracelet/index.html');
     await page.waitForFunction(() => window.BRACELET && window.BRACELET.model && window.BRACELET.frames > 2, null, { timeout: 60000 });
     const gl = await page.evaluate(() => window.BRACELET.webgl);
@@ -118,6 +123,7 @@ module.exports = {
     // price can't load (as in a published artifact): the page uses the price
     // saved with it, newer than the stored Oct 1 quote, and says so.
     priceMode = 'abort';
+    await page.check('#showNames');
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.BRACELET && window.BRACELET.model && window.BRACELET.priceLoading === false, null, { timeout: 60000 });
     const saved = await page.evaluate(() => ({ p: window.BRACELET.price(), note: document.getElementById('priceNote').textContent }));
@@ -125,6 +131,10 @@ module.exports = {
     assert.equal(saved.p.source, 'saved');
     assert.ok(saved.p.usdPerOzt > 1000, 'a real saved gold price');
     assert.match(saved.note, /^Spot price on Oct 7, 8:50 PM Eastern\. The live price can.t load here/);
+    // Place names are off again after the reload, whatever was ticked before.
+    await page.waitForTimeout(300);
+    assert.equal(await page.isChecked('#showNames'), false, 'place names off after a reload');
+    assert.equal(await page.evaluate(() => document.getElementById('labels').hidden), true, 'no labels drawn');
     const kept = await page.evaluate(() => window.BRACELET.params);
     assert.equal(kept.islandLenMm, 85);
     assert.equal(kept.wireDiaMm, 2);
@@ -180,18 +190,47 @@ module.exports = {
     await page.click('[data-view="quarter"]');
     assert.equal(await page.evaluate(() => window.BRACELET.stageMode), '3d');
 
-    // For the jeweller: the PDF and the drawing download, built from this design.
+    // For the jeweller: tweak the settings, then export. The plans come from
+    // the design as it is at that moment, from the button on the 3D view or
+    // the plans section.
     async function download(selector) {
       const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.click(selector)]);
       return { name: dl.suggestedFilename(), bytes: require('fs').readFileSync(await dl.path()) };
     }
-    const pdf = await download('#dlPdf');
+    async function tweak(id, value) {
+      const b = await page.evaluate(() => window.BRACELET.builds);
+      await page.$eval('#' + id, (el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); }, value);
+      await page.waitForFunction(n => window.BRACELET.builds > n, b, { timeout: 10000 });
+    }
+    await tweak('islandLenMm', 80);
+    await tweak('wireDiaMm', 2);
+    await page.click('#metal button[data-v="14k"]');
+    await page.waitForFunction(() => window.BRACELET.params.metal === '14k' && /14k/.test(document.getElementById('sWire').textContent), null, { timeout: 10000 });
+    await page.waitForFunction(() => !!window.jspdf, null, { timeout: 20000 });
+    const len = String(Math.round(await page.evaluate(() => window.BRACELET.model.lengths.totalMm)));
+    const pdf = await download('#exportPlans');
     assert.equal(pdf.name, 'plano-pulsera-fishers.pdf');
     assert.equal(pdf.bytes.slice(0, 5).toString(), '%PDF-');
-    assert.ok(pdf.bytes.toString('latin1').includes('Recueza el alambre'), 'the Spanish instructions are in it');
+    const pdfText = pdf.bytes.toString('latin1');
+    for (const s of ['Recueza el alambre', 'oro amarillo de 14 k', '2,0 mm', 'isla 80 mm', len + ' mm (corte']) {
+      assert.ok(pdfText.includes(s), `the exported PDF has the tweaked design: “${s}”`);
+    }
+    const again = await download('#dlPdf');
+    assert.ok(again.bytes.toString('latin1').includes('isla 80 mm'), 'the plans section exports the same design');
     const svgFile = await download('#dlSvg');
     assert.equal(svgFile.name, 'plano-pulsera-fishers.svg');
-    assert.match(svgFile.bytes.toString('utf8'), /^<svg [^>]*width="279.4mm"/);
+    const svgText = svgFile.bytes.toString('utf8');
+    assert.match(svgText, /^<svg [^>]*width="279.4mm"/);
+    assert.ok(svgText.includes('isla 80 mm') && svgText.includes('Ø 2,0 mm') && svgText.includes('oro amarillo de 14 k'), 'the drawing has the tweaked design');
+    // Where the device can share files (iPad), the PDF goes to the share sheet.
+    assert.ok(await page.isVisible('#sharePdf'), 'Share PDF offered where files can be shared');
+    await page.click('#sharePdf');
+    await page.waitForFunction(() => (window.__shared || []).length > 0, null, { timeout: 10000 });
+    const shared = await page.evaluate(() => window.__shared[0]);
+    assert.equal(shared.name, 'plano-pulsera-fishers.pdf');
+    assert.equal(shared.type, 'application/pdf');
+    assert.ok(shared.size > 20000, `a real PDF went to the share sheet (${shared.size} bytes)`);
+    await ctx.screenshot('plans-section');
     assert.deepEqual(ctx.pageErrors.map(e => e.message), []);
 
     // Phone width: stage on top, panel below, nothing wider than the screen.

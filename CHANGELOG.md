@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased] — Fishers Bracelet: export the plans after changing the settings, place names stay off
+
+The owner wants to export the jeweller's plans from the site itself, after changing the settings, and wants place names off by default.
+
+The plans are built from the design as it is at the moment of the tap. A new "Export plans" button on the 3D view saves the PDF without scrolling. The plans section now sits right under the spec, with Download PDF, Download drawing (SVG) and Open the plans page. On an iPad or iPhone, a "Share PDF" button opens the share sheet, so the PDF can go straight to the jeweller by Mail, Messages or WhatsApp, or to Files. The plans page has the same Share button. The PDF is made and handed over within the same tap, which iPad Safari needs before it allows a download or the share sheet.
+
+Place names start off on every visit, even when the browser brings a ticked box back after a reload or Back.
+
+The 3D view now redraws only when something changes: a drag, a slider, a camera move, the trace or the turntable. That spares the iPad's battery and keeps the software-drawn 3D used in testing responsive.
+
+Verified by `npm test` (206 pass). `tests/e2e/scenarios/bracelet-designer.js` now also changes the island length, the wire and the metal, then exports from the button on the 3D view and from the plans section. It checks that the PDF and the drawing carry the changed design and that the share sheet gets the PDF. It also ticks the place names, reloads, and checks they are off again. In this session one run passed those checks; the next stalled on a click on the 3/4 camera button after the trace. That still needs a look.
+
 ## [Unreleased] — Fishers Bracelet: closed East End, ball clasp on North Hill, flat views and Spanish plans for the jeweller
 
 The owner asked for a round of changes to the bracelet, all made here.

@@ -58,6 +58,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--gold-hi); o
 #view:active { cursor: grabbing; }
 .stage-bar { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; pointer-events: none; }
 .stage-bar > * { pointer-events: auto; }
+.stage-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; background: var(--tag-bg); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); padding: 3px; gap: 2px; }
 .seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 999px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
@@ -141,10 +142,11 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .actions .btn { backdrop-filter: none; background: transparent; }
 #copyBox { width: 100%; min-height: 120px; font: 12px/1.4 var(--f-num); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; resize: vertical; }
-#copyMsg, #dlMsg { font-size: 12px; color: var(--ok); align-self: center; }
+#copyMsg { font-size: 12px; color: var(--ok); align-self: center; }
 a.btn { text-decoration: none; color: inherit; display: inline-block; }
 a.btn.gold { color: #1c1407; }
 .jnote { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+.jmsg { margin: 8px 0 0; font-size: 12px; color: var(--ok); min-height: 1em; }
 .credit { font-size: 11px; color: var(--muted); margin: 0; }
 .credit a { color: inherit; }
 
@@ -171,7 +173,10 @@ a.btn.gold { color: #1c1407; }
         <button type="button" data-view="clasp" aria-pressed="false">Clasp</button>
         <button type="button" data-view="flat" aria-pressed="false">Flat</button>
       </div>
-      <button type="button" class="btn gold" id="trace">Trace the wire</button>
+      <div class="stage-actions">
+        <button type="button" class="btn" id="exportPlans" title="The jeweller's plans for this design, as a PDF in Spanish">Export plans</button>
+        <button type="button" class="btn gold" id="trace">Trace the wire</button>
+      </div>
       <div class="stage-sum" aria-hidden="true"><span id="stageSum"></span></div>
     </div>
     <div class="trace-cap" id="traceCap" hidden></div>
@@ -201,6 +206,18 @@ a.btn.gold { color: #1c1407; }
         <div class="row"><span>Clasp</span><b id="sHook">–</b></div>
         <div class="row"><span>Solder points</span><b id="sSpots">–</b></div>
       </div>
+    </section>
+
+    <section aria-label="Plans for the jeweller">
+      <h2>Plans for the jeweller</h2>
+      <p class="note jnote">Exported from the design as it is now: a real-size flat drawing, how to make it and the spec, in Spanish. Change the shape below, then export again.</p>
+      <div class="actions">
+        <button type="button" class="btn gold" id="dlPdf">Download PDF</button>
+        <button type="button" class="btn" id="sharePdf" hidden>Share PDF</button>
+        <button type="button" class="btn" id="dlSvg">Download drawing (SVG)</button>
+        <a class="btn" id="openPlans" href="jeweler.html">Open the plans page</a>
+      </div>
+      <p class="note jmsg" id="dlMsg" role="status"></p>
     </section>
 
     <section aria-label="Price">
@@ -267,19 +284,8 @@ a.btn.gold { color: #1c1407; }
       <h2>Show</h2>
       <div class="checks">
         <label><input type="checkbox" id="showWrist" checked> Wrist</label>
-        <label><input type="checkbox" id="showNames"> Place names</label>
+        <label><input type="checkbox" id="showNames" autocomplete="off"> Place names</label>
         <label><input type="checkbox" id="spin"> Turntable</label>
-      </div>
-    </section>
-
-    <section aria-label="For the jeweller">
-      <h2>For the jeweller</h2>
-      <p class="note jnote">Plans in Spanish: a real-size flat drawing of this design, how to make it, and a note asking for a quote.</p>
-      <div class="actions">
-        <a class="btn gold" id="openPlans" href="jeweler.html">Open the plans</a>
-        <button type="button" class="btn" id="dlPdf">Download PDF</button>
-        <button type="button" class="btn" id="dlSvg">Download drawing (SVG)</button>
-        <span id="dlMsg" role="status"></span>
       </div>
     </section>
 
@@ -452,6 +458,7 @@ a.btn.gold { color: #1c1407; }
     buildTags();
     drawFlat();
     if (stageMode === 'flat') drawFlatStage();
+    dirty = true;
     writeSpec();
     BRACELET.model = model;
     BRACELET.builds++;
@@ -461,6 +468,7 @@ a.btn.gold { color: #1c1407; }
   var tagsEl = document.getElementById('labels');
   var tags = [];
   var TAGGED = ['East End', 'North Hill', 'Silver Eel', 'Race Point'];
+  var namesOn = false;
   function buildTags() {
     tagsEl.textContent = '';
     tags = [];
@@ -487,7 +495,7 @@ a.btn.gold { color: #1c1407; }
   }
   var tmpV = new THREE.Vector3(), tmpD = new THREE.Vector3();
   function placeTags() {
-    var show = document.getElementById('showNames').checked;
+    var show = namesOn;
     tagsEl.hidden = !show;
     if (!show) return;
     var w = canvas.clientWidth, h = canvas.clientHeight;
@@ -675,8 +683,14 @@ a.btn.gold { color: #1c1407; }
     stopsEl.appendChild(b);
   });
 
-  document.getElementById('showWrist').addEventListener('change', function (e) { wrist.visible = e.target.checked; });
-  document.getElementById('showNames').addEventListener('change', function () { drawFlatStage(); });
+  document.getElementById('showWrist').addEventListener('change', function (e) { wrist.visible = e.target.checked; dirty = true; });
+  // Place names start off on every visit. The browser may bring a checked box
+  // back on reload or Back, so the page keeps its own switch and puts the box
+  // back to match it.
+  var namesBox = document.getElementById('showNames');
+  namesBox.checked = false;
+  namesBox.addEventListener('change', function () { namesOn = namesBox.checked; drawFlatStage(); dirty = true; });
+  window.addEventListener('pageshow', function () { namesBox.checked = namesOn; });
   document.getElementById('spin').addEventListener('change', function (e) { controls.autoRotate = e.target.checked; });
 
   document.getElementById('reset').addEventListener('click', function () {
@@ -742,10 +756,27 @@ a.btn.gold { color: #1c1407; }
   function saved(name) {
     return function (how) { BRACELET.lastDownload = name; dlMsg(how === 'saved' ? 'Saved ' + name + '.' : 'Downloading ' + name + '.'); };
   }
-  function notSaved(e) { dlMsg(e && e.code === 'declined' ? 'Not saved.' : 'This view can\u2019t save files. Open the plans and use the PDF there.'); }
-  document.getElementById('dlPdf').addEventListener('click', function () {
-    dlMsg('Making the PDF\u2026');
-    loadJsPDF().then(function (ctor) { return P.saveFile(P.FILE.pdf, P.pdf(model, 'es', ctor).output('blob')); }).then(saved(P.FILE.pdf), notSaved);
+  function notSaved(e) { dlMsg(e && e.code === 'declined' ? 'Not saved.' : e && e.name === 'AbortError' ? '' : 'This view can\u2019t save files. Open the plans page and use the PDF there.'); }
+  // Built from the current settings at the moment of the tap. jsPDF is
+  // normally loaded already; the file is then made and handed over within
+  // the same tap, which iPad Safari needs for a download or the share sheet.
+  function withPDF(use) {
+    if (window.jspdf) return use(P.pdf(model, 'es', window.jspdf.jsPDF).output('blob'));
+    dlMsg('Getting the PDF maker ready\u2026');
+    return loadJsPDF().then(function () { dlMsg('Ready: tap again to save the PDF.'); });
+  }
+  function exportPDF() {
+    withPDF(function (blob) { return P.saveFile(P.FILE.pdf, blob).then(saved(P.FILE.pdf), notSaved); });
+  }
+  document.getElementById('dlPdf').addEventListener('click', exportPDF);
+  document.getElementById('exportPlans').addEventListener('click', exportPDF);
+  var shareBtn = document.getElementById('sharePdf');
+  shareBtn.hidden = !P.canShareFiles();
+  shareBtn.addEventListener('click', function () {
+    withPDF(function (blob) {
+      return P.shareFile(P.FILE.pdf, blob, 'Pulsera Fishers Island', P.message(model, 'es'))
+        .then(function () { BRACELET.lastDownload = P.FILE.pdf; dlMsg('Shared ' + P.FILE.pdf + '.'); }, notSaved);
+    });
   });
   document.getElementById('dlSvg').addEventListener('click', function () {
     P.saveFile(P.FILE.svg, P.svg(model, 'es')).then(saved(P.FILE.svg), notSaved);
@@ -843,7 +874,7 @@ a.btn.gold { color: #1c1407; }
       ctx.textAlign = 'center';
       var tailMid = (fp.joint[0] + fp.tailEnd[0]) / 2;
       ctx.fillText('tail ' + fmt(fp.tailLenMm) + ' mm' + (small ? '' : ': wraps round under the wrist into the circle'), X(tailMid), Y(m.ring.v) + Math.max(18, dia * sc + 12));
-      if (document.getElementById('showNames').checked) {
+      if (namesOn) {
         ctx.textAlign = 'right';
         model.landmarks.forEach(function (lm) {
           if (lm.name !== 'Race Point' && lm.name !== 'Silver Eel') return;
@@ -912,6 +943,7 @@ a.btn.gold { color: #1c1407; }
       controls.target.copy(to.tgt);
       controls.update();
       tween = null;
+      dirty = true;
       return;
     }
     tween = { t0: performance.now(), dur: 700, fromPos: camera.position.clone(), fromTgt: controls.target.clone(), to: to };
@@ -969,6 +1001,7 @@ a.btn.gold { color: #1c1407; }
       wireMesh.geometry.setDrawRange(0, Infinity);
       capB.visible = true;
       trace = null;
+      dirty = true;
       BRACELET.tracing = false;
       drawFlat();
       drawFlatStage();
@@ -980,6 +1013,7 @@ a.btn.gold { color: #1c1407; }
   function applyTheme() {
     ghostMat.uniforms.uColor.value.set(cssVar('--ghost') || '#34506b');
     scene.fog.color.set(cssVar('--stage-b') || '#d2dbe2').convertSRGBToLinear();
+    dirty = true;
     if (model) { drawFlat(); drawFlatStage(); }
   }
   if (window.matchMedia) {
@@ -994,13 +1028,22 @@ a.btn.gold { color: #1c1407; }
     if (renderer) renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    dirty = true;
     if (model) { drawFlat(); drawFlatStage(); }
   }
   if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
   window.addEventListener('resize', resize);
 
+  // Draw only when something changed: a drag, a slider, a camera move, the
+  // trace or the turntable. A still bracelet costs nothing, which spares the
+  // iPad's battery and keeps software-drawn 3D (CI) responsive.
+  var dirty = true;
+  function invalidate() { dirty = true; }
+  controls.addEventListener('change', invalidate);
   function frame(now) {
     requestAnimationFrame(frame);
+    BRACELET.frames++;
+    var active = !!(tween || trace || controls.autoRotate);
     if (tween) {
       var t = Math.min(1, (now - tween.t0) / tween.dur);
       var e = 1 - Math.pow(1 - t, 3);
@@ -1009,18 +1052,21 @@ a.btn.gold { color: #1c1407; }
       if (t >= 1) tween = null;
     }
     stepTrace(now);
-    controls.update();
+    var moved = controls.update();   // true while the camera is still easing after a drag
+    if (!(dirty || active || moved)) return;
+    dirty = false;
     var d = camera.position.distanceTo(controls.target);
     scene.fog.near = d - 15;
     scene.fog.far = d + 130;
     if (renderer) renderer.render(scene, camera);
     placeTags();
-    BRACELET.frames++;
+    BRACELET.renders++;
   }
 
   // Hooks for tests and for a later Claude session poking at the page.
   var BRACELET = window.BRACELET = {
     frames: 0,
+    renders: 0,
     builds: 0,
     tracing: false,
     model: null,

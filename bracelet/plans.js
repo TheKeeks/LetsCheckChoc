@@ -389,18 +389,15 @@
     return doc;
   }
 
-  // ── Saving a file (browser) ────────────────────────────────
-  // In a published artifact the viewer's downloads capability offers the file
-  // (with a confirmation); on the site itself a plain download link does.
+  // ── Saving and sharing a file (browser) ────────────────────
+  // On the site itself a download link saves the file, clicked in the same
+  // tap so Safari doesn't treat it as a pop-up. In a published artifact the
+  // viewer's downloads capability offers it instead, with a confirmation.
+  function typeOf(name) { return /\.pdf$/.test(name) ? 'application/pdf' : /\.svg$/.test(name) ? 'image/svg+xml' : 'text/plain'; }
+  function asBlob(name, data) { return data instanceof Blob ? data : new Blob([data], { type: typeOf(name) }); }
   function saveFile(name, data) {
-    var use = root.claude && typeof root.claude.use === 'function'
-      ? root.claude.use('downloads').then(null, function () { return null; })
-      : Promise.resolve(null);
-    return use.then(function (dl) {
-      if (dl) return dl.save({ filename: name, data: data }).then(function () { return 'saved'; });
-      var type = /\.pdf$/.test(name) ? 'application/pdf' : /\.svg$/.test(name) ? 'image/svg+xml' : 'text/plain';
-      var blob = data instanceof Blob ? data : new Blob([data], { type: type });
-      var url = URL.createObjectURL(blob);
+    if (!(root.claude && typeof root.claude.use === 'function')) {
+      var url = URL.createObjectURL(asBlob(name, data));
       var a = document.createElement('a');
       a.href = url;
       a.download = name;
@@ -408,8 +405,24 @@
       a.click();
       a.remove();
       setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
-      return 'link';
+      return Promise.resolve('link');
+    }
+    return root.claude.use('downloads').then(null, function () { return null; }).then(function (dl) {
+      if (!dl) throw { code: 'unavailable' };
+      return dl.save({ filename: name, data: data }).then(function () { return 'saved'; });
     });
+  }
+  // iPad and iPhone: the share sheet sends the file on (Mail, Messages,
+  // WhatsApp, Save to Files). Only where the browser can share files.
+  function canShareFiles() {
+    try {
+      return typeof navigator !== 'undefined' && typeof navigator.share === 'function' && typeof navigator.canShare === 'function' &&
+        navigator.canShare({ files: [new File(['%PDF'], 'x.pdf', { type: 'application/pdf' })] });
+    } catch (e) { return false; }
+  }
+  function shareFile(name, data, title, text) {
+    var file = new File([asBlob(name, data)], name, { type: typeOf(name) });
+    return navigator.share({ files: [file], title: title, text: text }).then(function () { return 'shared'; });
   }
 
   var FILE = { pdf: 'plano-pulsera-fishers.pdf', svg: 'plano-pulsera-fishers.svg' };
@@ -425,7 +438,9 @@
     toSVG: toSVG,
     svg: function (model, lang) { return toSVG(sheet(model, lang)); },
     pdf: pdf,
-    saveFile: saveFile
+    saveFile: saveFile,
+    canShareFiles: canShareFiles,
+    shareFile: shareFile
   };
   root.BraceletPlans = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
