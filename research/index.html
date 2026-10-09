@@ -294,6 +294,9 @@ svg.dec-cam, .chart svg.dec-cam { width: 12px; height: 9px; display: inline-bloc
 .cut-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 8px; }
 .cut-top .fr-cap { margin: 0 auto 0 0; }
 #cutCv { width: 100%; display: block; border-radius: 6px; }
+.cut-key { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 6px 0 0; font-size: .8rem; color: var(--fg-2); }
+.cut-key i { display: inline-block; width: 24px; height: 0; margin-right: 7px; vertical-align: middle; border-top: 2px solid #d9c7a0; }
+.cut-key i.kept { border-top: 2px dashed #9fe3f0; }
 .w3 { position: relative; }
 #w3Cv { width: 100%; height: min(70vh, 520px); display: block; border-radius: 6px; touch-action: none; background: #0b1622; }
 .w3-cmp { position: absolute; right: 10px; top: 10px; width: 52px; height: 52px; border-radius: 50%; background: rgba(11,22,34,.75); border: 1px solid rgba(255,255,255,.25); touch-action: none; cursor: grab; }
@@ -378,7 +381,7 @@ body { margin: 0; }
         <div class="hub-g" data-mode="drop" hidden><div class="hub-h">Swell</div>
           <div class="hub-row"><label class="hub-f" for="tripSize">Size <input id="tripSize" type="number" min="0" max="40" step="0.5" value="6" inputmode="decimal"> ft</label><label class="hub-f" for="tripPer">Period <select id="tripPer"><option>6</option><option>8</option><option>10</option><option selected>12</option><option>14</option><option>16</option><option>18</option></select> s</label></div></div>
         <div class="hub-g" data-mode="drop" hidden><div class="hub-h">Aim</div>
-          <div class="hub-col"><button type="button" id="tripAimC">At Choc</button><button type="button" id="tripAimW">At Wilderness</button><button type="button" id="tripRand">Random start</button></div></div>
+          <div class="hub-col"><button type="button" id="tripAimC">At Choc</button><button type="button" id="tripAimW">At Wilderness</button><button type="button" id="tripAimM" title="Ditch Plains">At Montauk</button><button type="button" id="tripRand">Random start</button></div></div>
         <div class="hub-g" data-mode="drop" hidden><div class="hub-h">Show</div>
           <div class="hub-tgs"><button type="button" class="hub-tg" id="tripInsetTg" aria-pressed="false"><i class="ck"></i>Arrival close-up</button></div></div>
       </div>
@@ -411,7 +414,8 @@ body { margin: 0; }
           <h3>Drop a wave</h3>
           <ul>
             <li><b>Tap the ocean</b> to start a wave there, drag the white ring to aim it, then press Play. Tap the map to pause.</li>
-            <li><b>Aim at Choc or Wilderness</b> finds the heading whose ray gets closest to the takeoff peak on your reef map. From some starts no ray gets there, and it says how close the best one comes.</li>
+            <li><b>Aim at Choc or Wilderness</b> finds the heading whose ray gets closest to the takeoff peak on your reef map. From some starts no ray gets there, and it says how close the best one comes. <b>At Montauk</b> does the same for Ditch Plains.</li>
+            <li><b>Compare two places:</b> under the map, pick 50 km and press Keep to compare, then aim the same swell somewhere else. The kept wave's sea floor and energy stay on the side view as dashed lines, lined up at the shore.</li>
             <li><b>White ticks</b> mark each half hour of travel. They bunch up where the wave slows down.</li>
             <li><b>The sea floor funnels swell into the window.</b> The model's rays that reach Choc start out from anywhere between 62° and 205°, yet all arrive at the reef from between 129° and 157°.</li>
             <li><b>Power per meter of crest</b> compares the shore with the start. Under 100% the sea floor spread the swell out; over 100% the shoals focused it. From deep water, read it as a rough size: a few percent or a few tens of percent.</li>
@@ -442,8 +446,10 @@ body { margin: 0; }
     <div class="cut-top"><div class="fr-cap">Your wave over the sea floor</div>
       <div class="seg" role="group" aria-label="View" id="cutView"><button type="button" data-v="side" aria-pressed="true">Side view</button><button type="button" data-v="3d" aria-pressed="false">3D</button></div>
       <div class="seg" role="group" aria-label="Swell height offshore" id="cutFt"><button type="button" data-v="3" aria-pressed="false">3 ft</button><button type="button" data-v="6" aria-pressed="true">6 ft</button><button type="button" data-v="10" aria-pressed="false">10 ft</button></div>
-      <div class="seg" role="group" aria-label="How much of the trip" id="cutLen"><button type="button" data-v="0.3" aria-pressed="false">Last 300 m</button><button type="button" data-v="1" aria-pressed="true">1 km</button><button type="button" data-v="5" aria-pressed="false">5 km</button></div></div>
+      <div class="seg" role="group" aria-label="How much of the trip" id="cutLen"><button type="button" data-v="0.3" aria-pressed="false">Last 300 m</button><button type="button" data-v="1" aria-pressed="true">1 km</button><button type="button" data-v="5" aria-pressed="false">5 km</button><button type="button" data-v="50" aria-pressed="false">50 km</button></div>
+      <button type="button" id="cutKeep">Keep to compare</button></div>
     <canvas id="cutCv" aria-label="The wave side-on over the sea floor along its last kilometers"></canvas>
+    <p id="cutKey" class="cut-key" hidden></p>
     <div id="w3Box" class="w3" hidden>
       <canvas id="w3Cv" aria-label="3D view: the whole wave front crossing the sea floor"></canvas>
       <div id="w3Compass" class="w3-cmp" role="button" aria-label="Compass: drag to turn or tilt, tap to face north"><svg viewBox="-20 -20 40 40" aria-hidden="true"><circle r="18" class="ring"/><g id="w3Needle"><path d="M0 -14 L4 0 L0 -2 L-4 0 Z" class="n"/><path d="M0 14 L4 0 L0 2 L-4 0 Z" class="s"/></g><text y="-6.5" x="0" text-anchor="middle" class="t">N</text></svg></div>
@@ -1748,6 +1754,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   const P = (lon, lat) => [lon * KX, -lat * KY];
   const PEAK = [-71.96339, 41.27557];                        // Choc takeoff peak (owner's reef map)
   const CHOC = [-71.96359, 41.27591], W1 = [-72.00573, 41.25286], W2 = [-72.01117, 41.25551];
+  const MTK = [-71.92, 41.038];                              // Ditch Plains, Montauk's main break: "At Montauk", to compare the approach with Fishers
   const BUOY = [-71.127, 40.969];
   const LABELS = [['Long Island', -72.75, 40.93, 600, 60], ['Montauk', -71.86, 41.05, 200, 14], ['Block Island', -71.58, 41.19, 260, 14],
     ['Fishers Island', -71.99, 41.29, 90, 6], ['Martha\'s Vineyard', -70.62, 41.42, 600, 40], ['Nantucket', -70.07, 41.32, 600, 40],
@@ -2007,14 +2014,16 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   const dist = (a, b) => Math.hypot((a[0] - b[0]) * 111320 * Math.cos(a[1] * D2R), (a[1] - b[1]) * 110950);
   const bearing = (a, b) => (Math.atan2((b[0] - a[0]) * Math.cos(a[1] * D2R), b[1] - a[1]) / D2R + 360) % 360;
   function miss(res, spot) {
+    if (spot === 'm') return res.minT[0];                     // Montauk: the tracer measures its closest pass on both maps
     if (res.fine) return spot === 'c' ? res.minC : res.minW;
     return 1e6 + dist(res.end, spot === 'c' ? PEAK : W1);     // never reached the survey map
   }
+  const aimTg = (spot) => (spot === 'm' ? [MTK] : null);
   function aim(spot, T, start) {
     // The miss distance is jagged in the heading (shoals split neighboring rays), so refine
     // the ten best headings at each level instead of only the single best.
-    const b0 = bearing(start, spot === 'c' ? PEAK : W1);
-    const seen = new Map(); const m = (th) => { const k = th.toFixed(4); if (!seen.has(k)) seen.set(k, miss(trace(T, start[0], start[1], th, false), spot)); return seen.get(k); };
+    const b0 = bearing(start, spot === 'c' ? PEAK : spot === 'm' ? MTK : W1), tg = aimTg(spot);
+    const seen = new Map(); const m = (th) => { const k = th.toFixed(4); if (!seen.has(k)) seen.set(k, miss(trace(T, start[0], start[1], th, false, tg), spot)); return seen.get(k); };
     let cand = [];
     for (let th = b0 - 50; th <= b0 + 50; th += 1) cand.push({ th, m: m(th) });
     for (const [half, step] of [[1, 0.05], [0.05, 0.0025]]) {
@@ -2093,7 +2102,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   }
 
   let pwTimer = 0;
-  function pwJob(r) { if (!r.pwJob) r.pwJob = spreading(r, () => S.ray === r).then((pw) => { if (pw) { r.pw = pw; if (S.phase === 'setup') hudSetup(); } else r.pwJob = null; return pw; }); return r.pwJob; }
+  function pwJob(r) { if (!r.pwJob) r.pwJob = spreading(r, () => S.ray === r || S.keep === r).then((pw) => { if (pw) { r.pw = pw; if (S.phase === 'setup') hudSetup(); } else r.pwJob = null; return pw; }); return r.pwJob; }
   function schedulePw(r) { clearTimeout(pwTimer); pwTimer = setTimeout(() => { if (S.ray === r) pwJob(r); }, 300); }
   function ensurePw(r) { return r ? (r.pw ? Promise.resolve(r.pw) : (clearTimeout(pwTimer), pwJob(r))) : Promise.resolve(null); }
   const pwAt = (r, dd) => { const { i, f } = at(r, dd); return r.pw[i] + (r.pw[Math.min(r.n - 1, i + 1)] - r.pw[i]) * f; };
@@ -2130,7 +2139,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   if (inCv) new ResizeObserver(() => { const b = inCv.getBoundingClientRect(); inW = b.width; inH = b.height; inCv.width = Math.round(inW * dpr); inCv.height = Math.round(inH * dpr); draw(); }).observe(inCv);
 
   // ── state
-  const S = { phase: 'setup', T: 12, start: [-71.85, 38.91], th: null, ray: null, dist: 0, playing: false, hold: 0, last: 0, cam: null, target: null, note: '' };
+  const S = { phase: 'setup', T: 12, start: [-71.85, 38.91], th: null, ray: null, keep: null, dist: 0, playing: false, hold: 0, last: 0, cam: null, target: null, note: '' };
   const MINW = 3;
   function playView(r, dd) {
     const end = P(r.lon[r.n - 1], r.lat[r.n - 1]); const s = sample(r, dd); const hd = P(s.lon, s.lat);
@@ -2260,7 +2269,12 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
       ctx.font = '11px "IBM Plex Mono", monospace'; ctx.textAlign = 'left'; ctx.fillStyle = '#e7edf2'; ctx.fillText('buoy', X(BUOY[0]) + 7, Y(...BUOY) + 4);
       ctx.globalAlpha = 1;
     }
-    const r = S.ray;
+    const r = S.ray, k = S.keep;
+    if (!MAPV() && k && k !== r) {                           // the wave kept to compare (side view), dashed, its landing marked
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      linePath(X, Y, k); ctx.strokeStyle = 'rgba(159,227,240,.8)'; ctx.lineWidth = 1.6; ctx.setLineDash([3, 5]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#9fe3f0'; ctx.beginPath(); ctx.arc(X(k.lon[k.n - 1]), Y(k.lon[k.n - 1], k.lat[k.n - 1]), 3.5, 0, 7); ctx.fill();
+    }
     if (MAPV()) drawWeek(X, Y, v);
     else if (S.phase === 'setup') drawSetup(X, Y, r); else drawPlay(X, Y, r, v);
     if (INSET) { ctx.font = '600 11px "IBM Plex Mono", monospace'; ctx.fillStyle = 'rgba(231,237,242,.9)'; ctx.textAlign = 'left'; ctx.fillText('Arrival · 1.6 km', 8, 16); }
@@ -2386,7 +2400,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     const setup = S.phase === 'setup';
     $('tripPlay').textContent = setup ? 'Play' : 'Back to map';
     $('tripPlay').disabled = setup && !S.ray;
-    for (const id of ['tripAimC', 'tripAimW', 'tripRand']) $(id).disabled = !GR.ok;
+    for (const id of ['tripAimC', 'tripAimW', 'tripAimM', 'tripRand']) $(id).disabled = !GR.ok;
     $('tripOut').textContent = S.phase === 'play' ? 'Tap the map to pause.' : S.turnShort && S.turnRay === S.ray ? S.turnShort
       : S.start ? 'Tap the water to move the start. Drag the white ring to aim.' : 'Tap the ocean to drop a wave.';
   }
@@ -2401,7 +2415,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     $('tripPhase').textContent = 'Aiming…';
     setTimeout(() => {
       const b = aim(spot, S.T, S.start); S.th = (b.th + 360) % 360;
-      const name = spot === 'c' ? 'Choc' : 'Wilderness', r0 = spot === 'c' ? 250 : 150;
+      const name = { c: 'Choc', w: 'Wilderness', m: 'Montauk' }[spot], r0 = spot === 'w' ? 150 : 250;
       S.note = b.m < rEff(S.T, r0) ? `aimed at ${name}` : b.m < 1e6 ? `best it can do: ${Math.round(b.m).toLocaleString()} m from ${name}` : `can't reach the survey map from here`;
       S.ray = makeRay(S.T, S.start, S.th);
       const pts = [S.start, [S.ray.lon[S.ray.n - 1], S.ray.lat[S.ray.n - 1]]]; S.cam = fitCam(pts);
@@ -3119,6 +3133,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   $('tripPer').addEventListener('change', () => { S.T = +$('tripPer').value; if (S.phase !== 'setup') toSetup(false); S.note = ''; retrace(); });
   $('tripAimC').addEventListener('click', () => doAim('c'));
   $('tripAimW').addEventListener('click', () => doAim('w'));
+  $('tripAimM').addEventListener('click', () => doAim('m'));
   $('tripRand').addEventListener('click', () => { if (S.phase !== 'setup') toSetup(false); randomStart(); S.ray = makeRay(S.T, S.start, S.th); S.cam = fitCam([S.start, [S.ray.lon[S.ray.n - 1], S.ray.lat[S.ray.n - 1]]]); hudSetup(); draw(); });
   $('tripSize').addEventListener('input', () => energy(S.ray, S.phase === 'setup' || S.phase === 'done' ? (S.ray ? S.ray.len : 0) : S.dist));
   // arrival close-up: off by default; the choice is remembered on this device
@@ -3477,10 +3492,15 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   // under its last stretch. The wave on top is linear theory along the ray: its length from the depth
   // (dispersion), its height growing with shoaling (group speed) and with how much the bottom focused or
   // spread it (the ray's power count), and it breaks once it is about 0.78 times as tall as the water is deep.
-  const CUT = { len: 1, ft: 6, key: '', prof: null, bed: null, t: 0, run: false, vis: false };
+  // The 50 km view is for comparing the approach to two places (Montauk and Fishers, say). At that scale the crests are
+  // a few pixels apart (a 12 s wave is about 200 m long), too close to draw one by one, so the wave is a band as tall as
+  // the wave there. "Keep to compare" leaves one wave's section drawn dashed under the next one's, lined up at the shore.
+  const CUT = { len: 1, ft: 6, key: '', prof: null, kprof: null, bed: null, t: 0, run: false, vis: false };
   const cutCv = $('cutCv'), cutCtx = cutCv ? cutCv.getContext('2d') : null;
   function cutProfile(r) {
-    const Lkm = Math.min(CUT.len, r.len), NA = 150, JM = 0, out = { Lkm, NA, JM, h: [], bed: [], H: [], k: [], ph: [], c: [], pw: [], ib: -1 };
+    // 150 points up to 12 km, then one every ~80 m so the 50 km section still shows shoals a few hundred meters across
+    const Lkm = Math.min(CUT.len, r.len), NA = Math.max(150, Math.min(700, Math.round(Lkm * 12))), JM = 0;
+    const out = { Lkm, NA, JM, h: [], bed: [], H: [], k: [], ph: [], c: [], pw: [], ib: -1, coarse: 0 };
     const across = 0;                                        // flat section: just the line under the ray
     for (let a = 0; a < NA; a++) {
       const dd = r.len - Lkm + Lkm * a / (NA - 1), p = sample(r, dd), hd = headingAt(r, Math.max(dd, 0.06), 0.06) * D2R;
@@ -3489,20 +3509,36 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
         const off = j * across, lon = p.lon + off * Math.cos(hd) / 1000 / KX, lat = p.lat - off * Math.sin(hd) / 1000 / KY;
         const dep = depthAt(lon, lat); row.push(dep == null ? 0 : Math.max(-4, dep));
       }
-      out.bed.push(row);
+      out.bed.push(row); if (!inWorld(p.lat, p.lon, 0)) out.coarse++;    // past the survey map's edge: ETOPO (about 1 km)
       const h = Math.max(0, row[JM]); out.h.push(h);
     }
     const H0 = CUT.ft / FTm, cg0 = G * r.T / (4 * Math.PI); let ph = 0;
+    const Hat = (dd, h) => H0 * Math.sqrt(cg0 / cg(r.T, h)) * Math.sqrt(r.pw ? Math.max(0.05, pwAt(r, dd)) : 1);
+    // Where it breaks: the first spot where it's 0.78 x as tall as the water is deep, looked for every 5 m whatever the
+    // view and placed between the last two looks. The 50 km view's own points are 83 m apart: on its own it found the
+    // break in shallower water, so a smaller wave, than the close-ups did for the same wave.
+    const nF = Math.max(1, Math.round(Lkm * 200)); let bdd = -1, prev = null;
+    for (let q = 0; q <= nF; q++) {
+      const dd = r.len - Lkm + Lkm * q / nF, p = sample(r, dd), dep = depthAt(p.lon, p.lat), h = Math.max(dep == null ? 0 : dep, 0.3);
+      const x = Hat(dd, h) / (0.78 * h) - 1;
+      if (x >= 0) { const f = prev ? prev.x / (prev.x - x) : 0; bdd = prev ? prev.dd + (dd - prev.dd) * f : dd; out.bh = prev ? prev.h + (h - prev.h) * f : h; break; }
+      prev = { dd, h, x };
+    }
     for (let a = 0; a < NA; a++) {
       const h = Math.max(out.h[a], 0.3), c = cp(r.T, h), k = 2 * Math.PI / (c * r.T), dd = r.len - Lkm + Lkm * a / (NA - 1);
-      const pw = r.pw ? Math.max(0.05, pwAt(r, dd)) : 1;
-      let H = H0 * Math.sqrt(cg0 / cg(r.T, h)) * Math.sqrt(pw);
-      if (out.ib < 0 && H >= 0.78 * h) out.ib = a;
+      let H = Hat(dd, h);
+      if (out.ib < 0 && bdd >= 0 && dd >= bdd - 1e-9) out.ib = a;
       if (out.ib >= 0) H = Math.min(H, 0.78 * h);            // broken: the surf zone keeps it about 0.78 x depth
       if (a) ph += k * Lkm * 1000 / (NA - 1);
       out.H.push(H); out.k.push(k); out.ph.push(ph); out.c.push(c); out.pw.push(r.pw ? pwAt(r, dd) : null);
     }
     return out;
+  }
+  // Depth scale: down to the deepest water on the section (and on the kept one). The short views stop at 60 m so the
+  // wave stays big enough to see; 50 km out the sea floor itself is the point, so it is never cut off there.
+  function cutZmax(P, K) {
+    let deep = 0; for (const x of P.h) deep = Math.max(deep, x); if (K) for (const x of K.h) deep = Math.max(deep, x);
+    return Math.max(4, Math.min(P.Lkm > 10 ? 400 : 60, deep * 1.05));
   }
   function cutSize() {
     const w = Math.max(280, Math.round(cutCv.clientWidth)), h = Math.round(Math.min(340, Math.max(220, w * 0.42)));
@@ -3512,11 +3548,12 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   function cutDraw(ts) {
     if (!cutCtx || $('cutBox').hidden) { CUT.run = false; return; }
     const r = S.ray; if (!r) { CUT.run = false; return; }
-    const [w, h] = cutSize(), key = [r.start, r.th, r.T, r.len, !!r.pw, CUT.len, CUT.ft, w, h].join();
-    if (key !== CUT.key) { CUT.key = key; CUT.prof = cutProfile(r); CUT.bed = null; cutCaption(); }
-    const P = CUT.prof, g = cutCtx, NA = P.NA, JM = P.JM;
+    const kr = S.keep && S.keep !== r ? S.keep : null;
+    const [w, h] = cutSize(), key = [r.start, r.th, r.T, r.len, !!r.pw, CUT.len, CUT.ft, w, h, kr ? [kr.start, kr.th, kr.T, !!kr.pw].join('/') : ''].join();
+    if (key !== CUT.key) { CUT.key = key; CUT.prof = cutProfile(r); CUT.kprof = kr ? cutProfile(kr) : null; CUT.bed = null; cutCaption(w, h); }
+    const P = CUT.prof, K = CUT.kprof, g = cutCtx, NA = P.NA, JM = P.JM, band = P.Lkm > 10;
     const padL = 44, padR = 16 + JM * 2 * 9, top = 84, bot = 30, ox = 9, oy = 6;
-    const zmax = Math.max(4, Math.min(60, Math.max(...P.h) * 1.05)), V = (h - top - bot - JM * 2 * oy) / (zmax + 3);
+    const zmax = cutZmax(P, K), V = (h - top - bot - JM * 2 * oy) / (zmax + 3);
     const sx = (a) => padL + (w - padL - padR) * a / (NA - 1);
     const XY = (a, j, z) => [sx(a) + (j + JM) * ox, top + 3 * V + JM * 2 * oy - (j + JM) * oy - z * V];
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -3540,12 +3577,12 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     }
     g.drawImage(CUT.bed, 0, 0, w, h);
     // the wave: surface height along the ray, the same across the strip (a long crest)
-    if (ts != null && !reduce) { const dt = CUT.last ? Math.min(0.1, (ts - CUT.last) / 1000) : 0; CUT.t += dt * 3; CUT.last = ts; }   // 3x real time
+    if (ts != null && !reduce && !band) { const dt = CUT.last ? Math.min(0.1, (ts - CUT.last) / 1000) : 0; CUT.t += dt * 3; CUT.last = ts; }   // 3x real time
     const om = 2 * Math.PI / r.T, eta = (a) => {
       const A = P.H[a] / 2, th = P.ph[a] - om * CUT.t, st = Math.min(0.45, P.H[a] / Math.max(0.3, P.h[a]) * 0.6);
       return A * (Math.cos(th) + st * Math.cos(2 * th)) / (1 + st);         // crests sharpen as it shoals
     };
-    const E = Array.from({ length: NA }, (_, a) => (P.h[a] > 0.05 || a <= P.ib ? eta(a) : null));
+    const E = Array.from({ length: NA }, (_, a) => (P.h[a] > 0.05 || a <= P.ib ? (band ? 0 : eta(a)) : null));
     const last = E.findIndex((e, a) => e == null && a > 0), end = last < 0 ? NA - 1 : last - 1;
     // the cut face: water column between the surface and the floor along the near edge
     g.beginPath();
@@ -3555,21 +3592,43 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     gr.addColorStop(0, 'rgba(70,150,205,.55)'); gr.addColorStop(1, 'rgba(20,55,95,.75)'); g.fillStyle = gr; g.fill();
     g.beginPath(); for (let a = 0; a < NA; a++) { const p = XY(a, -JM, -P.bed[a][0]); a ? g.lineTo(...p) : g.moveTo(...p); }
     g.strokeStyle = '#d9c7a0'; g.lineWidth = 2; g.stroke();
-    g.beginPath(); for (let a = 0; a <= end; a++) { const p = XY(a, -JM, E[a]); a ? g.lineTo(...p) : g.moveTo(...p); }
-    g.strokeStyle = 'rgba(240,248,252,.95)'; g.lineWidth = 1.6; g.stroke();
-    for (let a = 1; a < end; a++) {                          // whitewater spilling down the front of each broken crest
-      if (!(P.ib >= 0 && a >= P.ib && E[a] > E[a - 1] && E[a] >= E[a + 1] && E[a] > 0)) continue;
-      const [x, y] = XY(a, 0, E[a]); g.fillStyle = 'rgba(255,255,255,.55)';
-      for (let k = 0; k < 4; k++) { g.beginPath(); g.ellipse(x + 3 + k * 4, y + 2 + k * 2.5, 6 - k, 3, 0, 0, 7); g.fill(); }
+    // the kept wave's sea floor, dashed, by distance to go (both sections end at their shore)
+    const kx = K ? (b) => padL + (w - padL - padR) * (1 - K.Lkm * (1 - b / (K.NA - 1)) / P.Lkm) : null;
+    if (K) {
+      g.beginPath(); let on = false;
+      for (let b = 0; b < K.NA; b++) { const x = kx(b); if (x < padL - 0.5) continue; const y = XY(0, -JM, -K.bed[b][0])[1]; if (on) g.lineTo(x, y); else { g.moveTo(x, y); on = true; } }
+      g.setLineDash([6, 4]); g.strokeStyle = '#9fe3f0'; g.lineWidth = 2; g.stroke(); g.setLineDash([]);
+    }
+    if (band) {                                              // crests too close to draw: trough to crest, as tall as the wave there
+      g.beginPath();
+      for (let a = 0; a <= end; a++) { const p = XY(a, -JM, P.H[a] / 2); a ? g.lineTo(...p) : g.moveTo(...p); }
+      for (let a = end; a >= 0; a--) g.lineTo(...XY(a, -JM, -P.H[a] / 2));
+      g.closePath(); g.fillStyle = 'rgba(240,248,252,.5)'; g.fill();
+      g.beginPath(); for (let a = 0; a <= end; a++) { const p = XY(a, -JM, P.H[a] / 2); a ? g.lineTo(...p) : g.moveTo(...p); }
+      g.strokeStyle = 'rgba(240,248,252,.95)'; g.lineWidth = 1.4; g.stroke();
+    } else {
+      g.beginPath(); for (let a = 0; a <= end; a++) { const p = XY(a, -JM, E[a]); a ? g.lineTo(...p) : g.moveTo(...p); }
+      g.strokeStyle = 'rgba(240,248,252,.95)'; g.lineWidth = 1.6; g.stroke();
+      for (let a = 1; a < end; a++) {                        // whitewater spilling down the front of each broken crest
+        if (!(P.ib >= 0 && a >= P.ib && E[a] > E[a - 1] && E[a] >= E[a + 1] && E[a] > 0)) continue;
+        const [x, y] = XY(a, 0, E[a]); g.fillStyle = 'rgba(255,255,255,.55)';
+        for (let k = 0; k < 4; k++) { g.beginPath(); g.ellipse(x + 3 + k * 4, y + 2 + k * 2.5, 6 - k, 3, 0, 0, 7); g.fill(); }
+      }
     }
     // energy along the crest, % of where the wave started (the same count as Drop a wave's bar): a strip on top
     if (P.pw[0] != null) {
-      const top100 = Math.max(1.2, Math.min(2, Math.max(...P.pw) * 1.1)), y0 = 22, y1 = 66, py = (v) => y1 - Math.min(top100, Math.max(0, v)) / top100 * (y1 - y0);
+      const top100 = Math.max(1.2, Math.min(2, Math.max(...P.pw, ...(K && K.pw[0] != null ? K.pw : [])) * 1.1)), y0 = 22, y1 = 66, py = (v) => y1 - Math.min(top100, Math.max(0, v)) / top100 * (y1 - y0);
       g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = 1; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(sx(0), py(1)); g.lineTo(sx(NA - 1), py(1)); g.stroke(); g.setLineDash([]);
       g.beginPath(); for (let a = 0; a < NA; a++) { const p = [sx(a), py(P.pw[a])]; a ? g.lineTo(...p) : g.moveTo(...p); }
       g.strokeStyle = '#f0b25a'; g.lineWidth = 2; g.stroke();
+      if (K && K.pw[0] != null) {
+        g.beginPath(); let on = false;
+        for (let b = 0; b < K.NA; b++) { const x = kx(b); if (x < padL - 0.5) continue; const y = py(K.pw[b]); if (on) g.lineTo(x, y); else { g.moveTo(x, y); on = true; } }
+        g.setLineDash([6, 4]); g.strokeStyle = '#9fe3f0'; g.lineWidth = 1.6; g.stroke(); g.setLineDash([]);
+      }
       g.font = '12px "Instrument Sans", system-ui, sans-serif'; g.fillStyle = 'rgba(231,237,242,.85)'; g.textAlign = 'left';
-      g.fillText(`Energy along the crest: ${Math.round(P.pw[0] * 100)}% → ${Math.round(P.pw[NA - 1] * 100)}% of where it started`, sx(0), 13);
+      const et = `Energy along the crest: ${Math.round(P.pw[0] * 100)}% → ${Math.round(P.pw[NA - 1] * 100)}% of where it started`;
+      g.fillText(g.measureText(et).width > w - sx(0) - 8 ? `Energy: ${Math.round(P.pw[0] * 100)}% → ${Math.round(P.pw[NA - 1] * 100)}% of the start` : et, sx(0), 13);   // phones
       g.textAlign = 'right'; g.fillStyle = 'rgba(231,237,242,.55)'; g.font = '11px "IBM Plex Mono", monospace'; g.fillText('100%', sx(0) - 6, py(1) + 4); g.fillText('0', sx(0) - 6, py(0) + 4);
       g.strokeStyle = 'rgba(255,255,255,.12)'; g.beginPath(); g.moveTo(sx(0), py(0)); g.lineTo(sx(NA - 1), py(0)); g.stroke();
     }
@@ -3578,7 +3637,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     if (P.ib >= 0) { const [bx, by] = XY(P.ib, -JM, P.H[P.ib] * 0.6); g.fillStyle = '#f08a4b'; g.textAlign = bx > w - 50 ? 'right' : 'center'; g.fillText('breaks here', bx > w - 50 ? bx + 6 : bx, by - 14); g.beginPath(); g.moveTo(bx, by - 10); g.lineTo(bx, by); g.strokeStyle = '#f08a4b'; g.lineWidth = 1.5; g.stroke(); }
     // depth scale on the left, distance under the cut face
     g.textAlign = 'right'; g.fillStyle = 'rgba(231,237,242,.7)';
-    const zst = zmax > 25 ? 10 : zmax > 10 ? 5 : 2;
+    const zst = zmax > 150 ? 50 : zmax > 70 ? 20 : zmax > 25 ? 10 : zmax > 10 ? 5 : 2;
     for (let z = 0; z <= zmax; z += zst) { const [x, y] = XY(0, -JM, -z); g.fillText(z ? z + ' m' : '0', x - 6, y + 4); }
     g.textAlign = 'center';
     for (let k = 0; k <= 4; k++) {                           // distance to go, at round numbers
@@ -3588,13 +3647,34 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     }
     if (CUT.run) requestAnimationFrame(cutDraw);
   }
-  function cutCaption() {
-    const P = CUT.prof, r = S.ray, i0 = 0, i1 = P.ib >= 0 ? P.ib : P.h.findIndex((x, a) => a > 0 && x <= 0.05) - 1;
+  const toLand = (r) => (/^(near|on|off)/.test(r.land) ? '' : 'to ') + r.land;
+  function cutCaption(w, h) {
+    const P = CUT.prof, K = CUT.kprof, r = S.ray, kr = S.keep, i0 = 0, i1 = P.ib >= 0 ? P.ib : P.h.findIndex((x, a) => a > 0 && x <= 0.05) - 1;
     const e = i1 > 0 ? i1 : P.NA - 1, L = (a) => 2 * Math.PI / P.k[a], kmh = (a) => P.c[a] * 3.6;
-    const zmax = Math.max(4, Math.min(60, Math.max(...P.h) * 1.05)), V = `Wave height and depth share one scale, stretched about ${Math.max(2, Math.round((P.Lkm * 1000) / (zmax * 4)))} times against distance. The sea floor is the survey right under your ray.`;
-    $('cutCap').textContent = `A ${CUT.ft} ft, ${r.T} s swell on your ray. Over the last ${P.Lkm < 1 ? Math.round(P.Lkm * 1000) + ' m' : P.Lkm + ' km'} its wavelength goes from ${Math.round(L(i0))} m to ${Math.round(L(e))} m and it slows from ${Math.round(kmh(i0))} to ${Math.round(kmh(e))} km/h, ` +
-      (P.ib >= 0 ? `then breaks in ${P.h[P.ib].toFixed(1)} m of water at about ${(P.H[P.ib] * FTm).toFixed(1)} ft (it breaks once it's about 0.78 times as tall as the water is deep). ` : `and it doesn't break before the ray stops. `) +
-      `Height comes from shoaling plus how much the bottom focused or spread it along the way${r.pw ? '' : ' (still counting that; shoaling only for now)'}. ${V}`;
+    const km = (x) => (x < 1 ? Math.round(x * 1000) + ' m' : +x.toFixed(1) + ' km'), ft = (Q) => (0.78 * Q.bh * FTm).toFixed(1);
+    // the same scales cutDraw uses: meters of depth per pixel against meters of distance per pixel
+    const zmax = cutZmax(P, K), st = ((h - 114) / (zmax + 3)) / ((w - 60) / (P.Lkm * 1000));
+    const V = `Wave height and depth share one scale, stretched about ${Math.max(2, Math.round(st))} times against distance. ` +
+      (P.coarse ? 'The sea floor is the survey right under your ray, and NOAA\u2019s coarser ocean-wide map (about 1 km) where the ray is still beyond the survey\u2019s edge.' : 'The sea floor is the survey right under your ray.');
+    const avg = (Q) => { let t = 0, n = 0; for (const x of Q.h) if (x > 0.05) { t += x; n++; } return n ? Math.round(t / n) : 0; };
+    const cmp = K ? ` Dashed: the wave you kept (${kr.T} s ${toLand(kr)}). Over ${Math.abs(K.Lkm - P.Lkm) < 0.05 ? 'the same ' + km(P.Lkm) : 'its last ' + km(K.Lkm)} it crosses water ${avg(K)} m deep on average (yours: ${avg(P)} m)` +
+      (K.pw[0] != null && P.pw[0] != null ? `, ends with ${Math.round(K.pw[K.NA - 1] * 100)}% of the energy it started with (yours: ${Math.round(P.pw[P.NA - 1] * 100)}%)` : '') +
+      (K.ib >= 0 ? ` and breaks at about ${ft(K)} ft${P.ib >= 0 ? ` (yours: ${ft(P)} ft)` : ''}` : ' and doesn\u2019t break before its ray stops') + '.' : '';
+    $('cutCap').textContent = `A ${CUT.ft} ft, ${r.T} s swell on your ray. Over the last ${km(P.Lkm)} its wavelength goes from ${Math.round(L(i0))} m to ${Math.round(L(e))} m and it slows from ${Math.round(kmh(i0))} to ${Math.round(kmh(e))} km/h, ` +
+      (P.ib >= 0 ? `then breaks in ${P.bh.toFixed(1)} m of water at about ${ft(P)} ft (it breaks once it's about 0.78 times as tall as the water is deep). ` : `and it doesn't break before the ray stops. `) +
+      `Height comes from shoaling plus how much the bottom focused or spread it along the way${r.pw ? '' : ' (still counting that; shoaling only for now)'}. ` +
+      (P.Lkm > 10 ? 'At this scale the crests are only a few pixels apart, so the wave is drawn as a band from trough to crest. ' : '') + V + cmp;
+    cutKeyNote();
+  }
+  function cutKeyNote() {                                    // the legend under the side view, and the keep button
+    const b = $('cutKeep'), n = $('cutKey'), kr = S.keep, r = S.ray; if (!b || !n) return;
+    b.textContent = kr ? 'Clear kept wave' : 'Keep to compare';
+    n.hidden = !kr || !r || $('cutCv').hidden; n.textContent = '';
+    if (n.hidden) return;
+    const item = (cls, text) => { const sp = document.createElement('span'), i = document.createElement('i'); i.className = cls; sp.append(i, text); n.append(sp); };
+    if (kr === r) { item('kept', `Kept: this wave (${r.T} s ${toLand(r)}). Aim or drop another wave to compare.`); return; }
+    item('now', `Your wave: ${r.T} s ${toLand(r)}`);
+    item('kept', `Kept: ${kr.T} s ${toLand(kr)}`);
   }
   function cutStart() { if (!cutCtx || CUT.run || $('cutBox').hidden) return; CUT.run = true; CUT.last = 0; requestAnimationFrame(cutDraw); }
   function cutSync() {                                       // shown in Drop a wave once there's a ray
@@ -3606,6 +3686,8 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     for (const [id, k] of [['cutFt', 'ft'], ['cutLen', 'len']]) {
       $(id).addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; CUT[k] = +b.dataset.v; for (const x of $(id).querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b)); CUT.key = ''; cutDraw(); });
     }
+    // keep this wave's section to compare with the next one (Montauk against Fishers, say); its energy count keeps going
+    $('cutKeep').addEventListener('click', () => { S.keep = S.keep ? null : S.ray; if (S.keep) ensurePw(S.keep); CUT.key = ''; cutKeyNote(); cutDraw(); draw(); });
     setInterval(cutSync, 600);
   }
 
@@ -3829,7 +3911,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     requestAnimationFrame(w3Loop);
   }
   function w3Show(on) {
-    W3.on = on; $('w3Box').hidden = !on; $('cutCv').hidden = on; $('cutLen').hidden = on;
+    W3.on = on; $('w3Box').hidden = !on; $('cutCv').hidden = on; $('cutLen').hidden = on; $('cutKeep').hidden = on; cutKeyNote();
     for (const b of document.querySelectorAll('#cutView button')) b.setAttribute('aria-pressed', String((b.dataset.v === '3d') === on));
     if (on) { w3Build().then(() => { if (W3.scene) { W3.last = 0; requestAnimationFrame(w3Loop); } }).catch(() => { $('w3Note').textContent = 'This browser can’t show the 3D view.'; }); }
   }
@@ -3909,7 +3991,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   }
 
   window.CHOC.trip = { w3: W3, _aimed: () => (FC.d && fRow() != null ? fcAimed(FC.model, fRow(), FC.spot) : []), _at: (lon, lat) => fcAt(lon, lat, FC.model, fRow()),
-    _week: (i) => setWeek(i), _tapAt: (lon, lat) => { const { sc, x0, y0 } = proj(cam()); fcTap((lon * KX - x0) * sc, (-lat * KY - y0) * sc); }, _raw: (T, lon, lat, th) => trace(T, lon, lat, th, false), state: S, aim: doAim, play, _miss: (T, lon, lat, th, spot) => miss(trace(T, lon, lat, th, false), spot), _aim: (spot, T, s) => aim(spot, T, s), trace: (T, lon, lat, th) => makeRay(T, [lon, lat], th),
+    _week: (i) => setWeek(i), _tapAt: (lon, lat) => { const { sc, x0, y0 } = proj(cam()); fcTap((lon * KX - x0) * sc, (-lat * KY - y0) * sc); }, _raw: (T, lon, lat, th) => trace(T, lon, lat, th, false), state: S, aim: doAim, play, _miss: (T, lon, lat, th, spot) => miss(trace(T, lon, lat, th, false, aimTg(spot)), spot), _aim: (spot, T, s) => aim(spot, T, s), trace: (T, lon, lat, th) => makeRay(T, [lon, lat], th),
     _tiles: () => tileCache.size, _reefAsked: () => REEF.asked,
     skip: () => { if (S.ray) { S.dist = S.ray.len; S.phase = 'done'; S.playing = false; draw(); finish(); } }, setMode, fc: FC,
     _screen: (lon, lat) => { const { sc, x0, y0 } = proj(cam()); return [(lon * KX - x0) * sc, (-lat * KY - y0) * sc]; } };
