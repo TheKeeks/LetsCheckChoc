@@ -35,8 +35,8 @@ module.exports = {
       await page.waitForTimeout(300);
       const lines = await page.evaluate(() => window.CHOC.trip.fc.pillLines);
       log(`dot ${(pick.h * 3.28084).toFixed(1)} ft ${Math.round(pick.T)} s from ${Math.round(pick.D)}°, sea ${Math.round(pick.sea[2])}°: ${lines.join(' | ')}`);
-      assert.ok(lines[0].startsWith(`${(pick.h * 3.28084).toFixed(1)} ft · ${Math.round(pick.T)} s from`), 'card shows the dot\'s own swell');
-      assert.ok(lines.some((l) => /^One of the swells here/.test(l)), 'card notes the bigger sea there');
+      assert.ok(lines[0].startsWith(`${(pick.h * 3.28084).toFixed(1)} ft @ ${Math.round(pick.T)} s `), 'card shows the dot\'s own swell');
+      assert.ok(lines.some((l) => /^Biggest sea here: \d+\.\d ft @ \d+ s [A-Z]+$/.test(l)), 'card notes the bigger sea there');
     } else log('no hour with a dot under a different sea in this forecast');
 
     // No cutaway on the forecast.
