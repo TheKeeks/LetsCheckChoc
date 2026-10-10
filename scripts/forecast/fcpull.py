@@ -5,7 +5,9 @@ forward-ray model.
     wind sea, each with height, period and direction.  Source: noaa-gfs-bdp-pds on AWS (public).
   ECMWF IFS wave (open data, 0.25 deg, 3-hourly to 144 h, 6-hourly after): total sea height, mean direction,
     peak period, plus significant height in long-period bands (10-12, 12-14, 14-17, 17-21, 21-25, 25-30 s).
-    No direction per train.  Source: data.ecmwf.int (CC-BY 4.0).
+    No direction per train.  Source: ECMWF open data (CC-BY 4.0), read from ECMWF's mirror on Google Cloud
+    (ecmwf-open-data). data.ecmwf.int answers busy shared addresses like GitHub's runners with HTTP 429, so it is
+    used only when the mirror has no run; the AWS mirror throttles byte-range reads (503 Slow Down).
 
 Tie to Choc: each model's swell trains are read at buoy 44097 (CDIP 154, 40.969 N 71.127 W), the same point
 the ten-year history reads, then run through the same per-direction, per-period ray response the rest of
@@ -20,7 +22,7 @@ the Sound Check page reads it from there (research/fc/ holds the copy that ships
 (the survey map's bounds) and fwdk.json (each spot's response by period and direction) next to this file, and the
 page's forward-ray tables in research/fr/.
 """
-import json, math, sys, os, datetime as dt, urllib.request, concurrent.futures as cf
+import json, math, sys, os, datetime as dt, urllib.request, urllib.error, concurrent.futures as cf
 import numpy as np
 import eccodes
 from PIL import Image
@@ -32,14 +34,16 @@ STEPS = list(range(0, 145, 3)) + list(range(150, 169, 6))           # hours ahea
 GRIDS = {'reg': dict(lat=(35.0, 45.5), lon=(-77.5, -62.0), d=0.25),     # New Jersey to Cape Cod and out past the shelf
          'ocean': dict(lat=(-5.0, 70.0), lon=(-100.0, 10.0), d=1.0)}     # the whole North Atlantic, so the ocean view fills any screen
 
-def get(url, a=None, b=None, tries=4):
+def get(url, a=None, b=None, tries=6):
     for k in range(tries):
         try:
             rq = urllib.request.Request(url, headers={'Range': f'bytes={a}-{b}'} if a is not None else {})
             return urllib.request.urlopen(rq, timeout=90).read()
         except Exception as e:
             if k == tries - 1: raise
-            import time; time.sleep(2 * (k + 1))
+            # a server that's busy (429, 503) says how long to wait; otherwise back off 2, 4, 8, 16, 32 s
+            ra = e.headers.get('Retry-After') if isinstance(e, urllib.error.HTTPError) and e.code in (429, 503) and e.headers else None
+            import time; time.sleep(min(60, int(ra)) if ra and ra.isdigit() else 2 ** (k + 1))
 
 def jload(p):
     with open(p) as f: return json.load(f)
@@ -78,13 +82,18 @@ def latest_gfs():
         try: get(u, tries=1); return c
         except Exception: pass
     raise SystemExit('no complete GFS-Wave run found')
+# the same files at ECMWF's Google Cloud mirror and at ECMWF itself; the mirror first (see the top of this file)
+EC_SOURCES = ('https://storage.googleapis.com/ecmwf-open-data', 'https://data.ecmwf.int/forecasts')
 def latest_ec():
+    """(cycle, source) of the newest complete wave run, the mirror's own newest before ECMWF's: the mirror lags
+    ECMWF by minutes, which the 3-hourly schedule never notices"""
     now = dt.datetime.now(dt.timezone.utc)
-    for h in range(0, 48, 12):
-        t = now - dt.timedelta(hours=h); c = t.replace(hour=t.hour // 12 * 12, minute=0, second=0, microsecond=0)
-        u = f"https://data.ecmwf.int/forecasts/{c:%Y%m%d}/{c:%H}z/ifs/0p25/wave/{c:%Y%m%d%H}0000-{STEPS[-1]}h-wave-fc.index"
-        try: get(u, tries=1); return c
-        except Exception: pass
+    for src in EC_SOURCES:
+        for h in range(0, 48, 12):
+            t = now - dt.timedelta(hours=h); c = t.replace(hour=t.hour // 12 * 12, minute=0, second=0, microsecond=0)
+            u = f"{src}/{c:%Y%m%d}/{c:%H}z/ifs/0p25/wave/{c:%Y%m%d%H}0000-{STEPS[-1]}h-wave-fc.index"
+            try: get(u, tries=1); return c, src
+            except Exception: pass
     raise SystemExit('no complete ECMWF wave run found')
 
 GFS_VARS = {'hs': 'HTSGW:surface', 'w1h': 'SWELL:1 in sequence', 'w1t': 'SWPER:1 in sequence', 'w1d': 'SWDIR:1 in sequence',
@@ -114,8 +123,8 @@ def gfs_glob_step(c, s):
         i = next(n for n, l in enumerate(idx) if (':'.join(l.split(':')[3:5])) == name)
         out[k] = decode(get(u, offs[i], (offs[i + 1] - 1) if i + 1 < len(offs) else ''))
     return s, out
-def ec_step(c, s):
-    base = f"https://data.ecmwf.int/forecasts/{c:%Y%m%d}/{c:%H}z/ifs/0p25/wave/{c:%Y%m%d%H}0000-{s}h-wave-fc"
+def ec_step(c, src, s):
+    base = f"{src}/{c:%Y%m%d}/{c:%H}z/ifs/0p25/wave/{c:%Y%m%d%H}0000-{s}h-wave-fc"
     idx = [json.loads(l) for l in get(base + '.index').decode().splitlines()]
     out = {}
     for k in EC_VARS:
@@ -204,12 +213,12 @@ def q8(a, s, top=254):
 
 def main(OUT):
     os.makedirs(OUT, exist_ok=True)
-    cg, ce = latest_gfs(), latest_ec()
-    print('GFS-Wave', cg, 'ECMWF', ce, flush=True)
+    cg, (ce, esrc) = latest_gfs(), latest_ec()
+    print('GFS-Wave', cg, 'ECMWF', ce, 'from', esrc, flush=True)
     with cf.ThreadPoolExecutor(8) as ex:
         G = dict(ex.map(lambda s: gfs_step(cg, s), STEPS)); print('gfs done', flush=True)
         GG = dict(ex.map(lambda s: gfs_glob_step(cg, s), STEPS)); print('gfs global done', flush=True)
-        E = dict(ex.map(lambda s: ec_step(ce, s), STEPS)); print('ec done', flush=True)
+        E = dict(ex.map(lambda s: ec_step(ce, esrc, s), STEPS)); print('ec done', flush=True)
     elat = np.array([p[0] for p in EDGE]); elon = np.array([p[1] for p in EDGE])
     t0g, t0e = cg, ce
     times = sorted({t0g + dt.timedelta(hours=s) for s in STEPS} & {t0e + dt.timedelta(hours=s) for s in STEPS} | {t0g + dt.timedelta(hours=s) for s in STEPS})
