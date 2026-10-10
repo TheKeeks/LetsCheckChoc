@@ -220,6 +220,14 @@ html.hub-lock, html.hub-lock body { overflow: hidden; }
 .hub-play { flex: none; width: 42px; height: 42px; padding: 0; border-radius: 50%; display: grid; place-items: center; font-size: .9rem; background: #23384a; border-color: rgba(255,255,255,.2); }
 .hub-tlw { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
 .hub-asof { font-size: .66rem; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hub-asofrow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.hub-asofrow .hub-asof { flex: 1 1 auto; min-width: 0; }
+.hub-refresh { flex: none; padding: 1px 8px; font-size: .72rem; line-height: 1.3; background: transparent; color: var(--fg-2); border: 1px solid #2c3b49; border-radius: 10px; }
+.hub-refresh b { font-weight: 500; }
+.hub-refresh span { display: inline-block; }
+.hub-refresh.spin span { animation: hub-spin .8s linear infinite; }
+@keyframes hub-spin { to { transform: rotate(360deg); } }
+@media (max-width: 520px) { .hub-refresh b { display: none; } }
 .hub-chip { min-width: 0; font-size: .8rem; padding: 7px 13px; border-radius: 999px; background: rgba(10,15,21,.86); border: 1px solid rgba(240,138,75,.6); color: var(--fg); text-align: left; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
 .hub-chip:hover { background: rgba(35,56,74,.95); }
 .hub-chip b { color: var(--swell); font-weight: 600; }
@@ -402,6 +410,7 @@ body { margin: 0; }
             <li><b>Near Fishers:</b> the model's rays over the sea floor into the spot, colored by period.</li>
             <li><b>Timeline:</b> GFS-Wave solid, ECMWF dashed, night shaded. Dots: wind at the spot (green clean, yellow cross-shore, red onshore). Gray bars: far-off swell arriving.</li>
             <li><b>Spot height:</b> each model's swell at buoy 44097 (white diamond), run through the reef's response. On 177 past hours it beat reading the models at the survey map's edge.</li>
+            <li><b>↻ Refresh:</b> loads the newest forecast pull without reloading the page. A new pull comes every 3 hours; to make one now, run “Update Sound Check forecast” under Actions on GitHub.</li>
           </ul>
           <ul class="hub-fine">
             <li>GFS-Wave (NOAA): 0.16° near the coast, 0.25° offshore, separate swells.</li>
@@ -454,7 +463,7 @@ body { margin: 0; }
       <div class="trip-inset" id="tripInsetBox" hidden><canvas id="tripInset" aria-label="Close-up of where the wave arrives, over a 2016 aerial photo with your reef map"></canvas><button type="button" class="trip-inset-x" id="tripInsetClose" aria-label="Hide the arrival close-up">×</button></div>
       <div class="hub-bot" id="fcBox" data-mode="week">
         <div class="hub-over"><button type="button" id="fcBest" class="hub-chip" hidden></button><div class="hub-key" id="fcKey" role="img" aria-label="Wave height colors, 0 to 20 feet and up"><i></i><span><b>0</b><b style="left:22.4%">1</b><b style="left:50%">5</b><b>20+ ft</b></span></div></div>
-        <div class="hub-bar"><button type="button" id="fcPlay" class="hub-play" aria-label="Play the week">▶</button><div class="hub-tlw"><div id="fcTlSvg" class="fc-tl" aria-label="Drag along the week to scrub"></div><div id="fcAsOf" class="hub-asof mono">Loading the forecast…</div></div></div>
+        <div class="hub-bar"><button type="button" id="fcPlay" class="hub-play" aria-label="Play the week">▶</button><div class="hub-tlw"><div id="fcTlSvg" class="fc-tl" aria-label="Drag along the week to scrub"></div><div class="hub-asofrow"><div id="fcAsOf" class="hub-asof mono" aria-live="polite">Loading the forecast…</div><button type="button" id="fcRefresh" class="hub-refresh" title="Load the latest forecast" aria-label="Load the latest forecast"><span aria-hidden="true">↻</span><b> Refresh</b></button></div></div></div>
       </div>
       <div class="hub-bot" id="pastBox" data-mode="past" hidden>
         <div class="hub-over"><button type="button" id="pastBest" class="hub-chip" hidden></button><div class="hub-key" role="img" aria-label="Wave height colors, 0 to 20 feet and up"><i></i><span><b>0</b><b style="left:22.4%">1</b><b style="left:50%">5</b><b>20+ ft</b></span></div></div>
@@ -819,7 +828,6 @@ body { margin: 0; }
   <h2 id="next-h">What's next</h2>
   <ol>
     <li><strong>Keep logging, especially off-season, flat days and Wilderness.</strong> The ratings model has 28 Choc sessions, none from November to May, only two flat ones, and no logged Wilderness sessions. Wilderness numbers can't be checked against anything until there are some.</li>
-    <li><strong>Refresh the forecast on a schedule.</strong> The forecast on this page is a snapshot from the last time the pull script ran. A GitHub Action could run it every 6 hours.</li>
     <li><strong>Read the logs live.</strong> The ten-year calendar now reads photos from the site's surf log. The ratings model still fits from a CSV export; reading the logs live would let it refit after every new session.</li>
     <li><strong>Sharper sea floor for Choc's number.</strong> Tracing the last kilometer and a half on the 8 m survey, with your reef sketch as the landing zone, puts rays on the reef itself instead of a 650 m circle. It would replace the ten-year numbers only if it ranks your logged sessions better than the current model.</li>
     <li><strong>Sharper wind.</strong> The 17-point wind grid uses the ECMWF 9 km model. NOAA's HRRR (3 km, archived since 2018) would resolve the wind over the reef better.</li>
@@ -1471,12 +1479,26 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   // fc/ is the copy that ships with the page. The newer of the two wins (a pull that can't be reached in 6 s
   // doesn't count), and its field images are read from the same place (d._base).
   const FC_LIVE = 'https://raw.githubusercontent.com/TheKeeks/LetsCheckChoc/fc-data/fc/';
-  const fcGet = (base, ms) => {
+  // the pull; false when the server answers without one (nothing published yet), null when it doesn't answer.
+  // fresh: past GitHub's 5-minute cache too
+  const fcGet = (base, ms, fresh) => {
     const ac = typeof AbortController === 'function' ? new AbortController() : null, t = ac && ms ? setTimeout(() => ac.abort(), ms) : 0;
-    return fetch(base + 'fc.json', { cache: 'no-cache', signal: ac ? ac.signal : undefined }).then(r => (r.ok ? r.json() : null))
-      .then(d => (d && d.made ? Object.assign(d, { _base: base }) : null)).catch(() => null).finally(() => clearTimeout(t));
+    return fetch(base + 'fc.json' + (fresh ? '?t=' + Date.now() : ''), { cache: fresh ? 'no-store' : 'no-cache', signal: ac ? ac.signal : undefined }).then(r => (r.ok ? r.json() : false))
+      .then(d => (d && d.made ? Object.assign(d, { _base: base }) : false)).catch(() => null).finally(() => clearTimeout(t));
   };
-  window.CHOC.fcData = Promise.all([fcGet(FC_LIVE, 6000), fcGet('fc/')]).then(([live, here]) => (live && (!here || live.made > here.made) ? live : here));
+  window.CHOC.fcData = Promise.all([fcGet(FC_LIVE, 6000), fcGet('fc/')]).then(([live, here]) => (live && (!here || live.made > here.made) ? live : here || null));
+  // ↻ under the map's timeline: ask GitHub again for the latest pull and, when it is newer than the forecast on show,
+  // put it up everywhere the page shows the forecast (the map and the 7-day table). 'new' | 'same' | 'none' | 'unreachable'
+  const fcSubs = [];
+  window.CHOC.onForecast = (fn) => { fcSubs.push(fn); };
+  window.CHOC.fcRefresh = async () => {
+    const [live, cur] = await Promise.all([fcGet(FC_LIVE, 8000, true), window.CHOC.fcData]);
+    if (live === null) return 'unreachable';
+    if (!live) return 'none';
+    if (cur && live.made <= cur.made) return 'same';
+    window.CHOC.fcData = Promise.resolve(live); fcSubs.forEach((f) => f(live));
+    return 'new';
+  };
   const ETF = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hourCycle: 'h23' });
   const etp = ms => { const o = {}; for (const p of ETF.formatToParts(new Date(ms))) o[p.type] = p.value; o.h = +o.hour % 24; return o; };
   const hr12 = h => `${h % 12 || 12}${h < 12 ? 'am' : 'pm'}`;
@@ -1612,7 +1634,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     if (tb) tb.innerHTML = '<thead><tr><th>Day</th><th class="num">Wilderness</th><th class="num">Choc</th><th class="num">Buoy</th><th>Wind at Wilderness</th></tr></thead><tbody>' + s.top.map(t => `<tr><td class="mono">${t.date}</td><td class="num">${t.wild} ft</td><td class="num">${t.choc} ft</td><td class="num">${t.buoy} ft</td><td>${t.wind_ok ? '<span style="color:var(--offshore)">clean</span>' : 'not clean'}${t.wdir != null ? ' · ' + window.CHOC.windArrow(t.wdir) + 'from ' + t.wdir + '°' : ''}</td></tr>`).join('') + '</tbody>';
   }
 
-  kresp('choc'); thisWeek(); wildSection(); dayCheck();
+  kresp('choc'); thisWeek(); window.CHOC.onForecast(thisWeek); wildSection(); dayCheck();
 })();
 
 (function () {
@@ -2654,8 +2676,9 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   function fcPx(model, g) {
     const k = model + '_' + g; if (k in FC.px) return FC.px[k];
     FC.px[k] = null;
-    img(`${(FC.d && FC.d._base) || 'fc/'}field_${k}.png`).then((im) => {   // from the same place as the forecast's numbers
-      if (!im) return;
+    const d = FC.d, base = (d && d._base) || 'fc/';         // from the same place as the forecast's numbers; a published
+    img(`${base}field_${k}.png${/^https?:/.test(base) ? '?m=' + encodeURIComponent(d.made) : ''}`).then((im) => {   // pull's images are keyed to it, so a cached older one never pairs with newer numbers
+      if (!im || FC.d !== d) return;                         // ↻ brought a newer pull while this one loaded
       FC.px[k] = { w: im.width, a: window.CHOC.pixels(im) };
       FC.aim = {}; FC.arr = {};
       if (S.phase === 'week') { draw(); fcTimeline(); }
@@ -2758,14 +2781,14 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   const spotFt = (model, i, spot) => (model === 'gfs' ? FC.d.gfs[i][spot || FC.spot] : (ecRow(i) || {})[spot || FC.spot]);
   async function setWeek(i) {
     if (FC.i !== i) { FC.fan = null; FC.dot = null; }        // a new hour: the dot picked belongs to the old one
-    FC.i = i; const my = i, g = FC.d.gfs[i], e = ecRow(i);
+    FC.i = i; const my = i, d = FC.d, g = d.gfs[i], e = ecRow(i);
     if (S.phase === 'week') weekHud();                       // the headline needs only the forecast numbers, not the rays still loading
     const tr = FC.model === 'gfs' ? g.trains.filter((t) => t.T >= 5).map((t) => ({ ft: t.ft, T: t.T, D: t.D })) : e ? [{ ft: e.hs, T: e.T, D: e.D }] : [];
     const cur = await Promise.all(tr.map(async (t) => {
       const Te = Math.max(6, Math.min(16, Math.round(t.T / 2) * 2)), De = Math.round(t.D / 5) * 5, f = await frFile(Te);
       return Object.assign({ rays: f && f[De] ? f[De].rays : null }, t);
     }));
-    if (FC.i !== my || S.phase !== 'week') return;
+    if (FC.i !== my || FC.d !== d || S.phase !== 'week') return;
     FC.cur = cur; weekHud(); draw(); fcCursor();
   }
   function weekHud() {
@@ -3019,20 +3042,34 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     b.dataset.i = best; b.hidden = false; b.setAttribute('aria-label', `Jump to the best bet for ${SPOT[sp].name}`);
     b.innerHTML = `<b>Best bet</b> ${fcWhen(Date.parse(r.t))} · ${bv.toFixed(1)} ft<span class="x"> · ${windWord(windKind(r.wind))}` + (e ? (gap <= 0.5 ? ' · models agree' : ' · models differ') : '') + '</span>';
   }
-  function fcAsOf() {
+  function fcAsOf(note) {
     const d = FC.d, made = Date.parse(d.made), p = etParts(made), hrs = Math.max(0, Math.round((Date.now() - made) / 36e5));
     const run = (r) => { const q = etParts(Date.parse(r.replace(/Z$/, ':00Z'))); return h12(q.h); };
     const txt = `As of ${p.weekday} ${p.month} ${p.day}, ${h12(p.h, p.minute)} ET` + (hrs >= 1 ? ` (${hrs < 48 ? hrs + ' h' : Math.round(hrs / 24) + ' days'} old)` : '') +
       (d.runs.gfs === d.runs.ec ? ` · GFS-Wave and ECMWF ${run(d.runs.gfs)} runs` : ` · GFS-Wave ${run(d.runs.gfs)} run · ECMWF ${run(d.runs.ec)} run`);
-    $('fcAsOf').textContent = txt; $('fcAsOf').title = txt;
+    $('fcAsOf').textContent = (note ? note[0].toUpperCase() + note.slice(1) + ' · ' : '') + txt; $('fcAsOf').title = txt;
   }
-  fcData.then((d) => {
+  function fcLoad(d) {                                       // the forecast's numbers, on load and when ↻ brings a newer pull
     if (!d) { $('fcAsOf').textContent = 'The forecast file didn’t load.'; return; }
-    FC.d = d;
+    const at = FC.d ? Date.parse(FC.d.gfs[FC.i].t) : Date.now();   // first load: now; a newer pull keeps the hour on show
+    FC.d = d; FC.px = {}; FC.cv = {}; FC.aim = {}; FC.arr = {};   // field images, colors and dots belong to the pull they came with
     FC.ecIx = d.gfs.map((r) => { const t = Date.parse(r.t); let b = null, bd = 3 * 36e5 + 1; d.ec.forEach((q, k) => { const x = Math.abs(Date.parse(q.t) - t); if (x < bd) { bd = x; b = k; } }); return b; });
-    const now = Date.now(); FC.i = 0; d.gfs.forEach((r, i) => { if (Date.parse(r.t) <= now) FC.i = i; });
+    FC.i = 0; d.gfs.forEach((r, i) => { if (Date.parse(r.t) <= at) FC.i = i; });
     fcAsOf(); fcBest();
     if (S.phase === 'week') setMode('week');
+  }
+  fcData.then(fcLoad);
+  if (window.CHOC.onForecast) window.CHOC.onForecast(fcLoad);
+  // ↻: the latest pull now, without waiting for a reload (a new one is published every 3 hours)
+  let noteT = 0;
+  $('fcRefresh').addEventListener('click', async () => {
+    const b = $('fcRefresh'); if (b.disabled || !window.CHOC.fcRefresh) return;
+    clearTimeout(noteT); b.disabled = true; b.classList.add('spin'); $('fcAsOf').textContent = 'Checking for a newer forecast…';
+    const r = await window.CHOC.fcRefresh().catch(() => 'unreachable');
+    b.disabled = false; b.classList.remove('spin');
+    if (!FC.d) { $('fcAsOf').textContent = 'The forecast file didn’t load.'; return; }
+    fcAsOf({ new: 'just updated', same: 'up to date', none: 'nothing published on GitHub yet' }[r] || 'couldn’t reach GitHub');
+    noteT = setTimeout(() => fcAsOf(), 8000);               // then the date alone again: a phone's line is too short for both
   });
   { const st = []; for (let f = 0; f <= 20; f += 1) st.push(`rgb(${hCol(f)}) ${(Math.sqrt(f / 20) * 100).toFixed(1)}%`);   // keys use a square-root scale, like the colors
     for (const kb of document.querySelectorAll('.hub-key i')) kb.style.background = `linear-gradient(90deg, ${st.join(', ')})`; }
