@@ -26,7 +26,8 @@ npm run test:rules    # Firestore/Storage rules in the Firebase emulators (tests
 node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 ```
 
-- Unit and Python tests need **no npm install**. `test:rules` needs
+- Unit and Python tests need **no npm install** (`scripts/test_fcpull.py` also
+  needs numpy, Pillow and eccodes, else it skips). `test:rules` needs
   `npm i --no-save firebase-tools@15.32.1 @firebase/rules-unit-testing@5.0.2 firebase@12.19.0`
   first (CI: `.github/workflows/rules.yml`).
 - e2e needs Playwright 1.56.x. A web session has it globally, with Chromium in
@@ -52,11 +53,12 @@ node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 | `data/buoys-east-coast.json`, `data/tide-stations.json` | Static catalogs read by `initApp` |
 | `scripts/fetch_buoy.py` | Pipeline: NDBC 44097 → `data/buoy.json`, plus model-vs-buoy rows |
 | `scripts/canary.py` | Upstream canary (`.github/workflows/canary.yml`, every 6 h): opens/closes one `data-canary` issue |
+| `scripts/forecast/fcpull.py` | Sound Check forecast pull: GFS-Wave + ECMWF → `research/fc/fc.json` + field PNGs, tied to the spots with `research/fr/` and `scripts/forecast/{world,fwdk}.json` |
 | `scripts/smoke_regression.js`, `scripts/leak_deg_sensitivity.js`, `scripts/generate_icons.js`, `scripts/bracelet_plans.js` | Dev-only tools, never loaded by the page |
 | `test-gate.js` | Legacy tests, still run by `npm test` |
 | `tests/` | `tests/helpers/` (vm loader, DOM stub, fixture map), `tests/unit/`, `tests/e2e/`, `tests/fixtures/` |
 | `project/` | React prototype. `project/assets/lineup.jpg` is used by the live page |
-| `research/` | Sound Check tab (was "Swell Map"): a self-contained research page (`research/index.html` plus its tiles, ray tables and forecast snapshot `research/fc/`), framed by `#view-research` and loaded on first open. Built outside this repo; treat as generated |
+| `research/` | Sound Check tab (was "Swell Map"): a self-contained research page (`research/index.html` plus its tiles, ray tables and the forecast copy that ships with it, `research/fc/`; the page shows the newer of that and the `fc-data` branch), framed by `#view-research` and loaded on first open. Built outside this repo; treat as generated |
 | `previews/` | Looks layered over the live app by the inline loaders in `index.html`. `previews/clean/` is the DEFAULT look (no parameter); `?classic=1` opens the old look with no look files, `?preview=<name>` picks a candidate look instead (e2e `tests/e2e/scenarios/preview-looks.js`, `tests/e2e/scenarios/look-default.js`). The e2e runner's `ctx.open()` adds `classic=1` to any path that names no look, so the older scenarios test the app underneath. Delete a folder (and its name in the loader) when a look is retired. `previews/clean/` is the approved "A refined" design: `previews/clean/core.js` (shell, data, Settings) plus one js/css pair per screen (forecast, log, model, tv), API in `previews/clean/CONTRACT.md`, e2e `tests/e2e/scenarios/preview-clean.js` plus `preview-clean-{core,forecast,log,tv}.js` |
 | `bracelet/` | Fishers Bracelet, a side project not linked from the forecast: a 3D designer for a one-wire gold bracelet that traces the island, closes it at the East End in one end-on joint and ends in a ball clasp on North Hill. `bracelet/index.html` (page), `bracelet/geometry.js` (pure route and shape maths), `bracelet/plans.js` (the jeweller's 1:1 flat drawing, Spanish how-to, SVG and PDF), `bracelet/jeweler.html` (plans page), `bracelet/plans/` (PDF + SVG of the standard design, regenerate with `scripts/bracelet_plans.js`), `bracelet/fishers-outline.js` (OSM coastline), three.js r128 and jsPDF 2.5.1 vendored in `bracelet/vendor/`. Unit `tests/unit/bracelet-geometry.test.js`, `tests/unit/bracelet-plans.test.js`; e2e `tests/e2e/scenarios/bracelet-designer.js` (open `/bracelet/index.html`: the runner's server has no folder index) |
 
@@ -113,6 +115,8 @@ each one. Line numbers drift with every edit, so do not cite them in docs.
   every NDBC file fails it exits 1 and writes nothing; a partial failure keeps
   the previous sections and lists them in `stale_sections`. Verification rows
   are hourly and back-fill the hours of dropped runs.
+- **Sound Check forecast:** `.github/workflows/update-forecast.yml` runs the pull every 3 h and force-pushes it to the
+  `fc-data` branch (latest pull only); `research/` shows the newer of it and `research/fc/` (e2e: `net.fcLive`).
 - **Firebase:** anonymous auth by default, Google sign-in optional. Surf logs
   live in Firestore `surf_logs`, photos in Storage `surf-photos/raw/<uid>/…`.
   `loadSurfLog` waits on `window._fbAuthReady`. It runs in the background,

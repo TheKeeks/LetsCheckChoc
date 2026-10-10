@@ -1,5 +1,32 @@
 # Changelog
 
+## [Unreleased] — Sound Check: the 7-day forecast stays current
+
+On Friday the Sound Check forecast still read "As of Wed Oct 7, 11:58am ET". The GFS-Wave and ECMWF pull behind it (run through the ray model to Choc and Wilderness) had been run by hand and committed with the page as a snapshot. Nothing ever ran it again.
+
+The pull now lives in the repo as `scripts/forecast/fcpull.py`, with its two inputs; it reads the page's own ray tables in `research/fr/`. A new workflow, `.github/workflows/update-forecast.yml`, runs it every 3 hours and publishes the result to an `fc-data` branch. GFS-Wave runs land 4–5 hours after 00/06/12/18Z. The workflow also runs as soon as it lands on `main`, and can be started by hand from the Actions tab.
+
+The branch holds only the latest pull, replaced each time. A pull is about 3 MB of field images, so committing it to `main` every few hours would add gigabytes a year to the repo the site is served from.
+
+The page reads that pull from raw.githubusercontent.com and shows whichever is newer: the published pull, or the copy that ships with it in `research/fc/`. The field images come from the same place as the numbers. If GitHub can't be reached within 6 s, the page uses the shipped copy, and the as-of line under the timeline shows its real age. The shipped copy is refreshed in this change: the 12Z runs of 9 Oct.
+
+If a pull fails (no complete model run, or a download error), nothing is published. The page keeps the last good pull, and GitHub emails the owner, as with the buoy bot. CI skips the `fc-data` branch.
+
+A **↻ Refresh** button now sits beside the as-of line. It asks GitHub again for the latest pull, past its 5-minute cache. If that pull is newer than the one on show, the map, the timeline and the 7-day table switch to it without a reload, and the map stays on the hour being looked at. For a few seconds the line then says what happened: just updated, up to date, nothing published on GitHub yet, or couldn't reach GitHub. After that it shows the date alone again, because a phone's line is too short for both. The button can't start a new pull, since that would need a GitHub token in the page. The forecast's help card says how to start one from the Actions tab.
+
+Verified by:
+- **A new e2e scenario, `w6-swell-map-forecast-fresh.js`.** It serves a pull a day newer than the shipped copy and checks that the page uses it, numbers and field images both, and names it in the as-of line. It also checks that an older pull doesn't replace the shipped copy, and that the shipped copy is used when GitHub can't be reached. It fails on the current page, which read "As of Wed Oct 7", and passes now. It then presses ↻ after a newer pull is published. It checks that the map, the timeline and the 7-day table switch to that pull, and that the map stays on the same hour. It also presses ↻ when nothing is newer, when nothing is published, and when GitHub can't be reached; each time the forecast on show stays and the line says why. The ↻ checks fail on the page without the button and pass now.
+- **`scripts/test_fcpull.py`.** It checks which model run gets picked: the newest complete run, falling back when the newest is still coming in, and failing when nothing has been published for two days. It also checks that the swell window holds: a 12 s swell from 136° reaches Choc more than 1.5 times bigger than from 60° or 220°.
+- **The pull itself.** It ran from the repo and gave byte-identical output to the hand-run version. The publish step was dry-run locally.
+
+The e2e runner serves no pull by default (`net.fcLive`), so the other scenarios still use the shipped copy. No Firebase or rules changes.
+
+## [Unreleased] — Sound Check: photos test waits for the page's own surf-log read
+
+`w6-swell-map-photos.js` hands the calendar its own photos, but the page also reads the surf log itself on load. When that read finished after the test's photos went in, it replaced them and the test found none. That happened on a fast CI runner during #151. The page now exposes that read as `CHOC.logLoaded`, and the test waits for it before adding photos.
+
+Reproduced locally by taking the delays out of the Firebase stub: without the wait the test fails the way CI did, and with the wait it passes. Visitors are not affected, since only tests add photos this way.
+
 ## [Unreleased] — Sound Check: readouts as short 1°/2° swell lines
 
 The owner found the historical lookup and the map full of boxes of explanation, and asked for short lines instead: primary swell, secondary swell, with 1° and 2° as the labels. The swell mix was written as sentences everywhere it appeared. The calendar card said "Where Choc's swell came from at its biggest hour (4am): 58% from groundswell of 9.1 ft at 17 s from SSE (167°) · …", and the map headline ran it all into one line.

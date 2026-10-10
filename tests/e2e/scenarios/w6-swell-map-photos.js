@@ -13,6 +13,8 @@ module.exports = {
     await page.route(/photos\.example\.test/, r => r.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="9"><rect width="12" height="9" fill="#3a6"/></svg>' }));
     await ctx.open('/research/index.html');
     await page.waitForFunction(() => window.CHOC && window.CHOC.setPhotos && window.CHOC.showPast, null, { timeout: 30000 });
+    // The page reads the (empty) test log itself; hand it photos only after that read, or the read replaces them.
+    await page.evaluate(() => window.CHOC.logLoaded);
 
     // The test log has no photos: no cameras until some are given.
     assert.equal(await page.$$eval('#decHeat .dec-cam', n => n.length), 0, 'no photos in an empty log');

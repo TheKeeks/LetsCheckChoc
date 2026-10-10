@@ -1,0 +1,58 @@
+name: Update Sound Check forecast
+
+# The Sound Check page's 7-day forecast: GFS-Wave and ECMWF run through the ray model
+# (scripts/forecast/fcpull.py). Each run pulls the latest complete model runs and publishes them to the
+# fc-data branch, which holds only the latest pull (force-pushed), so the field images (about 3 MB a pull)
+# never pile up in main's history. The page reads fc-data and falls back to research/fc/, the copy that
+# ships with it, showing whichever was pulled more recently with its real age.
+on:
+  schedule:
+    - cron: '40 */3 * * *'  # every 3 hours at :40; GFS-Wave runs land 4-5 h after 00/06/12/18Z (GitHub drops some runs)
+  workflow_dispatch:  # Manual trigger
+  push:               # first pull as soon as this lands, and after any change to the pull
+    branches: [main]
+    paths:
+      - 'scripts/forecast/**'
+      - '.github/workflows/update-forecast.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-forecast
+  cancel-in-progress: false
+
+jobs:
+  update-forecast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install numpy==2.4.6 pillow==12.3.0 eccodes==2.49.0
+
+      # Exits non-zero when no complete run is found or a download fails: the publish below is skipped,
+      # fc-data keeps the last good pull, and GitHub emails the owner.
+      - name: Pull the latest GFS-Wave and ECMWF runs
+        run: python scripts/forecast/fcpull.py "$RUNNER_TEMP/fc"
+
+      - name: Publish to the fc-data branch (latest pull only)
+        run: |
+          # build the commit in a separate index, so the checkout is untouched and the branch has only fc/
+          export GIT_INDEX_FILE="$RUNNER_TEMP/fc.index"
+          git read-tree --empty
+          for f in "$RUNNER_TEMP"/fc/fc.json "$RUNNER_TEMP"/fc/field_*.png; do
+            git update-index --add --cacheinfo "100644,$(git hash-object -w "$f"),fc/$(basename "$f")"
+          done
+          tree=$(git write-tree)
+          what=$(python -c "import json, sys; d = json.load(open(sys.argv[1])); print(d['made'], '· GFS-Wave', d['runs']['gfs'], '· ECMWF', d['runs']['ec'])" "$RUNNER_TEMP/fc/fc.json")
+          commit=$(git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" commit-tree "$tree" -m "Forecast $what")
+          git push --force origin "$commit:refs/heads/fc-data"
+          echo "Published $what"

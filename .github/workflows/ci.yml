@@ -1,9 +1,12 @@
 name: CI
 
 # Runs the same commands a Claude Code web session runs (see CLAUDE.md).
-# Bot buoy-data commits only touch data/** and are skipped.
+# Bot buoy-data commits only touch data/** and are skipped, and so is the
+# forecast bot's fc-data branch (forecast files only, no code to test).
 on:
   push:
+    branches-ignore:
+      - 'fc-data'
     paths-ignore:
       - 'data/**'
   pull_request:
@@ -37,6 +40,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      # the Sound Check forecast pull (scripts/forecast/fcpull.py, tested in scripts/test_fcpull.py) reads GRIB with
+      # eccodes; same versions as .github/workflows/update-forecast.yml
+      - run: pip install numpy==2.4.6 pillow==12.3.0 eccodes==2.49.0
       - run: npm run test:py
 
   e2e:
