@@ -10,14 +10,19 @@ them these tests are skipped.
 """
 
 import datetime as dt
+import email.message
 import importlib.util
+import json
 import types
 import unittest
+import urllib.error
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parent / "forecast" / "fcpull.py"
 UTC = dt.timezone.utc
 NOW = dt.datetime(2026, 10, 9, 19, 50, tzinfo=UTC)   # a Friday afternoon (3:50 pm EDT)
+MIRROR, ECMWF = "https://storage.googleapis.com/ecmwf-open-data", "https://data.ecmwf.int/forecasts"
 
 try:
     import numpy  # noqa: F401
@@ -28,12 +33,18 @@ except ImportError:
     HAVE_DEPS = False
 
 
-def load_fcpull(published):
-    """The module with its clock pinned at NOW and get() answering only for runs in `published`
-    (a set of (model, cycle datetime)); every other request fails like a missing file."""
+def load_module():
     spec = importlib.util.spec_from_file_location("fcpull_under_test", SCRIPT)
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
+    return m
+
+
+def load_fcpull(published):
+    """The module with its clock pinned at NOW and get() answering only for runs in `published`, a set of
+    (model, cycle datetime) or, for ECMWF, (model, cycle, source): a run with no source is on both ECMWF's
+    mirror and ECMWF itself. Every other request fails like a missing file."""
+    m = load_module()
 
     class Clock(dt.datetime):
         @classmethod
@@ -42,11 +53,14 @@ def load_fcpull(published):
     m.dt = types.SimpleNamespace(datetime=Clock, timedelta=dt.timedelta, timezone=dt.timezone)
     asked = []
 
-    def get(url, a=None, b=None, tries=4):
+    def get(url, a=None, b=None, tries=6):
         asked.append(url)
-        for model, c in published:
-            stamp = f"gfs.{c:%Y%m%d}/{c:%H}/wave" if model == "gfs" else f"forecasts/{c:%Y%m%d}/{c:%H}z/"
-            if stamp in url:
+        for model, c, *src in published:
+            if model == "gfs":
+                ok = f"gfs.{c:%Y%m%d}/{c:%H}/wave" in url
+            else:
+                ok = f"/{c:%Y%m%d}/{c:%H}z/ifs/" in url and url.startswith(tuple(src) or (MIRROR, ECMWF))
+            if ok:
                 return b"ok"
         raise OSError("404 " + url)
     m.get = get
@@ -67,7 +81,32 @@ class TestWhichRun(unittest.TestCase):
 
     def test_ecmwf_runs_every_12_hours(self):
         m, _ = load_fcpull({("ec", dt.datetime(2026, 10, 9, 0, tzinfo=UTC))})
-        self.assertEqual(m.latest_ec(), dt.datetime(2026, 10, 9, 0, tzinfo=UTC))
+        self.assertEqual(m.latest_ec(), (dt.datetime(2026, 10, 9, 0, tzinfo=UTC), MIRROR))
+
+    def test_ecmwf_from_its_google_mirror(self):
+        # the bot's first run got HTTP 429 (too many requests) from data.ecmwf.int halfway through: GitHub's
+        # runners share addresses. ECMWF's Google Cloud mirror has the same files without that limit (its AWS
+        # mirror refused about 40% of byte-range reads with 503 Slow Down, even two at a time).
+        m, asked = load_fcpull({("ec", dt.datetime(2026, 10, 9, 12, tzinfo=UTC))})
+        self.assertEqual(m.latest_ec(), (dt.datetime(2026, 10, 9, 12, tzinfo=UTC), MIRROR))
+        self.assertTrue(asked[0].startswith(MIRROR + "/"), asked[0])
+
+    def test_ecmwf_itself_only_when_the_mirror_has_nothing(self):
+        # a run that is only on ECMWF so far waits for the mirror (minutes behind)
+        m, _ = load_fcpull({("ec", dt.datetime(2026, 10, 9, 12, tzinfo=UTC), ECMWF), ("ec", dt.datetime(2026, 10, 9, 0, tzinfo=UTC), MIRROR)})
+        self.assertEqual(m.latest_ec(), (dt.datetime(2026, 10, 9, 0, tzinfo=UTC), MIRROR))
+        # with nothing on the mirror for two days, ECMWF itself
+        m, _ = load_fcpull({("ec", dt.datetime(2026, 10, 9, 12, tzinfo=UTC), ECMWF)})
+        self.assertEqual(m.latest_ec(), (dt.datetime(2026, 10, 9, 12, tzinfo=UTC), ECMWF))
+
+    def test_ecmwf_fields_come_from_the_chosen_source(self):
+        m, asked = load_fcpull(set())
+        index = "\n".join(json.dumps({"param": k, "_offset": 10 * i, "_length": 10}) for i, k in enumerate(m.EC_VARS)).encode()
+        m.get = lambda url, a=None, b=None, tries=6: (asked.append(url), index if url.endswith(".index") else b"grib")[1]
+        m.decode = lambda msg: msg
+        step, out = m.ec_step(dt.datetime(2026, 10, 9, 12, tzinfo=UTC), MIRROR, 24)
+        self.assertEqual((step, sorted(out)), (24, sorted(m.EC_VARS)))
+        self.assertTrue(asked and all(u.startswith(MIRROR + "/20261009/12z/ifs/0p25/wave/20261009120000-24h-wave-fc") for u in asked), asked)
 
     def test_nothing_published_for_two_days_fails(self):
         # exits non-zero, so the workflow skips publishing and fc-data keeps the last good pull
@@ -76,6 +115,26 @@ class TestWhichRun(unittest.TestCase):
             m.latest_gfs()
         with self.assertRaises(SystemExit):
             m.latest_ec()
+
+
+@unittest.skipUnless(HAVE_DEPS, "fcpull needs numpy, Pillow and eccodes")
+class TestDownloads(unittest.TestCase):
+    def test_a_busy_server_is_waited_out(self):
+        # two "429 Too Many Requests", then the file: the first wait is what the server asks for (Retry-After),
+        # the second a back-off
+        m = load_module()
+        busy = email.message.Message(); busy["Retry-After"] = "7"
+        answers = [urllib.error.HTTPError("u", 429, "Too Many Requests", busy, None),
+                   urllib.error.HTTPError("u", 429, "Too Many Requests", email.message.Message(), None),
+                   mock.Mock(read=lambda: b"grib")]
+        def urlopen(rq, timeout=None):
+            a = answers.pop(0)
+            if isinstance(a, Exception):
+                raise a
+            return a
+        with mock.patch.object(m.urllib.request, "urlopen", urlopen), mock.patch("time.sleep") as sleep:
+            self.assertEqual(m.get("https://example.test/f.grib2", 0, 9), b"grib")
+        self.assertEqual([c.args[0] for c in sleep.call_args_list], [7, 4])
 
 
 @unittest.skipUnless(HAVE_DEPS, "fcpull needs numpy, Pillow and eccodes")

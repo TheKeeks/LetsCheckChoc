@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — Sound Check: the forecast bot reads ECMWF from its Google mirror
+
+The forecast bot's first run, right after #152 merged, failed. GFS-Wave downloaded fine, but halfway through the ECMWF files data.ecmwf.int answered "HTTP 429 Too Many Requests". GitHub's runners share addresses, ECMWF limits busy ones, and the pull asks for about 500 pieces of ECMWF files, eight at a time. With the run failed, nothing was published, so the page kept showing the forecast that ships with it.
+
+The pull now reads ECMWF from ECMWF's own mirror on Google Cloud (`storage.googleapis.com/ecmwf-open-data`), which holds the same files within minutes of each run. It goes to data.ecmwf.int only if the mirror has no run from the last two days. ECMWF's AWS mirror was tried first and ruled out: it refused about 40% of the pull's requests with "503 Slow Down", even two at a time. Azure's mirror refuses public reads. A server that says it is busy (429 or 503) now gets the wait it asks for, else a back-off of 2 to 32 s, over six tries instead of four.
+
+Verified by:
+- **`scripts/test_fcpull.py`:** new tests check that ECMWF comes from the mirror, falls back to ECMWF itself only when the mirror has nothing, reads every field from the source it picked, and waits out a "429" the way the server asks. They fail on the previous pull and pass now.
+- **The full pull, run from a web session:** GFS-Wave 12Z and ECMWF 12Z of 10 Oct, the ECMWF part from the Google mirror, in 1 min 38 s, with all seven files written. With the same requests, Google's mirror answered all 68 test reads at eight at a time, the AWS mirror refused 16–20 of 41–50 even at two at a time, and data.ecmwf.int answered from here but refused GitHub's runner.
+
 ## [Unreleased] — Sound Check: the 7-day forecast stays current
 
 On Friday the Sound Check forecast still read "As of Wed Oct 7, 11:58am ET". The GFS-Wave and ECMWF pull behind it (run through the ray model to Choc and Wilderness) had been run by hand and committed with the page as a snapshot. Nothing ever ran it again.
