@@ -29,20 +29,20 @@ module.exports = {
     assert.equal(q1.length, 2, 'buoy and model panels');
     assert.ok(q1.every(p => p.dots === 28), 'one dot per logged session in each panel');
     assert.match(q1[0].text, /Raw buoy height.*Picks the bigger of two sessions: 77%/);
-    assert.match(q1[1].text, /Modeled height at Choc.*Picks the bigger of two sessions: 87%/);
-    assert.match(qa[0].text, /picks the bigger of two of your sessions 87% of the time, the raw buoy 77%/);
+    assert.match(q1[1].text, /Modeled height at Choc.*Picks the bigger of two sessions: 88%/);
+    assert.match(qa[0].text, /picks the bigger of two of your sessions 88% of the time, the raw buoy 77%/);
     const rows = await page.$$eval('#q2Share .share-row', rs => rs.map(r => r.dataset.k + ' ' + r.querySelector('.share-val').textContent));
     log(rows.join(' | '));
-    assert.deepEqual(rows, ['east 15% · 120 days', 'in 40% · 312 days', 'south 45% · 352 days']);
+    assert.deepEqual(rows, ['east 15% · 124 days', 'in 40% · 329 days', 'south 45% · 368 days']);
     assert.match(qa[1].text, /On only 40% of Choc's 3 ft\+ days.*on 45% it bends in from south of Montauk/);
-    assert.match(await page.$eval('#q2Share', n => n.closest('figure').textContent.replace(/\s+/g, ' ')), /On 40% of the 784 days in ten years/);
+    assert.match(await page.$eval('#q2Share', n => n.closest('figure').textContent.replace(/\s+/g, ' ')), /On 40% of the 821 days in ten years/);
 
     // The window by direction and period is a main chart now, with the window marked.
     assert.equal(await page.$eval('#kresp', n => !!n.closest('details')), false, 'not hidden in a collapsed box');
     assert.match(await page.$eval('#kresp', n => n.textContent), /the window/);
     // The tiles moved to the question they answer.
-    assert.match(await page.$eval('#q1Takes', n => n.textContent), /0\.85.*2\.1 ft/s);
-    assert.match(await page.$eval('#q2Takes', n => n.textContent), /58%.*29 Aug 2023/s);
+    assert.match(await page.$eval('#q1Takes', n => n.textContent), /0\.85.*2\.2 ft/s);
+    assert.match(await page.$eval('#q2Takes', n => n.textContent), /54%.*29 Aug 2023/s);
     assert.ok(!/Part [123]\b/.test(await page.evaluate(() => document.body.innerText)), 'no leftover "Part 1/2/3" pointers in what you read');
 
     // A question card jumps to its section.

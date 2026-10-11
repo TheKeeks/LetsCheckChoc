@@ -27,7 +27,7 @@ node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 ```
 
 - Unit and Python tests need **no npm install** (`scripts/test_fcpull.py` also
-  needs numpy, Pillow and eccodes, else it skips). `test:rules` needs
+  needs numpy, Pillow and eccodes, `scripts/test_raycore.py` numpy, else they skip). `test:rules` needs
   `npm i --no-save firebase-tools@15.32.1 @firebase/rules-unit-testing@5.0.2 firebase@12.19.0`
   first (CI: `.github/workflows/rules.yml`).
 - e2e needs Playwright 1.56.x. A web session has it globally, with Chromium in
@@ -53,6 +53,7 @@ node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 | `data/buoys-east-coast.json`, `data/tide-stations.json` | Static catalogs read by `initApp` |
 | `scripts/fetch_buoy.py` | Pipeline: NDBC 44097 → `data/buoy.json`, plus model-vs-buoy rows |
 | `scripts/canary.py` | Upstream canary (`.github/workflows/canary.yml`, every 6 h): opens/closes one `data-canary` issue |
+| `scripts/rays/raycore.py`, `scripts/rays/build_tables.py` | Sound Check's wave-ray physics (exact wave speed, Snell's-law ray step) and the builder of Choc's and Wilderness's ray tables (its 812 MB survey grid stays outside the repo); tested by `scripts/test_raycore.py` |
 | `scripts/forecast/fcpull.py` | Sound Check forecast pull: GFS-Wave + ECMWF → `research/fc/fc.json` + field PNGs, tied to the spots with `research/fr/` and `scripts/forecast/{world,fwdk}.json` |
 | `scripts/smoke_regression.js`, `scripts/leak_deg_sensitivity.js`, `scripts/generate_icons.js`, `scripts/bracelet_plans.js` | Dev-only tools, never loaded by the page |
 | `test-gate.js` | Legacy tests, still run by `npm test` |

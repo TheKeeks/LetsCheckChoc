@@ -34,7 +34,7 @@ module.exports = {
     await page.waitForTimeout(800);
     const hud = await page.$eval('#tripLine', n => n.innerText.replace(/[ \t]+/g, ' '));
     log(hud.replace(/\n/g, ' | '));
-    assert.match(hud, /^1° 9\.1 ft @ 17 s SSE 167° → 58%\nWind \d+ kn N, clean · best ~3am$/, 'phone headline: the primary swell, then the wind');
+    assert.match(hud, /^1° 9\.1 ft @ 17 s SSE 167° → 54%\nWind \d+ kn N, clean · best ~3am$/, 'phone headline: the primary swell, then the wind');
     assert.ok(await page.$eval('#tripLine', n => n.getBoundingClientRect().height < 3 * parseFloat(getComputedStyle(n).lineHeight || 20)), 'headline fits in two lines');
     assert.deepEqual(errors, [], 'no page errors');
   }
