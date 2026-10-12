@@ -59,7 +59,8 @@
   var chart = null, chartKey = '', lastW = 0;
   var slide = null, scrollAnim = null, drag = null, pendingChart = false;
   var pushTimer = null, lastHapticHour = null;
-  var comparison = null, terrainFrame = null, terrainSpot = 'choc';
+  var split = false, terrainFrame = null, terrainSpot = 'choc';
+  var SPLIT_KEY = 'lcc-forecast-split';
 
   function err(where, e) { C.err('forecast.' + where, e); }
   function run(where, fn) { try { fn(); } catch (e) { err(where, e); } }
@@ -85,8 +86,12 @@
   function mount(el) {
     root = el;
     el.innerHTML =
+      '<div class="cl-f-mode" role="group" aria-label="Forecast view">' +
+        '<button type="button" data-fmode="list" aria-pressed="true">Forecast</button>' +
+        '<button type="button" data-fmode="split" aria-pressed="false">Forecast + 3D map</button>' +
+      '</div>' +
+      '<div class="cl-f-split">' +
       '<div class="cl-f">' +
-        '<div class="cl-f-explore"><button type="button" class="cl-f-compare-open">Forecast + sea floor <span aria-hidden="true">↗</span></button><span>Explore Choc and the Race in 3D</span></div>' +
         '<p class="cl-lead cl-f-lead" hidden></p>' +
         '<div class="cl-f-now"></div>' +
         '<h2 class="cl-h2">This week</h2>' +
@@ -112,6 +117,12 @@
         '<h2 class="cl-h2">Details</h2>' +
         '<div class="cl-f-ch cl-f-det"></div>' +
         '<div class="cl-gap"></div>' +
+      '</div>' +
+      '<aside class="cl-f-map" aria-label="3D sea floor with the forecast on the water" hidden>' +
+        '<div class="cl-f-map-bar"><span>Sea floor, wave height and swell at the forecast hour</span><a href="#map">Full map</a></div>' +
+        '<iframe title="3D sea floor with wave height and swell motion for the forecast hour" allow="fullscreen"></iframe>' +
+        '<p class="cl-f-map-note"></p>' +
+      '</aside>' +
       '</div>';
     E.lead = el.querySelector('.cl-f-lead');
     E.now = el.querySelector('.cl-f-now');
@@ -124,7 +135,11 @@
     E.ctl = el.querySelector('.cl-f-ctl');
     E.lu = el.querySelector('.cl-f-lu');
     E.det = el.querySelector('.cl-f-det');
-    el.querySelector('.cl-f-compare-open').addEventListener('click', C.guard('forecast.compare', openComparison));
+    E.map = el.querySelector('.cl-f-map');
+    terrainFrame = E.map.querySelector('iframe');
+    el.querySelectorAll('[data-fmode]').forEach(function (b) {
+      b.addEventListener('click', C.guard('forecast.mode', function () { setSplit(b.getAttribute('data-fmode') === 'split', true); }));
+    });
 
     E.wk.addEventListener('click', C.guard('forecast.week.click', onWeekClick));
     E.ctl.addEventListener('click', C.guard('forecast.jump', onJump));
@@ -146,60 +161,53 @@
     // back to it whenever the two part (Model details read the app's).
     C.on('hour', function () { if (!drag) schedulePush(); syncTerrain(); });
     C.on('theme', syncTerrain);
+    C.on('tab', syncTerrain);
+    C.on('sub', syncTerrain);
     window.addEventListener('message', function (event) {
-      if (terrainFrame && event.origin === location.origin && event.source === terrainFrame.contentWindow && event.data && event.data.type === 'lcc-map-ready') syncTerrain();
+      if (!terrainFrame || event.origin !== location.origin || event.source !== terrainFrame.contentWindow || !event.data) return;
+      if (event.data.type === 'lcc-map-ready') syncTerrain();
+      if (event.data.type === 'lcc-map-spot') { terrainSpot = event.data.spot === 'race' ? 'race' : 'choc'; syncTerrain(); }
     });
+    var want = false;
+    try { want = localStorage.getItem(SPLIT_KEY) === '1'; } catch (_) { /* private mode */ }
+    if (want) setSplit(true, false);
   }
 
-  // Reuse the live forecast controls in the split view: one forecast, one
-  // cursor, no second app/data load. Closing restores the same DOM and state.
-  function openComparison() {
-    if (comparison) return;
-    var forecast = root.querySelector('.cl-f');
-    if (!forecast) return;
-    comparison = C.sub.open({
-      id: 'forecast-terrain', title: 'Forecast + sea floor',
-      mount: function (body, handle) {
-        handle.el.classList.add('cl-comparison');
-        body.innerHTML = '<div class="cl-compare-toolbar"><p>Read the forecast. Explore the bottom beneath it.</p><label>Terrain <select class="cl-compare-spot" aria-label="Terrain location"><option value="choc">Chocomount</option><option value="race">The Race</option></select></label></div>' +
-          '<div class="cl-compare-grid"><section class="cl-compare-forecast" aria-label="Current Chocomount forecast"><h2 class="cl-compare-label">Chocomount forecast</h2></section>' +
-          '<section class="cl-compare-terrain" aria-label="Sea-floor comparison"><iframe title="3D bathymetry with forecast overlays" allow="fullscreen"></iframe><p class="cl-compare-note"></p></section></div>';
-        body.querySelector('.cl-compare-forecast').appendChild(forecast);
-        terrainFrame = body.querySelector('iframe');
-        terrainFrame.addEventListener('load', syncTerrain);
-        terrainFrame.src = 'map/index.html?compact=1&embed=1&spot=' + terrainSpot + '&theme=' + (C.theme() === 'night' ? 'dark' : 'light');
-        var select = body.querySelector('select');
-        select.value = terrainSpot;
-        select.addEventListener('change', function () { terrainSpot = select.value === 'race' ? 'race' : 'choc'; syncTerrain(); });
-        requestAnimationFrame(function () { measure(); chartKey = ''; renderChart(); renderLineup(); syncTerrain(); });
-      },
-      onClose: function () {
-        root.appendChild(forecast);
-        if (terrainFrame) terrainFrame.src = 'about:blank';
-        terrainFrame = null;
-        comparison = null;
-        requestAnimationFrame(function () { measure(); chartKey = ''; renderChart(); renderLineup(); });
-      }
+  // Forecast + 3D map: the forecast keeps its column and the map (map/index.html,
+  // compact) sits beside it on wide screens, above it on phones. One forecast, one
+  // cursor: the map follows the hour the chart is on.
+  function setSplit(on, save) {
+    split = !!on;
+    root.querySelectorAll('[data-fmode]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String((b.getAttribute('data-fmode') === 'split') === split));
     });
-    syncTerrain();
+    E.map.hidden = !split;
+    if (split) document.documentElement.setAttribute('data-forecast-split', '');
+    else document.documentElement.removeAttribute('data-forecast-split');
+    if (split && !terrainFrame.getAttribute('src')) {
+      terrainFrame.src = 'map/index.html?embed=1&compact=1&spot=' + terrainSpot + '&theme=' + (C.theme() === 'night' ? 'dark' : 'light') + timeParam();
+    }
+    if (save) { try { localStorage.setItem(SPLIT_KEY, split ? '1' : '0'); } catch (_) { /* private mode */ } }
+    requestAnimationFrame(function () {
+      if (measure()) { chartKey = ''; run('chart', renderChart); if (E.lu) E.lu.__key = null; run('lineup', renderLineup); }
+      syncTerrain();
+    });
   }
+  function hourAt() { var hr = D.hour(C.cursor.get()) || D.now(); return hr && hr.at ? new Date(hr.at) : null; }
+  function timeParam() { var t = hourAt(); return t ? '&time=' + encodeURIComponent(t.toISOString()) : ''; }
 
   function syncTerrain() {
-    if (!terrainFrame || !terrainFrame.contentWindow) return;
-    var hr = D.hour(C.cursor.get()) || D.now(), trains = splitTrains(hr);
-    var swell = trains.reach || (hr && hr.swell), wind = hr && hr.wind;
+    if (!split || !terrainFrame || !terrainFrame.contentWindow || !terrainFrame.getAttribute('src')) return;
+    var t = hourAt();
     terrainFrame.contentWindow.postMessage({
-      type: 'lcc-map', spot: terrainSpot, theme: C.theme() === 'night' ? 'dark' : 'light', active: true,
-      forecast: {
-        waveHeight: swell ? swell.h : null, wavePeriod: swell ? swell.period : null,
-        waveDirection: swell ? swell.dir : null, windSpeed: wind ? wind.mph : null,
-        windDirection: wind ? wind.dir : null, time: hr && hr.at ? new Date(hr.at).toISOString() : null
-      }
+      type: 'lcc-map', spot: terrainSpot, theme: C.theme() === 'night' ? 'dark' : 'light',
+      active: C.tab() === 'forecast' && C.sub.depth() === 0,
+      time: t ? t.toISOString() : null
     }, location.origin);
-    var note = terrainFrame.parentNode.querySelector('.cl-compare-note');
+    var note = E.map.querySelector('.cl-f-map-note');
     if (note) note.textContent = terrainSpot === 'race'
-      ? 'The Race sea floor · Direction overlays reference the Chocomount forecast. This is not a calibrated Race surf or tidal-current forecast.'
-      : 'Chocomount sea floor · Swell and wind overlays follow the selected forecast hour. Drag the forecast chart to explore.';
+      ? 'The Race: wave height and swell come from the Sound Check model for the forecast hour. There is no surf or tidal-current forecast for the Race.'
+      : 'Drag the forecast chart and the map moves to that hour (Sound Check model, GFS-Wave by default; 3-hour steps).';
   }
 
   // Column width of the chart (the view may be hidden: keep the last one).

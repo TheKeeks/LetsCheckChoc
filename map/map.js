@@ -1,403 +1,677 @@
+/* Map page: Fishers Island's sea floor in 2D or 3D, with the forecast on the water.
+ *
+ * One MapLibre map. "3D bathymetry" raises the terrain from the Fishers Island
+ * viewer's elevation (0.8 m near the island, 4 m around it, then the Sound's
+ * 16 m and 144 m grids) at an adjustable depth stretch; off, the same map lies
+ * flat. Everything on the water is draped on that surface, so in 3D it rides
+ * over the bottom:
+ *
+ *   wave height   the Sound Check refraction model for the forecast hour (height-worker.js)
+ *   swell motion  streaks that follow wave rays traced over the bottom and slow
+ *                 as they shoal (swell-worker.js), animated here on a canvas
+ *   swell paths   the model's rays that reach Choc and Wilderness (research/fr)
+ *
+ * Sea-floor colors and terrain are drawn tile by tile in bathy-worker.js and
+ * reach the map through the lccbathy:// protocol; aerial photos, the ocean
+ * basemap and NOAA charts are live tile services.
+ *
+ * Embedded (?embed=1, ?compact=1) the parent page drives theme, spot and hour
+ * with postMessage {type: 'lcc-map', theme, spot, time, active}; the map answers
+ * {type: 'lcc-map-ready'} once and {type: 'lcc-map-spot', spot} when the spot
+ * buttons are used. window.ChocMap is the same API for tests.
+ */
 (function () {
   'use strict';
-  const $ = id => document.getElementById(id), G = window.MapGeometry, T = window.THREE;
-  const params = new URLSearchParams(location.search), compact = params.get('compact') === '1';
-  const SPOTS = { choc: { name: 'Chocomount reef', lon: -71.96339, lat: 41.27557, distance: 3.8 }, race: { name: 'The Race', lon: -72.043, lat: 41.243, distance: 6.2 } };
-  const SOURCES = {
-    survey: { max: 17, label: 'NOAA relief', url: t => {
-      const a = G.tileLocation(t.x, t.y + 1, t.z), b = G.tileLocation(t.x + 1, t.y, t.z);
-      return 'https://gis.ngdc.noaa.gov/arcgis/rest/services/DEM_mosaics/DEM_all/ImageServer/exportImage?' + new URLSearchParams({ bbox: [a[0], a[1], b[0], b[1]].join(','), bboxSR: '4326', imageSR: '3857', size: '256,256', format: 'png', interpolation: 'RSP_BilinearInterpolation', renderingRule: '{"rasterFunction":"ColorHillshade"}', f: 'image' });
-    } },
-    satellite: { max: 19, label: 'Esri imagery', url: t => `https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${t.z}/${t.y}/${t.x}` },
-    topo: { max: 16, label: 'USGS topography', url: t => `https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/${t.z}/${t.y}/${t.x}` }
+  const $ = id => document.getElementById(id);
+  const G = window.MapGeometry, ML = window.maplibregl;
+  const q = new URLSearchParams(location.search);
+  const EMBED = q.get('embed') === '1', COMPACT = q.get('compact') === '1';
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const coarsePointer = matchMedia('(pointer: coarse)').matches;
+  const DPR = Math.min(2, devicePixelRatio || 1);
+  const SOUND = [-72.4, 40.6, -70.85, 41.5];
+  const FT = 3.28084;
+  const ET = { timeZone: 'America/New_York' };
+  const FC_LIVE = 'https://raw.githubusercontent.com/TheKeeks/LetsCheckChoc/fc-data/fc/';
+
+  // Camera presets. Choc looks north onto the beach from Block Island Sound;
+  // the Race looks north-east up the channel at the island's west end.
+  const VIEWS = {
+    choc: { center: [-71.9625, 41.2722], zoom: 15.1, pitch: 63, bearing: -12 },
+    race: { center: [-72.052, 41.2335], zoom: 13.5, pitch: 62, bearing: 35 },
+    fishers: { center: [-71.975, 41.262], zoom: 12.3, pitch: 52, bearing: -8 },
+    sound: { center: [-71.72, 41.13], zoom: 9.3, pitch: 40, bearing: 0 }
   };
-  const state = { spot: params.get('spot') === 'race' ? 'race' : 'choc', theme: params.get('theme') === 'dark' ? 'dark' : 'light', threeD: true, exaggeration: 8, follow: true, active: true,
-    layers: { relief: true, survey: false, satellite: false, topo: false, field: false, waves: compact, wind: false, rays: false }, forecast: null,
-    camera: { az: 0.2, el: 0.72, distance: 4, x: 0, z: 0 }, tileCache: new Map(), rayCache: new Map(), failedSources: new Set(), dirty: true };
-  let renderer, scene, camera, root, ground, overlays, markers, meta, values, wet, footprint, viewBounds, surveyBounds, running = false, visible = true, updateTimer, generation = 0;
-  let fieldMetadata, fieldPixels, fieldWidth, fieldTexture, fieldMesh, fieldTime, fieldRequest = 0, tileWorkers = 0;
-  const tileJobs = [];
-  let origin = [-71.98, 41.265], requestedDate = /^\d{4}-\d{2}-\d{2}$/.test(params.get('date') || '') ? params.get('date') : null;
-  const image = src => new Promise((resolve, reject) => {
-    const im = new Image(); const timer = setTimeout(() => { im.src = ''; reject(new Error('Tile timed out')); }, 18000);
-    if (/^https?:/.test(src)) im.crossOrigin = 'anonymous';
-    im.onload = () => { clearTimeout(timer); resolve(im); }; im.onerror = () => { clearTimeout(timer); reject(new Error('Image unavailable')); }; im.src = src;
-  });
-  async function json(url) {
-    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 12000);
-    try { const r = await fetch(url, { signal: controller.signal }); if (!r.ok) throw new Error('Data unavailable'); return await r.json(); } finally { clearTimeout(timer); }
+  const SPOTS = [
+    { name: 'Choc', at: [-71.96339, 41.27557], cls: '' },
+    { name: 'Wilderness', at: [-72.00845, 41.25419], cls: 'w' },
+    { name: 'The Race', at: [-72.052, 41.2335], cls: 'r' }
+  ];
+
+  // ── State (preferences survive reloads; the view and hour do not)
+  const PREF_KEY = 'lcc-map-prefs';
+  const state = {
+    view: q.get('spot') === 'race' ? 'race' : VIEWS[q.get('view')] ? q.get('view') : 'choc',
+    threeD: true, ex: 3, hill: 0.85, base: 'photo', model: 'gfs',
+    layers: { waves: true, swell: true, rays: false, contours: false },
+    step: 0, playing: false, theme: document.documentElement.dataset.theme || 'light', active: true,
+    fc: null, wantTime: Date.parse(q.get('time') || '') || null
+  };
+  try {
+    const p = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
+    if (typeof p.threeD === 'boolean') state.threeD = p.threeD;
+    if (p.ex >= 1 && p.ex <= 10) state.ex = p.ex;
+    if (p.hill >= 0 && p.hill <= 1) state.hill = p.hill;
+    if (['photo', 'color', 'aerial', 'chart'].includes(p.base)) state.base = p.base;
+    if (p.model === 'ec') state.model = 'ec';
+    if (p.layers) for (const k in state.layers) if (typeof p.layers[k] === 'boolean') state.layers[k] = p.layers[k];
+  } catch (e) { /* defaults */ }
+  if (q.get('3d') === '0') state.threeD = false;
+  function savePrefs() {
+    try { localStorage.setItem(PREF_KEY, JSON.stringify({ threeD: state.threeD, ex: state.ex, hill: state.hill, base: state.base, model: state.model, layers: state.layers })); } catch (e) { /* private mode */ }
   }
-  const local = (lon, lat) => [(lon - origin[0]) * meta.kmlon, (origin[1] - lat) * meta.kmlat];
-  const geographic = (x, z) => [origin[0] + x / meta.kmlon, origin[1] - z / meta.kmlat];
-  const depth = (lon, lat) => G.sample(meta, values, wet, lon, lat);
-  const height = (lon, lat) => { const d = depth(lon, lat); return d ? -d.depth / 1000 : 0; };
-  function surfaceHeight(lon, lat) {
-    if (!ground) return height(lon, lat);
-    const g = ground.geometry, p = g.attributes.position, nx = g.userData.nx, ny = g.userData.ny, q = local(lon, lat);
-    const fx = (q[0] - p.getX(0)) / (p.getX(nx) - p.getX(0)) * nx, fy = (q[1] - p.getZ(0)) / (p.getZ(ny * (nx + 1)) - p.getZ(0)) * ny;
-    if (fx < 0 || fy < 0 || fx > nx || fy > ny) return height(lon, lat);
-    const x = Math.min(nx - 1, Math.floor(fx)), y = Math.min(ny - 1, Math.floor(fy)), u = fx - x, v = fy - y, i = y * (nx + 1) + x;
-    return u + v <= 1 ? p.getY(i) * (1 - u - v) + p.getY(i + 1) * u + p.getY(i + nx + 1) * v :
-      p.getY(i + 1) * (1 - v) + p.getY(i + nx + 1) * (1 - u) + p.getY(i + nx + 2) * (u + v - 1);
+  const status = t => { $('status').textContent = t || ''; };
+
+  if (!ML || !hasWebGL()) {
+    status('This browser can’t draw the map (WebGL is off). The ocean-wide map still works.');
+    $('explorerBtn').hidden = false;
+    wireExplorer();
+    $('explorerBtn').click();
+    return;
   }
-  const overlayHeight = (lon, lat, offset) => { const y = surfaceHeight(lon, lat); return (state.follow ? y : Math.max(0, y)) + offset; };
-  function dispose(obj) {
-    if (!obj) return;
-    obj.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (Array.isArray(o.material)) o.material.forEach(m => m.dispose()); else o.material.dispose(); } });
-    if (obj.parent) obj.parent.remove(obj);
+  function hasWebGL() { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } }
+
+  // ════════════════════════════════════════════════════════════════════
+  // Sea-floor tiles: the lccbathy:// protocol, answered by bathy-worker.js
+  // ════════════════════════════════════════════════════════════════════
+  const bathy = new Worker('bathy-worker.js');
+  const pending = new Map();
+  let seq = 0, tilesServed = 0, tileErrors = 0;
+  bathy.onmessage = e => {
+    const m = e.data;
+    if (m.type === 'error') { tileErrors++; status('Sea-floor data didn’t load (' + m.where + '). Aerial and chart layers still work.'); return; }
+    const p = pending.get(m.id); if (!p) return;
+    pending.delete(m.id);
+    if (m.error) p.reject(new Error(m.error)); else p.resolve(m);
+  };
+  function askBathy(msg) {
+    return new Promise((resolve, reject) => { const id = ++seq; pending.set(id, { resolve, reject }); bathy.postMessage(Object.assign({ id }, msg)); });
   }
-  function setTheme(theme) {
-    state.theme = theme === 'dark' || theme === 'night' ? 'dark' : 'light'; document.documentElement.dataset.theme = state.theme;
-    if (scene) scene.background.set(state.theme === 'dark' ? 0x15292f : 0xe6efec);
-    const f = $('researchExplorer'); if (f.contentWindow && f.src) f.contentWindow.postMessage({ type: 'lcc-theme', theme: state.theme }, location.origin);
-    dirty();
-  }
-  function dirty() { state.dirty = true; if (renderer && !running && state.active && visible && !document.hidden) { running = true; requestAnimationFrame(frame); } }
-  function frame() {
-    running = false; if (!renderer || !state.active || !visible || document.hidden) return;
-    if (state.dirty) {
-      state.dirty = false; const v = state.camera, el = state.threeD ? v.el : Math.PI / 2 - 0.001;
-      root.scale.y = state.threeD ? state.exaggeration : 0.00001;
-      camera.position.set(v.x + v.distance * Math.cos(el) * Math.sin(v.az), v.distance * Math.sin(el), v.z + v.distance * Math.cos(el) * Math.cos(v.az));
-      camera.lookAt(v.x, 0, v.z); renderer.render(scene, camera);
-    }
-  }
-  function resize() {
-    if (!renderer) return; const cv = $('terrain'), w = cv.clientWidth, h = cv.clientHeight;
-    if (!w || !h) return; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); dirty(); queueUpdate();
-  }
-  function setSpot(spot, force) {
-    if (!SPOTS[spot] || (!force && state.spot === spot)) return;
-    state.spot = spot; const p = SPOTS[spot];
-    $('placeName').textContent = p.name; $('coordinates').textContent = `${p.lat.toFixed(4)}° N · ${Math.abs(p.lon).toFixed(4)}° W`;
-    document.querySelectorAll('[data-spot]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.spot === spot)));
-    if (meta) { const q = local(p.lon, p.lat); state.camera = { az: 0.2, el: 0.72, distance: p.distance, x: q[0], z: q[1] }; queueUpdate(); dirty(); }
-    forecastReadout();
-  }
-  function bounds() {
-    const v = state.camera, half = v.distance * 0.85, cx = geographic(v.x, v.z), ratio = Math.max(1, camera.aspect);
-    return [Math.max(surveyBounds[0], cx[0] - half * ratio / meta.kmlon), Math.max(surveyBounds[1], cx[1] - half / meta.kmlat),
-      Math.min(surveyBounds[2], cx[0] + half * ratio / meta.kmlon), Math.min(surveyBounds[3], cx[1] + half / meta.kmlat)];
-  }
-  function color(d) {
-    if (!d.wet) return new T.Color().setRGB(0.61 + Math.min(0.15, -d.depth / 120), 0.65 + Math.min(0.12, -d.depth / 130), 0.49 + Math.min(0.1, -d.depth / 150));
-    const stops = [[0, [0.86, 0.82, 0.62]], [4, [0.49, 0.73, 0.69]], [12, [0.27, 0.57, 0.63]], [35, [0.17, 0.39, 0.51]], [100, [0.08, 0.23, 0.33]]];
-    let i = 0; while (i < stops.length - 2 && d.depth > stops[i + 1][0]) i++;
-    const a = stops[i], b = stops[i + 1], f = G.clamp((d.depth - a[0]) / (b[0] - a[0]), 0, 1);
-    return new T.Color().setRGB(...a[1].map((v, k) => v + f * (b[1][k] - v)));
-  }
-  function terrainMesh(box, spacing, tile, offset) {
-    const width = (box[2] - box[0]) * meta.kmlon, tall = (box[3] - box[1]) * meta.kmlat;
-    const nx = Math.max(2, Math.ceil(width / spacing)), ny = Math.max(2, Math.ceil(tall / spacing));
-    const positions = new Float32Array((nx + 1) * (ny + 1) * 3), colors = new Float32Array(positions.length), uv = new Float32Array((nx + 1) * (ny + 1) * 2), indices = [];
-    for (let y = 0; y <= ny; y++) for (let x = 0; x <= nx; x++) {
-      const lon = box[0] + (box[2] - box[0]) * x / nx, lat = box[3] - (box[3] - box[1]) * y / ny, p = y * (nx + 1) + x;
-      const q = local(lon, lat), d = depth(lon, lat), c = d ? color(d) : new T.Color(0x708980);
-      positions.set([q[0], d ? -d.depth / 1000 + (offset || 0) : 0, q[1]], p * 3); colors.set([c.r, c.g, c.b], p * 3);
-      const t = tile ? G.tilePoint(lon, lat, tile.z) : [x / nx, y / ny]; uv.set(tile ? [t[0] - tile.x, 1 - (t[1] - tile.y)] : [t[0], 1 - t[1]], p * 2);
-      if (x < nx && y < ny) { const a = p, b = p + 1, c1 = p + nx + 1, d1 = c1 + 1; indices.push(a, c1, b, b, c1, d1); }
-    }
-    const g = new T.BufferGeometry(); g.setAttribute('position', new T.BufferAttribute(positions, 3)); g.setAttribute('color', new T.BufferAttribute(colors, 3)); g.setAttribute('uv', new T.BufferAttribute(uv, 2)); g.setIndex(indices); g.computeVertexNormals(); g.userData = { nx, ny, box }; return g;
-  }
-  function drapedTileGeometry(tile, offset) {
-    // Clip the actual ground triangles at tile edges. Independent raster meshes
-    // interpolate the survey differently and let peaks poke through their imagery.
-    const a = G.tileLocation(tile.x, tile.y + 1, tile.z), b = G.tileLocation(tile.x + 1, tile.y, tile.z);
-    const box = [Math.max(a[0], viewBounds[0]), Math.max(a[1], viewBounds[1]), Math.min(b[0], viewBounds[2]), Math.min(b[1], viewBounds[3])];
-    const out = new T.BufferGeometry(), positions = [], uvs = [];
-    if (box[0] >= box[2] || box[1] >= box[3]) { out.setAttribute('position', new T.Float32BufferAttribute([], 3)); out.setAttribute('uv', new T.Float32BufferAttribute([], 2)); return out; }
-    const lo = local(box[0], box[3]), hi = local(box[2], box[1]);
-    const g = ground.geometry, p = g.attributes.position, nx = g.userData.nx, ny = g.userData.ny, w = p.getX(nx) - p.getX(0), h = p.getZ(ny * (nx + 1)) - p.getZ(0);
-    const x0 = G.clamp(Math.floor((lo[0] - p.getX(0)) / w * nx), 0, nx - 1), x1 = G.clamp(Math.floor((hi[0] - p.getX(0)) / w * nx), 0, nx - 1);
-    const y0 = G.clamp(Math.floor((lo[1] - p.getZ(0)) / h * ny), 0, ny - 1), y1 = G.clamp(Math.floor((hi[1] - p.getZ(0)) / h * ny), 0, ny - 1);
-    const point = i => [p.getX(i), p.getY(i), p.getZ(i)];
-    const clip = (polygon, axis, boundary, side) => {
-      const result = [];
-      for (let i = 0; i < polygon.length; i++) {
-        const cur = polygon[i], prev = polygon[(i + polygon.length - 1) % polygon.length];
-        const ci = (cur[axis] - boundary) * side >= -1e-10, pi = (prev[axis] - boundary) * side >= -1e-10;
-        if (ci !== pi) { const f = (boundary - prev[axis]) / (cur[axis] - prev[axis]); result.push(prev.map((v, k) => v + (cur[k] - v) * f)); }
-        if (ci) result.push(cur);
-      }
-      return result;
-    };
-    const put = v => { const q = geographic(v[0], v[2]), t = G.tilePoint(q[0], q[1], tile.z); positions.push(v[0], v[1] + offset, v[2]); uvs.push(t[0] - tile.x, 1 - (t[1] - tile.y)); };
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const i = y * (nx + 1) + x;
-      for (const vertices of [[i, i + nx + 1, i + 1], [i + 1, i + nx + 1, i + nx + 2]]) {
-        let polygon = vertices.map(point);
-        for (const edge of [[0, lo[0], 1], [0, hi[0], -1], [2, lo[1], 1], [2, hi[1], -1]]) polygon = clip(polygon, ...edge);
-        for (let j = 1; j < polygon.length - 1; j++) { put(polygon[0]); put(polygon[j]); put(polygon[j + 1]); }
-      }
-    }
-    out.setAttribute('position', new T.Float32BufferAttribute(positions, 3)); out.setAttribute('uv', new T.Float32BufferAttribute(uvs, 2)); return out;
-  }
-  function drawGround() {
-    dispose(ground); viewBounds = bounds();
-    const w = (viewBounds[2] - viewBounds[0]) * meta.kmlon;
-    const spacing = Math.max(meta.dx / 1000, w / 280);
-    ground = new T.Mesh(terrainMesh(viewBounds, spacing), new T.MeshLambertMaterial({ vertexColors: state.layers.relief, color: state.layers.relief ? 0xffffff : 0x87aaa2, side: T.DoubleSide })); root.add(ground);
-    if (!footprint) {
-      const a = local(surveyBounds[0], surveyBounds[1]), b = local(surveyBounds[2], surveyBounds[3]);
-      footprint = new T.LineLoop(new T.BufferGeometry().setFromPoints([new T.Vector3(a[0], 0, a[1]), new T.Vector3(b[0], 0, a[1]), new T.Vector3(b[0], 0, b[1]), new T.Vector3(a[0], 0, b[1])] ), new T.LineBasicMaterial({ color: 0x81a49b, transparent: true, opacity: 0.45 })); root.add(footprint);
-    }
-    drawMarkers(); dirty();
-  }
-  function drawMarkers() {
-    dispose(markers); markers = new T.Group(); root.add(markers);
-    for (const [key, p] of Object.entries(SPOTS)) {
-      const q = local(p.lon, p.lat), y = height(p.lon, p.lat);
-      const g = new T.BufferGeometry().setFromPoints([new T.Vector3(q[0], y + 0.004, q[1]), new T.Vector3(q[0], 0.035, q[1])]);
-      markers.add(new T.Line(g, new T.LineBasicMaterial({ color: key === state.spot ? 0xeea858 : 0xfaf0cc })));
-      const pin = new T.Mesh(new T.SphereGeometry(state.camera.distance * 0.009, 12, 8), new T.MeshBasicMaterial({ color: key === state.spot ? 0xeea858 : 0xfaf0cc })); pin.position.set(q[0], 0.035, q[1]); pin.scale.y = 1 / state.exaggeration; markers.add(pin);
-    }
-  }
-  function queueUpdate() {
-    clearTimeout(updateTimer); updateTimer = setTimeout(() => { if (!meta || !renderer) return; drawGround(); updateTiles(); drawOverlays(); }, 180);
-  }
-  function updateStatus() {
-    const failed = [...state.failedSources].filter(k => state.layers[k]).map(k => SOURCES[k].label);
-    $('mapStatus').textContent = failed.length ? `${failed.join(', ')} unavailable · showing available layers and local terrain` : '16 m terrain · drag to pan · shift-drag to orbit · pinch to zoom';
-  }
-  async function updateTiles() {
-    if (!viewBounds) return; const gen = ++generation, needed = new Set();
-    const metresPerPixel = state.camera.distance * 800 / Math.max(300, $('terrain').clientHeight);
-    const wantedZ = Math.round(Math.log2(156543.03 * Math.cos(SPOTS[state.spot].lat * Math.PI / 180) / metresPerPixel));
-    const jobs = [];
-    Object.entries(SOURCES).forEach(([source, service], order) => {
-      if (!state.layers[source]) return;
-      const tiles = G.tilesFor(viewBounds, G.clamp(wantedZ + 1, 11, service.max), 28);
-      for (const tile of tiles) {
-        const key = `${source}/${tile.z}/${tile.x}/${tile.y}`; needed.add(key);
-        let record = state.tileCache.get(key);
-        if (record) { record.last = Date.now(); if (record.mesh) { record.mesh.visible = true; record.mesh.geometry.dispose(); record.mesh.geometry = drapedTileGeometry(tile, 0.0007 + order * 0.0006); } continue; }
-        record = { source, last: Date.now(), mesh: null, loading: true }; state.tileCache.set(key, record);
-        jobs.push(async () => {
-          if (!currentTile(key)) { state.tileCache.delete(key); return; }
-          try {
-            const im = await image(service.url(tile));
-            if (!state.tileCache.has(key)) return;
-            const a = G.tileLocation(tile.x, tile.y + 1, tile.z), b = G.tileLocation(tile.x + 1, tile.y, tile.z);
-            const box = [Math.max(a[0], surveyBounds[0]), Math.max(a[1], surveyBounds[1]), Math.min(b[0], surveyBounds[2]), Math.min(b[1], surveyBounds[3])];
-            if (box[2] <= box[0] || box[3] <= box[1]) return;
-            const tex = new T.Texture(im); tex.needsUpdate = true; tex.encoding = T.sRGBEncoding; tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
-            record.texture = tex; record.mesh = new T.Mesh(drapedTileGeometry(tile, 0.0007 + order * 0.0006), new T.MeshBasicMaterial({ map: tex, transparent: true, opacity: source === 'survey' ? 0.9 : source === 'satellite' ? 0.82 : 0.65, side: T.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 - order }));
-            record.mesh.renderOrder = order + 1; record.mesh.visible = state.layers[source] && (gen === generation || currentTile(key)); root.add(record.mesh);
-            state.failedSources.delete(source); dirty();
-          } catch (e) { state.failedSources.add(source); state.tileCache.delete(key); } finally { record.loading = false; updateStatus(); }
-        });
-      }
+  ML.addProtocol('lccbathy', (params, abort) => new Promise((resolve, reject) => {
+    const m = /^lccbathy:\/\/(dem|color)\/(\d+)\/(\d+)\/(\d+)\??(.*)$/.exec(params.url);
+    if (!m) { reject(new Error('Bad sea-floor tile ' + params.url)); return; }
+    const o = new URLSearchParams(m[5]), id = ++seq;
+    pending.set(id, {
+      resolve: r => { tilesServed++; if (tilesServed === 1 && /^Loading sea floor/.test($('status').textContent)) status(''); resolve({ data: r.data }); },
+      reject: e => { tileErrors++; reject(e); }
     });
-    state.neededTiles = needed;
-    state.tileCache.forEach((r, k) => { if (r.mesh) r.mesh.visible = needed.has(k); });
-    // Bound decoded GPU images and share six workers across all camera updates.
-    const old = [...state.tileCache.entries()].filter(([k, r]) => !needed.has(k) && !r.loading).sort((a, b) => a[1].last - b[1].last);
-    while (state.tileCache.size > 72 && old.length) { const [k, r] = old.shift(); dispose(r.mesh); if (r.texture) r.texture.dispose(); state.tileCache.delete(k); }
-    tileJobs.push(...jobs);
-    while (tileWorkers < 6 && tileJobs.length) {
-      tileWorkers++;
-      (async () => { try { while (tileJobs.length) await tileJobs.shift()(); } finally { tileWorkers--; } })();
-    }
+    abort.signal.addEventListener('abort', () => { if (pending.delete(id)) { bathy.postMessage({ type: 'abort', id }); reject(new DOMException('Aborted', 'AbortError')); } });
+    bathy.postMessage({
+      type: 'tile', id, kind: m[1], z: +m[2], x: +m[3], y: +m[4],
+      o: { size: +o.get('size') || 256, ex: +o.get('ex') || 3, hill: o.has('hill') ? +o.get('hill') : 0.85, mode: o.get('mode') || 'nautical', land: o.get('land') || 'photo', contours: o.get('contours') === '1' }
+    });
+  }));
+  const colorUrl = () => 'lccbathy://color/{z}/{x}/{y}?size=' + (DPR > 1.4 ? 512 : 256) + '&ex=' + state.ex + '&hill=' + state.hill +
+    '&land=' + (state.base === 'color' ? 'color' : 'photo') + '&contours=' + (state.layers.contours ? 1 : 0);
+  const demUrl = () => 'lccbathy://dem/{z}/{x}/{y}?ex=' + state.ex;
+
+  // ════════════════════════════════════════════════════════════════════
+  // Map
+  // ════════════════════════════════════════════════════════════════════
+  const ESRI = ['https://server.arcgisonline.com/ArcGIS/rest/services/', 'https://services.arcgisonline.com/ArcGIS/rest/services/'];
+  const NOAA_ENC = 'https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png&transparent=true&f=image';
+  const blank = () => { const c = document.createElement('canvas'); c.width = c.height = 2; return c; };
+  const canvases = { sound: blank(), fine: blank(), swell: document.createElement('canvas') };
+  canvases.swell.width = canvases.swell.height = 2;
+  const far = [[-72.4, 41.5], [-72.39, 41.5], [-72.39, 41.49], [-72.4, 41.49]];
+  const style = {
+    version: 8,
+    sources: {
+      ocean: { type: 'raster', tiles: ESRI.map(h => h + 'Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}'), tileSize: 256, maxzoom: 13, attribution: 'Esri, GEBCO, NOAA' },
+      photo: { type: 'raster', tiles: ESRI.map(h => h + 'World_Imagery/MapServer/tile/{z}/{y}/{x}'), tileSize: 256, maxzoom: 19, attribution: 'Imagery © Esri, Maxar, Earthstar Geographics' },
+      chart: { type: 'raster', tiles: [NOAA_ENC], tileSize: 256, minzoom: 8, maxzoom: 18, attribution: 'NOAA Office of Coast Survey' },
+      bathy: { type: 'raster', tiles: [colorUrl()], tileSize: 256, minzoom: 7, maxzoom: 18, bounds: SOUND, attribution: 'Sea floor: NOAA NGS, NOAA NCEI, USGS 3DEP' },
+      dem: { type: 'raster-dem', tiles: [demUrl()], tileSize: 256, minzoom: 7, maxzoom: 17, bounds: SOUND, encoding: 'mapbox' },
+      wavesSound: { type: 'canvas', canvas: canvases.sound, coordinates: far, animate: false },
+      wavesFine: { type: 'canvas', canvas: canvases.fine, coordinates: far, animate: false },
+      swell: { type: 'canvas', canvas: canvases.swell, coordinates: far, animate: false },
+      rays: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } }
+    },
+    layers: [
+      { id: 'bg', type: 'background', paint: { 'background-color': '#9cc3d5' } },
+      { id: 'ocean', type: 'raster', source: 'ocean' },
+      { id: 'photo', type: 'raster', source: 'photo', paint: { 'raster-fade-duration': 150 } },
+      { id: 'bathy', type: 'raster', source: 'bathy', paint: { 'raster-fade-duration': 120 } },
+      { id: 'chart', type: 'raster', source: 'chart', layout: { visibility: 'none' }, paint: { 'raster-fade-duration': 150 } },
+      { id: 'wavesSound', type: 'raster', source: 'wavesSound', paint: { 'raster-opacity': 0.5, 'raster-resampling': 'linear', 'raster-fade-duration': 0 } },
+      { id: 'wavesFine', type: 'raster', source: 'wavesFine', paint: { 'raster-opacity': 0.5, 'raster-resampling': 'linear', 'raster-fade-duration': 0 } },
+      { id: 'rays', type: 'line', source: 'rays', layout: { 'line-cap': 'round', 'line-join': 'round', visibility: 'none' },
+        paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 9, ['*', 0.5, ['get', 'w']], 14, ['get', 'w'], 17, ['*', 2, ['get', 'w']]], 'line-opacity': ['case', ['get', 'hit'], 0.95, 0.35] } },
+      { id: 'swell', type: 'raster', source: 'swell', paint: { 'raster-opacity': 1, 'raster-resampling': 'linear', 'raster-fade-duration': 0 } }
+    ]
+  };
+  const v0 = VIEWS[state.view];
+  let map;
+  try {
+    map = new ML.Map({
+      container: 'map', style, center: v0.center, zoom: v0.zoom - (EMBED ? 0.4 : 0), bearing: v0.bearing,
+      pitch: state.threeD ? v0.pitch : 0, maxPitch: state.threeD ? 85 : 0, minZoom: 6, maxZoom: 19.5,
+      pixelRatio: DPR, attributionControl: { compact: true }, canvasContextAttributes: { antialias: true },
+      fadeDuration: 0, maxTileCacheSize: 400
+    });
+  } catch (e) {
+    status('This browser can’t draw the map. The ocean-wide map still works.');
+    wireExplorer(); return;
   }
-  function currentTile(key) { return state.neededTiles && state.neededTiles.has(key); }
-  function line(points, color, opacity) {
-    const g = new T.BufferGeometry().setFromPoints(points); const l = new T.Line(g, new T.LineBasicMaterial({ color, transparent: true, opacity: opacity || 0.9, depthTest: true })); overlays.add(l);
-  }
-  function geographicLine(points, color, offset, opacity) {
-    let segment = [];
-    const flush = () => { if (segment.length > 1) line(segment, color, opacity); segment = []; };
-    for (const q of points) {
-      if (!depth(q[0], q[1])) { flush(); continue; }
-      const p = local(q[0], q[1]); segment.push(new T.Vector3(p[0], overlayHeight(q[0], q[1], offset), p[1]));
-    }
-    flush();
-  }
-  function arrow(lon, lat, from, color, offset) {
-    const direction = (from + 180) * Math.PI / 180, l = state.camera.distance * 0.045;
-    const q = local(lon, lat), dx = Math.sin(direction) * l, dz = -Math.cos(direction) * l;
-    const points = [];
-    for (let i = 0; i <= 10; i++) points.push(geographic(q[0] + dx * i / 10, q[1] + dz * i / 10));
-    geographicLine(points, color, offset);
-    geographicLine([geographic(q[0] + dx * 0.6 - dz * 0.3, q[1] + dz * 0.6 + dx * 0.3), geographic(q[0] + dx, q[1] + dz), geographic(q[0] + dx * 0.6 + dz * 0.3, q[1] + dz * 0.6 - dx * 0.3)], color, offset);
-  }
-  function drawOverlays() {
-    if (!root || !viewBounds) return; dispose(overlays); overlays = new T.Group(); root.add(overlays);
-    drawField();
-    const fc = state.forecast;
-    if (fc && (state.layers.waves || state.layers.wind)) {
-      for (let y = 1; y < 8; y++) for (let x = 1; x < 10; x++) {
-        const lon = viewBounds[0] + (viewBounds[2] - viewBounds[0]) * x / 10, lat = viewBounds[1] + (viewBounds[3] - viewBounds[1]) * y / 8;
-        const d = depth(lon, lat); if (!d || !d.wet) continue;
-        if (state.layers.waves && Number.isFinite(fc.waveDirection)) arrow(lon, lat, fc.waveDirection, 0xf3dfad, 0.004);
-        if (state.layers.wind && Number.isFinite(fc.windDirection) && (x + y) % 2 === 0) arrow(lon, lat, fc.windDirection, 0xe8bdf2, 0.008);
-      }
-    }
-    if (state.layers.rays && fc && Number.isFinite(fc.wavePeriod) && Number.isFinite(fc.waveDirection)) {
-      const period = G.clamp(Math.round(fc.wavePeriod / 2) * 2, 6, 16), direction = G.clamp(Math.round(fc.waveDirection / 5) * 5, 50, 230);
-      const data = state.rayCache.get(period);
-      if (!data) {
-        if (!state.rayCache.has(period)) { state.rayCache.set(period, null); json(`../research/fr/${period}.json`).then(j => { state.rayCache.set(period, j); drawOverlays(); }).catch(() => { state.rayCache.delete(period); $('mapStatus').textContent = 'Refraction paths unavailable · other layers remain available'; }); }
-      } else if (data[direction]) {
-        for (const r of data[direction].rays) {
-          const points = []; for (let i = 0; i < r.p.length; i += 2) points.push([-72.4 + r.p[i] / 100 / meta.kmlon, 41.5 - r.p[i + 1] / 100 / meta.kmlat]);
-          // Densify source paths before draping, so long path segments follow the bottom.
-          const dense = [];
-          for (let i = 0; i < points.length - 1; i++) {
-            const a = points[i], b = points[i + 1];
-            if (Math.max(a[0], b[0]) < viewBounds[0] || Math.min(a[0], b[0]) > viewBounds[2] || Math.max(a[1], b[1]) < viewBounds[1] || Math.min(a[1], b[1]) > viewBounds[3]) { if (dense.length) { geographicLine(dense, r.h ? 0xffd48c : 0xc9e6dc, 0.003, r.h ? 0.95 : 0.36); dense.length = 0; } continue; }
-            const n = Math.min(160, Math.ceil(Math.hypot((b[0] - a[0]) * meta.kmlon, (b[1] - a[1]) * meta.kmlat) / 0.035));
-            for (let k = 0; k <= n; k++) dense.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]);
-          }
-          geographicLine(dense, r.h ? 0xffd48c : 0xc9e6dc, 0.003, r.h ? 0.95 : 0.36);
-        }
-      }
-    }
-    forecastReadout(); dirty();
-  }
-  function forecastReadout() {
-    const fc = state.forecast, el = $('forecastReadout'), showing = state.layers.field || state.layers.rays || state.layers.waves || state.layers.wind;
-    el.hidden = !showing;
-    if (!showing) return;
-    if (!fc) { el.textContent = 'Forecast overlays unavailable. The sea floor and map layers still work.'; return; }
-    const parts = [];
-    if (fc.time) { const date = new Date(fc.time); if (Number.isFinite(date.getTime())) parts.push(date.toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric' }) + ' ET'); }
-    if (Number.isFinite(fc.waveHeight)) parts.push(`${fc.waveHeight.toFixed(1)} ft swell`);
-    if (Number.isFinite(fc.wavePeriod)) parts.push(`${fc.wavePeriod.toFixed(1)} s`);
-    if (Number.isFinite(fc.waveDirection)) parts.push(`from ${Math.round(fc.waveDirection)}°`);
-    if (state.layers.wind && Number.isFinite(fc.windSpeed)) parts.push(`${Math.round(fc.windSpeed)} mph wind`);
-    if (state.layers.rays && Number.isFinite(fc.wavePeriod) && Number.isFinite(fc.waveDirection)) parts.push(`paths: ${G.clamp(Math.round(fc.wavePeriod / 2) * 2, 6, 16)} s / ${G.clamp(Math.round(fc.waveDirection / 5) * 5, 50, 230)}°`);
-    if (state.spot === 'race') parts.push('Choc-area reference conditions; no Race surf model');
-    if (state.layers.field) parts.push(fieldTime ? `GFS height field: ${new Date(fieldTime).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric' })} ET · 0.25° grid` : 'Wave-height field unavailable');
-    if (fc.time && Date.now() - Date.parse(fc.time) > 12 * 3600000) parts.push('past forecast hour');
-    el.textContent = parts.join(' · ') || 'Forecast values unavailable';
-  }
-  function setForecast(fc) {
-    if (!fc || typeof fc !== 'object') return;
-    const out = {}; for (const k of ['waveHeight', 'wavePeriod', 'waveDirection', 'windSpeed', 'windDirection']) out[k] = typeof fc[k] === 'number' && Number.isFinite(fc[k]) ? fc[k] : null;
-    if (typeof fc.time === 'string' && Number.isFinite(Date.parse(fc.time))) out.time = fc.time;
-    state.forecast = out; drawOverlays();
-  }
-  async function loadForecast() {
-    try {
-      const localData = await json('../research/fc/fc.json');
-      const apply = d => {
-        if (state.externalForecast) return; const rows = d.gfs || []; if (!rows.length) return;
-        const row = rows.reduce((a, b) => Math.abs(Date.parse(a.t) - Date.now()) < Math.abs(Date.parse(b.t) - Date.now()) ? a : b), train = (row.trains || []).filter(t => t.k !== 'ww').sort((a, b) => b.ft - a.ft)[0];
-        setForecast({ time: row.t, waveHeight: train ? train.ft : row.hs, wavePeriod: train ? train.T : null, waveDirection: train ? train.D : null, windSpeed: row.wind ? row.wind[0] * 1.15078 : null, windDirection: row.wind ? row.wind[1] : null });
-      };
-      loadField(localData, '../research/fc/');
-      apply(localData);
-      json('https://raw.githubusercontent.com/TheKeeks/LetsCheckChoc/fc-data/fc/fc.json').then(d => { if (Date.parse(d.made) > Date.parse(localData.made)) { apply(d); loadField(d, 'https://raw.githubusercontent.com/TheKeeks/LetsCheckChoc/fc-data/fc/'); } }).catch(() => {});
-    } catch (e) { forecastReadout(); }
-  }
-  async function loadField(data, base) {
-    const request = ++fieldRequest;
-    try {
-      const im = await image(base + 'field_gfs_reg.png' + (base.startsWith('https:') ? '?m=' + encodeURIComponent(data.made) : ''));
-      if (request !== fieldRequest) return;
-      const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const ctx = c.getContext('2d');
-      ctx.drawImage(im, 0, 0); fieldPixels = ctx.getImageData(0, 0, c.width, c.height).data; fieldWidth = c.width; fieldMetadata = data; c.width = c.height = 1;
-      drawField(); forecastReadout();
-    } catch (e) { forecastReadout(); }
-  }
-  function drawField() {
-    dispose(fieldMesh); fieldMesh = null; if (fieldTexture) { fieldTexture.dispose(); fieldTexture = null; }
-    if (!root || !state.layers.field || !fieldMetadata || !fieldPixels || !viewBounds) return;
-    const rows = fieldMetadata.gfs, grid = fieldMetadata.grids.reg, wanted = Date.parse((state.forecast || {}).time) || Date.now();
-    let row = 0; rows.forEach((r, i) => { if (Math.abs(Date.parse(r.t) - wanted) < Math.abs(Date.parse(rows[row].t) - wanted)) row = i; });
-    fieldTime = rows[row].t;
-    const c = document.createElement('canvas'); c.width = grid.lon[3]; c.height = grid.lat[3]; const ctx = c.getContext('2d'), pixels = ctx.createImageData(c.width, c.height);
-    for (let i = 0; i < c.width * c.height; i++) {
-      const p = (row * fieldWidth + i) * 4; if (fieldPixels[p] === 255 || fieldPixels[p + 1] === 255) continue;
-      const metres = fieldPixels[p] / 10, col = new T.Color().setHSL(G.clamp(0.57 - metres * 0.075, 0, 0.57), 0.72, 0.52);
-      pixels.data.set([Math.round(col.r * 255), Math.round(col.g * 255), Math.round(col.b * 255), 190], i * 4);
-    }
-    ctx.putImageData(pixels, 0, 0); fieldTexture = new T.CanvasTexture(c); fieldTexture.magFilter = T.NearestFilter; fieldTexture.minFilter = T.NearestFilter;
-    const b = [grid.lon[0] - grid.lon[2] / 2, grid.lat[1] - grid.lat[2] / 2, grid.lon[1] + grid.lon[2] / 2, grid.lat[0] + grid.lat[2] / 2];
-    const geometry = ground.geometry.clone(), pos = geometry.attributes.position, uv = geometry.attributes.uv;
-    for (let i = 0; i < pos.count; i++) {
-      const q = geographic(pos.getX(i), pos.getZ(i)); uv.setXY(i, (q[0] - b[0]) / (b[2] - b[0]), (q[1] - b[1]) / (b[3] - b[1]));
-      pos.setY(i, (state.follow ? pos.getY(i) : Math.max(0, pos.getY(i))) + 0.0026);
-    }
-    uv.needsUpdate = pos.needsUpdate = true;
-    fieldMesh = new T.Mesh(geometry, new T.MeshBasicMaterial({ map: fieldTexture, transparent: true, opacity: 0.57, side: T.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5 })); fieldMesh.renderOrder = 5; root.add(fieldMesh); dirty();
-  }
-  function openExplorer() {
-    const frame = $('researchExplorer'); frame.hidden = false; $('explorerToggle').setAttribute('aria-expanded', 'true'); $('explorerToggle').textContent = 'Map explorer is open';
-    if (!frame.getAttribute('src')) frame.src = `../research/index.html?view=map&theme=${state.theme}${requestedDate ? '&date=' + requestedDate : ''}`;
-    else if (requestedDate) frame.contentWindow.postMessage({ type: 'lcc-map-date', date: requestedDate }, location.origin);
-  }
-  function receive(data) {
-    if (!data || typeof data !== 'object') return;
-    if (data.type === 'lcc-theme') setTheme(data.theme);
-    if (data.type !== 'lcc-map') return;
-    if (data.theme) setTheme(data.theme); if (data.spot) setSpot(data.spot);
-    if (data.forecast) { state.externalForecast = true; setForecast(data.forecast); }
-    if (typeof data.active === 'boolean') { state.active = data.active; if (state.active) { resize(); dirty(); } }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(data.date || '')) { requestedDate = data.date; openExplorer(); }
-  }
-  addEventListener('message', e => { if (e.origin === location.origin && e.source === parent) receive(e.data); });
-  addEventListener('visibilitychange', dirty);
-  window.ChocMap = { setSpot, setTheme, setForecast, receive, getState: () => ({ spot: state.spot, theme: state.theme, threeD: state.threeD, layers: Object.assign({}, state.layers), ready: !!renderer, active: state.active, tileCount: state.tileCache.size, loadedTiles: [...state.tileCache.values()].filter(r => r.mesh && r.mesh.visible).length, pendingTiles: [...state.tileCache.values()].filter(r => r.loading).length, overlayFollowsTerrain: state.follow, fieldReady: !!fieldMesh, fieldTime, renderedTriangles: renderer ? renderer.info.render.triangles : 0, camera: Object.assign({}, state.camera) }) };
-  document.querySelectorAll('[data-spot]').forEach(b => b.addEventListener('click', () => { setSpot(b.dataset.spot); parent.postMessage({ type: 'lcc-map-spot', spot: state.spot }, location.origin); }));
-  $('bathymetryToggle').addEventListener('click', () => { state.threeD = !state.threeD; $('bathymetryToggle').setAttribute('aria-pressed', String(state.threeD)); $('bathymetryToggle').querySelector('span').textContent = state.threeD ? 'On' : 'Off'; $('viewScale').textContent = state.threeD ? `Depth stretched ${state.exaggeration}×` : '2D overhead view'; dirty(); });
-  $('layersToggle').addEventListener('click', () => { $('layersPanel').hidden = !$('layersPanel').hidden; $('layersToggle').setAttribute('aria-expanded', String(!$('layersPanel').hidden)); });
-  $('closeLayers').addEventListener('click', () => { $('layersPanel').hidden = true; $('layersToggle').setAttribute('aria-expanded', 'false'); $('layersToggle').focus(); });
-  document.querySelectorAll('[data-layer]').forEach(input => input.addEventListener('change', () => { state.layers[input.dataset.layer] = input.checked; if (input.dataset.layer === 'relief' && renderer) drawGround(); updateTiles(); drawOverlays(); updateStatus(); }));
-  document.querySelectorAll('[data-layer]').forEach(input => { input.checked = !!state.layers[input.dataset.layer]; });
-  $('overlayPosition').addEventListener('change', () => { state.follow = $('overlayPosition').value === 'floor'; drawOverlays(); });
-  $('verticalScale').addEventListener('input', () => { state.exaggeration = +$('verticalScale').value; $('scaleValue').textContent = state.exaggeration + '×'; $('viewScale').textContent = state.threeD ? `Depth stretched ${state.exaggeration}×` : '2D overhead view'; drawMarkers(); dirty(); });
-  $('sourcesToggle').addEventListener('click', () => { $('sources').hidden = !$('sources').hidden; $('sourcesToggle').setAttribute('aria-expanded', String(!$('sources').hidden)); });
-  $('explorerToggle').addEventListener('click', openExplorer);
-  $('researchExplorer').addEventListener('load', () => setTheme(state.theme));
-  function zoom(f) { state.camera.distance = G.clamp(state.camera.distance * f, 0.3, 15); dirty(); queueUpdate(); }
-  function pan(dx, dy) {
-    const v = state.camera, k = v.distance / Math.max(250, $('terrain').clientHeight) * 0.8;
-    v.x -= (dx * Math.cos(v.az) + dy * Math.sin(v.az)) * k; v.z -= (-dx * Math.sin(v.az) + dy * Math.cos(v.az)) * k;
-    if (surveyBounds) { const a = local(surveyBounds[0], surveyBounds[3]), b = local(surveyBounds[2], surveyBounds[1]); v.x = G.clamp(v.x, a[0] + 0.1, b[0] - 0.1); v.z = G.clamp(v.z, a[1] + 0.1, b[1] - 0.1); }
-    dirty(); queueUpdate();
-  }
-  $('zoomIn').addEventListener('click', () => zoom(0.7)); $('zoomOut').addEventListener('click', () => zoom(1.4));
-  $('rotate').addEventListener('click', () => { state.camera.az += Math.PI / 6; dirty(); queueUpdate(); }); $('resetView').addEventListener('click', () => setSpot(state.spot, true));
-  const cv = $('terrain'), pointers = new Map(); let previousGesture;
-  cv.addEventListener('contextmenu', e => e.preventDefault());
-  cv.addEventListener('wheel', e => { e.preventDefault(); zoom(Math.exp(e.deltaY * 0.001)); }, { passive: false });
-  cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY, e.button]); previousGesture = null; });
-  cv.addEventListener('pointermove', e => {
-    if (!pointers.has(e.pointerId)) return; const prev = pointers.get(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY, prev[2]]);
-    if (pointers.size === 1) { if (prev[2] === 2 || e.shiftKey) { state.camera.az -= (e.clientX - prev[0]) * 0.006; state.camera.el = G.clamp(state.camera.el + (e.clientY - prev[1]) * 0.005, 0.2, 1.5); dirty(); queueUpdate(); } else pan(e.clientX - prev[0], e.clientY - prev[1]); }
-    else if (pointers.size === 2) {
-      const [a, b] = [...pointers.values()], g = { distance: Math.hypot(a[0] - b[0], a[1] - b[1]), angle: Math.atan2(b[1] - a[1], b[0] - a[0]), y: (a[1] + b[1]) / 2 };
-      if (previousGesture) { zoom(previousGesture.distance / Math.max(10, g.distance)); state.camera.az += g.angle - previousGesture.angle; state.camera.el = G.clamp(state.camera.el + (g.y - previousGesture.y) * 0.003, 0.2, 1.5); dirty(); }
-      previousGesture = g;
-    }
+  map.addControl(new ML.NavigationControl({ visualizePitch: true }), 'top-right');
+  map.addControl(new ML.ScaleControl({ unit: 'imperial' }), 'bottom-left');
+  status('Loading sea floor…');
+  let mapReady = false;
+  map.on('error', e => {
+    const src = e && e.sourceId;
+    if (src === 'photo' || src === 'ocean' || src === 'chart') { if (!$('status').textContent) status((src === 'chart' ? 'NOAA chart' : 'Esri') + ' tiles are slow or offline; the sea floor still works.'); }
   });
-  const release = e => { pointers.delete(e.pointerId); previousGesture = null; }; cv.addEventListener('pointerup', release); cv.addEventListener('pointercancel', release);
-  cv.addEventListener('keydown', e => { const key = e.key; if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '+', '=', '-'].includes(key)) return; e.preventDefault(); if (key === '+' || key === '=') zoom(0.8); else if (key === '-') zoom(1.25); else pan(key === 'ArrowLeft' ? 40 : key === 'ArrowRight' ? -40 : 0, key === 'ArrowUp' ? 40 : key === 'ArrowDown' ? -40 : 0); });
-  cv.addEventListener('webglcontextlost', e => { e.preventDefault(); $('mapLoading').hidden = false; $('mapLoading').textContent = 'The 3D view paused. Reload to restore it, or use the map explorer below.'; });
-  if ('IntersectionObserver' in window) new IntersectionObserver(entries => { visible = entries.some(e => e.isIntersecting); if (visible) dirty(); }).observe(cv);
-  if ('ResizeObserver' in window) new ResizeObserver(resize).observe(cv); else addEventListener('resize', resize);
-  setSpot(state.spot, true); setTheme(state.theme); loadForecast();
-  if (requestedDate && !compact) openExplorer();
-  async function start() {
+
+  // ── markers
+  for (const s of SPOTS) {
+    const el = document.createElement('div');
+    el.className = 'spot ' + s.cls; el.innerHTML = '<i></i><span>' + s.name + '</span>';
+    new ML.Marker({ element: el, anchor: 'left', offset: [-8, 0] }).setLngLat(s.at).addTo(map);
+  }
+
+  map.on('load', () => {
+    mapReady = true;
+    applyBase(); applyLayers(); applyTheme(); set3D(state.threeD, true);
+    loadForecast();
+    if (EMBED && parent !== window) parent.postMessage({ type: 'lcc-map-ready' }, location.origin);
+    map.on('moveend', () => swellBounds(false));
+    map.on('resize', () => swellBounds(true));
+    swellBounds(true);
+  });
+
+  // ════════════════════════════════════════════════════════════════════
+  // 3D on / off, depth stretch, base and layers
+  // ════════════════════════════════════════════════════════════════════
+  function set3D(on, instant) {
+    state.threeD = on;
+    const b = $('threeD'); b.setAttribute('aria-checked', String(on));
+    document.documentElement.classList.toggle('is-2d', !on);
+    if (!mapReady) return;
+    if (on) {
+      map.setMaxPitch(85);
+      map.setTerrain({ source: 'dem', exaggeration: state.ex });
+      const p = Math.max(map.getPitch(), (VIEWS[state.view] || VIEWS.choc).pitch);
+      if (instant) map.jumpTo({ pitch: p }); else map.easeTo({ pitch: p, duration: reduceMotion ? 0 : 900 });
+    } else {
+      map.setTerrain(null);
+      const done = () => { if (!state.threeD) map.setMaxPitch(0); };
+      if (instant || reduceMotion) { map.jumpTo({ pitch: 0 }); done(); } else { map.easeTo({ pitch: 0, duration: 700 }); map.once('moveend', done); }
+    }
+    swellBounds(true);
+  }
+  let reloadTimer = 0;
+  function setEx(ex) {
+    state.ex = ex; $('exOut').textContent = ex + '×';
+    if (mapReady && state.threeD) map.setTerrain({ source: 'dem', exaggeration: ex });
+    // Land rides at 1.25x whatever the stretch, so the terrain and shading tiles are redrawn once the slider rests.
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(() => { if (!mapReady) return; map.getSource('dem').setTiles([demUrl()]); map.getSource('bathy').setTiles([colorUrl()]); }, 350);
+  }
+  function refreshColors() { if (mapReady) map.getSource('bathy').setTiles([colorUrl()]); }
+  function applyBase() {
+    if (!mapReady) return;
+    const b = state.base, vis = (id, on) => map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+    vis('photo', b === 'photo' || b === 'aerial');
+    vis('bathy', b === 'photo' || b === 'color');
+    vis('chart', b === 'chart');
+    vis('ocean', b !== 'aerial');
+    $('depthKey').hidden = !(b === 'photo' || b === 'color');
+    refreshColors();
+  }
+  function applyLayers() {
+    if (!mapReady) return;
+    const vis = (id, on) => map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+    vis('wavesSound', state.layers.waves); vis('wavesFine', state.layers.waves);
+    vis('rays', state.layers.rays); vis('swell', state.layers.swell);
+    $('waveKey').hidden = !state.layers.waves;
+    document.querySelectorAll('[data-layer]').forEach(i => { i.checked = !!state.layers[i.dataset.layer]; });
+    if (state.layers.rays) updateRays();
+    swellRun();
+  }
+  function applyTheme() {
+    const dark = state.theme === 'dark';
+    document.documentElement.dataset.theme = state.theme;
+    if (!mapReady) return;
+    map.setPaintProperty('bg', 'background-color', dark ? '#0b1a2c' : '#9cc3d5');
     try {
-      if (!T) throw new Error('3D library unavailable');
-      const loaded = await Promise.all([json('../research/ocean/fine16.json'), image('../research/ocean/fine16.png')]); meta = loaded[0];
-      const im = loaded[1], scratch = document.createElement('canvas'); scratch.width = im.width; scratch.height = im.height;
-      const ctx = scratch.getContext('2d', { willReadFrequently: true }); if (!ctx) throw new Error('Canvas unavailable'); ctx.drawImage(im, 0, 0);
-      const pixels = ctx.getImageData(0, 0, im.width, im.height).data; values = new Float32Array(meta.cols * meta.rows); wet = new Uint8Array(values.length);
-      for (let i = 0; i < values.length; i++) { values[i] = ((pixels[i * 4] << 8) | pixels[i * 4 + 1]) / meta.scale - meta.off; wet[i] = pixels[i * 4 + 2] > 127 ? 1 : 0; }
-      scratch.width = scratch.height = 1;
-      surveyBounds = [meta.left + meta.dx / 2000 / meta.kmlon, meta.top - (meta.rows - 0.5) * meta.dx / 1000 / meta.kmlat, meta.left + (meta.cols - 0.5) * meta.dx / 1000 / meta.kmlon, meta.top - meta.dx / 2000 / meta.kmlat];
-      renderer = new T.WebGLRenderer({ canvas: cv, antialias: true, alpha: false, powerPreference: 'low-power' }); renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1)); renderer.outputEncoding = T.sRGBEncoding;
-      scene = new T.Scene(); scene.background = new T.Color(state.theme === 'dark' ? 0x15292f : 0xe6efec); camera = new T.PerspectiveCamera(45, 1, 0.005, 150);
-      scene.add(new T.AmbientLight(0xffffff, 0.68)); const sun = new T.DirectionalLight(0xfff7e2, 0.68); sun.position.set(-8, 12, 4); scene.add(sun);
-      root = new T.Group(); scene.add(root); setSpot(state.spot, true); resize(); drawGround(); drawOverlays(); $('mapLoading').hidden = true; dirty();
-      parent.postMessage({ type: 'lcc-map-ready' }, location.origin);
-    } catch (e) {
-      $('mapLoading').hidden = true; $('fallback').hidden = false; $('bathymetryToggle').disabled = true; $('mapStatus').textContent = '3D unavailable · the original 2D map remains available below';
-      if (!compact) openExplorer(); parent.postMessage({ type: 'lcc-map-ready', webgl: false }, location.origin);
+      map.setSky(dark
+        ? { 'sky-color': '#0b1d2e', 'horizon-color': '#24384a', 'fog-color': '#1a2a38', 'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.7, 'fog-ground-blend': 0.9, 'atmosphere-blend': 0 }
+        : { 'sky-color': '#9fcbe8', 'horizon-color': '#e4eef3', 'fog-color': '#dfeaf0', 'sky-horizon-blend': 0.55, 'horizon-fog-blend': 0.7, 'fog-ground-blend': 0.9, 'atmosphere-blend': 0 });
+    } catch (e) { /* older engines: no sky */ }
+  }
+  function setTheme(t) {
+    t = t === 'dark' || t === 'night' ? 'dark' : 'light';
+    if (t === state.theme && mapReady) return;
+    state.theme = t; applyTheme();
+    const f = $('explorerFrame'); if (f.getAttribute('src') && f.contentWindow) f.contentWindow.postMessage({ type: 'lcc-theme', theme: t }, location.origin);
+  }
+  function go(view, opts) {
+    if (!VIEWS[view]) return;
+    state.view = view;
+    document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
+    if (!mapReady) return;
+    const v = VIEWS[view], cam = { center: v.center, zoom: v.zoom - (EMBED ? 0.4 : 0), bearing: v.bearing, pitch: state.threeD ? v.pitch : 0 };
+    if ((opts && opts.instant) || reduceMotion) map.jumpTo(cam); else map.flyTo(Object.assign(cam, { duration: 1800, essential: true }));
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // Forecast: GFS-Wave / ECMWF trains for each 3-hour step (research/fc)
+  // ════════════════════════════════════════════════════════════════════
+  async function getJSON(url) { const r = await fetch(url, { cache: 'no-cache' }); if (!r.ok) throw new Error(url + ' ' + r.status); return r.json(); }
+  async function loadForecast() {
+    let d = null;
+    try { d = await getJSON('../research/fc/fc.json'); } catch (e) { /* try the live copy */ }
+    useForecast(d);
+    try {
+      const live = await getJSON(FC_LIVE + 'fc.json');
+      if (live && live.gfs && (!d || Date.parse(live.made) > Date.parse(d.made))) useForecast(live);
+    } catch (e) { /* the copy that ships with the site is fine */ }
+    if (!state.fc) { $('hudTime').textContent = 'Forecast unavailable'; $('hudSwell').textContent = 'The sea floor and map layers still work.'; }
+  }
+  function useForecast(d) {
+    if (!d || !d.gfs || !d.gfs.length) return;
+    const ecByTime = new Map((d.ec || []).map(r => [Math.round(Date.parse(r.t) / 36e5), r]));
+    state.fc = { made: d.made, rows: d.gfs.map(r => ({ t: Date.parse(r.t), gfs: r, ec: ecByTime.get(Math.round(Date.parse(r.t) / 36e5)) || null })) };
+    const s = $('step'); s.max = String(state.fc.rows.length - 1);
+    $('timebar').hidden = false;
+    setStep(nearestStep(state.wantTime || Date.now()), true);
+  }
+  function nearestStep(t) {
+    const rows = state.fc ? state.fc.rows : []; let best = 0;
+    rows.forEach((r, i) => { if (Math.abs(r.t - t) < Math.abs(rows[best].t - t)) best = i; });
+    return best;
+  }
+  function trainsAt(row) {
+    if (!row) return [];
+    if (state.model === 'ec') return row.ec && row.ec.hs != null ? [{ ft: row.ec.hs, T: row.ec.T, D: row.ec.D }] : [];
+    return (row.gfs.trains || []).filter(t => t.T >= 4).map(t => ({ ft: t.ft, T: t.T, D: t.D }));
+  }
+  let stepTimer = 0;
+  function setStep(i, now) {
+    if (!state.fc) return;
+    state.step = Math.max(0, Math.min(state.fc.rows.length - 1, i));
+    $('step').value = String(state.step);
+    hud();
+    clearTimeout(stepTimer);
+    const apply = () => { requestWaves(); swellTrains(); if (state.layers.rays) updateRays(); };
+    if (now) apply(); else stepTimer = setTimeout(apply, 60);
+  }
+  const fmtTime = t => new Date(t).toLocaleString('en-US', Object.assign({ weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric' }, ET));
+  const arrow = from => '<svg class="arr" viewBox="0 0 12 12" aria-hidden="true" style="transform:rotate(' + Math.round((from + 180) % 360) + 'deg)"><path d="M6 1 L9.6 10 L6 8 L2.4 10 Z" fill="currentColor"/></svg>';
+  function hud() {
+    const row = state.fc && state.fc.rows[state.step];
+    if (!row) return;
+    const src = state.model === 'ec' ? row.ec : row.gfs;
+    $('hudTime').textContent = fmtTime(row.t);
+    $('hudSpot').textContent = src && src.choc != null ? (COMPACT ? 'Sound Check model: ' : '') + 'Choc ' + src.choc.toFixed(1) + ' ft' + (src.wild != null ? ' · Wilderness ' + src.wild.toFixed(1) + ' ft' : '') : (state.model === 'ec' ? 'No ECMWF run for this hour' : '');
+    const tr = trainsAt(row).filter(t => t.T >= 5 && t.ft >= 0.2).sort((a, b) => b.ft - a.ft).slice(0, 3);
+    const parts = tr.map(t => arrow(t.D) + ' ' + t.ft.toFixed(1) + ' ft @ ' + Math.round(t.T) + ' s ' + G.compass(t.D));
+    const w = row.gfs.wind; if (w) parts.push('Wind ' + arrow(w[1]) + ' ' + Math.round(w[0]) + ' kn ' + G.compass(w[1]));
+    $('hudSwell').innerHTML = parts.join(' · ') + (state.model === 'gfs' ? '' : ' · ECMWF');
+  }
+
+  // ── wave height (height-worker.js)
+  const hw = new Worker('height-worker.js');
+  let hwSeq = 0, hAll = null, hGrid = null, wavesReady = false;
+  function requestWaves() {
+    const row = state.fc && state.fc.rows[state.step];
+    if (!row) return;
+    hw.postMessage({ id: ++hwSeq, trains: trainsAt(row) });
+  }
+  hw.onmessage = e => {
+    const m = e.data;
+    if (m.id !== hwSeq || m.error) { if (m.error) status('Wave heights unavailable: ' + m.error); return; }
+    hAll = m.hAll; hGrid = m.grid;
+    paintCanvas('wavesSound', canvases.sound, m.sound);
+    if (m.fine) paintCanvas('wavesFine', canvases.fine, m.fine);
+    wavesReady = true;
+  };
+  function paintCanvas(id, cv, f) {
+    if (cv.width !== f.w || cv.height !== f.h) { cv.width = f.w; cv.height = f.h; }
+    cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(f.img.buffer), f.w, f.h), 0, 0);
+    const src = map.getSource(id); if (!src) return;
+    const [w, s, e, n] = f.bounds;
+    if (!src._lccSet) { src.setCoordinates([[w, n], [e, n], [e, s], [w, s]]); src._lccSet = true; }
+    pushCanvas(id);
+  }
+  // Canvas sources upload only while "playing"; play+pause uploads once. With terrain on,
+  // draped layers are cached per tile, so bump the source's feature state to redraw them.
+  let bump = 0;
+  function pushCanvas(id) {
+    const src = map.getSource(id); if (!src || !src.play) return;
+    src.play(); src.pause();
+    if (state.threeD) map.setFeatureState({ source: id, id: 1 }, { n: ++bump });
+  }
+
+  // ── swell paths (research/fr): Part 1's rays for each train, the ones reaching the spots bright
+  const frCache = new Map();
+  function frFile(T) {
+    if (!frCache.has(T)) frCache.set(T, getJSON('../research/fr/' + T + '.json').catch(() => { frCache.delete(T); return null; }));
+    return frCache.get(T);
+  }
+  let raySeq = 0;
+  async function updateRays() {
+    const row = state.fc && state.fc.rows[state.step], my = ++raySeq;
+    const tr = trainsAt(row).filter(t => t.T >= 5 && t.ft >= 0.2);
+    const features = [];
+    for (const t of tr) {
+      const Te = Math.max(6, Math.min(16, Math.round(t.T / 2) * 2)), De = Math.round(t.D / 5) * 5, f = await frFile(Te);
+      if (my !== raySeq) return;
+      if (!f || !f[De]) continue;
+      const c = G.perRGB(t.T), color = 'rgb(' + c.join(',') + ')', w = Math.max(1, Math.min(5, 0.6 + t.ft * 0.45));
+      for (const r of f[De].rays) {
+        const p = r.p; if (p.length < 4) continue;
+        const coords = [];
+        for (let k = 0; k < p.length; k += 2) coords.push([-72.4 + p[k] / 100 / 83.95050561668964, 41.5 - p[k + 1] / 100 / 110.95]);
+        features.push({ type: 'Feature', properties: { color, w, hit: /[cw]/.test(r.h || '') }, geometry: { type: 'LineString', coordinates: coords } });
+      }
+    }
+    if (my === raySeq && mapReady) map.getSource('rays').setData({ type: 'FeatureCollection', features });
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // Swell motion: streaks along the traced rays, drawn on a canvas draped on the map
+  // ════════════════════════════════════════════════════════════════════
+  const sw = new Worker('swell-worker.js');
+  const SW = { ctx: canvases.swell.getContext('2d'), b: null, W: 2, H: 2, cpp: 1, parts: [], trains: [], fields: new Map(), seq: 0, raf: 0, last: 0, drawn: 0, key: '' };
+  const swPending = new Map();
+  sw.onmessage = e => { const p = swPending.get(e.data.id); if (!p) return; swPending.delete(e.data.id); if (e.data.error) p.reject(new Error(e.data.error)); else p.resolve(e.data.field); };
+  function swellField(T, D) {
+    const Tq = Math.max(5, Math.min(20, Math.round(T))), Dq = ((Math.round(D / 3) * 3) % 360 + 360) % 360, key = Tq + '_' + Dq;
+    let f = SW.fields.get(key);
+    if (!f) {
+      f = new Promise((resolve, reject) => { const id = ++SW.seq; swPending.set(id, { resolve, reject }); sw.postMessage({ id, T: Tq, from: Dq }); });
+      SW.fields.set(key, f);
+      if (SW.fields.size > 10) SW.fields.delete(SW.fields.keys().next().value);
+    }
+    return f;
+  }
+  let swTrainSeq = 0;
+  async function swellTrains() {
+    const row = state.fc && state.fc.rows[state.step], my = ++swTrainSeq;
+    const tr = trainsAt(row).filter(t => t.T >= 5 && t.ft >= 0.25).sort((a, b) => b.ft - a.ft).slice(0, 3);
+    const e = tr.reduce((s, t) => s + t.ft * t.ft, 0) || 1;
+    const out = [];
+    for (const t of tr) {
+      try {
+        const field = await swellField(t.T, t.D);
+        if (my !== swTrainSeq) return;
+        const c = G.perRGB(t.T).map(v => Math.round(v + (255 - v) * 0.45));
+        out.push({ T: t.T, D: t.D, ft: t.ft, share: t.ft * t.ft / e, field, style: 'rgba(' + c.join(',') + ',0.8)' });
+      } catch (err) { /* this train stays still; the others move */ }
+    }
+    if (my !== swTrainSeq) return;
+    let acc = 0; out.forEach(t => { t.share = Math.max(t.share, 0.18); acc += t.share; }); out.forEach(t => { t.share /= acc; });
+    SW.trains = out;
+    for (const p of SW.parts) p.age = p.life;   // re-seed on the new hour
+    swellRun();
+  }
+  /** [east, north, speed share, ray density] for a train at a point, or null on land / off the grids. */
+  function flowAt(F, lon, lat) {
+    for (const g of [F.fine, F.coarse]) {
+      const x = (lon - g.left) * g.sx - 0.5, y = (g.top - lat) * g.sy - 0.5;
+      if (!(x >= 0 && y >= 0 && x <= g.w - 1 && y <= g.h - 1)) continue;
+      const i = Math.round(y) * g.w + Math.round(x);
+      if (!g.sp[i]) return null;
+      const x0 = Math.min(g.w - 2, x | 0), y0 = Math.min(g.h - 2, y | 0), fx = x - x0, fy = y - y0, j = y0 * g.w + x0;
+      const ux = (g.ux[j] * (1 - fx) + g.ux[j + 1] * fx) * (1 - fy) + (g.ux[j + g.w] * (1 - fx) + g.ux[j + g.w + 1] * fx) * fy;
+      const uy = (g.uy[j] * (1 - fx) + g.uy[j + 1] * fx) * (1 - fy) + (g.uy[j + g.w] * (1 - fx) + g.uy[j + g.w + 1] * fx) * fy;
+      const l = Math.hypot(ux, uy); if (l < 8) return null;
+      return [ux / l, uy / l, g.sp[i] / 255, g.dn[i] / 50];
+    }
+    return null;
+  }
+  /**
+   * The canvas covers the view (in 3D, the ground out to a few screen-widths) on
+   * Web Mercator. It stays put while the map moves and is re-placed only when the
+   * view has moved well away from it, so streaks never jump.
+   */
+  function swellBounds(force) {
+    if (!mapReady) return;
+    const c = map.getCenter(), z = map.getZoom(), mpp = G.metersPerPixel(z), el = map.getContainer();
+    const cx = G.mercX(c.lng), cy = G.mercY(c.lat), w = el.clientWidth || 800, h = el.clientHeight || 600;
+    const pitch = map.getPitch(), key = [Math.round(z * 2), Math.round(pitch / 10), Math.round(map.getBearing() / 15), state.threeD, w, h].join();
+    const b = SW.b;
+    if (!force && b && key === SW.key && cx > b[0] + (b[2] - b[0]) * 0.22 && cx < b[2] - (b[2] - b[0]) * 0.22 && cy > b[1] + (b[3] - b[1]) * 0.22 && cy < b[3] - (b[3] - b[1]) * 0.22) return;
+    SW.key = key;
+    let nb;
+    if (state.threeD && pitch > 10) {
+      // Tilted: cover the ground actually on screen from the bottom edge to a little below the
+      // horizon, not a box around the center, so the canvas pixels go where the eye is.
+      const xs = [], ys = [], top = Math.min(0.5, 0.12 + Math.max(0, pitch - 45) / 100);
+      for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) {
+        const ll = map.unproject([w * i / 4, h * (top + (1 - top) * j / 4)]);
+        if (ll && Number.isFinite(ll.lat)) { xs.push(G.mercX(ll.lng)); ys.push(G.mercY(ll.lat)); }
+      }
+      const cap = Math.max(w, h) * mpp * 2.6, pad = 0.08;
+      let x0 = Math.max(Math.min(...xs), cx - cap), x1 = Math.min(Math.max(...xs), cx + cap), y0 = Math.max(Math.min(...ys), cy - cap), y1 = Math.min(Math.max(...ys), cy + cap);
+      const px = (x1 - x0) * pad, py = (y1 - y0) * pad;
+      nb = [x0 - px, y0 - py, x1 + px, y1 + py];
+    } else {
+      nb = [cx - w * mpp * 0.62, cy - h * mpp * 0.62, cx + w * mpp * 0.62, cy + h * mpp * 0.62];
+    }
+    const maxSide = coarsePointer ? 1280 : (state.threeD ? 2048 : (DPR > 1.4 ? 1600 : 1280)), span = Math.max(nb[2] - nb[0], nb[3] - nb[1]);
+    SW.cpp = span / maxSide;
+    SW.W = Math.max(2, Math.round((nb[2] - nb[0]) / SW.cpp)); SW.H = Math.max(2, Math.round((nb[3] - nb[1]) / SW.cpp));
+    SW.b = nb;
+    canvases.swell.width = SW.W; canvases.swell.height = SW.H;
+    const per = (coarsePointer ? 600 : 480) / (state.threeD ? 1.7 : 1);   // 3D spreads them over far more ground
+    const n = Math.round(Math.max(500, Math.min(coarsePointer ? 1800 : 3000, w * h / per)));
+    SW.parts = Array.from({ length: n }, () => ({ x: 0, y: 0, age: 1, life: 0, tr: null }));
+    const src = map.getSource('swell');
+    if (src) src.setCoordinates([[G.lonOf(nb[0]), G.latOf(nb[3])], [G.lonOf(nb[2]), G.latOf(nb[3])], [G.lonOf(nb[2]), G.latOf(nb[1])], [G.lonOf(nb[0]), G.latOf(nb[1])]]);
+    if (reduceMotion) drawStill(); else swellRun();
+  }
+  function pickTrain() {
+    let r = Math.random();
+    for (const t of SW.trains) { if ((r -= t.share) <= 0) return t; }
+    return SW.trains[SW.trains.length - 1];
+  }
+  function spawn(p) {
+    p.tr = pickTrain(); p.age = 0; p.life = 1.6 + Math.random() * 3.2; p.fresh = true;
+    const b = SW.b;
+    for (let k = 0; k < 10; k++) {
+      const x = b[0] + Math.random() * (b[2] - b[0]), y = b[1] + Math.random() * (b[3] - b[1]);
+      const f = flowAt(p.tr.field, G.lonOf(x), G.latOf(y));
+      // More streaks where the rays bunch up (focused swell), few in the shadows.
+      if (f && Math.random() < 0.15 + 0.85 * Math.min(1, f[3])) { p.x = x; p.y = y; return; }
+    }
+    p.age = p.life;   // nothing found this time; try again next frame
+  }
+  function swellActive() { return mapReady && state.layers.swell && state.active && !document.hidden && SW.trains.length && SW.b; }
+  function swellRun() {
+    if (reduceMotion) { drawStill(); return; }
+    if (!SW.raf && swellActive()) { SW.last = 0; SW.raf = requestAnimationFrame(swellFrame); }
+    if (!state.layers.swell || !SW.trains.length) clearSwell();
+  }
+  function clearSwell() { SW.ctx.setTransform(1, 0, 0, 1, 0, 0); SW.ctx.clearRect(0, 0, SW.W, SW.H); if (mapReady) pushCanvas('swell'); }
+  function swellFrame(now) {
+    SW.raf = 0;
+    if (!swellActive()) return;
+    SW.raf = requestAnimationFrame(swellFrame);
+    if (SW.last && now - SW.drawn < 30) return;              // about 30 frames a second is plenty for streaks
+    const dt = SW.last ? Math.min(0.08, (now - SW.last) / 1000) : 0.033;
+    SW.last = now; SW.drawn = now;
+    stepParticles(dt, true);
+    pushCanvas('swell');
+  }
+  function stepParticles(dt, fade) {
+    const ctx = SW.ctx, b = SW.b, cpp = SW.cpp, mpp = G.metersPerPixel(map.getZoom());
+    if (fade) {
+      // Trails fade by half in about a quarter second.
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = 'rgba(0,0,0,' + (1 - Math.pow(0.5, dt / 0.26)).toFixed(3) + ')';
+      ctx.fillRect(0, 0, SW.W, SW.H);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(1, Math.min(3, 1.3 * mpp / cpp));
+    for (const t of SW.trains) {
+      ctx.beginPath();
+      // Screen speed grows with period (long-period swell moves faster) and drops with the group speed in shallow water.
+      const pxps = 9 + 2.4 * t.T;
+      for (const p of SW.parts) {
+        if (p.tr !== t && p.age < p.life) continue;
+        if (p.age >= p.life) { spawn(p); if (p.tr !== t || p.age >= p.life) continue; }
+        const lon = G.lonOf(p.x), lat = G.latOf(p.y), f = flowAt(t.field, lon, lat);
+        if (!f) { p.age = p.life; continue; }
+        const d = pxps * f[2] * mpp * dt, nx = p.x + f[0] * d, ny = p.y + f[1] * d;
+        if (nx < b[0] || nx > b[2] || ny < b[1] || ny > b[3]) { p.age = p.life; continue; }
+        if (!p.fresh) { ctx.moveTo((p.x - b[0]) / cpp, (b[3] - p.y) / cpp); ctx.lineTo((nx - b[0]) / cpp, (b[3] - ny) / cpp); }
+        p.fresh = false; p.x = nx; p.y = ny; p.age += dt;
+      }
+      ctx.strokeStyle = t.style; ctx.stroke();
     }
   }
-  start();
+  function drawStill() {                                      // reduced motion: short still streamlines instead
+    if (!mapReady || !SW.b) return;
+    SW.ctx.clearRect(0, 0, SW.W, SW.H);
+    if (!state.layers.swell || !SW.trains.length) { pushCanvas('swell'); return; }
+    for (const p of SW.parts) p.age = p.life;
+    for (let k = 0; k < 24; k++) stepParticles(0.05, false);
+    pushCanvas('swell');
+  }
+  document.addEventListener('visibilitychange', swellRun);
+
+  // ════════════════════════════════════════════════════════════════════
+  // Depth probe: hover (or tap) for depth, source and modeled wave height
+  // ════════════════════════════════════════════════════════════════════
+  let probeSeq = 0, probeTimer = 0, dragging = false;
+  map.on('dragstart', () => { dragging = true; hideProbe(); });
+  map.on('dragend', () => { dragging = false; });
+  map.on('mousemove', e => {
+    if (dragging || coarsePointer) return;
+    clearTimeout(probeTimer); probeTimer = setTimeout(() => probe(e.lngLat, e.point), 70);
+  });
+  map.getCanvas().addEventListener('mouseleave', hideProbe);
+  map.on('click', e => { if (coarsePointer) probe(e.lngLat, e.point); });
+  map.on('movestart', () => { if (coarsePointer) hideProbe(); });
+  function hideProbe() { $('probe').hidden = true; probeSeq++; }
+  function waveAt(lon, lat) {
+    if (!hAll || !hGrid) return null;
+    const x = Math.round((lon - hGrid.left) * hGrid.sx - 0.5), y = Math.round((hGrid.top - lat) * hGrid.sy - 0.5);
+    if (x < 0 || y < 0 || x >= hGrid.w || y >= hGrid.h) return null;
+    return hAll[y * hGrid.w + x];
+  }
+  async function probe(ll, pt) {
+    const my = ++probeSeq;
+    let r; try { r = await askBathy({ type: 'sample', lon: ll.lng, lat: ll.lat }); } catch (e) { return; }
+    if (my !== probeSeq || r.h == null) { if (my === probeSeq) hideProbe(); return; }
+    const h = r.h, el = $('probe'), m = Math.abs(h).toFixed(h > -10 && h < 10 ? 1 : 0), ft = Math.round(Math.abs(h) * FT);
+    let html = h < 0 ? '<b>' + m + ' m deep</b> (' + ft + ' ft)' : '<b>' + m + ' m high</b> (' + ft + ' ft)';
+    if (r.source) html += '<br>' + r.source;
+    const w = h < 0 && state.layers.waves ? waveAt(ll.lng, ll.lat) : null;
+    if (w != null && w >= 0) html += '<br>Waves ' + w.toFixed(1) + ' ft (model)';
+    html += '<br><span style="color:var(--muted)">' + ll.lat.toFixed(4) + '° N, ' + Math.abs(ll.lng).toFixed(4) + '° W</span>';
+    el.innerHTML = html; el.hidden = false;
+    const W = innerWidth, H = innerHeight, bw = el.offsetWidth, bh = el.offsetHeight;
+    el.style.left = Math.min(W - bw - 8, pt.x + 14) + 'px'; el.style.top = Math.min(H - bh - 8, Math.max(8, pt.y + 14)) + 'px';
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // Controls
+  // ════════════════════════════════════════════════════════════════════
+  $('threeD').addEventListener('click', () => { set3D(!state.threeD); savePrefs(); });
+  document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
+    go(b.dataset.view);
+    if (EMBED && parent !== window && (b.dataset.view === 'choc' || b.dataset.view === 'race')) parent.postMessage({ type: 'lcc-map-spot', spot: b.dataset.view }, location.origin);
+  }));
+  function setPanel(open, focus) {
+    $('panel').hidden = !open; $('layersBtn').setAttribute('aria-expanded', String(open));
+    if (open && focus) $('panelClose').focus({ preventScroll: true });
+  }
+  $('layersBtn').addEventListener('click', () => setPanel($('panel').hidden, true));
+  $('panelClose').addEventListener('click', () => { setPanel(false); $('layersBtn').focus(); });
+  addEventListener('keydown', e => { if (e.key === 'Escape') { if (!$('explorer').hidden) $('explorerClose').click(); else if (!$('panel').hidden) setPanel(false); } });
+  document.querySelectorAll('input[name="base"]').forEach(r => {
+    r.checked = r.value === state.base;
+    r.addEventListener('change', () => { if (r.checked) { state.base = r.value; applyBase(); savePrefs(); } });
+  });
+  document.querySelectorAll('[data-layer]').forEach(i => i.addEventListener('change', () => {
+    state.layers[i.dataset.layer] = i.checked;
+    if (i.dataset.layer === 'contours') refreshColors(); else applyLayers();
+    savePrefs();
+  }));
+  document.querySelectorAll('[data-model]').forEach(b => {
+    b.setAttribute('aria-pressed', String(b.dataset.model === state.model));
+    b.addEventListener('click', () => {
+      state.model = b.dataset.model;
+      document.querySelectorAll('[data-model]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      setStep(state.step, true); savePrefs();
+    });
+  });
+  $('ex').value = String(state.ex); $('exOut').textContent = state.ex + '×';
+  $('ex').addEventListener('input', () => setEx(+$('ex').value));
+  $('ex').addEventListener('change', savePrefs);
+  $('hill').value = String(state.hill); $('hillOut').textContent = Math.round(state.hill * 100) + '%';
+  $('hill').addEventListener('input', () => { state.hill = +$('hill').value; $('hillOut').textContent = Math.round(state.hill * 100) + '%'; clearTimeout(reloadTimer); reloadTimer = setTimeout(refreshColors, 250); });
+  $('hill').addEventListener('change', savePrefs);
+  $('step').addEventListener('input', () => { stopPlay(); setStep(+$('step').value); });
+  $('nowBtn').addEventListener('click', () => { stopPlay(); setStep(nearestStep(Date.now()), true); });
+  let playTimer = 0;
+  function stopPlay() { if (!state.playing) return; state.playing = false; clearInterval(playTimer); $('play').setAttribute('aria-label', 'Play forecast'); $('play').innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>'; }
+  $('play').addEventListener('click', () => {
+    if (state.playing) { stopPlay(); return; }
+    if (!state.fc) return;
+    state.playing = true;
+    $('play').setAttribute('aria-label', 'Pause forecast'); $('play').innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
+    playTimer = setInterval(() => setStep((state.step + 1) % state.fc.rows.length, true), 1400);
+  });
+  hud();
+  document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === state.view)));
+  $('threeD').setAttribute('aria-checked', String(state.threeD));
+  if (!COMPACT && innerWidth > 1100) setPanel(true);
+  wireExplorer();
+
+  function wireExplorer() {
+    $('explorerBtn').addEventListener('click', () => {
+      const f = $('explorerFrame');
+      if (!f.getAttribute('src')) f.src = '../research/index.html?view=map&theme=' + (document.documentElement.dataset.theme || 'light') + (state.pastDate ? '&date=' + state.pastDate : '');
+      $('explorer').hidden = false; $('explorerClose').focus();
+    });
+    $('explorerClose').addEventListener('click', () => { $('explorer').hidden = true; $('explorerBtn').focus(); });
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // Parent page and tests
+  // ════════════════════════════════════════════════════════════════════
+  function receive(d) {
+    if (!d || typeof d !== 'object') return;
+    if (d.type === 'lcc-theme') { setTheme(d.theme); return; }
+    if (d.type !== 'lcc-map') return;
+    if (d.theme) setTheme(d.theme);
+    if ((d.spot === 'choc' || d.spot === 'race') && d.spot !== state.view) go(d.spot);
+    const t = Date.parse(d.time || (d.forecast && d.forecast.time) || '');
+    if (Number.isFinite(t)) { state.wantTime = t; if (state.fc) { const i = nearestStep(t); if (i !== state.step) setStep(i); } }
+    if (typeof d.active === 'boolean' && d.active !== state.active) { state.active = d.active; if (d.active && mapReady) map.resize(); swellRun(); }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d.date || '')) {
+      state.pastDate = d.date;
+      const f = $('explorerFrame');
+      if (f.getAttribute('src') && f.contentWindow) f.contentWindow.postMessage({ type: 'lcc-map-date', date: d.date }, location.origin);
+      $('explorerBtn').click();
+    }
+  }
+  addEventListener('message', e => { if (e.origin === location.origin && e.source === parent && parent !== window) receive(e.data); });
+
+  window.ChocMap = {
+    map, receive, setTheme, go, set3D, setStep,
+    setSpot: s => go(s),
+    getState: () => ({
+      ready: mapReady, threeD: state.threeD, terrain: !!(mapReady && map.getTerrain()), pitch: map.getPitch(), zoom: map.getZoom(),
+      view: state.view, base: state.base, layers: Object.assign({}, state.layers), ex: state.ex, model: state.model,
+      step: state.step, time: state.fc && state.fc.rows[state.step] ? new Date(state.fc.rows[state.step].t).toISOString() : null,
+      steps: state.fc ? state.fc.rows.length : 0, tilesServed, tileErrors, wavesReady, theme: state.theme, active: state.active,
+      swellTrains: SW.trains.length, particles: SW.parts.length, swellCanvas: [SW.W, SW.H]
+    })
+  };
 })();

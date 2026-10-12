@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — Map rebuilt on the Fishers Island viewer's sea floor; Forecast + 3D map
+
+The Map page's 3D view had lost the Fishers Island viewer's resolution: it drew a 16 m grid as one mesh rebuilt on every pan and zoom, which flickered, and its controls were hand-rolled. The Forecast page's side-by-side view was a small link to a separate sheet, and the swell overlays were static arrows.
+
+The map is now one MapLibre GL map (5.24.0, vendored). Its sea floor comes from the viewer's own grids, copied into `map/data` unchanged (0.8 m detail chunks loaded only where you zoom in, the 4 m overview, then the Sound Check 16 m and 144 m grids), drawn tile by tile in a worker with the viewer's nautical colors and relief shading. "3D bathymetry" raises the same tiles as terrain (depth stretch 1–10×, land 1.25×) or lays the map flat. Wave height (the Sound Check refraction model, ported to a worker) and swell motion (streaks along wave rays traced over the bottom, slowing as they shoal) are draped on the terrain for any forecast step, with a time bar to scrub or play. Aerial photos, the ocean basemap and NOAA charts are live tile services.
+
+Forecast has a "Forecast | Forecast + 3D map" switch: the map sits beside the forecast on wide screens and above it on phones, follows the forecast chart's hour and theme, pauses when Forecast is hidden, and the choice is remembered. The Map tab's frame now fits the screen.
+
+Verified with `tests/unit/map-geometry.test.js` (Mercator tiles, dispersion, terrain encoding, colors) and the e2e scenarios `map-terrain.js` (sea floor without any tile service, 3D on/off, layers, depth probe, parent messages, compact embed) and `forecast-terrain.js` (split beside/above, hour and theme sync, pause, remembered), plus manual checks at 60 fps on a desktop GPU in 3D with swell motion running.
+
 ## [Unreleased] — Forecast, Map, Methods and account navigation
 
 The home page now has Forecast, Map, Methods and Log navigation; Model appears after Google sign-in. Log explains why an account is needed, direct Model links use the same login gate, and sign-in failures show useful feedback. Light is the default, with shared theme settings for every page.

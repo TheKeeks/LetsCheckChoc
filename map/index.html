@@ -5,62 +5,98 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <title>Map · Let's Check Choc</title>
+  <link rel="stylesheet" href="../vendor/maplibre/maplibre-gl.css">
   <link rel="stylesheet" href="map.css">
   <script>
+    // Theme and embedding before first paint: ?theme= wins, then the app's display setting.
     (function () {
-      const q = new URLSearchParams(location.search);
-      document.documentElement.dataset.theme = q.get('theme') === 'dark' ? 'dark' : 'light';
-      if (q.get('compact') === '1') document.documentElement.classList.add('compact');
-      if (q.get('embed') === '1') document.documentElement.classList.add('embedded');
+      var q = new URLSearchParams(location.search), t = q.get('theme'), root = document.documentElement;
+      if (t !== 'dark' && t !== 'light') {
+        var m = null; try { m = localStorage.getItem('lcc-clean-display'); } catch (e) { /* private mode */ }
+        t = m === 'dark' || (m === 'system' && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+      }
+      root.dataset.theme = t;
+      if (q.get('embed') === '1') root.classList.add('embedded');
+      if (q.get('compact') === '1') root.classList.add('compact');
     })();
   </script>
 </head>
 <body>
-  <main>
-    <header class="page-heading"><div><p class="eyebrow">FISHERS ISLAND & THE SOUND</p><h1>Below the surface.</h1><p>Explore the bottom that shapes the surf.</p></div><a href="../">Back to forecast ↗</a></header>
-    <section class="terrain-card" aria-label="Interactive bathymetry map">
-      <div class="toolbar">
-        <div class="spot-picker" role="group" aria-label="Map location"><button data-spot="choc" aria-pressed="true">Choc</button><button data-spot="race" aria-pressed="false">The Race</button></div>
-        <button id="bathymetryToggle" class="primary" aria-pressed="true">3D bathymetry <span>On</span></button>
-        <button id="layersToggle" aria-expanded="false" aria-controls="layersPanel">Layers <span aria-hidden="true">≡</span></button>
+  <div id="map" role="region" aria-label="Map of Fishers Island and Block Island Sound. Drag to move, scroll or pinch to zoom, right-drag or two fingers to tilt and turn."></div>
+
+  <header class="bar" aria-label="Map controls">
+    <div class="seg" role="group" aria-label="Go to">
+      <button type="button" data-view="choc" aria-pressed="true">Choc</button>
+      <button type="button" data-view="race" aria-pressed="false">The Race</button>
+      <button type="button" data-view="fishers" aria-pressed="false">Fishers</button>
+      <button type="button" data-view="sound" aria-pressed="false">Sound</button>
+    </div>
+    <button type="button" id="threeD" class="switch" role="switch" aria-checked="true"><i aria-hidden="true"></i><span>3D bathymetry</span></button>
+    <button type="button" id="layersBtn" class="chip" aria-expanded="false" aria-controls="panel">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 12.5 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg><span>Layers</span>
+    </button>
+  </header>
+
+  <aside id="panel" class="panel" aria-label="Layers" hidden>
+    <div class="panel-head"><h2>Layers</h2><button type="button" id="panelClose" class="icon" aria-label="Close layers">×</button></div>
+    <fieldset>
+      <legend>Base</legend>
+      <label><input type="radio" name="base" value="photo" checked> Sea floor + aerial land</label>
+      <label><input type="radio" name="base" value="color"> Sea floor + elevation colors</label>
+      <label><input type="radio" name="base" value="aerial"> Aerial photo everywhere</label>
+      <label><input type="radio" name="base" value="chart"> NOAA nautical chart</label>
+    </fieldset>
+    <fieldset>
+      <legend>Forecast on the water</legend>
+      <label><input type="checkbox" data-layer="waves" checked> Wave height <small>color</small></label>
+      <label><input type="checkbox" data-layer="swell" checked> Swell motion <small>streaks bend with the bottom</small></label>
+      <label><input type="checkbox" data-layer="rays"> Swell paths to Choc <small>the model's rays</small></label>
+      <div class="model" role="group" aria-label="Forecast model">
+        <button type="button" data-model="gfs" aria-pressed="true">GFS-Wave</button>
+        <button type="button" data-model="ec" aria-pressed="false">ECMWF</button>
       </div>
-      <div id="stage" class="stage">
-        <canvas id="terrain" tabindex="0" aria-label="Bathymetry. Drag to pan, shift-drag to rotate, scroll to zoom. Arrow keys pan; plus and minus zoom."></canvas>
-        <div class="map-label"><span class="status-dot"></span><strong id="placeName">Chocomount reef</strong><span id="coordinates">41.2756° N · 71.9634° W</span></div>
-        <div class="map-controls"><button id="zoomIn" aria-label="Zoom in">+</button><button id="zoomOut" aria-label="Zoom out">−</button><button id="rotate" aria-label="Rotate view">↻</button><button id="resetView" aria-label="Reset map view">⌂</button></div>
-        <aside id="layersPanel" class="layers" hidden>
-          <div class="layers-heading"><strong>Make the map yours</strong><button id="closeLayers" aria-label="Close layers">×</button></div>
-          <p class="eyebrow">ON THE SEA FLOOR</p>
-          <label><input type="checkbox" data-layer="relief" checked><span>Depth colors<small>Existing 16 m elevation grid</small></span></label>
-          <label><input type="checkbox" data-layer="survey"><span>NOAA survey relief<small>Streamed · finest available DEM</small></span></label>
-          <label><input type="checkbox" data-layer="satellite"><span>Satellite & aerial imagery<small>Streamed · zooms to source detail</small></span></label>
-          <label><input type="checkbox" data-layer="topo"><span>Topographic map<small>USGS · streamed tiles</small></span></label>
-          <p class="eyebrow">CONDITIONS & PATHS</p>
-          <label><input type="checkbox" data-layer="field"><span>Forecast wave-height field<small>GFS · native 0.25° regional grid</small></span></label>
-          <label><input type="checkbox" data-layer="rays"><span>Swell refraction paths<small>Research model · snapped period & direction</small></span></label>
-          <label><input type="checkbox" data-layer="waves"><span>Forecast swell direction<small>Regional forecast · no local downscaling</small></span></label>
-          <label><input type="checkbox" data-layer="wind"><span>Forecast wind direction<small>Forecast at Fishers Island</small></span></label>
-          <label class="select-label">Overlay position<select id="overlayPosition"><option value="floor">Follow bathymetry</option><option value="surface">Above sea level</option></select></label>
-          <label class="select-label">Vertical scale <output id="scaleValue">8×</output><input id="verticalScale" type="range" min="1" max="20" value="8" aria-label="Vertical exaggeration"></label>
-        </aside>
-        <div id="mapLoading" class="loading" role="status">Loading the sea floor…</div>
-        <div id="fallback" class="fallback" hidden><strong>3D is unavailable in this browser.</strong><p>You can still explore all the survey maps, forecasts and wave paths below.</p><a href="../research/index.html?view=map">Open the 2D map</a></div>
-        <div class="map-bottom"><span class="depth-key">SHALLOW <i></i> DEEP</span><span id="viewScale">Depth stretched 8×</span></div>
-      </div>
-      <div class="map-caption"><span id="mapStatus" role="status">16 m terrain · drag to pan · shift-drag to orbit · pinch to zoom</span><button id="sourcesToggle" aria-expanded="false" aria-controls="sources">Data & resolution ↗</button></div>
-      <div id="forecastReadout" class="forecast-readout" hidden></div>
-      <div id="sources" class="sources" hidden>
-        <p>The 3D surface uses the existing 16 m signed elevation grid around Fishers Island and The Race, built from NOAA topo-bathymetry. Vertical scale is exaggerated for visibility. Outside the survey footprint, the viewer stops instead of inventing depths.</p>
-        <p><a href="https://gis.ngdc.noaa.gov/arcgis/rest/services/DEM_mosaics/DEM_all/ImageServer" target="_blank" rel="noopener">NOAA NCEI relief</a> uses the service’s finest available survey mosaic (about 3 m where 1/9 arc-second CUDEM is available). <a href="https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer" target="_blank" rel="noopener">Imagery © Esri, Maxar, Earthstar Geographics and the GIS User Community</a>; source detail and dates vary. <a href="https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer" target="_blank" rel="noopener">USGS The National Map</a> provides topography. Imagery and relief are requested as tiles for the current view, never saved into the repository.</p>
-        <p>Sharper textures do not add elevation measurements. Regional GFS-Wave / ECMWF fields and wind keep their native resolution; directional marks illustrate the forecast, not a high-resolution current simulation. Refraction paths are the existing research model, snapped to the nearest available 2-second period and 5° direction. Bathymetry-following overlays are a viewing aid, not underwater waves. This is a surf exploration map, not a navigation chart.</p>
-      </div>
-    </section>
-    <section id="researchSection" class="research-section" aria-label="Forecast and wave research map">
-      <div class="section-heading"><div><p class="eyebrow">THE BIGGER PICTURE</p><h2>Follow the swell.</h2><p>All the original map layers, historical conditions, forecast models and wave experiments.</p></div><button id="explorerToggle" aria-expanded="false" aria-controls="researchExplorer">Open map explorer ↗</button></div>
-      <iframe id="researchExplorer" title="Forecast, historical and wave-path map explorer" loading="lazy" hidden></iframe>
-    </section>
-  </main>
-  <script src="../research/vendor/three.min.js"></script>
+    </fieldset>
+    <fieldset>
+      <legend>Sea floor</legend>
+      <label><input type="checkbox" data-layer="contours"> Depth contours <small>every 5 m</small></label>
+      <label class="range"><span>Depth stretch <output id="exOut">3×</output></span><input type="range" id="ex" min="1" max="10" step="0.5" value="3"></label>
+      <label class="range"><span>Relief shading <output id="hillOut">85%</output></span><input type="range" id="hill" min="0" max="1" step="0.05" value="0.85"></label>
+    </fieldset>
+    <button type="button" id="explorerBtn" class="wide">Ocean-wide swell &amp; past days <span aria-hidden="true">↗</span></button>
+    <details class="sources">
+      <summary>Data and credits</summary>
+      <p><b>Sea floor and island:</b> NOAA NGS 2023 topobathy lidar (1 m), NOAA NCEI multibeam surveys (0.4–2 m, MLLW shifted to NAVD88), NOAA CUDEM (3 m) and USGS 3DEP lidar, built into 0.8 m and 4 m grids for the Fishers Island viewer. Beyond Fishers: the Sound Check 16 m survey grid and its 144 m refraction grid. Heights are NAVD88.</p>
+      <p><b>Wave height:</b> the Sound Check refraction model: each GFS-Wave (or ECMWF) swell train at buoy 44097, times the model's refraction coefficient for its period and direction, trains added as energy, capped at 0.78 × depth.</p>
+      <p><b>Swell motion:</b> wave rays traced across the same depth grids (144 m across the Sound, 32 m around Fishers); streaks follow the rays' direction and slow to the waves' group speed in shallow water. More streaks where the rays bunch up (focused energy).</p>
+      <p><b>Live map layers:</b> Esri World Imagery and Ocean Base (Esri, Maxar, Earthstar Geographics, GEBCO, NOAA); NOAA Office of Coast Survey ENC chart display.</p>
+    </details>
+  </aside>
+
+  <section class="hud" aria-live="polite">
+    <div class="hud-main"><strong id="hudTime">Loading forecast…</strong><span id="hudSpot"></span></div>
+    <div id="hudSwell" class="hud-sub"></div>
+  </section>
+
+  <div class="timebar" id="timebar" hidden>
+    <button type="button" id="play" class="icon" aria-label="Play forecast"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></button>
+    <input type="range" id="step" min="0" max="0" value="0" aria-label="Forecast hour">
+    <button type="button" id="nowBtn" class="chip small">Now</button>
+  </div>
+
+  <div class="legend" id="legend" aria-hidden="true">
+    <div id="waveKey" class="key"><span>Wave height</span><i class="ramp waves"></i><div class="ticks"><b>0</b><b style="left:25%">5</b><b style="left:40%">8</b><b style="left:65%">13</b><b style="left:100%">20 ft</b></div></div>
+    <div id="depthKey" class="key"><span>Depth</span><i class="ramp depth"></i><div class="ticks"><b>0</b><b style="left:30%">10</b><b style="left:55%">33</b><b style="left:100%">110 m</b></div></div>
+  </div>
+
+  <div id="probe" class="probe" hidden></div>
+  <p id="status" class="status" role="status"></p>
+
+  <div id="explorer" class="explorer" hidden>
+    <div class="explorer-head"><h2>Ocean-wide swell &amp; past days</h2><button type="button" id="explorerClose" class="icon" aria-label="Close">×</button></div>
+    <iframe id="explorerFrame" title="Ocean-wide swell and past days map"></iframe>
+  </div>
+
+  <script src="../vendor/maplibre/maplibre-gl.js"></script>
   <script src="geometry.js"></script>
   <script src="map.js"></script>
 </body>

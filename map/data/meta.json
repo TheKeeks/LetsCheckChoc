@@ -1,0 +1,39 @@
+{
+  "title": "Fishers Island, New York",
+  "width": 4096,
+  "height": 2452,
+  "bounds": {
+    "west": -72.08,
+    "east": -71.88,
+    "south": 41.225,
+    "north": 41.315
+  },
+  "mercator": [
+    -8023908.89637916,
+    5045585.973074097,
+    -8001644.998220504,
+    5058915.70795293
+  ],
+  "cellSizeM": 4.085390560490839,
+  "widthM": 16733.759735770476,
+  "heightM": 10018.756787978966,
+  "minM": -96.20999145507812,
+  "maxM": 23.109699249267578,
+  "deepestM": -105.19673156738281,
+  "highestM": 43.909400939941406,
+  "landShare": 0.06833816702564233,
+  "imagery": {
+    "width": 8192,
+    "height": 4905,
+    "zoom": 16
+  },
+  "datum": "NAVD88 (meters); int16 centimeters, -32768 = no data",
+  "sources": {
+    "bathymetry": "NOAA NGS 2023 Long Island Sound topobathy lidar (shallows), NOAA NCEI multibeam survey grids (BAG mosaic, MLLW shifted to NAVD88), and NOAA NCEI CUDEM 1/9 arc-second topobathy",
+    "lidar": "NOAA NGS 2023 topobathy lidar; USGS 3DEP lidar where it does not reach",
+    "imagery": "Esri World Imagery (Esri, Maxar, Earthstar Geographics)"
+  },
+  "mllwOffsetM": 0.4969596862792969,
+  "multibeamShare": 0.8363916294415273,
+  "topobathyLidarShare": 0.1599928589862867
+}

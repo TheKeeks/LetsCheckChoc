@@ -25,15 +25,33 @@ after signing in, **Model** joins the navigation and your surf journal opens.
 Settings (top right) controls Light, Dark, Follow system, or Sunset to sunrise
 across Forecast, Map, Methods, Log, and Model. Choc TV still follows the sun.
 
-**Map** brings together the existing forecast, historical, and wave-path maps
-with a new 3D sea-floor viewer. Choose Choc or The Race, switch **3D bathymetry**
-on/off, and open **Layers** for streamed NOAA survey relief, imagery,
-topography, the GFS wave-height field, forecast directions, and the research refraction paths. Overlays
-can follow the sea floor or sit above sea level. Drag to pan, shift-drag to
-orbit, or pinch/scroll to zoom. **Data & resolution** explains each source.
-The existing 16 m elevation grid supplies the geometry; sharper imagery does
-not invent more detailed elevations. Layers load from mapping APIs on demand.
-The original map experiments remain under **Open map explorer**.
+**Map** is Fishers Island's sea floor from the Fishers Island viewer's own
+elevation: NOAA's 2023 topobathy lidar and multibeam surveys at 0.8 m near the
+island and 4 m around it, then the Sound Check 16 m and 144 m grids across Block
+Island Sound. **3D bathymetry** raises it (depth stretch 1–10×, land always
+1.25×); off, the same map lies flat. Drag to move, scroll or pinch to zoom,
+right-drag or two fingers to tilt and turn; Choc, The Race, Fishers and Sound
+jump to set views. On the water, for any 3-hour forecast step (GFS-Wave or
+ECMWF, play or scrub along the bottom bar):
+
+- **Wave height**: the Sound Check refraction model (each swell train at buoy
+  44097 times its refraction coefficient, capped at 0.78 × depth).
+- **Swell motion**: streaks that follow wave rays traced over the bottom, bend
+  around the reefs and slow down as they shoal; more streaks where rays bunch
+  up (focused swell).
+- **Swell paths to Choc**: the model's rays, the ones reaching Choc and
+  Wilderness bright.
+
+All three are draped on the terrain, so in 3D they ride over the bottom.
+Base layers: sea floor with aerial land (Esri), sea floor with elevation
+colors, aerial photo everywhere, or the NOAA nautical chart; optional 5 m
+contours. Hover (or tap on a phone) for depth, its survey and the modeled wave
+height. **Ocean-wide swell & past days** opens the Sound Check's own map.
+
+On Forecast, **Forecast + 3D map** puts that map beside the forecast (above it
+on a phone); it follows the hour on the forecast chart and is remembered. The
+map's heights are the Sound Check model's, which can differ from the headline
+forecast. There is no surf or current forecast for the Race.
 
 **Methods** is the research page, now in the shared light/dark design. Its
 historical-day links open the Map explorer at that date.
@@ -67,7 +85,7 @@ rules or production deployment settings are changed by this branch.
 ```
 LetsCheckChoc/
 ├── index.html                  Page shell (Forecast / Map / Methods / Log / Model)
-├── map/                        3D sea floor, streamed map tiles, draped forecast layers
+├── map/                        Map page: sea floor (map/data, ~117 MB of gzip grids), workers, forecast layers
 ├── app.js                      All JavaScript
 ├── kiosk.js                    Choc TV kiosk mode (?kiosk=1) — see below
 ├── style.css                   All styles

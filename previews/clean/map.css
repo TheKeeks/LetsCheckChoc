@@ -1,8 +1,10 @@
+/* Map tab: the map page (map/index.html) in a frame that fills the screen
+   between the header and the tab bar, so the map — not the page — takes the gestures. */
 .cl-map-wrap { padding: 0 var(--gut); }
-.cl-map-frame { display: block; width: 100%; height: max(780px, calc(100dvh - 155px)); border: 1px solid var(--hair); border-radius: 14px; background: var(--bg); }
-.cl-map-link { padding: 12px 2px; color: var(--muted); font-size: 13px; }
+.cl-map-frame { display: block; width: 100%; height: calc(100vh - var(--tab-h) - 130px); height: calc(100dvh - var(--tab-h) - 130px); min-height: 420px; border: 1px solid var(--hair); border-radius: 14px; background: #9cc3d5; }
+.cl-map-link { padding: 10px 2px; color: var(--muted); font-size: 13px; }
 @media (max-width: 600px) {
   .cl-map-wrap { padding: 0; }
-  .cl-map-frame { height: max(880px, calc(100dvh - 140px)); border-inline: 0; border-radius: 0; }
+  .cl-map-frame { border-inline: 0; border-radius: 0; }
   .cl-map-link { padding-inline: var(--gut); }
 }
