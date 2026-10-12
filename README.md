@@ -19,19 +19,55 @@ Your site will be live at `https://[username].github.io/LetsCheckChoc/`
 
 ## The look
 
-The site opens in the clean design (white by day, dark green after sunset
-at the spot): the swell that reaches the reef up top, this week below it,
-then the chart, the lineup and the details, with Forecast / Log / Model tabs
-and Settings behind the icon in the top right. Choc TV (`?kiosk=1`) uses the
-same design. The old Windows-style look is still there at `?classic=1`
-(`?kiosk=1&classic=1` for Choc TV), and Settings links to it. The new look
-skips the boat question below; the classic look still asks it.
+The site opens on Forecast in the clean, light design. The bottom navigation
+shows **Forecast, Map, Methods, Log**. Log asks you to sign in with Google;
+after signing in, **Model** joins the navigation and your surf journal opens.
+Settings (top right) controls Light, Dark, Follow system, or Sunset to sunrise
+across Forecast, Map, Methods, Log, and Model. Choc TV still follows the sun.
+
+**Map** brings together the existing forecast, historical, and wave-path maps
+with a new 3D sea-floor viewer. Choose Choc or The Race, switch **3D bathymetry**
+on/off, and open **Layers** for streamed NOAA survey relief, imagery,
+topography, the GFS wave-height field, forecast directions, and the research refraction paths. Overlays
+can follow the sea floor or sit above sea level. Drag to pan, shift-drag to
+orbit, or pinch/scroll to zoom. **Data & resolution** explains each source.
+The existing 16 m elevation grid supplies the geometry; sharper imagery does
+not invent more detailed elevations. Layers load from mapping APIs on demand.
+The original map experiments remain under **Open map explorer**.
+
+**Methods** is the research page, now in the shared light/dark design. Its
+historical-day links open the Map explorer at that date.
+
+On Forecast, **Forecast + sea floor** opens the current forecast and an
+interactive terrain panel side by side (stacked on phones). The forecast
+chart's selected hour drives the direction overlays. Terrain can be switched
+between Choc and The Race. The forecast remains the existing Chocomount
+forecast: there is no calibrated Race surf/current model in the source data.
+
+The old Windows-style look remains at `?classic=1` (`?kiosk=1&classic=1`
+for Choc TV), and Settings links to it. The clean look skips the boat question.
+
+### Testing this branch locally
+
+From the checkout, run `python3 -m http.server 8765 --bind 127.0.0.1`, then
+open `http://127.0.0.1:8765/`. Run `npm test` for unit/regression checks;
+`npm run test:e2e` uses the documented Playwright dependency and Chromium.
+The site still needs no build step for GitHub Pages. `node scripts/build-preview.js`
+packages static files into ignored `dist/` for the separate private branch
+preview defined in `.openai/hosting.json`.
+
+Google sign-in uses the existing Firebase project. A new hosted preview domain
+must be added to Firebase Authentication → Settings → Authorized domains by a
+project administrator before Google login works there. The login screen
+reports that condition; it never substitutes a simulated account. No Firebase
+rules or production deployment settings are changed by this branch.
 
 ## File Structure
 
 ```
 LetsCheckChoc/
-├── index.html                  Page shell (3 tabs: Forecast / Regression / Log)
+├── index.html                  Page shell (Forecast / Map / Methods / Log / Model)
+├── map/                        3D sea floor, streamed map tiles, draped forecast layers
 ├── app.js                      All JavaScript
 ├── kiosk.js                    Choc TV kiosk mode (?kiosk=1) — see below
 ├── style.css                   All styles
@@ -152,7 +188,7 @@ radar scope's coastline outline with the swell-window cone
 
 ## App Structure
 
-The app is organised as three tabs that share a global header (buoy
+The classic view is organised as three original tabs that share a global header (buoy
 selector + auth bar):
 
 1. **Current Conditions & Forecast** — lineup map (Choc only), swell

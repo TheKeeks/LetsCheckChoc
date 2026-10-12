@@ -1,8 +1,8 @@
 # `?preview=clean` — the CLEAN contract
 
 The "A refined" boards from Claude Design, built as a preview look over the
-**real** app with live data. The plain URL does not change. This file is the
-shared API that `core.js` gives the four parts. It is owned by Core: parts
+**real** app with live data. The plain URL opens Forecast. This file is the
+shared API that `core.js` gives the screen parts. It is owned by Core: parts
 read it and do not edit it.
 
 ## Files and owners
@@ -11,9 +11,11 @@ read it and do not edit it.
 |---|---|---|
 | `theme.css` | Core | Tokens (day, and night under `html[data-clean-theme="night"]`), legacy hiding, `@import`s the five files below |
 | `base.css` | Core | Scoped reset, phone shell, sub-page, shared classes (below) |
-| `theme.js` | Core | Loader: `document.write`s `core.js`, `forecast.js`, `log.js`, `model.js`, `tv.js` in that order |
+| `theme.js` | Core | Loader: `document.write`s `core.js`, `forecast.js`, `map.js`, `methods.js`, `log.js`, `model.js`, `tv.js` in that order |
 | `core.js` | Core | `window.CLEAN`: shell, theme, gate skip, data adapters, formatting, icons, events, Settings |
 | `forecast.js` + `forecast.css` | Forecast | Forecast tab (Now block, This week, chart, lineup, details) |
+| `map.js` + `map.css` | Map | Map tab and its bathymetry/layer viewer |
+| `methods.js` + `methods.css` | Methods | Methods tab, the research explanation |
 | `log.js` + `log.css` | Log | Log tab |
 | `model.js` + `model.css` | Model | Model tab |
 | `tv.js` + `tv.css` | TV | Choc TV (`?kiosk=1`) |
@@ -33,8 +35,9 @@ no modules, no bundler. Wrap each file in an IIFE and keep its globals inside.
 
 1. Picks the theme (below), sets `html[data-clean-theme]`.
 2. Removes `body[data-era]` (the Win95 styles hang off it) and builds the shell:
-   - **phone**: `#cl-app.cl` = header (`h1` title + date, Settings button), three
-     views `#cl-view-forecast|log|model` (`section.cl-view`), fixed tab bar;
+   - **phone**: `#cl-app.cl` = header (`h1` title + date, Settings button), five
+     views `#cl-view-forecast|map|methods|log|model` (`section.cl-view`), fixed tab bar;
+     Model is shown only for a signed-in, nonanonymous account;
    - **Choc TV** (`isKioskMode()`): one empty `#cl-tv.cl` (fixed, full screen).
 3. Sets `html.cl-on` (and `html.cl-tv` on the TV). Only then does `theme.css`
    hide the legacy chrome (`#gate-overlay`, `#app-window`, `#kiosk-status`,
@@ -55,7 +58,8 @@ no modules, no bundler. Wrap each file in an IIFE and keep its globals inside.
    the classic Choc TV takes the screen back (a kiosk never sits blank).
 7. If core itself throws at boot it unmounts: the page is the classic app.
 
-Deep links (handy for screenshots): `?preview=clean#log`, `#model`, `#settings`.
+Deep links: `#forecast`, `#map`, `#methods`, `#log`, `#model`, `#settings`.
+The tab hash follows navigation. A signed-out `#model` opens the Log login page.
 
 ## Parts: register, mount, render
 
@@ -64,7 +68,7 @@ Deep links (handy for screenshots): `?preview=clean#log`, `#model`, `#settings`.
   'use strict';
   if (!window.CLEAN) return;            // core failed: the classic app is showing
   var root;
-  CLEAN.register('forecast', {          // 'forecast' | 'log' | 'model' | 'tv'
+  CLEAN.register('forecast', {          // 'forecast' | 'map' | 'methods' | 'log' | 'model' | 'tv'
     mount: function (el) {              // once; el = #cl-view-forecast (or #cl-tv)
       root = el;
       el.innerHTML = '<div class="cl-f-now"></div>';
@@ -97,7 +101,7 @@ Deep links (handy for screenshots): `?preview=clean#log`, `#model`, `#settings`.
 
 | Call | Does |
 |---|---|
-| `CLEAN.show(tab)` | Switch to `'forecast' \| 'log' \| 'model'` (120 ms fade, scroll remembered per tab, also runs the app's own `switchTab` so Tab 2/3 renderers and `STATE.activeTab` stay in step). Tapping the active tab scrolls to the top. |
+| `CLEAN.show(tab)` | Switch to `'forecast' \| 'map' \| 'methods' \| 'log' \| 'model'` (120 ms fade, scroll remembered per tab). Forecast/Log/Model also run the legacy `switchTab`; Map/Methods own their viewers. Signed-out Model requests open Log. Tapping the active tab scrolls to the top. |
 | `CLEAN.tab()` | Current tab (`'tv'` on the TV) |
 | `CLEAN.setTitle(tab, title, sub?)` | Override the header for a tab; `CLEAN.setTitle(tab, null)` restores the default. Defaults: Forecast "Today"/"Tonight" + "Thu 1 Oct", Log "Log", Model "Your model". |
 | `CLEAN.openSettings(section?)` | Opens Settings; `section` scrolls to `'account' \| 'display' \| 'forecast' \| 'sources' \| 'spot'` (e.g. the Forecast part's Details › Data sources row). |
@@ -114,12 +118,15 @@ classic view.
 ## Theme
 
 - `CLEAN.theme()` → `'day' | 'night'` (also `html[data-clean-theme]`).
-- `CLEAN.themeMode()` → `'sunset'` (default) `| 'system' | 'light' | 'dark'`.
+- `CLEAN.themeMode()` → `'light'` (default) `| 'sunset' | 'system' | 'dark'`.
 - `CLEAN.setThemeMode(mode)`; stored in `localStorage lcc-clean-display`.
 - `'sunset'`: night from sunset to sunrise at the spot (`calcDaylight`), checked
   every minute; the colours fade over 400 ms, layout never moves. Choc TV always
   follows the sun. Reduced motion: no fades or slides anywhere.
 - Event `'theme'` (`t`) and the part's `onTheme(t)`.
+- `CLEAN.bindFrameTheme(iframe)` sends `{ type: 'lcc-theme', theme: 'day'|'night' }`
+  to a same-origin frame on load and theme changes. Returns an unsubscribe
+  function. Embedded pages must check the message origin and parent source.
 
 ## Events
 
@@ -132,6 +139,7 @@ classic view.
 | `model` | — | After `slRetrain` (model scores changed) |
 | `log` | — | After `renderSurfLogTable` (surf log changed / loaded), coalesced |
 | `auth` | `CLEAN.auth()` | After `updateAuthUI` (sign in / out / anonymous) |
+| `authStatus` | `{ available, pending, error }` | Google popup starts, finishes, or fails |
 | `hour` | `idx` | After `applyScrubberToHour` (the shared cursor moved; Choc TV's radar playback fires this every step) |
 | `tab` | `tab` | Tab switched |
 | `sub` | `{ id, open }` | Sub-page opened / closed |
@@ -259,7 +267,7 @@ Inline SVG strings (`aria-hidden`), paths copied from the boards, round set
 
 | Call | Board |
 |---|---|
-| `forecast()` `log()` `model()` | Tab icons (24) |
+| `forecast()` `map()` `methods()` `log()` `model()` | Tab icons (24) |
 | `settings()` `back()` | Header sliders, sub-page back (22) |
 | `chevronRight()` `chevronLeft()` `chevronDown()` | Rows (18) |
 | `jumpLeft()` `jumpRight()` `jumpsLeft()` `jumpsRight()` | Chart buttons ‹ › « » (14, 2.5 stroke) |
@@ -310,12 +318,17 @@ Part classes are prefixed `cl-f-` (forecast), `cl-l-` (log), `cl-m-` (model),
 `cl-tv-` (TV). Style only inside your own root; never restyle `.cl-hd`,
 `.cl-tabs` or `#cl-tv` itself.
 
+The current tab is also on `html[data-active-tab]`. Map and Methods use a
+1440 px maximum shell width; other tabs remain 640 px. Add `.cl-wide-view` to
+a `.cl-sub` for a 1440 px comparison window.
+
 ## Rules every part keeps
 
 - Missing data stays `null` and shows "—", never 0. Never edit `data/*.json`.
 - Never re-save another crew member's surf-log entry (`saveLogEntryToFirebase`
   refuses; check `entry.userId === CLEAN.auth().uid` before offering Edit/Delete).
-- Red only for dead data, amber only for stale. Spot name never on screen.
+- Red only for dead data, amber only for stale. Name the location where a
+  choice between Chocomount and the Race would otherwise be ambiguous.
 - 44 px touch targets, tabular numerals (the default), no horizontal scroll at
   375–414 px, reduced motion respected (`CLEAN.util.reducedMotion()`).
 - To hook an app global, wrap it in your own file the way core does:
@@ -338,7 +351,10 @@ under `minHours` folded into its neighbour, shortest first; `null` hours stay
 gaps: the phone chart's and the TV strip's window band).
 
 Auth: `CLEAN.auth()` → `{ signedIn, uid, name }`; `CLEAN.signIn()`;
-`CLEAN.signOut()`.
+`CLEAN.signOut()`; `CLEAN.authStatus()` → `{ available, pending, error }`.
+Anonymous Firebase sessions do not count as signed in. The Log gate uses the
+existing Google account linking/migration flow; signing out hides the form,
+past sessions and Model tab without removing saved data.
 
 Errors: `CLEAN.errors` (`[{ where, message, at }]`), `CLEAN.err(where, e)`,
 `CLEAN.guard(where, fn)`. `CLEAN.ready` is true once the shell is up;

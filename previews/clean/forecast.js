@@ -59,6 +59,7 @@
   var chart = null, chartKey = '', lastW = 0;
   var slide = null, scrollAnim = null, drag = null, pendingChart = false;
   var pushTimer = null, lastHapticHour = null;
+  var comparison = null, terrainFrame = null, terrainSpot = 'choc';
 
   function err(where, e) { C.err('forecast.' + where, e); }
   function run(where, fn) { try { fn(); } catch (e) { err(where, e); } }
@@ -85,6 +86,7 @@
     root = el;
     el.innerHTML =
       '<div class="cl-f">' +
+        '<div class="cl-f-explore"><button type="button" class="cl-f-compare-open">Forecast + sea floor <span aria-hidden="true">↗</span></button><span>Explore Choc and the Race in 3D</span></div>' +
         '<p class="cl-lead cl-f-lead" hidden></p>' +
         '<div class="cl-f-now"></div>' +
         '<h2 class="cl-h2">This week</h2>' +
@@ -122,6 +124,7 @@
     E.ctl = el.querySelector('.cl-f-ctl');
     E.lu = el.querySelector('.cl-f-lu');
     E.det = el.querySelector('.cl-f-det');
+    el.querySelector('.cl-f-compare-open').addEventListener('click', C.guard('forecast.compare', openComparison));
 
     E.wk.addEventListener('click', C.guard('forecast.week.click', onWeekClick));
     E.ctl.addEventListener('click', C.guard('forecast.jump', onJump));
@@ -141,7 +144,62 @@
     // Every app repaint (drawForecastChart) puts the app's own scrubber
     // back to now; the cursor on screen is this one, so bring the app's
     // back to it whenever the two part (Model details read the app's).
-    C.on('hour', function () { if (!drag) schedulePush(); });
+    C.on('hour', function () { if (!drag) schedulePush(); syncTerrain(); });
+    C.on('theme', syncTerrain);
+    window.addEventListener('message', function (event) {
+      if (terrainFrame && event.origin === location.origin && event.source === terrainFrame.contentWindow && event.data && event.data.type === 'lcc-map-ready') syncTerrain();
+    });
+  }
+
+  // Reuse the live forecast controls in the split view: one forecast, one
+  // cursor, no second app/data load. Closing restores the same DOM and state.
+  function openComparison() {
+    if (comparison) return;
+    var forecast = root.querySelector('.cl-f');
+    if (!forecast) return;
+    comparison = C.sub.open({
+      id: 'forecast-terrain', title: 'Forecast + sea floor',
+      mount: function (body, handle) {
+        handle.el.classList.add('cl-comparison');
+        body.innerHTML = '<div class="cl-compare-toolbar"><p>Read the forecast. Explore the bottom beneath it.</p><label>Terrain <select class="cl-compare-spot" aria-label="Terrain location"><option value="choc">Chocomount</option><option value="race">The Race</option></select></label></div>' +
+          '<div class="cl-compare-grid"><section class="cl-compare-forecast" aria-label="Current Chocomount forecast"><h2 class="cl-compare-label">Chocomount forecast</h2></section>' +
+          '<section class="cl-compare-terrain" aria-label="Sea-floor comparison"><iframe title="3D bathymetry with forecast overlays" allow="fullscreen"></iframe><p class="cl-compare-note"></p></section></div>';
+        body.querySelector('.cl-compare-forecast').appendChild(forecast);
+        terrainFrame = body.querySelector('iframe');
+        terrainFrame.addEventListener('load', syncTerrain);
+        terrainFrame.src = 'map/index.html?compact=1&embed=1&spot=' + terrainSpot + '&theme=' + (C.theme() === 'night' ? 'dark' : 'light');
+        var select = body.querySelector('select');
+        select.value = terrainSpot;
+        select.addEventListener('change', function () { terrainSpot = select.value === 'race' ? 'race' : 'choc'; syncTerrain(); });
+        requestAnimationFrame(function () { measure(); chartKey = ''; renderChart(); renderLineup(); syncTerrain(); });
+      },
+      onClose: function () {
+        root.appendChild(forecast);
+        if (terrainFrame) terrainFrame.src = 'about:blank';
+        terrainFrame = null;
+        comparison = null;
+        requestAnimationFrame(function () { measure(); chartKey = ''; renderChart(); renderLineup(); });
+      }
+    });
+    syncTerrain();
+  }
+
+  function syncTerrain() {
+    if (!terrainFrame || !terrainFrame.contentWindow) return;
+    var hr = D.hour(C.cursor.get()) || D.now(), trains = splitTrains(hr);
+    var swell = trains.reach || (hr && hr.swell), wind = hr && hr.wind;
+    terrainFrame.contentWindow.postMessage({
+      type: 'lcc-map', spot: terrainSpot, theme: C.theme() === 'night' ? 'dark' : 'light', active: true,
+      forecast: {
+        waveHeight: swell ? swell.h : null, wavePeriod: swell ? swell.period : null,
+        waveDirection: swell ? swell.dir : null, windSpeed: wind ? wind.mph : null,
+        windDirection: wind ? wind.dir : null, time: hr && hr.at ? new Date(hr.at).toISOString() : null
+      }
+    }, location.origin);
+    var note = terrainFrame.parentNode.querySelector('.cl-compare-note');
+    if (note) note.textContent = terrainSpot === 'race'
+      ? 'The Race sea floor · Direction overlays reference the Chocomount forecast. This is not a calibrated Race surf or tidal-current forecast.'
+      : 'Chocomount sea floor · Swell and wind overlays follow the selected forecast hour. Drag the forecast chart to explore.';
   }
 
   // Column width of the chart (the view may be hidden: keep the last one).
@@ -168,6 +226,7 @@
     if (drag && drag.active) pendingChart = true; else run('chart', renderChart);
     run('lineup', renderLineup);
     run('details', renderDetails);
+    run('terrain', syncTerrain);
   }
 
   // ════════════════════════════════════════════════════════════════════

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Map · Let's Check Choc</title>
+  <link rel="stylesheet" href="map.css">
+  <script>
+    (function () {
+      const q = new URLSearchParams(location.search);
+      document.documentElement.dataset.theme = q.get('theme') === 'dark' ? 'dark' : 'light';
+      if (q.get('compact') === '1') document.documentElement.classList.add('compact');
+      if (q.get('embed') === '1') document.documentElement.classList.add('embedded');
+    })();
+  </script>
+</head>
+<body>
+  <main>
+    <header class="page-heading"><div><p class="eyebrow">FISHERS ISLAND & THE SOUND</p><h1>Below the surface.</h1><p>Explore the bottom that shapes the surf.</p></div><a href="../">Back to forecast ↗</a></header>
+    <section class="terrain-card" aria-label="Interactive bathymetry map">
+      <div class="toolbar">
+        <div class="spot-picker" role="group" aria-label="Map location"><button data-spot="choc" aria-pressed="true">Choc</button><button data-spot="race" aria-pressed="false">The Race</button></div>
+        <button id="bathymetryToggle" class="primary" aria-pressed="true">3D bathymetry <span>On</span></button>
+        <button id="layersToggle" aria-expanded="false" aria-controls="layersPanel">Layers <span aria-hidden="true">≡</span></button>
+      </div>
+      <div id="stage" class="stage">
+        <canvas id="terrain" tabindex="0" aria-label="Bathymetry. Drag to pan, shift-drag to rotate, scroll to zoom. Arrow keys pan; plus and minus zoom."></canvas>
+        <div class="map-label"><span class="status-dot"></span><strong id="placeName">Chocomount reef</strong><span id="coordinates">41.2756° N · 71.9634° W</span></div>
+        <div class="map-controls"><button id="zoomIn" aria-label="Zoom in">+</button><button id="zoomOut" aria-label="Zoom out">−</button><button id="rotate" aria-label="Rotate view">↻</button><button id="resetView" aria-label="Reset map view">⌂</button></div>
+        <aside id="layersPanel" class="layers" hidden>
+          <div class="layers-heading"><strong>Make the map yours</strong><button id="closeLayers" aria-label="Close layers">×</button></div>
+          <p class="eyebrow">ON THE SEA FLOOR</p>
+          <label><input type="checkbox" data-layer="relief" checked><span>Depth colors<small>Existing 16 m elevation grid</small></span></label>
+          <label><input type="checkbox" data-layer="survey"><span>NOAA survey relief<small>Streamed · finest available DEM</small></span></label>
+          <label><input type="checkbox" data-layer="satellite"><span>Satellite & aerial imagery<small>Streamed · zooms to source detail</small></span></label>
+          <label><input type="checkbox" data-layer="topo"><span>Topographic map<small>USGS · streamed tiles</small></span></label>
+          <p class="eyebrow">CONDITIONS & PATHS</p>
+          <label><input type="checkbox" data-layer="field"><span>Forecast wave-height field<small>GFS · native 0.25° regional grid</small></span></label>
+          <label><input type="checkbox" data-layer="rays"><span>Swell refraction paths<small>Research model · snapped period & direction</small></span></label>
+          <label><input type="checkbox" data-layer="waves"><span>Forecast swell direction<small>Regional forecast · no local downscaling</small></span></label>
+          <label><input type="checkbox" data-layer="wind"><span>Forecast wind direction<small>Forecast at Fishers Island</small></span></label>
+          <label class="select-label">Overlay position<select id="overlayPosition"><option value="floor">Follow bathymetry</option><option value="surface">Above sea level</option></select></label>
+          <label class="select-label">Vertical scale <output id="scaleValue">8×</output><input id="verticalScale" type="range" min="1" max="20" value="8" aria-label="Vertical exaggeration"></label>
+        </aside>
+        <div id="mapLoading" class="loading" role="status">Loading the sea floor…</div>
+        <div id="fallback" class="fallback" hidden><strong>3D is unavailable in this browser.</strong><p>You can still explore all the survey maps, forecasts and wave paths below.</p><a href="../research/index.html?view=map">Open the 2D map</a></div>
+        <div class="map-bottom"><span class="depth-key">SHALLOW <i></i> DEEP</span><span id="viewScale">Depth stretched 8×</span></div>
+      </div>
+      <div class="map-caption"><span id="mapStatus" role="status">16 m terrain · drag to pan · shift-drag to orbit · pinch to zoom</span><button id="sourcesToggle" aria-expanded="false" aria-controls="sources">Data & resolution ↗</button></div>
+      <div id="forecastReadout" class="forecast-readout" hidden></div>
+      <div id="sources" class="sources" hidden>
+        <p>The 3D surface uses the existing 16 m signed elevation grid around Fishers Island and The Race, built from NOAA topo-bathymetry. Vertical scale is exaggerated for visibility. Outside the survey footprint, the viewer stops instead of inventing depths.</p>
+        <p><a href="https://gis.ngdc.noaa.gov/arcgis/rest/services/DEM_mosaics/DEM_all/ImageServer" target="_blank" rel="noopener">NOAA NCEI relief</a> uses the service’s finest available survey mosaic (about 3 m where 1/9 arc-second CUDEM is available). <a href="https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer" target="_blank" rel="noopener">Imagery © Esri, Maxar, Earthstar Geographics and the GIS User Community</a>; source detail and dates vary. <a href="https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer" target="_blank" rel="noopener">USGS The National Map</a> provides topography. Imagery and relief are requested as tiles for the current view, never saved into the repository.</p>
+        <p>Sharper textures do not add elevation measurements. Regional GFS-Wave / ECMWF fields and wind keep their native resolution; directional marks illustrate the forecast, not a high-resolution current simulation. Refraction paths are the existing research model, snapped to the nearest available 2-second period and 5° direction. Bathymetry-following overlays are a viewing aid, not underwater waves. This is a surf exploration map, not a navigation chart.</p>
+      </div>
+    </section>
+    <section id="researchSection" class="research-section" aria-label="Forecast and wave research map">
+      <div class="section-heading"><div><p class="eyebrow">THE BIGGER PICTURE</p><h2>Follow the swell.</h2><p>All the original map layers, historical conditions, forecast models and wave experiments.</p></div><button id="explorerToggle" aria-expanded="false" aria-controls="researchExplorer">Open map explorer ↗</button></div>
+      <iframe id="researchExplorer" title="Forecast, historical and wave-path map explorer" loading="lazy" hidden></iframe>
+    </section>
+  </main>
+  <script src="../research/vendor/three.min.js"></script>
+  <script src="geometry.js"></script>
+  <script src="map.js"></script>
+</body>
+</html>

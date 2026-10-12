@@ -1,4 +1,5 @@
 node_modules/
+dist/
 tests/e2e/artifacts/
 __pycache__/
 # Firebase emulator logs (npm run test:rules)

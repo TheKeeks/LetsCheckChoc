@@ -9,7 +9,7 @@
 // ════════════════════════════════════════════════════════════════════
 (function () {
   'use strict';
-  var files = ['core', 'forecast', 'log', 'model', 'tv'];
+  var files = ['core', 'forecast', 'map', 'methods', 'log', 'model', 'tv'];
   for (var i = 0; i < files.length; i++) {
     document.write('<script src="previews/clean/' + files[i] + '.js"><\/script>');
   }

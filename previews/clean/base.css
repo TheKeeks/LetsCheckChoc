@@ -94,6 +94,9 @@
 /* A phone layout: on an iPad or desktop it stays one centred column
    (--col), the tab bar spans the screen with its buttons over the column. */
 html.cl-on { --col: 640px; }
+html.cl-on[data-active-tab="map"],
+html.cl-on[data-active-tab="methods"] { --col: 1440px; }
+.cl-sub.cl-wide-view { max-width: 1440px; }
 /* Keyboard, switch and VoiceOver focus scroll the control into view
    above the fixed tab bar (1 px rule + 6 px + --tab-h + max(10 px, safe
    area)), with 8 px of air, never behind it. */
@@ -135,7 +138,7 @@ html.cl-on:not(.cl-tv) {
 .cl-view.cl-enter { animation: cl-fade-in 120ms ease-out; }
 @keyframes cl-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
-/* Tab bar: always the same three tabs in the same place. The active
+/* Four public tabs; Model joins the bar after sign-in. The active
    icon takes the in-window colour, its label turns ink. */
 .cl-tabs {
   position: fixed;

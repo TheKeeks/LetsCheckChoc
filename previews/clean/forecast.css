@@ -8,6 +8,28 @@
    ════════════════════════════════════════════════════════════════════ */
 
 .cl-f { padding-bottom: 4px; }
+.cl-f-explore { margin: 8px var(--gut) 12px; padding: 12px 14px; border: 1px solid var(--hair); border-radius: 12px; background: var(--shade); }
+.cl-f-explore .cl-f-compare-open { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 32px; color: var(--in); font-weight: 600; }
+.cl-f-explore > span { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+.cl-comparison.cl-sub { max-width: 1480px; }
+.cl-comparison .cl-f-explore { display: none; }
+.cl-compare-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 10px 20px 18px; border-bottom: 1px solid var(--hair); }
+.cl-compare-toolbar p { color: var(--muted); font-size: 14px; }
+.cl-compare-toolbar label { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; }
+.cl-compare-spot { min-height: 44px; border: 1px solid var(--hair); border-radius: 8px; background: var(--bg); padding: 8px 30px 8px 12px; }
+.cl-compare-grid { display: grid; grid-template-columns: minmax(320px, .9fr) minmax(0, 1.3fr); align-items: start; }
+.cl-compare-forecast { min-width: 0; border-right: 1px solid var(--hair); }
+.cl-compare-label { padding: 16px var(--gut) 0; font-size: 13px; color: var(--muted); font-weight: 600; }
+.cl-compare-terrain { position: sticky; top: 8px; min-width: 0; padding: 12px; }
+.cl-compare-terrain iframe { width: 100%; height: max(560px, calc(100dvh - 200px)); display: block; border: 1px solid var(--hair); border-radius: 12px; background: var(--bg); }
+.cl-compare-note { margin: 10px 4px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+@media (max-width: 800px) {
+  .cl-compare-grid { grid-template-columns: minmax(0, 1fr); }
+  .cl-compare-forecast { border-right: 0; }
+  .cl-compare-terrain { position: static; grid-row: 1; }
+  .cl-compare-terrain iframe { height: 620px; }
+  .cl-compare-toolbar { padding-inline: var(--gut); }
+}
 .cl-f-lead { margin: 0; line-height: 1.4; }
 
 /* ── Now block ──────────────────────────────────────────────────────── */

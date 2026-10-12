@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sound Check · Chocomount research</title>
+<title>Methods · LetsCheckChoc</title>
+<script src="methods-theme.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap">
 <style>
-/* Layout: one 760px reading column on a night-chart ground; the map at the top breaks
-   out wider, with its controls laid over it like a weather app. Single dark world by choice. */
+/* One reading column; methods-theme.css supplies the shared light/dark display. */
 :root {
   color-scheme: dark;
   --ink: #070b10;          /* page ground: night water */
@@ -347,19 +347,21 @@ svg.warr, .chart svg.warr, .dec-heat svg.warr, .od-lanes svg.warr { display: inl
 .od-hint.on { color: var(--swell); }
 body { margin: 0; }
 </style>
+<link rel="stylesheet" href="methods-theme.css">
 </head>
 <body>
 
 <div class="wrap">
 <header>
-  <h1 class="sc-title">Sound Check</h1>
+  <h1 class="sc-title">Methods</h1>
   <div class="eyebrow">Chocomount research · Block Island buoy 44097 · 2016 – 2026</div>
   <p class="lede">Hourly swell at Block Island buoy 44097 since 2016, carried to Chocomount and Wilderness with a refraction model built on NOAA's sea-floor survey and checked against the surf log.</p>
   <div class="qa-box">
     <a class="qa" href="#q1-h"><span class="eyebrow">Question 1</span><b>What makes the surf good at Choc?</b><span>The swell that actually reaches the reef, not the buoy's number. The model's height at Choc picks the bigger of two of your sessions <span class="mono" id="qa1M">87%</span> of the time, the raw buoy <span class="mono" id="qa1B">77%</span>. After size comes offshore wind; the tide barely matters.</span></a>
     <a class="qa" href="#q2-h"><span class="eyebrow">Question 2</span><b>How real is the swell window?</b><span>Real, but soft-edged. On only <span class="mono" id="qa2In">40%</span> of Choc's 3 ft+ days does the swell come straight through the gap between Block Island and Montauk; on <span class="mono" id="qa2S">45%</span> it bends in from south of Montauk.</span></a>
   </div>
-  <p class="qs-more">Also on this page: <a href="#trip-h">the map</a> (this week's forecast, any day since 2016, or drop your own wave), <a href="#how-h">how the model works</a>, <a href="#dec-h">ten years, month by month</a>, <a href="#week-h">the 7-day forecast</a> and <a href="#wild-h">Wilderness</a>.</p>
+  <p class="qs-more">Explore <a href="#how-h">how the model works</a>, <a href="#dec-h">ten years, month by month</a>, <a href="#week-h">the 7-day forecast</a> and <a href="#wild-h">Wilderness</a>. Forecast layers, past days and sea-floor exploration now live on the Map page.</p>
+  <a class="methods-map-link" href="../map/index.html" data-open-map>Explore the map <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8h10M8 3l5 5-5 5"/></svg></a>
 </header>
 <section aria-labelledby="trip-h">
   <div class="eyebrow">The map</div>
@@ -903,6 +905,11 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const C = { swell: css('--swell'), soft: css('--swell-soft'), cool: css('--cool'), off: css('--offshore'), blown: css('--blown'),
               fg: css('--fg'), fg2: css('--fg-2'), fg3: css('--fg-3'), rule: css('--rule'), panel: css('--panel'), ink: css('--ink') };
+  // Charts retain this palette object, so update it before their theme redraw listeners run.
+  addEventListener('lcc-theme-change', () => {
+    const vars = { swell: '--swell', soft: '--swell-soft', cool: '--cool', off: '--offshore', blown: '--blown', fg: '--fg', fg2: '--fg-2', fg3: '--fg-3', rule: '--rule', panel: '--panel', ink: '--ink' };
+    for (const key in vars) C[key] = css(vars[key]);
+  });
   const OFF = 335, BIG_E = 5.2;
   const wSoft = d => d >= 115 && d <= 158 ? 1 : d >= 100 && d < 115 ? (d - 100) / 15 : d > 158 && d <= 175 ? (175 - d) / 17 : 0;
 
@@ -1395,6 +1402,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   function byDaylight() { takeaways(); months(); events(); goodMonths(); }
   window.CHOC.onChange(byDaylight);
   byDaylight(); period(); sessChart(); modelAll(); q1Pair(); q2Share();
+  addEventListener('lcc-theme-change', () => { byDaylight(); period(); sessChart(); modelAll(); q1Pair(); q2Share(); });
 })();
 
 (function () {
@@ -1635,6 +1643,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   }
 
   kresp('choc'); thisWeek(); window.CHOC.onForecast(thisWeek); wildSection(); dayCheck();
+  addEventListener('lcc-theme-change', () => { kresp('choc'); thisWeek(); wildSection(); });
 })();
 
 (function () {
@@ -1732,7 +1741,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     g.strokeStyle = `rgba(${w},0.22)`; g.lineWidth = Math.max(5, 2 * reff(T, 'wild') / 1000 * s); g.lineCap = 'round'; g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
     g.strokeStyle = `rgb(${w})`; g.lineWidth = 2.5; g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
   }
-  function label(g, t, x, y, al, col) { g.font = `600 12px ${css('--body')}`; g.textAlign = al; g.textBaseline = 'middle'; g.shadowColor = 'rgba(0,0,0,.85)'; g.shadowBlur = 4; g.fillStyle = col || C.fg; g.fillText(t, x, y); g.shadowBlur = 0; }
+  function label(g, t, x, y, al, col) { g.font = `600 12px ${css('--body')}`; g.textAlign = al; g.textBaseline = 'middle'; g.shadowColor = 'rgba(0,0,0,.85)'; g.shadowBlur = 4; g.fillStyle = col || '#e7edf2'; g.fillText(t, x, y); g.shadowBlur = 0; }
 
   function redraw() {
     if (!WW) return;
@@ -1754,7 +1763,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
     xW.strokeStyle = 'rgba(255,255,255,0.7)'; xW.lineWidth = 1; xW.setLineDash([4, 4]); xW.strokeRect(qx, qy, qx2 - qx, qy2 - qy); xW.setLineDash([]);
     // swell arrow
     const ax = WW * 0.84, ay = WH * 0.16, L = 30;
-    xW.strokeStyle = C.fg; xW.fillStyle = C.fg; xW.lineWidth = 2.5; xW.beginPath(); xW.moveTo(ax - tx * L, ay - ty * L); xW.lineTo(ax + tx * L * 0.6, ay + ty * L * 0.6); xW.stroke();
+    xW.strokeStyle = '#e7edf2'; xW.fillStyle = '#e7edf2'; xW.lineWidth = 2.5; xW.beginPath(); xW.moveTo(ax - tx * L, ay - ty * L); xW.lineTo(ax + tx * L * 0.6, ay + ty * L * 0.6); xW.stroke();
     xW.beginPath(); const hx = ax + tx * L * 0.6, hy = ay + ty * L * 0.6; xW.moveTo(hx + tx * 8, hy + ty * 8); xW.lineTo(hx - ty * 6, hy + tx * 6); xW.lineTo(hx + ty * 6, hy - tx * 6); xW.fill();
     { const t = `swell from ${compass(D)} (${D}°)`; xW.font = `600 12px ${css('--body')}`; const tw = xW.measureText(t).width;
       const lx = Math.max(tw / 2 + 12, Math.min(WW - tw / 2 - 12, ax));
@@ -1807,6 +1816,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   if ('IntersectionObserver' in window) new IntersectionObserver(es => { onScreen = es.some(e => e.isIntersecting); }).observe(cvW.closest('figure'));
   function tick(t) { if (onScreen && !reduce && t - last > 50) { dash = (dash + 1.2) % 19; last = t; redraw(); } requestAnimationFrame(tick); }
   addEventListener('resize', () => { size(); redraw(); });
+  addEventListener('lcc-theme-change', redraw);
   size(); redraw(); requestAnimationFrame(tick);
 })();
 
@@ -4295,6 +4305,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   setInterval(() => { if (pending && !window.CHOC.st.playing) { setDay(pending); pending = null; } }, 700);
   let started = false;
   new IntersectionObserver((es) => { if (!started && es.some((e) => e.isIntersecting)) { started = true; show(); } }, { rootMargin: '300px' }).observe(host);
+  addEventListener('lcc-theme-change', () => { if (started) show(); });
 })();
 
 // ── TEN YEARS, MONTH BY MONTH: a year x month grid of good days (or big swell days, or Choc at
@@ -4487,6 +4498,7 @@ const SESSPAIRS=[["2021-09-10",9,7.9133,4.0533],["2022-08-30",1,2.48,1.03],["202
   });
   { const x = D[st.idx]; sel = x ? key(x.y, x.m) : null; }
   draw(); month();
+  addEventListener('lcc-theme-change', () => { draw(); month(); });
 })();
 
 </script>

@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — Forecast, Map, Methods and account navigation
+
+The home page now has Forecast, Map, Methods and Log navigation; Model appears after Google sign-in. Log explains why an account is needed, direct Model links use the same login gate, and sign-in failures show useful feedback. Light is the default, with shared theme settings for every page.
+
+Methods retains the research narrative and diagrams while Map houses the existing forecast, historical and wave-path exploration alongside a Choc/Race 3D bathymetry viewer. Existing survey elevations form the terrain; NOAA relief, aerial imagery and topography stream from geographic tile services and follow it. Layer controls, a flat/3D switch, source-resolution notes and a 2D fallback keep the map usable across devices. Forecast + sea floor reuses the live forecast and its selected hour in a two-panel view. Race terrain is explicitly paired with the Chocomount reference forecast because no calibrated Race forecast exists in the repository.
+
+The feature is isolated on a branch and packaged for a separate private preview. Google login on a new host requires that host in the existing Firebase project’s authorized domains. The existing forecast calculations, bot-owned data and Firebase rules are unchanged.
+
+Verified with unit and legacy checks, focused browser scenarios for navigation/auth, Methods/maps, forecast comparison, and the existing clean Forecast/Log/Model/TV views; geometry and rendered-map checks cover the new terrain viewer.
+
 ## [Unreleased] — Sound Check: the forecast bot reads ECMWF from its Google mirror
 
 The forecast bot's first run, right after #152 merged, failed. GFS-Wave downloaded fine, but halfway through the ECMWF files data.ecmwf.int answered "HTTP 429 Too Many Requests". GitHub's runners share addresses, ECMWF limits busy ones, and the pull asks for about 500 pieces of ECMWF files, eight at a time. With the run failed, nothing was published, so the page kept showing the forecast that ships with it.
