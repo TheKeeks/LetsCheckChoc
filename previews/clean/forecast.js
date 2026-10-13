@@ -13,11 +13,14 @@
 //     the same on the rows, the map and the bars.
 //   • Ray map: those swells' rays bending over the bottom into the spot
 //     (research/fr/land.json over research/fr_world.jpg), thicker for a
-//     bigger share; the buoy and the spot pinned.
+//     bigger share; the buoy and the spot pinned. "Storms" turns it into
+//     the North Atlantic at the same hour: GFS-Wave's wave height, GFS's
+//     sea-level pressure every 4 hPa, the lows and highs, and each storm's
+//     track over the run (field_gfs_ocean.png, field_gfs_mslp.png).
 //   • Week scrubber: the spot's height for the run's 7 days (both models'
 //     mean, the GFS-to-ECMWF band, each model), nights shaded, the tide
-//     and the wind (green when offshore at Choc) underneath. Drag, arrow
-//     keys, or the jump buttons; "Now" follows the clock.
+//     and the wind (blue when offshore at Choc) underneath. Drag, arrow
+//     keys, the jump buttons or play; "Now" follows the clock.
 //   • Wind and tide at that hour, then the buoy check: buoy 44097's
 //     latest reading against the forecasts made 1, 2 and 3 days before
 //     for that hour (Open-Meteo's earlier runs at the buoy); tap for the
@@ -37,6 +40,12 @@
   var FC_SHIP = 'research/fc/fc.json';
   var FC_LIVE = 'https://raw.githubusercontent.com/TheKeeks/LetsCheckChoc/fc-data/fc/fc.json';
   var LAND = 'research/fr/land.json', BACKDROP = 'research/fr_world.jpg';
+  // The storm view: the Sound Check map's North Atlantic backdrop and land mask (lon/lat rasters, ocean_meta.json)
+  var OCEAN_BG = 'research/ocean/ocean_bg.jpg', OCEAN_LAND = 'research/ocean/ocean_land.png', OCEAN_META = 'research/ocean/ocean_meta.json';
+  var CHOC_LL = [41.27591, -71.96359];
+  // wave-height colours (ft), the Sound Check map's (research HST): most of the change at surfable sizes
+  var HST = [[0, [16, 42, 74]], [1, [30, 100, 160]], [2, [40, 170, 165]], [3.5, [120, 200, 100]], [5, [240, 210, 100]],
+    [8, [240, 138, 75]], [13, [224, 71, 90]], [20, [176, 79, 201]], [28, [214, 128, 214]]];
   var VERIF = 'data/verification.json';
   var PREV = 'https://marine-api.open-meteo.com/v1/marine';
   var BUOY_LL = [40.969, -71.127];        // NDBC 44097 (fc.json carries it as fc.buoy)
@@ -63,6 +72,9 @@
   var verif = { status: 'idle', rows: null, at: 0 };
   var sheet = null;                       // the open buoy-check sub-page
   var drawn = { rays: 0, labels: [], note: '' };  // what the map last drew (CLEAN.forecastInfo, for tests)
+  var view = 'choc';                      // the map: 'choc' (swell reaching the spot) | 'storms' (the North Atlantic)
+  var storm = { status: 'idle', key: null, wave: null, hpa: null, bg: null, land: null, bounds: null, tracks: null, lows: null, drawn: null };
+  var play = { timer: 0 };
 
   try { if (localStorage.getItem('lcc-f-spot') === 'wild') spot = 'wild'; } catch (_) { /* private mode */ }
 
@@ -82,7 +94,7 @@
   // ════════════════════════════════════════════════════════════════════
   // THE MODEL FORECAST
   // ════════════════════════════════════════════════════════════════════
-  function useForecast(d) {
+  function useForecast(d, base) {
     if (!d || !d.gfs || !d.gfs.length) return false;
     if (fc.made && !(Date.parse(d.made) > Date.parse(fc.made))) return false;
     var ec = {};
@@ -101,16 +113,20 @@
     fc.steps = steps;
     fc.made = d.made || null;
     fc.runs = d.runs || null;
+    fc.base = base;                       // its field images come from the same place
+    fc.grid = d.grids && d.grids.ocean || null;
+    fc.mslp = d.mslp && d.mslp.file ? d.mslp : null;
     if (d.buoy && isNum(d.buoy[0]) && isNum(d.buoy[1])) fc.buoy = d.buoy;
     fc.status = 'ok';
     return true;
   }
   function loadForecast() {
+    var got = function (d, base) { if (!useForecast(d, base)) return; if (view === 'storms') loadStorms(); render('fc'); };
     getJSON(FC_SHIP).then(function (d) {
-      if (useForecast(d)) render('fc');
+      got(d, FC_SHIP.replace(/fc\.json$/, ''));
       return getJSON(FC_LIVE);
     }).then(function (d) {
-      if (useForecast(d)) render('fc');
+      got(d, FC_LIVE.replace(/fc\.json$/, ''));
       if (fc.status === 'loading') { fc.status = 'failed'; render('fc'); }
     });
   }
@@ -151,15 +167,28 @@
       '<div class="cl-f">' +
         '<div class="cl-f-head" aria-live="polite"></div>' +
         '<div class="cl-f-map">' +
-          '<canvas aria-hidden="true"></canvas>' +
-          '<div class="cl-f-seg" role="group" aria-label="Spot">' +
-            '<button type="button" data-spot="choc">Choc</button><button type="button" data-spot="wild">Wilderness</button>' +
+          '<div class="cl-f-mbar">' +
+            '<div class="cl-f-seg cl-f-vseg" role="group" aria-label="Map">' +
+              '<button type="button" data-view="choc" aria-pressed="true">Swell at Choc</button><button type="button" data-view="storms" aria-pressed="false">Storms</button>' +
+            '</div>' +
+            '<div class="cl-f-seg cl-f-sseg" role="group" aria-label="Spot">' +
+              '<button type="button" data-spot="choc">Choc</button><button type="button" data-spot="wild">Wilderness</button>' +
+            '</div>' +
           '</div>' +
-          '<p class="cl-f-mapnote" hidden></p>' +
+          '<div class="cl-f-stage">' +
+            '<canvas aria-hidden="true"></canvas>' +
+            '<p class="cl-f-mapnote" hidden></p>' +
+          '</div>' +
+          '<div class="cl-f-key" hidden>' +
+            '<span class="cl-f-kh">Wave height</span>' +
+            '<span class="cl-f-kb" aria-hidden="true"><i style="background:' + keyGradient() + '"></i><b style="left:0">0</b><b style="left:25%">5</b><b style="left:50%">10</b><b style="left:100%">20+' + NB + 'ft</b></span>' +
+            '<span class="cl-f-kl">Lines: sea-level pressure every 4' + NB + 'hPa · <b class="cl-f-kL">L</b> low · <b class="cl-f-kH">H</b> high · white: each storm’s track, brighter ahead</span>' +
+          '</div>' +
         '</div>' +
         '<div class="cl-f-wk">' +
           '<div class="cl-f-cx" tabindex="0" role="slider" aria-label="Forecast hour. Drag, or use the arrow keys" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></div>' +
           '<div class="cl-f-ctl">' +
+            '<button type="button" class="cl-f-jb cl-f-play" data-j="play" aria-label="Play the week" aria-pressed="false"><span aria-hidden="true">▶</span></button>' +
             '<button type="button" class="cl-f-jb" data-j="-day" aria-label="A day earlier">' + I.jumpsLeft(14) + '<span>day</span></button>' +
             '<button type="button" class="cl-f-jb" data-j="-1" aria-label="Previous forecast step">' + I.jumpLeft(14) + '</button>' +
             '<button type="button" class="cl-f-jb" data-j="now" aria-label="Back to now"><span>Now</span></button>' +
@@ -176,7 +205,10 @@
     E.head = el.querySelector('.cl-f-head');
     E.map = el.querySelector('.cl-f-map');
     E.cv = E.map.querySelector('canvas');
-    E.seg = E.map.querySelector('.cl-f-seg');
+    E.seg = E.map.querySelector('.cl-f-sseg');
+    E.vseg = E.map.querySelector('.cl-f-vseg');
+    E.key = E.map.querySelector('.cl-f-key');
+    E.play = el.querySelector('.cl-f-play');
     E.mapnote = E.map.querySelector('.cl-f-mapnote');
     E.wk = el.querySelector('.cl-f-wk');
     E.cx = el.querySelector('.cl-f-cx');
@@ -190,6 +222,10 @@
       spot = b.getAttribute('data-spot') === 'wild' ? 'wild' : 'choc';
       try { localStorage.setItem('lcc-f-spot', spot); } catch (_) { /* private mode */ }
       render('spot');
+    }));
+    E.vseg.addEventListener('click', C.guard('forecast.view', function (ev) {
+      var b = ev.target.closest('button[data-view]'); if (!b) return;
+      setView(b.getAttribute('data-view'));
     }));
     E.ctl.addEventListener('click', C.guard('forecast.jump', onJump));
     E.cx.addEventListener('pointerdown', C.guard('forecast.down', onDown));
@@ -258,6 +294,8 @@
     h += '</ul>';
     setHTML(E.head, h);
     E.seg.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-spot') === spot)); });
+    var vb = E.vseg.querySelector('[data-view="choc"]'), vt = 'Swell at ' + sp.name;
+    if (vb.textContent !== vt) vb.textContent = vt;
   }
 
   // ════════════════════════════════════════════════════════════════════
@@ -282,6 +320,7 @@
     var g = E.cv.getContext('2d'); if (!g) return;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.fillStyle = '#0b1219'; g.fillRect(0, 0, w, h);
+    if (view === 'storms') { drawStorms(g, w, h); return; }
     if (backdrop && backdrop.complete && backdrop.naturalWidth) g.drawImage(backdrop, 0, 0, w, h);
     g.fillStyle = 'rgba(8,13,19,0.28)'; g.fillRect(0, 0, w, h);
     var note = land.status === 'failed' ? 'The ray pictures didn’t load' : '';
@@ -344,6 +383,222 @@
     drawn = { rays: nrays, labels: labels.map(function (L) { return L.txt; }), note: note };
   }
   function setNote(t) { E.mapnote.hidden = !t; if (E.mapnote.textContent !== t) E.mapnote.textContent = t; }
+
+  // ════════════════════════════════════════════════════════════════════
+  // STORMS: the North Atlantic at the hour
+  // ════════════════════════════════════════════════════════════════════
+  // The frame: 98°W to 14°W (the whole Gulf of Mexico to Africa), as tall as the ray map's shape
+  // allows, centred on 38°N (the Caribbean to the tip of Greenland), drawn in plain longitude and
+  // latitude with longitude squeezed by cos 40°, as the Sound Check map does near Fishers.
+  var SF = { L: -98, R: -14, latC: 38, cos: Math.cos(40 * Math.PI / 180) };
+  function setView(v) {
+    v = v === 'storms' ? 'storms' : 'choc';
+    if (v === view) return;
+    view = v;
+    E.vseg.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === v)); });
+    E.seg.hidden = v === 'storms';
+    E.key.hidden = v !== 'storms';
+    if (v === 'storms') loadStorms();
+    run('map', drawMap);
+  }
+  function loadImg(src) {
+    return new Promise(function (ok) {
+      var im = new Image();
+      if (/^https?:/.test(src)) im.crossOrigin = 'anonymous';   // another site's image: its pixels stay readable (it sends CORS)
+      im.onload = function () { ok(im); }; im.onerror = function () { ok(null); }; im.src = src;
+    });
+  }
+  function pixels(im) {
+    var c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+    var g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0);
+    return g.getImageData(0, 0, im.width, im.height).data;
+  }
+  // The run's images, loaded the first time Storms is opened (and again for a newer run).
+  function loadStorms() {
+    if (!fc.steps || !fc.grid || !fc.base) { storm.status = fc.status === 'loading' ? 'idle' : 'failed'; return; }
+    var key = fc.base + '|' + fc.made;
+    if (storm.key === key && storm.status !== 'failed') return;
+    storm.key = key; storm.status = 'loading'; storm.wave = storm.hpa = storm.tracks = storm.lows = null;
+    var tag = /^https?:/.test(fc.base) ? '?m=' + encodeURIComponent(fc.made) : '';   // a published pull's images are keyed to it
+    var want = [loadImg(fc.base + 'field_gfs_ocean.png' + tag), fc.mslp ? loadImg(fc.base + fc.mslp.file + tag) : Promise.resolve(null)];
+    if (!storm.bg) want.push(loadImg(OCEAN_BG), loadImg(OCEAN_LAND), getJSON(OCEAN_META));
+    Promise.all(want).then(C.guard('forecast.storms', function (r) {
+      if (storm.key !== key) return;                                // a newer run arrived meanwhile
+      if (r.length > 2) { storm.bg = r[2]; storm.land = r[3]; storm.bounds = r[4] && r[4].bounds; }
+      var n = fc.grid.lat[3] * fc.grid.lon[3];
+      if (r[0] && r[0].width === n) storm.wave = { w: r[0].width, a: pixels(r[0]) };
+      if (r[1] && r[1].width === n) {
+        var a = pixels(r[1]), rows = r[1].height, hpa = [];
+        for (var k = 0; k < rows; k++) {
+          var row = new Float32Array(n);
+          for (var q = 0; q < n; q++) { var o = 4 * (k * n + q), v = a[o] << 8 | a[o + 1]; row[q] = v === 65535 ? NaN : v / 10 + 800; }
+          hpa.push(row);
+        }
+        storm.hpa = hpa;
+        trackLows();
+      }
+      storm.status = storm.wave || storm.hpa ? 'ok' : 'failed';
+      run('map', drawMap);
+    }));
+  }
+  // Lows and highs at each step: a 1° cell lower (higher) than everything within 3° and at least 2 hPa below (above)
+  // the ring 4° out, under 1008 hPa (over 1022), its centre refined between cells. Then each low is followed from step
+  // to step (nearest low within what a storm can travel, 110 km/h) into tracks; a storm is a track that lasts a day or
+  // more and gets to 1000 hPa or lower (shorter ones are mostly lows that form and fill again, and clutter the map).
+  function trackLows() {
+    var G = fc.grid, nla = G.lat[3], nlo = G.lon[3], d = G.lat[2];
+    var lows = storm.hpa.map(function (P) {
+      var out = [];
+      for (var i = 4; i < nla - 4; i++) {
+        var lat = G.lat[0] - i * d; if (lat < 8 || lat > 68) continue;
+        for (var j = 4; j < nlo - 4; j++) {
+          var lon = G.lon[0] + j * d; if (lon < -100 || lon > 5) continue;
+          var p = P[i * nlo + j]; if (!(p <= 1008 || p >= 1022)) continue;
+          var low = p <= 1008, ok = true;
+          for (var a = -3; a <= 3 && ok; a++) for (var b = -3; b <= 3; b++) {
+            if (!a && !b) continue;
+            var v = P[(i + a) * nlo + j + b];
+            if (v !== v || (low ? v < p || (v === p && (a < 0 || (a === 0 && b < 0))) : v > p || (v === p && (a < 0 || (a === 0 && b < 0))))) { ok = false; break; }
+          }
+          if (!ok) continue;
+          var ring = 0, nr = 0;
+          for (var t = 0; t < 16; t++) { var ai = Math.round(4 * Math.sin(t * Math.PI / 8)), bj = Math.round(4 * Math.cos(t * Math.PI / 8)), w = P[(i + ai) * nlo + j + bj]; if (w === w) { ring += w; nr++; } }
+          if (!nr || (low ? ring / nr - p : p - ring / nr) < 2) continue;
+          var pu = P[(i - 1) * nlo + j], pd = P[(i + 1) * nlo + j], pl = P[i * nlo + j - 1], pr = P[i * nlo + j + 1];
+          var di = (pu - pd) / (2 * (pu - 2 * p + pd)) || 0, dj = (pl - pr) / (2 * (pl - 2 * p + pr)) || 0;
+          di = Math.max(-0.5, Math.min(0.5, di)); dj = Math.max(-0.5, Math.min(0.5, dj));
+          out.push({ lat: lat - di * d, lon: lon + dj * d, p: p, low: low });
+        }
+      }
+      return out;
+    });
+    var tracks = [], open = [];
+    lows.forEach(function (L, k) {
+      var dt = k ? (fc.steps[k].t - fc.steps[k - 1].t) / HOUR : 3, reach = Math.max(300, 110 * dt), next = [], taken = {};
+      var pairs = [];
+      open.forEach(function (tr, ti) {
+        var last = tr.pts[tr.pts.length - 1];
+        L.forEach(function (x, xi) { if (x.low) { var km = dist(last, x); if (km <= reach) pairs.push([km, ti, xi]); } });
+      });
+      pairs.sort(function (a, b) { return a[0] - b[0]; });
+      var used = {};
+      pairs.forEach(function (q) { if (used[q[1]] || taken[q[2]]) return; used[q[1]] = taken[q[2]] = 1; var tr = open[q[1]]; tr.pts.push(Object.assign({ k: k }, L[q[2]])); next.push(tr); });
+      L.forEach(function (x, xi) { if (x.low && !taken[xi]) { var tr = { pts: [Object.assign({ k: k }, x)] }; tracks.push(tr); next.push(tr); } });
+      open = next;
+    });
+    storm.lows = lows;
+    storm.tracks = tracks.filter(function (tr) {
+      return fc.steps[tr.pts[tr.pts.length - 1].k].t - fc.steps[tr.pts[0].k].t >= DAY && tr.pts.some(function (x) { return x.p <= 1000; });
+    });
+  }
+  function dist(a, b) {               // km, near enough for following a storm
+    var R = 6371, f1 = a.lat * Math.PI / 180, f2 = b.lat * Math.PI / 180, dl = (b.lon - a.lon) * Math.PI / 180;
+    return R * Math.acos(Math.max(-1, Math.min(1, Math.sin(f1) * Math.sin(f2) + Math.cos(f1) * Math.cos(f2) * Math.cos(dl))));
+  }
+  function keyGradient() {
+    return 'linear-gradient(90deg,' + HST.filter(function (c) { return c[0] <= 20; }).map(function (c) { return rgb(c[1]) + ' ' + (c[0] / 20 * 100) + '%'; }).join(',') + ')';
+  }
+  function hcol(ft) {
+    var k = 0; while (k < HST.length - 2 && ft > HST[k + 1][0]) k++;
+    var a = HST[k], b = HST[k + 1], f = Math.max(0, Math.min(1, (ft - a[0]) / (b[0] - a[0])));
+    return a[1].map(function (v, j) { return Math.round(v + (b[1][j] - v) * f); });
+  }
+  function drawStorms(g, w, h) {
+    var s = w / ((SF.R - SF.L) * SF.cos), latSpan = h / s, T = SF.latC + latSpan / 2, B = SF.latC - latSpan / 2;
+    var X = function (lon) { return (lon - SF.L) * SF.cos * s; }, Y = function (lat) { return (T - lat) * s; };
+    var i = curStep(), note = '', info = { lows: [], highs: 0, tracks: 0, isobars: 0, frame: { L: SF.L, R: SF.R, T: T, B: B } };
+    // the backdrop and its land mask are lon/lat rasters: a crop is just a scale
+    var crop = function (im) {
+      var bb = storm.bounds; if (!im || !bb) return null;
+      var px = im.width / (bb[2] - bb[0]), py = im.height / (bb[3] - bb[1]);
+      return [(SF.L - bb[0]) * px, (bb[3] - T) * py, (SF.R - SF.L) * px, (T - B) * py];
+    };
+    var cb = crop(storm.bg);
+    if (cb) g.drawImage(storm.bg, cb[0], cb[1], cb[2], cb[3], 0, 0, w, h);
+    var G = fc.grid, k = i >= 0 ? i : null;
+    if (storm.status === 'loading' || storm.status === 'idle') note = 'Loading the storms…';
+    else if (storm.status === 'failed') note = 'The storm maps didn\u2019t load';
+    else if (k == null) note = 'No model forecast for this hour';
+    if (G && k != null && storm.wave && k < storm.wave.a.length / (4 * storm.wave.w)) {
+      // wave height: one pixel per 1° cell, smoothed as it is scaled up, then cut off the land
+      var nla = G.lat[3], nlo = G.lon[3], d = G.lat[2];
+      var sm = document.createElement('canvas'); sm.width = nlo; sm.height = nla;
+      var sg = sm.getContext('2d'), id = sg.createImageData(nlo, nla), A = storm.wave.a, n = nla * nlo;
+      for (var q = 0; q < n; q++) {
+        var o = 4 * (k * n + q); if (A[o] === 255) continue;
+        var c = hcol(A[o] / 10 * M2FT); id.data[4 * q] = c[0]; id.data[4 * q + 1] = c[1]; id.data[4 * q + 2] = c[2]; id.data[4 * q + 3] = 200;
+      }
+      sg.putImageData(id, 0, 0);
+      var dpr = E.cv.width / w, off = document.createElement('canvas'); off.width = E.cv.width; off.height = E.cv.height;
+      var og = off.getContext('2d'); og.setTransform(dpr, 0, 0, dpr, 0, 0); og.imageSmoothingEnabled = true;
+      og.drawImage(sm, X(G.lon[0] - d / 2), Y(G.lat[0] + d / 2), nlo * d * SF.cos * s, nla * d * s);
+      var cl = crop(storm.land);
+      if (cl) { og.globalCompositeOperation = 'destination-out'; og.drawImage(storm.land, cl[0], cl[1], cl[2], cl[3], 0, 0, w, h); og.globalCompositeOperation = 'source-over'; }
+      g.globalAlpha = 0.85; g.drawImage(off, 0, 0, w, h); g.globalAlpha = 1;
+    }
+    if (G && k != null && storm.hpa && storm.hpa[k]) {
+      info.isobars = isobars(g, storm.hpa[k], G, X, Y, T, B);
+      // tracks: the whole run faint, the hours still to come brighter, a dot every 6 h
+      (storm.tracks || []).forEach(function (tr) {
+        var pts = tr.pts; if (!pts.some(function (x) { return x.lon >= SF.L && x.lon <= SF.R && x.lat >= B && x.lat <= T; })) return;
+        info.tracks++;
+        g.lineWidth = 1.6; g.lineJoin = 'round';
+        for (var a = 1; a < pts.length; a++) {
+          g.strokeStyle = pts[a].k > k ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)';
+          g.beginPath(); g.moveTo(X(pts[a - 1].lon), Y(pts[a - 1].lat)); g.lineTo(X(pts[a].lon), Y(pts[a].lat)); g.stroke();
+        }
+        pts.forEach(function (x) {
+          if (fc.steps[x.k] && Math.round(fc.steps[x.k].t / HOUR) % 6) return;
+          g.fillStyle = x.k > k ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.35)'; g.beginPath(); g.arc(X(x.lon), Y(x.lat), 1.8, 0, 7); g.fill();
+        });
+      });
+      g.font = '700 12px ' + (getComputedStyle(root).getPropertyValue('--sans') || 'sans-serif'); g.textBaseline = 'middle'; g.textAlign = 'center';
+      (storm.lows && storm.lows[k] || []).forEach(function (x) {
+        if (x.lon < SF.L || x.lon > SF.R || x.lat < B || x.lat > T) return;
+        var px = X(x.lon), py = Y(x.lat), t = (x.low ? 'L ' : 'H ') + Math.round(x.p);
+        if (x.low) info.lows.push({ p: Math.round(x.p), lat: Math.round(x.lat * 10) / 10, lon: Math.round(x.lon * 10) / 10 }); else info.highs++;
+        var tw = g.measureText(t).width + 12;
+        px = Math.max(tw / 2 + 2, Math.min(w - tw / 2 - 2, px)); py = Math.max(12, Math.min(h - 12, py));   // a label at the edge stays readable
+        g.fillStyle = 'rgba(10,15,21,0.82)'; g.beginPath(); if (g.roundRect) g.roundRect(px - tw / 2, py - 10, tw, 20, 10); else g.rect(px - tw / 2, py - 10, tw, 20); g.fill();
+        g.fillStyle = x.low ? '#ff8a8a' : '#8ac4ff'; g.fillText(t, px, py);
+      });
+      g.textAlign = 'start';
+    } else if (storm.status === 'ok' && !storm.hpa && k != null) note = 'This forecast run has no pressure map yet';
+    // Choc
+    var cx = X(CHOC_LL[1]), cy = Y(CHOC_LL[0]);
+    g.fillStyle = 'rgb(255,196,140)'; g.beginPath(); g.arc(cx, cy, 4.5, 0, 7); g.fill(); g.strokeStyle = '#0a0f15'; g.lineWidth = 1.5; g.stroke();
+    g.font = '600 11px ' + (getComputedStyle(root).getPropertyValue('--sans') || 'sans-serif'); g.textBaseline = 'middle';
+    g.fillStyle = 'rgba(10,15,21,0.86)'; g.beginPath(); if (g.roundRect) g.roundRect(cx - 50, cy - 10, 40, 20, 10); else g.rect(cx - 50, cy - 10, 40, 20); g.fill();
+    g.fillStyle = 'rgb(255,196,140)'; g.fillText('Choc', cx - 43, cy);
+    setNote(note);
+    drawn = { rays: 0, labels: [], note: note };
+    storm.drawn = info;
+  }
+  // Marching squares over the 1° pressure grid inside the frame: a segment per cell per 4 hPa level.
+  function isobars(g, P, G, X, Y, T, B) {
+    var nla = G.lat[3], nlo = G.lon[3], d = G.lat[2], n = 0;
+    var i0 = Math.max(0, Math.floor((G.lat[0] - T) / d) - 1), i1 = Math.min(nla - 2, Math.ceil((G.lat[0] - B) / d) + 1);
+    var j0 = Math.max(0, Math.floor((SF.L - G.lon[0]) / d) - 1), j1 = Math.min(nlo - 2, Math.ceil((SF.R - G.lon[0]) / d) + 1);
+    var at = function (i, j, fi, fj) { return [X(G.lon[0] + (j + fj) * d), Y(G.lat[0] - (i + fi) * d)]; };
+    var thin = new Path2D(), bold = new Path2D();
+    for (var i = i0; i <= i1; i++) for (var j = j0; j <= j1; j++) {
+      var a = P[i * nlo + j], b = P[i * nlo + j + 1], c = P[(i + 1) * nlo + j + 1], e = P[(i + 1) * nlo + j];
+      if (a !== a || b !== b || c !== c || e !== e) continue;
+      var lo = Math.min(a, b, c, e), hi = Math.max(a, b, c, e);
+      for (var lv = Math.ceil(lo / 4) * 4; lv <= hi; lv += 4) {
+        var pts = [], f = function (u, v) { return (lv - u) / (v - u); }, path = lv % 20 ? thin : bold;
+        if ((a < lv) !== (b < lv)) pts.push(at(i, j, 0, f(a, b)));
+        if ((b < lv) !== (c < lv)) pts.push(at(i, j + 1, f(b, c), 0));
+        if ((e < lv) !== (c < lv)) pts.push(at(i + 1, j, 0, f(e, c)));
+        if ((a < lv) !== (e < lv)) pts.push(at(i, j, f(a, e), 0));
+        for (var p = 0; p + 1 < pts.length; p += 2) { path.moveTo(pts[p][0], pts[p][1]); path.lineTo(pts[p + 1][0], pts[p + 1][1]); n++; }
+      }
+    }
+    g.lineCap = 'round';
+    g.lineWidth = 1; g.strokeStyle = 'rgba(255,255,255,0.42)'; g.stroke(thin);
+    g.lineWidth = 1.4; g.strokeStyle = 'rgba(255,255,255,0.72)'; g.stroke(bold);
+    return n;
+  }
 
   // ════════════════════════════════════════════════════════════════════
   // WEEK SCRUBBER
@@ -448,6 +703,7 @@
   }
   function onDown(ev) {
     if (!fc.steps || !geom) return;
+    stopPlay();
     drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, moved: false, horiz: ev.pointerType === 'mouse' };
     if (drag.horiz) { try { E.cx.setPointerCapture(ev.pointerId); } catch (_) { /* fine */ } setStep(stepAtX(ev.clientX)); }
   }
@@ -479,6 +735,7 @@
     else if (k === 'End') j = n;
     if (j == null) return;
     ev.preventDefault();
+    stopPlay();
     setStep(Math.max(0, Math.min(n, j)));
   }
   // The step nearest a day later (or earlier): runs step every 3 h early on and every 6 h later.
@@ -487,9 +744,28 @@
     fc.steps.forEach(function (s, k) { if (Math.abs(s.t - t) < Math.abs(fc.steps[b].t - t)) b = k; });
     return b;
   }
+  function stopPlay() {
+    if (!play.timer) return;
+    clearInterval(play.timer); play.timer = 0;
+    E.play.setAttribute('aria-pressed', 'false'); E.play.setAttribute('aria-label', 'Play the week'); E.play.firstChild.textContent = '▶';
+  }
+  function startPlay() {
+    if (!fc.steps) return;
+    var i = curStep(); if (i < 0 || i >= fc.steps.length - 1) i = 0;
+    setStep(i);
+    E.play.setAttribute('aria-pressed', 'true'); E.play.setAttribute('aria-label', 'Pause'); E.play.firstChild.textContent = '❚❚';
+    play.timer = setInterval(C.guard('forecast.play', function () {
+      if (document.hidden || !E.map.clientWidth) { stopPlay(); return; }   // the tab or the page was put away
+      var k = curStep();
+      if (k < 0 || k >= fc.steps.length - 1) { stopPlay(); return; }
+      setStep(k + 1);
+    }), U.reducedMotion() ? 1400 : 700);
+  }
   function onJump(ev) {
     var b = ev.target.closest('button[data-j]'); if (!b || !fc.steps) return;
     var j = b.getAttribute('data-j');
+    if (j === 'play') { if (play.timer) stopPlay(); else startPlay(); return; }
+    stopPlay();
     if (j === 'now') { setStep(-1, true); return; }
     var i = curStep(); if (i < 0) i = 0;
     var k = j === 'day' ? dayFrom(i, 1) : j === '-day' ? dayFrom(i, -1) : i + Number(j);
@@ -636,7 +912,14 @@
   C.forecastInfo = function () {
     var i = curStep();
     return { fc: fc.status, made: fc.made, step: i, t: i >= 0 ? fc.steps[i].t : null, mode: cur.mode, spot: spot,
-      rays: drawn.rays, labels: drawn.labels.slice(), note: drawn.note, land: land.status, prev: prev.status, verif: verif.status };
+      rays: drawn.rays, labels: drawn.labels.slice(), note: drawn.note, land: land.status, prev: prev.status, verif: verif.status,
+      view: view, playing: !!play.timer,
+      storm: { status: storm.status, mslp: !!storm.hpa, drawn: storm.drawn ? JSON.parse(JSON.stringify(storm.drawn)) : null,
+        tracks: storm.tracks ? storm.tracks.map(function (tr) {
+          var a = tr.pts[0], b = tr.pts[tr.pts.length - 1], r1 = function (v) { return Math.round(v * 10) / 10; };
+          return { min: Math.round(Math.min.apply(null, tr.pts.map(function (x) { return x.p; }))), hours: Math.round((fc.steps[b.k].t - fc.steps[a.k].t) / HOUR),
+            from: [r1(a.lat), r1(a.lon)], to: [r1(b.lat), r1(b.lon)], k: [a.k, b.k] };
+        }) : null } };
   };
 
   C.register('forecast', {

@@ -151,5 +151,61 @@ class TestTieToChoc(unittest.TestCase):
         self.assertEqual(list(m.q8(numpy.array([float("nan"), 1.23, 99.0]), 10)), [255, 12, 254])
 
 
+@unittest.skipUnless(HAVE_DEPS, "fcpull needs numpy, Pillow and eccodes")
+class TestPressure(unittest.TestCase):
+    """Sea-level pressure for the Forecast tab's storm view (field_gfs_mslp.png)."""
+
+    def grib(self, values, bitmap):
+        """a GRIB2 message on a 1 deg global grid holding `values` (181 x 360, north row first)"""
+        g = eccodes.codes_grib_new_from_samples("regular_ll_sfc_grib2")
+        for k, v in (("Ni", 360), ("Nj", 181), ("latitudeOfFirstGridPointInDegrees", 90), ("longitudeOfFirstGridPointInDegrees", 0),
+                     ("latitudeOfLastGridPointInDegrees", -90), ("longitudeOfLastGridPointInDegrees", 359),
+                     ("iDirectionIncrementInDegrees", 1), ("jDirectionIncrementInDegrees", 1)):
+            eccodes.codes_set(g, k, v)
+        eccodes.codes_set(g, "bitmapPresent", 1 if bitmap else 0)
+        eccodes.codes_set_values(g, values.ravel())
+        msg = eccodes.codes_get_message(g)
+        eccodes.codes_release(g)
+        return msg
+
+    def test_pressure_in_pascals_is_not_read_as_missing(self):
+        # PRMSL comes in Pa (about 101325), above the GRIB missing value 9999: it has no bitmap, so every value stays
+        m, _ = load_fcpull(set())
+        f = m.decode(self.grib(numpy.full((181, 360), 101325.0), bitmap=False))
+        self.assertEqual(int(numpy.isnan(f["v"]).sum()), 0)
+        self.assertAlmostEqual(float(f["v"][90, 0]), 101325.0, delta=1)
+
+    def test_a_wave_field_still_masks_its_land(self):
+        m, _ = load_fcpull(set())
+        v = numpy.full((181, 360), 1.5)
+        v[:10, :] = 9999.0                                   # the missing value marks the cells with no data
+        f = m.decode(self.grib(v, bitmap=True))
+        self.assertTrue(numpy.isnan(f["v"][:10]).all())
+        self.assertFalse(numpy.isnan(f["v"][10:]).any())
+
+    def test_encoding_round_trip(self):
+        m, _ = load_fcpull(set())
+        got = m.dec_hpa(m.enc_hpa(numpy.array([950.04, 1013.25, float("nan"), 1041.4, 700.0])))
+        self.assertAlmostEqual(got[0], 950.0, places=6)
+        self.assertAlmostEqual(got[1], 1013.2, delta=0.051)
+        self.assertTrue(numpy.isnan(got[2]))
+        self.assertAlmostEqual(got[3], 1041.4, places=6)
+        self.assertTrue(numpy.isnan(got[4]), "below the range: no data, never a made-up pressure")
+
+    def test_image_rows_are_steps_and_cells_follow_the_swell_fields(self):
+        # a field where the pressure says where it is: 1000 hPa + latitude / 10 + (longitude + 180) / 1000 (40 N 70 W: 1004.11)
+        m, _ = load_fcpull(set())
+        lat = 90 - numpy.arange(181)[:, None]
+        lon = numpy.arange(360)[None, :]
+        lon = numpy.where(lon >= 180, lon - 360, lon)
+        f = dict(v=(100000.0 + 10.0 * lat + 0.1 * (lon + 180)) * numpy.ones((181, 360)), la0=90.0, lo0=0.0, dl=1.0, dj=1.0, ni=360, nj=181)
+        img = m.mslp_image({s: f for s in m.STEPS})
+        la, lo = m.grid_axes("ocean")
+        self.assertEqual(img.shape, (len(m.STEPS), len(la) * len(lo), 3))
+        i, j = list(la).index(40.0), list(lo).index(-70.0)
+        p = m.dec_hpa(img[5, i * len(lo) + j])
+        self.assertAlmostEqual(float(p), 1000.0 + 4.0 + 0.11, delta=0.06)
+
+
 if __name__ == "__main__":
     unittest.main()
