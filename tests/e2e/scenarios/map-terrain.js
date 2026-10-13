@@ -8,8 +8,9 @@
 module.exports = {
   name: 'Map: own sea-floor tiles, 3D toggle, wave height and swell motion, parent messages',
   // Reduced motion: the 3D toggle jumps instead of easing. Software WebGL (CI runners, cloud sessions) can take
-  // seconds per 3D frame, so an eased tilt outlasted the 5 s waits below though the toggle itself worked.
-  options: { viewport: { width: 1100, height: 800 }, timeoutMs: 150000, contextOptions: { reducedMotion: 'reduce' } },
+  // seconds per 3D frame, so an eased tilt outlasted the 5 s waits below though the toggle itself worked. The whole
+  // scenario takes about 60 s here and has run past 150 s on a busy CI runner: 240 s, as w6-swell-map-3d.js.
+  options: { viewport: { width: 1100, height: 800 }, timeoutMs: 240000, contextOptions: { reducedMotion: 'reduce' } },
   async run({ page, ctx, assert }) {
     await ctx.open('/map/index.html?3d=1');
     const S = () => page.evaluate(() => ChocMap.getState());
