@@ -16,7 +16,8 @@
  * basemap and NOAA charts are live tile services.
  *
  * Embedded (?embed=1, ?compact=1) the parent page drives theme, spot and hour
- * with postMessage {type: 'lcc-map', theme, spot, time, active}; the map answers
+ * with postMessage {type: 'lcc-map', theme, spot, time, active, ui}; ui 'peek'
+ * (Forecast's collapsed window: no controls, no gestures) or 'full'. The map answers
  * {type: 'lcc-map-ready'} once and {type: 'lcc-map-spot', spot} when the spot
  * buttons are used. window.ChocMap is the same API for tests.
  */
@@ -55,8 +56,10 @@
     threeD: true, ex: 3, hill: 0.85, base: 'photo', model: 'gfs',
     layers: { waves: true, swell: true, rays: false, contours: false },
     step: 0, playing: false, theme: document.documentElement.dataset.theme || 'light', active: true,
-    fc: null, wantTime: Date.parse(q.get('time') || '') || null
+    fc: null, wantTime: Date.parse(q.get('time') || '') || null,
+    ui: q.get('ui') === 'peek' ? 'peek' : 'full'
   };
+  document.documentElement.classList.toggle('peek', state.ui === 'peek');
   try {
     const p = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
     if (typeof p.threeD === 'boolean') state.threeD = p.threeD;
@@ -72,11 +75,52 @@
   }
   const status = t => { $('status').textContent = t || ''; };
 
+  // ── Monitor | Model. Monitor is this map; Model is the Sound Check's own map
+  // (research/index.html?view=map: ocean-wide swell, any day since 2016, Drop a wave),
+  // loaded the first time it is opened. Embedded beside the forecast, only Monitor shows.
+  const TABS = ['monitor', 'model'];
+  let onTab = () => {};
+  state.tab = 'monitor';
+  if (!COMPACT) {
+    let t = q.get('tab') || location.hash.slice(1);
+    if (!TABS.includes(t)) { try { t = sessionStorage.getItem('lcc-map-tab'); } catch (e) { t = null; } }
+    if (TABS.includes(t)) state.tab = t;
+  }
+  function setTab(t, focus) {
+    if (!TABS.includes(t)) return;
+    state.tab = t;
+    TABS.forEach(k => {
+      const b = $('tab-' + k), on = k === t;
+      b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1;
+      $(k).classList.toggle('off', !on); $(k).setAttribute('aria-hidden', String(!on));
+      if (on && focus) b.focus();
+    });
+    if (t === 'model') {
+      const f = $('modelFrame');
+      if (!f.getAttribute('src')) f.src = '../research/index.html?view=map&fill=1&theme=' + (document.documentElement.dataset.theme || 'light') + (state.pastDate ? '&date=' + state.pastDate : '');
+      setPanel(false);
+    }
+    try { sessionStorage.setItem('lcc-map-tab', t); } catch (e) { /* private mode */ }
+    onTab(t);
+  }
+  document.querySelectorAll('[role="tab"]').forEach(b => {
+    b.addEventListener('click', () => setTab(b.dataset.tab));
+    b.addEventListener('keydown', e => {
+      const k = { ArrowRight: 1, ArrowLeft: -1, Home: -9, End: 9 }[e.key]; if (!k) return;
+      e.preventDefault();
+      const i = Math.max(0, Math.min(TABS.length - 1, TABS.indexOf(state.tab) + k));
+      setTab(TABS[i], true);
+    });
+  });
+  function setPanel(open, focus) {
+    $('panel').hidden = !open; $('layersBtn').setAttribute('aria-expanded', String(open));
+    if (open && focus) $('panelClose').focus({ preventScroll: true });
+  }
+  setTab(state.tab);
+
   if (!ML || !hasWebGL()) {
-    status('This browser can’t draw the map (WebGL is off). The ocean-wide map still works.');
-    $('explorerBtn').hidden = false;
-    wireExplorer();
-    $('explorerBtn').click();
+    status('This browser can’t draw the 3D map (WebGL is off). The Model tab still works.');
+    setTab('model');
     return;
   }
   function hasWebGL() { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } }
@@ -160,13 +204,24 @@
       fadeDuration: 0, maxTileCacheSize: 400
     });
   } catch (e) {
-    status('This browser can’t draw the map. The ocean-wide map still works.');
-    wireExplorer(); return;
+    status('This browser can’t draw the 3D map. The Model tab still works.');
+    setTab('model'); return;
   }
   map.addControl(new ML.NavigationControl({ visualizePitch: true }), 'top-right');
+  // Peek: a picture of the water at the forecast hour that the page scrolls past; 'full' hands the gestures back.
+  const HANDLERS = ['scrollZoom', 'boxZoom', 'dragRotate', 'dragPan', 'keyboard', 'doubleClickZoom', 'touchZoomRotate', 'touchPitch'];
+  function setUI(m) {
+    m = m === 'peek' ? 'peek' : 'full';
+    state.ui = m;
+    document.documentElement.classList.toggle('peek', m === 'peek');
+    HANDLERS.forEach(h => { if (map[h]) map[h][m === 'peek' ? 'disable' : 'enable'](); });
+    if (m === 'peek') { setPanel(false); if (mapReady) hideProbe(); }
+    if (mapReady) { map.resize(); swellBounds(true); }
+  }
   map.addControl(new ML.ScaleControl({ unit: 'imperial' }), 'bottom-left');
   status('Loading sea floor…');
   let mapReady = false;
+  setUI(state.ui);
   map.on('error', e => {
     const src = e && e.sourceId;
     if (src === 'photo' || src === 'ocean' || src === 'chart') { if (!$('status').textContent) status((src === 'chart' ? 'NOAA chart' : 'Esri') + ' tiles are slow or offline; the sea floor still works.'); }
@@ -181,6 +236,8 @@
 
   map.on('load', () => {
     mapReady = true;
+    // Embedded, the credits start folded behind their (i) button so they don't cover the readout.
+    if (COMPACT) { const a = map.getContainer().querySelector('.maplibregl-compact-show'); if (a) a.classList.remove('maplibregl-compact-show'); }
     applyBase(); applyLayers(); applyTheme(); set3D(state.threeD, true);
     loadForecast();
     if (EMBED && parent !== window) parent.postMessage({ type: 'lcc-map-ready' }, location.origin);
@@ -253,7 +310,7 @@
     t = t === 'dark' || t === 'night' ? 'dark' : 'light';
     if (t === state.theme && mapReady) return;
     state.theme = t; applyTheme();
-    const f = $('explorerFrame'); if (f.getAttribute('src') && f.contentWindow) f.contentWindow.postMessage({ type: 'lcc-theme', theme: t }, location.origin);
+    const f = $('modelFrame'); if (f.getAttribute('src') && f.contentWindow) f.contentWindow.postMessage({ type: 'lcc-theme', theme: t }, location.origin);
   }
   function go(view, opts) {
     if (!VIEWS[view]) return;
@@ -313,7 +370,7 @@
     if (!row) return;
     const src = state.model === 'ec' ? row.ec : row.gfs;
     $('hudTime').textContent = fmtTime(row.t);
-    $('hudSpot').textContent = src && src.choc != null ? (COMPACT ? 'Sound Check model: ' : '') + 'Choc ' + src.choc.toFixed(1) + ' ft' + (src.wild != null ? ' · Wilderness ' + src.wild.toFixed(1) + ' ft' : '') : (state.model === 'ec' ? 'No ECMWF run for this hour' : '');
+    $('hudSpot').innerHTML = src && src.choc != null ? (COMPACT ? '<span class="model-tag">Sound Check model: </span>' : '') + 'Choc ' + src.choc.toFixed(1) + ' ft' + (src.wild != null ? ' · Wilderness ' + src.wild.toFixed(1) + ' ft' : '') : (state.model === 'ec' ? 'No ECMWF run for this hour' : '');
     const tr = trainsAt(row).filter(t => t.T >= 5 && t.ft >= 0.2).sort((a, b) => b.ft - a.ft).slice(0, 3);
     const parts = tr.map(t => arrow(t.D) + ' ' + t.ft.toFixed(1) + ' ft @ ' + Math.round(t.T) + ' s ' + G.compass(t.D));
     const w = row.gfs.wind; if (w) parts.push('Wind ' + arrow(w[1]) + ' ' + Math.round(w[0]) + ' kn ' + G.compass(w[1]));
@@ -488,7 +545,7 @@
     }
     p.age = p.life;   // nothing found this time; try again next frame
   }
-  function swellActive() { return mapReady && state.layers.swell && state.active && !document.hidden && SW.trains.length && SW.b; }
+  function swellActive() { return mapReady && state.tab === 'monitor' && state.layers.swell && state.active && !document.hidden && SW.trains.length && SW.b; }
   function swellRun() {
     if (reduceMotion) { drawStill(); return; }
     if (!SW.raf && swellActive()) { SW.last = 0; SW.raf = requestAnimationFrame(swellFrame); }
@@ -550,11 +607,11 @@
   map.on('dragstart', () => { dragging = true; hideProbe(); });
   map.on('dragend', () => { dragging = false; });
   map.on('mousemove', e => {
-    if (dragging || coarsePointer) return;
+    if (dragging || coarsePointer || state.ui === 'peek') return;
     clearTimeout(probeTimer); probeTimer = setTimeout(() => probe(e.lngLat, e.point), 70);
   });
   map.getCanvas().addEventListener('mouseleave', hideProbe);
-  map.on('click', e => { if (coarsePointer) probe(e.lngLat, e.point); });
+  map.on('click', e => { if (coarsePointer && state.ui !== 'peek') probe(e.lngLat, e.point); });
   map.on('movestart', () => { if (coarsePointer) hideProbe(); });
   function hideProbe() { $('probe').hidden = true; probeSeq++; }
   function waveAt(lon, lat) {
@@ -586,13 +643,9 @@
     go(b.dataset.view);
     if (EMBED && parent !== window && (b.dataset.view === 'choc' || b.dataset.view === 'race')) parent.postMessage({ type: 'lcc-map-spot', spot: b.dataset.view }, location.origin);
   }));
-  function setPanel(open, focus) {
-    $('panel').hidden = !open; $('layersBtn').setAttribute('aria-expanded', String(open));
-    if (open && focus) $('panelClose').focus({ preventScroll: true });
-  }
   $('layersBtn').addEventListener('click', () => setPanel($('panel').hidden, true));
   $('panelClose').addEventListener('click', () => { setPanel(false); $('layersBtn').focus(); });
-  addEventListener('keydown', e => { if (e.key === 'Escape') { if (!$('explorer').hidden) $('explorerClose').click(); else if (!$('panel').hidden) setPanel(false); } });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && !$('panel').hidden) { setPanel(false); $('layersBtn').focus(); } });
   document.querySelectorAll('input[name="base"]').forEach(r => {
     r.checked = r.value === state.base;
     r.addEventListener('change', () => { if (r.checked) { state.base = r.value; applyBase(); savePrefs(); } });
@@ -630,17 +683,9 @@
   hud();
   document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === state.view)));
   $('threeD').setAttribute('aria-checked', String(state.threeD));
-  if (!COMPACT && innerWidth > 1100) setPanel(true);
-  wireExplorer();
-
-  function wireExplorer() {
-    $('explorerBtn').addEventListener('click', () => {
-      const f = $('explorerFrame');
-      if (!f.getAttribute('src')) f.src = '../research/index.html?view=map&theme=' + (document.documentElement.dataset.theme || 'light') + (state.pastDate ? '&date=' + state.pastDate : '');
-      $('explorer').hidden = false; $('explorerClose').focus();
-    });
-    $('explorerClose').addEventListener('click', () => { $('explorer').hidden = true; $('explorerBtn').focus(); });
-  }
+  if (!COMPACT && innerWidth > 1100 && state.tab === 'monitor') setPanel(true);
+  // Back on Monitor the map may have been resized while hidden; restart the streaks.
+  onTab = t => { if (t === 'monitor' && mapReady) { map.resize(); swellBounds(true); } swellRun(); };
 
   // ════════════════════════════════════════════════════════════════════
   // Parent page and tests
@@ -653,22 +698,23 @@
     if ((d.spot === 'choc' || d.spot === 'race') && d.spot !== state.view) go(d.spot);
     const t = Date.parse(d.time || (d.forecast && d.forecast.time) || '');
     if (Number.isFinite(t)) { state.wantTime = t; if (state.fc) { const i = nearestStep(t); if (i !== state.step) setStep(i); } }
+    if (d.ui === 'peek' || d.ui === 'full') { if (d.ui !== state.ui) setUI(d.ui); }
     if (typeof d.active === 'boolean' && d.active !== state.active) { state.active = d.active; if (d.active && mapReady) map.resize(); swellRun(); }
     if (/^\d{4}-\d{2}-\d{2}$/.test(d.date || '')) {
       state.pastDate = d.date;
-      const f = $('explorerFrame');
+      const f = $('modelFrame');
       if (f.getAttribute('src') && f.contentWindow) f.contentWindow.postMessage({ type: 'lcc-map-date', date: d.date }, location.origin);
-      $('explorerBtn').click();
+      if (!COMPACT) setTab('model');
     }
   }
   addEventListener('message', e => { if (e.origin === location.origin && e.source === parent && parent !== window) receive(e.data); });
 
   window.ChocMap = {
-    map, receive, setTheme, go, set3D, setStep,
+    map, receive, setTheme, go, set3D, setStep, setTab, setUI,
     setSpot: s => go(s),
     getState: () => ({
       ready: mapReady, threeD: state.threeD, terrain: !!(mapReady && map.getTerrain()), pitch: map.getPitch(), zoom: map.getZoom(),
-      view: state.view, base: state.base, layers: Object.assign({}, state.layers), ex: state.ex, model: state.model,
+      tab: state.tab, ui: state.ui, view: state.view, base: state.base, layers: Object.assign({}, state.layers), ex: state.ex, model: state.model,
       step: state.step, time: state.fc && state.fc.rows[state.step] ? new Date(state.fc.rows[state.step].t).toISOString() : null,
       steps: state.fc ? state.fc.rows.length : 0, tilesServed, tileErrors, wavesReady, theme: state.theme, active: state.active,
       swellTrains: SW.trains.length, particles: SW.parts.length, swellCanvas: [SW.W, SW.H]

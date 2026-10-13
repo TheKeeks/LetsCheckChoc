@@ -5,6 +5,8 @@
   var query = new URLSearchParams(location.search);
   var view = query.get('view');
   root.dataset.researchView = view === 'methods' || view === 'map' ? view : 'full';
+  // The Map page's Model tab: only the map, filling its frame.
+  if (view === 'map' && query.get('fill') === '1') root.dataset.researchFill = '1';
 
   function normalizeTheme(value) {
     if (value === 'dark' || value === 'night') return 'dark';

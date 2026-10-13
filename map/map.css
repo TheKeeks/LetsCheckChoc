@@ -32,6 +32,26 @@ button, input { font: inherit; color: inherit; }
 button { cursor: pointer; }
 #map { position: absolute; inset: 0; }
 
+/* ── Monitor | Model: two views of the water, one tab strip */
+:root { --tabs-h: 50px; }
+.tabs { position: absolute; z-index: 6; top: 0; left: 0; right: 0; height: calc(var(--tabs-h) + env(safe-area-inset-top)); padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left));
+  display: flex; justify-content: center; align-items: stretch; gap: 4px; background: var(--bg); border-bottom: 1px solid var(--hair); }
+.tabs button { border: 0; background: transparent; padding: 4px 18px 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 1px; min-width: 0;
+  color: var(--muted); border-bottom: 2.5px solid transparent; }
+.tabs b { font-size: 15px; font-weight: 600; }
+.tabs small { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tabs button:hover { color: var(--ink); }
+.pane { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; top: calc(var(--tabs-h) + env(safe-area-inset-top)); overflow: hidden; }
+/* The hidden pane keeps its size (the map must not resize to zero) and sits under the other. */
+.pane.off { visibility: hidden; pointer-events: none; z-index: 1; }
+.pane.off * { visibility: hidden !important; }
+#model { background: var(--bg); }
+#model iframe { display: block; width: 100%; height: 100%; border: 0; }
+.compact .tabs { display: none; }
+.compact { --tabs-h: 0px; }
+@media (max-width: 520px) { .tabs small { display: none; } .tabs button { flex: 1; } }
+
 /* ── shared pieces */
 .bar, .panel, .hud, .timebar, .legend, .probe, .status { position: absolute; z-index: 3; }
 .card, .bar > *, .hud, .timebar, .legend, .panel, .probe {
@@ -47,7 +67,7 @@ button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ── top bar */
-.bar { top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); right: 64px; display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; pointer-events: none; }
+.bar { top: 12px; left: max(12px, env(safe-area-inset-left)); right: 64px; display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; pointer-events: none; }
 .bar > * { pointer-events: auto; }
 .seg { display: inline-flex; padding: 3px; gap: 2px; }
 .seg button { min-height: 36px; padding: 0 11px; font-weight: 600; color: var(--muted); }
@@ -62,9 +82,9 @@ button { cursor: pointer; }
 .chip.small { min-height: 32px; padding: 0 10px; font-size: 13px; border: 1px solid var(--hair); }
 
 /* ── layers panel */
-.panel { top: calc(max(12px, env(safe-area-inset-top)) + 54px); left: max(12px, env(safe-area-inset-left)); width: 320px; max-height: calc(100% - 200px); overflow: auto; padding: 4px 16px 14px; overscroll-behavior: contain; }
+.panel { top: 66px; left: max(12px, env(safe-area-inset-left)); width: 320px; max-height: calc(100% - 200px); overflow: auto; padding: 4px 16px 14px; overscroll-behavior: contain; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; }
-.panel h2, .explorer h2 { font-size: 16px; margin: 8px 0; }
+.panel h2 { font-size: 16px; margin: 8px 0; }
 fieldset { border: 0; border-top: 1px solid var(--hair); margin: 0; padding: 10px 0 8px; }
 legend { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; padding: 0; }
 fieldset label { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; min-height: 32px; }
@@ -107,7 +127,7 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 
 .probe { padding: 7px 10px; font-size: 12.5px; pointer-events: none; max-width: 260px; z-index: 4; }
 .probe b { font-size: 13.5px; }
-.status { left: 50%; top: calc(max(12px, env(safe-area-inset-top)) + 58px); transform: translateX(-50%); margin: 0; padding: 6px 12px; border-radius: 16px; background: var(--card); border: 1px solid var(--hair); box-shadow: var(--shadow); font-size: 13px; color: var(--muted); pointer-events: none; }
+.status { left: 50%; top: 70px; transform: translateX(-50%); margin: 0; padding: 6px 12px; border-radius: 16px; background: var(--card); border: 1px solid var(--hair); box-shadow: var(--shadow); font-size: 13px; color: var(--muted); pointer-events: none; }
 .status:empty { display: none; }
 
 /* spot markers */
@@ -117,18 +137,12 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .spot.r i { background: #d8d17a; }
 .spot span { font: 600 12.5px var(--sans); color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.9), 0 0 2px rgba(0,0,0,.9); white-space: nowrap; }
 
-/* explorer overlay (the Sound Check map: ocean-wide swell and any day since 2016) */
-.explorer { position: absolute; inset: 0; z-index: 10; background: var(--bg); display: flex; flex-direction: column; }
-.explorer[hidden] { display: none; }
-.explorer-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 12px; border-bottom: 1px solid var(--hair); }
-.explorer iframe { flex: 1; border: 0; width: 100%; }
-
 /* MapLibre chrome in our theme */
 .maplibregl-ctrl-group { background: var(--card) !important; border-radius: 12px !important; box-shadow: var(--shadow) !important; border: 1px solid var(--hair); }
 .maplibregl-ctrl-group button { width: 40px !important; height: 40px !important; }
 .maplibregl-ctrl-group button + button { border-top: 1px solid var(--hair) !important; }
 :root[data-theme="dark"] .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(1); }
-.maplibregl-ctrl-top-right { top: max(0px, env(safe-area-inset-top)); }
+.compact .bar { top: max(12px, env(safe-area-inset-top)); }
 .maplibregl-ctrl-bottom-left { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 52px); }
 .maplibregl-ctrl-scale { background: var(--card); color: var(--ink); border-color: var(--muted); }
 .maplibregl-ctrl-attrib { font-size: 10.5px; }
@@ -152,3 +166,12 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .compact .maplibregl-ctrl-bottom-left { bottom: 6px; }
 .compact .legend { width: 170px; }
 @media (max-width: 520px) { .compact .legend { display: none; } .compact .hud { max-width: calc(100% - 24px); } }
+
+/* Forecast's map window: collapsed it is only a picture (no controls); open, the view buttons, 3D and zoom. */
+.compact #layersBtn, .compact .legend, .compact .maplibregl-ctrl-bottom-left { display: none !important; }
+.peek .bar, .peek .maplibregl-ctrl-top-right, .peek .probe, .peek .status { display: none !important; }
+.peek .hud { top: 8px; left: 8px; bottom: auto; padding: 4px 10px; border-radius: 999px; max-width: calc(100% - 16px); }
+.peek .hud-main { flex-wrap: nowrap; gap: 8px; white-space: nowrap; }
+.peek .hud-main strong, .peek #hudSpot { font-size: 12.5px; }
+.peek .hud-sub, .peek .maplibregl-ctrl-attrib { display: none; }
+.peek .model-tag { display: none; }

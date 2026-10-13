@@ -25,7 +25,7 @@ after signing in, **Model** joins the navigation and your surf journal opens.
 Settings (top right) controls Light, Dark, Follow system, or Sunset to sunrise
 across Forecast, Map, Methods, Log, and Model. Choc TV still follows the sun.
 
-**Map** is Fishers Island's sea floor from the Fishers Island viewer's own
+**Map** has two tabs. **Monitor** is Fishers Island's sea floor from the Fishers Island viewer's own
 elevation: NOAA's 2023 topobathy lidar and multibeam surveys at 0.8 m near the
 island and 4 m around it, then the Sound Check 16 m and 144 m grids across Block
 Island Sound. **3D bathymetry** raises it (depth stretch 1–10×, land always
@@ -46,11 +46,15 @@ All three are draped on the terrain, so in 3D they ride over the bottom.
 Base layers: sea floor with aerial land (Esri), sea floor with elevation
 colors, aerial photo everywhere, or the NOAA nautical chart; optional 5 m
 contours. Hover (or tap on a phone) for depth, its survey and the modeled wave
-height. **Ocean-wide swell & past days** opens the Sound Check's own map.
+height. **Model** is the Sound Check's own map: GFS-Wave and ECMWF across the
+Atlantic, any day since 2016, and Drop a wave.
 
-On Forecast, **Forecast + 3D map** puts that map beside the forecast (above it
-on a phone); it follows the hour on the forecast chart and is remembered. The
-map's heights are the Sound Check model's, which can differ from the headline
+On Forecast, the map sits in a short window right above **This week**.
+Collapsed it is only a picture of the water at the forecast hour, and the page
+scrolls over it. Tap it (or **Open the map**) and it grows into a live map with
+the view buttons, 3D on/off and zoom; **Close the map** folds it back. It
+follows the hour on the forecast chart and pauses when off screen. The map's
+heights are the Sound Check model's, which can differ from the headline
 forecast. There is no surf or current forecast for the Race.
 
 **Methods** is the research page, now in the shared light/dark design. Its

@@ -59,8 +59,7 @@
   var chart = null, chartKey = '', lastW = 0;
   var slide = null, scrollAnim = null, drag = null, pendingChart = false;
   var pushTimer = null, lastHapticHour = null;
-  var split = false, terrainFrame = null, terrainSpot = 'choc';
-  var SPLIT_KEY = 'lcc-forecast-split';
+  var mapOpen = false, mapSeen = false, terrainFrame = null, terrainSpot = 'choc';
 
   function err(where, e) { C.err('forecast.' + where, e); }
   function run(where, fn) { try { fn(); } catch (e) { err(where, e); } }
@@ -86,14 +85,20 @@
   function mount(el) {
     root = el;
     el.innerHTML =
-      '<div class="cl-f-mode" role="group" aria-label="Forecast view">' +
-        '<button type="button" data-fmode="list" aria-pressed="true">Forecast</button>' +
-        '<button type="button" data-fmode="split" aria-pressed="false">Forecast + 3D map</button>' +
-      '</div>' +
-      '<div class="cl-f-split">' +
       '<div class="cl-f">' +
         '<p class="cl-lead cl-f-lead" hidden></p>' +
         '<div class="cl-f-now"></div>' +
+        '<section class="cl-f-map" aria-label="Sea floor, wave height and swell at the forecast hour">' +
+          '<div class="cl-f-map-win">' +
+            '<iframe title="3D sea floor with wave height and swell motion for the forecast hour" tabindex="-1" allow="fullscreen"></iframe>' +
+            '<button type="button" class="cl-f-map-peek" aria-expanded="false"><span>Open the map</span></button>' +
+          '</div>' +
+          '<div class="cl-f-map-bar">' +
+            '<button type="button" class="cl-f-map-tg" aria-expanded="false">' + I.chevronDown(16) + '<span>Open the map</span></button>' +
+            '<span class="cl-f-map-src">Sound Check model · imagery Esri, NOAA</span>' +
+            '<a href="#map">Full map</a>' +
+          '</div>' +
+        '</section>' +
         '<h2 class="cl-h2">This week</h2>' +
         '<div class="cl-f-wk"></div>' +
         '<div class="cl-gap"></div>' +
@@ -117,12 +122,6 @@
         '<h2 class="cl-h2">Details</h2>' +
         '<div class="cl-f-ch cl-f-det"></div>' +
         '<div class="cl-gap"></div>' +
-      '</div>' +
-      '<aside class="cl-f-map" aria-label="3D sea floor with the forecast on the water" hidden>' +
-        '<div class="cl-f-map-bar"><span>Sea floor, wave height and swell at the forecast hour</span><a href="#map">Full map</a></div>' +
-        '<iframe title="3D sea floor with wave height and swell motion for the forecast hour" allow="fullscreen"></iframe>' +
-        '<p class="cl-f-map-note"></p>' +
-      '</aside>' +
       '</div>';
     E.lead = el.querySelector('.cl-f-lead');
     E.now = el.querySelector('.cl-f-now');
@@ -137,9 +136,8 @@
     E.det = el.querySelector('.cl-f-det');
     E.map = el.querySelector('.cl-f-map');
     terrainFrame = E.map.querySelector('iframe');
-    el.querySelectorAll('[data-fmode]').forEach(function (b) {
-      b.addEventListener('click', C.guard('forecast.mode', function () { setSplit(b.getAttribute('data-fmode') === 'split', true); }));
-    });
+    E.map.querySelector('.cl-f-map-peek').addEventListener('click', C.guard('forecast.map', function () { setMapOpen(true); }));
+    E.map.querySelector('.cl-f-map-tg').addEventListener('click', C.guard('forecast.map', function () { setMapOpen(!mapOpen); }));
 
     E.wk.addEventListener('click', C.guard('forecast.week.click', onWeekClick));
     E.ctl.addEventListener('click', C.guard('forecast.jump', onJump));
@@ -168,46 +166,55 @@
       if (event.data.type === 'lcc-map-ready') syncTerrain();
       if (event.data.type === 'lcc-map-spot') { terrainSpot = event.data.spot === 'race' ? 'race' : 'choc'; syncTerrain(); }
     });
-    var want = false;
-    try { want = localStorage.getItem(SPLIT_KEY) === '1'; } catch (_) { /* private mode */ }
-    if (want) setSplit(true, false);
+    // The map loads once its window comes near the screen, and runs only while on it.
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (es) {
+        mapSeen = es.some(function (e) { return e.isIntersecting; });
+        if (mapSeen && !terrainFrame.getAttribute('src')) loadMap();
+        syncTerrain();
+      }, { rootMargin: '200px 0px' }).observe(E.map);
+    } else { mapSeen = true; loadMap(); }
   }
 
-  // Forecast + 3D map: the forecast keeps its column and the map (map/index.html,
-  // compact) sits beside it on wide screens, above it on phones. One forecast, one
-  // cursor: the map follows the hour the chart is on.
-  function setSplit(on, save) {
-    split = !!on;
-    root.querySelectorAll('[data-fmode]').forEach(function (b) {
-      b.setAttribute('aria-pressed', String((b.getAttribute('data-fmode') === 'split') === split));
-    });
-    E.map.hidden = !split;
-    if (split) document.documentElement.setAttribute('data-forecast-split', '');
-    else document.documentElement.removeAttribute('data-forecast-split');
-    if (split && !terrainFrame.getAttribute('src')) {
-      terrainFrame.src = 'map/index.html?embed=1&compact=1&spot=' + terrainSpot + '&theme=' + (C.theme() === 'night' ? 'dark' : 'light') + timeParam();
+  // The map window above This week: collapsed it is a picture of the water at the
+  // forecast hour (the page scrolls over it); opened it takes taps, with the view
+  // buttons, 3D and zoom. One forecast, one cursor: the map follows the chart's hour.
+  function loadMap() {
+    terrainFrame.src = 'map/index.html?embed=1&compact=1&ui=' + (mapOpen ? 'full' : 'peek') + '&spot=' + terrainSpot +
+      '&theme=' + (C.theme() === 'night' ? 'dark' : 'light') + timeParam();
+  }
+  function setMapOpen(open) {
+    mapOpen = !!open;
+    E.map.classList.toggle('open', mapOpen);
+    var tg = E.map.querySelector('.cl-f-map-tg');
+    tg.setAttribute('aria-expanded', String(mapOpen));
+    tg.querySelector('span').textContent = mapOpen ? 'Close the map' : 'Open the map';
+    E.map.querySelector('.cl-f-map-peek').setAttribute('aria-expanded', String(mapOpen));
+    terrainFrame.tabIndex = mapOpen ? 0 : -1;
+    if (!terrainFrame.getAttribute('src')) loadMap();
+    syncTerrain();
+    if (mapOpen) {
+      // Bring the whole window on screen once it has grown.
+      setTimeout(function () {
+        var r = E.map.getBoundingClientRect();
+        if (r.bottom > innerHeight - 70 || r.top < 0) {
+          try { E.map.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); } catch (_) { E.map.scrollIntoView(); }
+        }
+      }, 260);
     }
-    if (save) { try { localStorage.setItem(SPLIT_KEY, split ? '1' : '0'); } catch (_) { /* private mode */ } }
-    requestAnimationFrame(function () {
-      if (measure()) { chartKey = ''; run('chart', renderChart); if (E.lu) E.lu.__key = null; run('lineup', renderLineup); }
-      syncTerrain();
-    });
   }
   function hourAt() { var hr = D.hour(C.cursor.get()) || D.now(); return hr && hr.at ? new Date(hr.at) : null; }
   function timeParam() { var t = hourAt(); return t ? '&time=' + encodeURIComponent(t.toISOString()) : ''; }
 
   function syncTerrain() {
-    if (!split || !terrainFrame || !terrainFrame.contentWindow || !terrainFrame.getAttribute('src')) return;
+    if (!terrainFrame || !terrainFrame.contentWindow || !terrainFrame.getAttribute('src')) return;
     var t = hourAt();
     terrainFrame.contentWindow.postMessage({
       type: 'lcc-map', spot: terrainSpot, theme: C.theme() === 'night' ? 'dark' : 'light',
-      active: C.tab() === 'forecast' && C.sub.depth() === 0,
+      active: mapSeen && C.tab() === 'forecast' && C.sub.depth() === 0,
+      ui: mapOpen ? 'full' : 'peek',
       time: t ? t.toISOString() : null
     }, location.origin);
-    var note = E.map.querySelector('.cl-f-map-note');
-    if (note) note.textContent = terrainSpot === 'race'
-      ? 'The Race: wave height and swell come from the Sound Check model for the forecast hour. There is no surf or tidal-current forecast for the Race.'
-      : 'Drag the forecast chart and the map moves to that hour (Sound Check model, GFS-Wave by default; 3-hour steps).';
   }
 
   // Column width of the chart (the view may be hidden: keep the last one).

@@ -66,11 +66,36 @@ module.exports = {
     assert.equal((await S()).active, false);
     await ctx.screenshot('choc-dark');
 
-    // Compact embed: no time bar (the forecast drives the hour).
-    await ctx.open('/map/index.html?embed=1&compact=1&spot=race&theme=light');
+    // Monitor | Model: Model loads the Sound Check map (map only) the first time it is opened.
+    ctx.serve('/research/index.html', '<!doctype html><html><body><p>Sound Check map</p></body></html>');
+    await page.evaluate(() => ChocMap.receive({ type: 'lcc-map', active: true }));
+    assert.equal(await page.getAttribute('#modelFrame', 'src'), null, 'Model not loaded until opened');
+    await page.click('#tab-model');
+    assert.equal((await S()).tab, 'model');
+    assert.match(await page.getAttribute('#modelFrame', 'src'), /research\/index\.html\?view=map&fill=1/);
+    assert.equal(await page.getAttribute('#tab-model', 'aria-selected'), 'true');
+    assert.ok(await page.evaluate(() => getComputedStyle(document.getElementById('monitor')).visibility === 'hidden'));
+    await page.keyboard.press('ArrowLeft');
+    assert.equal((await S()).tab, 'monitor');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'tab-monitor');
+    // A past day from the app opens Model.
+    await page.evaluate(() => ChocMap.receive({ type: 'lcc-map', date: '2021-09-10' }));
+    assert.equal((await S()).tab, 'model');
+
+    // Compact embed (Forecast's window): no tabs, no time bar; peek takes no gestures, full does.
+    await ctx.open('/map/index.html?embed=1&compact=1&ui=peek&spot=race&theme=light');
     await ctx.waitFor(() => window.ChocMap && ChocMap.getState().ready, { timeout: 45000 });
-    assert.equal((await S()).view, 'race');
+    s = await S();
+    assert.equal(s.view, 'race'); assert.equal(s.ui, 'peek'); assert.equal(s.tab, 'monitor');
+    assert.equal(await page.isVisible('.tabs'), false);
     assert.equal(await page.isVisible('#timebar'), false);
+    assert.equal(await page.isVisible('.bar'), false, 'no controls in the collapsed window');
+    assert.equal(await page.evaluate(() => ChocMap.map.dragPan.isEnabled()), false);
+    await page.evaluate(() => ChocMap.receive({ type: 'lcc-map', ui: 'full' }));
+    assert.equal(await page.evaluate(() => ChocMap.map.dragPan.isEnabled()), true);
+    assert.equal(await page.isVisible('[data-view="choc"]'), true, 'view buttons when open');
+    assert.equal(await page.isVisible('.maplibregl-ctrl-zoom-in'), true, 'zoom when open');
+    assert.equal(await page.isVisible('#layersBtn'), false);
     await ctx.screenshot('compact-race');
   }
 };

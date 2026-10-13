@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — Map: Monitor and Model tabs; Forecast's map in a window above This week
+
+The Sound Check's ocean-wide and past-days map was a button inside the Layers panel that opened an overlay. The Map page now has two tabs: Monitor (the 3D sea floor with the forecast on the water) and Model (the Sound Check's map, map only and full size, loaded the first time it is opened). Arrow keys move between them, a past day sent from the app opens Model, and the tab is remembered for the session.
+
+On Forecast, the side-by-side "Forecast + 3D map" mode is replaced by a map window right above This week. Collapsed it is a short picture of the water at the forecast hour with no controls and no gestures, so the page scrolls over it; opened it grows and takes taps, with the view buttons, 3D on/off and zoom. It follows the chart's hour and pauses off screen or on another tab.
+
+MapLibre's image queue could throw when a tile was cancelled mid-request (a fast fly-to or a sea-floor reload); the vendored copy skips such a request as cancelled (`vendor/maplibre/PATCHES.md`).
+
+Verified with the e2e scenarios `map-terrain.js` (tabs, keyboard, Model loaded on demand, past day opens Model, peek with no gestures and full with view buttons and zoom) and `forecast-terrain.js` (window above This week, collapsed untouchable, open live, hour, theme, pause off screen and off tab, phone fit).
+
 ## [Unreleased] — Map rebuilt on the Fishers Island viewer's sea floor; Forecast + 3D map
 
 The Map page's 3D view had lost the Fishers Island viewer's resolution: it drew a 16 m grid as one mesh rebuilt on every pan and zoom, which flickered, and its controls were hand-rolled. The Forecast page's side-by-side view was a small link to a separate sheet, and the swell overlays were static arrows.
