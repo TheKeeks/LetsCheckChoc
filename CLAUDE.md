@@ -27,7 +27,7 @@ node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 ```
 
 - Unit and Python tests need **no npm install** (`scripts/test_fcpull.py` also
-  needs numpy, Pillow and eccodes, `scripts/test_raycore.py` numpy, else they skip). `test:rules` needs
+  needs numpy, Pillow and eccodes, `scripts/test_raycore.py` numpy, `scripts/test_history.py` numpy and scipy, else they skip). `test:rules` needs
   `npm i --no-save firebase-tools@15.32.1 @firebase/rules-unit-testing@5.0.2 firebase@12.19.0`
   first (CI: `.github/workflows/rules.yml`).
 - e2e needs Playwright 1.56.x. A web session has it globally, with Chromium in
@@ -50,6 +50,7 @@ node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 | `style.css`, `styles-web1.css`, `styles-web1-extensions.css`, `styles-retro.css`, `styles-kiosk.css` | All five load on every page, in that order |
 | `firestore.rules`, `storage.rules`, `firestore.indexes.json` | Repo copies only (see Invariants) |
 | `data/buoy.json`, `data/verification.json` | Written by the pipeline bot. Never edit them |
+| `scripts/history/` | Sound Check history bot (`.github/workflows/update-history.yml`, daily): CDIP 44097 spectra, NDBC readings, ERA5/ECMWF wind, CO-OPS tides → `data/history/*.json`, `research/hist.js` (via `scripts/sound-check/page/build_hist.py`) and the `44097` lane of `research/ocean/day/<year>.json`; rebuilds since 2016 each run; how-to in `scripts/history/README.md`, tests `scripts/test_history.py` |
 | `data/buoys-east-coast.json`, `data/tide-stations.json` | Static catalogs read by `initApp` |
 | `scripts/fetch_buoy.py` | Pipeline: NDBC 44097 → `data/buoy.json`, plus model-vs-buoy rows |
 | `scripts/canary.py` | Upstream canary (`.github/workflows/canary.yml`, every 6 h): opens/closes one `data-canary` issue |
@@ -59,7 +60,7 @@ node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 | `test-gate.js` | Legacy tests, still run by `npm test` |
 | `tests/` | `tests/helpers/` (vm loader, DOM stub, fixture map), `tests/unit/`, `tests/e2e/`, `tests/fixtures/` |
 | `project/` | React prototype. `project/assets/lineup.jpg` is used by the live page |
-| `research/` | Sound Check tab (was "Swell Map"): a self-contained research page (`research/index.html` plus its tiles, ray tables and the forecast copy that ships with it, `research/fc/`; the page shows the newer of that and the `fc-data` branch), framed by `#view-research` and loaded on first open. Generated: edit its parts in `scripts/sound-check/page/` and rebuild (`scripts/sound-check/README.md`) |
+| `research/` | Sound Check tab (was "Swell Map"): a self-contained research page (`research/index.html` plus its tiles, ray tables and the forecast copy that ships with it, `research/fc/`; the page shows the newer of that and the `fc-data` branch), framed by `#view-research` and loaded on first open. Generated: edit its parts in `scripts/sound-check/page/` and rebuild (`scripts/sound-check/README.md`); its history, `research/hist.js`, is the history bot's |
 | `previews/` | Looks layered over the live app by the inline loaders in `index.html`. `previews/clean/` is the DEFAULT look (no parameter); `?classic=1` opens the old look with no look files, `?preview=<name>` picks a candidate look instead (e2e `tests/e2e/scenarios/preview-looks.js`, `tests/e2e/scenarios/look-default.js`). The e2e runner's `ctx.open()` adds `classic=1` to any path that names no look, so the older scenarios test the app underneath. Delete a folder (and its name in the loader) when a look is retired. `previews/clean/` is the approved "A refined" design: `previews/clean/core.js` (shell, data, Settings) plus one js/css pair per screen (forecast, map, methods, log, model = My ratings, tv), API in `previews/clean/CONTRACT.md`, e2e `tests/e2e/scenarios/preview-clean.js` plus `preview-clean-{core,forecast,forecast-fallback,forecast-storms,log,tv}.js`. Forecast is the Sound Check model (`research/fc/`, rays `research/fr/land.json` from `scripts/rays/land_rays.py`; its map's Storms view reads `field_gfs_ocean.png`, `field_gfs_mslp.png` and `research/ocean/`) |
 | `map/` | Map page: one map. It opens on the Sound Check map (`research/index.html?view=map&fill=1`); its "3D" button (added by `research/methods-theme.js`, message `lcc-open-3d`) opens the sea floor in 3D, "← Map" goes back; `?show=3d` starts in 3D. MapLibre GL 5.24.0 vendored in `vendor/maplibre/` with one local patch (`vendor/maplibre/PATCHES.md`), loaded with `map/map.js` (the 3D map) the first time 3D is opened. `map/page.js` (page, `window.ChocMap` test API, postMessage `lcc-map` from the parent), `map/bathy-worker.js` (draws sea-floor color and terrain tiles for the `lccbathy://` protocol from the separate repo `TheKeeks/LetsCheckChoc-data`, which GitHub Pages serves at `/LetsCheckChoc-data/` next to the site (e2e and CI read a checkout in `map-data/`, git-ignored; `E2E_MAP_DATA` points elsewhere): the Fishers Island viewer's 4 m overview and 0.8 m detail chunks, int16 cm row deltas, gzip; plus `research/ocean/fine16` and `research/depth144`), `map/height-worker.js` (the Sound Check K model, ported from `research/index.html`), `map/swell-worker.js` (wave-ray tracing for swell motion), `map/geometry.js` (pure maths, unit `tests/unit/map-geometry.test.js`). e2e `tests/e2e/scenarios/map-one-map.js` and `tests/e2e/scenarios/map-terrain.js`. `research/ocean/fine16.png` stores DEPTH (positive down), not height |
 | `bracelet/` | Fishers Bracelet, a side project not linked from the forecast: a 3D designer for a one-wire gold bracelet that traces the island, closes it at the East End in one end-on joint and ends in a ball clasp on North Hill. `bracelet/index.html` (page), `bracelet/geometry.js` (pure route and shape maths), `bracelet/plans.js` (the jeweller's 1:1 flat drawing, Spanish how-to, SVG and PDF), `bracelet/jeweler.html` (plans page), `bracelet/plans/` (PDF + SVG of the standard design, regenerate with `scripts/bracelet_plans.js`), `bracelet/fishers-outline.js` (OSM coastline), three.js r128 and jsPDF 2.5.1 vendored in `bracelet/vendor/`. Unit `tests/unit/bracelet-geometry.test.js`, `tests/unit/bracelet-plans.test.js`; e2e `tests/e2e/scenarios/bracelet-designer.js` (open `/bracelet/index.html`: the runner's server has no folder index) |
@@ -111,12 +112,11 @@ each one. Line numbers drift with every edit, so do not cite them in docs.
   buoys show "no live data". A failed fetch falls back to the last good saved
   copy (forecast up to 24 h old, tides up to 4 days). `STATE.dataAsOf` and
   `STATE.dataHealth` record the real age of the data, and kiosk.js reads them.
-- **Pipeline:** `.github/workflows/update-buoy.yml` runs every 2 h (GitHub drops
-  many runs). `scripts/fetch_buoy.py` writes `data/buoy.json` and appends to
-  `data/verification.json`, and the bot commits both straight to `main`. If
-  every NDBC file fails it exits 1 and writes nothing; a partial failure keeps
-  the previous sections and lists them in `stale_sections`. Verification rows
-  are hourly and back-fill the hours of dropped runs.
+- **Pipeline:** `.github/workflows/update-buoy.yml` runs every 2 h (GitHub drops many runs). `scripts/fetch_buoy.py`
+  writes `data/buoy.json` and appends to `data/verification.json`, and the bot commits both straight to `main`. If
+  every NDBC file fails it exits 1 and writes nothing; a partial failure keeps the previous sections and lists them
+  in `stale_sections`. Verification rows are hourly and back-fill the hours of dropped runs.
+- **Sound Check history:** `.github/workflows/update-history.yml` runs `scripts/history/update.py` daily: it rebuilds the history since 2016 through yesterday and commits what changed to `main`; it refuses to write a history shorter than the committed one.
 - **Sound Check forecast:** `.github/workflows/update-forecast.yml` runs the pull every 3 h and force-pushes it to the `fc-data` branch (latest pull only); `research/` and the Forecast tab's headline show the newer of it and `research/fc/` (e2e: `net.fcLive`).
 - **Firebase:** anonymous auth by default, Google sign-in optional. Surf logs
   live in Firestore `surf_logs`, photos in Storage `surf-photos/raw/<uid>/…`.
@@ -140,8 +140,8 @@ each one. Line numbers drift with every edit, so do not cite them in docs.
   `metric`) is documented at the top of `tests/e2e/run.js`. Uncaught page
   errors fail the scenario.
 - **Fixtures (`tests/fixtures/`).** Live recordings, with provenance in its
-  README. Tests serve `data/buoy.json` from `tests/fixtures/pipeline/`, never
-  the bot-updated file.
+  README. Tests serve `data/buoy.json` from `tests/fixtures/pipeline/` and `research/hist.js` from
+  `tests/fixtures/soundcheck/`, never the bot-updated files.
 - **Python (`scripts/test_*.py`).** `load_fetch_buoy()` in `scripts/test_fetch_buoy.py`
   imports the pipeline with the network blocked and outputs in a temp dir.
 - Every fix gets a test that fails before the change and passes after it.
@@ -153,7 +153,7 @@ each one. Line numbers drift with every edit, so do not cite them in docs.
   read it before touching forecast or model logic.
 - Times are **America/New_York**. Fixtures, tests and the crew are all on
   Eastern time. Never assume the viewer's timezone is UTC.
-- `data/*.json` belongs to the bot. Never hand-edit or commit changes to it.
+- `data/*.json`, `data/history/`, `research/hist.js` and the `44097` lanes of `research/ocean/day/` belong to the bots. Never hand-edit or commit changes to them; change how they're made in `scripts/history/` instead.
 - Classic scripts only: no ES modules, no bundler, no npm runtime deps.
   Functions and top-level `const`/`let` are shared globals across
   `firebase-config.js` → `app.js` → `kiosk.js`. kiosk.js reassigns some app.js

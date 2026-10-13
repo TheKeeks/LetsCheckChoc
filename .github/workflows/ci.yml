@@ -1,14 +1,17 @@
 name: CI
 
 # Runs the same commands a Claude Code web session runs (see CLAUDE.md).
-# Bot buoy-data commits only touch data/** and are skipped, and so is the
-# forecast bot's fc-data branch (forecast files only, no code to test).
+# Bot commits only touch data files and are skipped: the buoy bot's data/**,
+# the history bot's data/history/**, research/hist.js and research/ocean/day/**;
+# so is the forecast bot's fc-data branch (forecast files only, no code to test).
 on:
   push:
     branches-ignore:
       - 'fc-data'
     paths-ignore:
       - 'data/**'
+      - 'research/hist.js'
+      - 'research/ocean/day/**'
   pull_request:
   workflow_dispatch:
 
@@ -41,8 +44,9 @@ jobs:
         with:
           python-version: '3.12'
       # the Sound Check forecast pull (scripts/forecast/fcpull.py, tested in scripts/test_fcpull.py) reads GRIB with
-      # eccodes; same versions as .github/workflows/update-forecast.yml
-      - run: pip install numpy==2.4.6 pillow==12.3.0 eccodes==2.49.0
+      # eccodes; same versions as .github/workflows/update-forecast.yml. The history update (scripts/history/,
+      # tested in scripts/test_history.py) reads CDIP's NetCDF with scipy, as .github/workflows/update-history.yml
+      - run: pip install numpy==2.4.6 pillow==12.3.0 eccodes==2.49.0 scipy==1.17.1
       - run: npm run test:py
 
   e2e:

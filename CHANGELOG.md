@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased] — The Sound Check history updates itself every day
+
+The Sound Check's history (every day since May 2016: the month tiles, % of days with swell through the window, good-day shares, the storms, the swell trains, how much bent in from outside the window, Wilderness vs Choc) was built once, by hand, in a web session, from data through 5 October 2026. It went stale a day at a time. The scripts lived only in that session's scratch folder, and the history was embedded in `research/index.html`, so a page rebuild could roll it back. The page also carried the date in its text: the date picker stopped at 4 October, and its counts ("20 days", "300 Wilderness days") and its note on gaps ("August 2026") were typed in.
+
+The history moved out of the page first: `research/index.html` carried it (1.5 of its 1.9 MB), and now loads `research/hist.js`, which `scripts/sound-check/page/build_hist.py` writes from `data/history/`. The page is 0.45 MB, and a page rebuild can no longer roll the history back.
+
+A daily job now rebuilds the history. `scripts/history/` holds the scripts that built it, rewritten as functions of their inputs: `spectra.py` (buoy spectra to Choc and Wilderness, the swell trains, the bent-in share), `analyze.py` (daily rows, month counts, climatology, storms, good days), `derive.py` (calendar days, Wilderness, wind grid), `sources.py` (downloads, cached) and `update.py` (the run). `.github/workflows/update-history.yml` runs it every morning at 5:23 AM Eastern and commits what changed to `main`. Each run rebuilds everything from 2016 through yesterday in about 5 minutes. Late or corrected readings anywhere in the ten years land on the next run, and the last week's wind fills in as ERA5 catches up. Sources: CDIP's spectra for buoy 44097 (the archive is cached and fetched again only when CDIP updates it), NDBC's readings (finished years, published months, NDBC's provisional months, then the last 45 days), ERA5 and ECMWF wind through Open-Meteo, CO-OPS tides. Every file ends on the same day, and nothing counts hours after it. A run that would shorten the committed history by more than a week (a download cut short, a source down with nothing cached) writes nothing, and GitHub emails the owner. The ratings model is kept as fitted: the surf log stays in Firestore, which the bot doesn't read.
+
+The page reads its range and counts from the history file: the date picker reaches the last day, "2016 – 2026" and "Check any day, May 2016 – Oct 2026" follow it, the swell-train and Wilderness counts are counted from it, and the ten-year tiles' caption names the months short of data. Run locally through 12 October, the update adds the 7 new days and the 19 days of August 2026 the first build missed: NDBC hadn't published August yet, and its provisional file wasn't read. It also refines late August and September (NDBC's monthly files over the last-45-days feed) and the late-September wind (ERA5's revisions). The Past days panels' Block Island lane (`research/ocean/day/<year>.json`) is rebuilt too. Its Choc heights were still on the ray table from before the 11 October rebuild, and the first run moves them onto the current one; the buoy's own trains are unchanged. The Copernicus model lane and the model's ocean maps are not part of this update yet.
+
+Verified: on the inputs the history was built from, `update.py --offline --end 2026-10-05` gives every file in `data/history/` and `research/hist.js` byte for byte. `scripts/test_history.py` (13 new tests) builds buoy spectra in CDIP's NetCDF layout and runs the real code on them:
+- heights follow the ray table, and swell from the land side never reaches Choc;
+- only each hour's first good record counts;
+- a groundswell under a wind sea splits into two trains;
+- the bent-in share is near 0 from 137° and near 1 from 190°;
+- the recent file continues after the archive;
+- the Eastern-day rule matches America/New_York for every hour from 2016 to 2027;
+- NDBC files are read in the right order, Montauk fills only gaps, and missing values stay missing;
+- floats add up left to right, as the history was built, on any Python;
+- a whole run over a three-day cache stops every file on the last day with enough data, keeps the other lanes, and refuses to replace the long history with a short one.
+The workflow ran on the PR branch before merge. Its first run, under Python 3.12, shifted about 60 days by a tenth: 3.12's `sum()` compensates for rounding, and the history was built adding left to right. The scripts now add left to right explicitly, and the second run matched a local rebuild file for file. The new e2e scenario `w6-swell-map-history-follows.js` checks that with the pinned history the counts the page makes equal the ones in its markup. Then, with one more day served, the picker, years and counts follow; it fails on the old page. CI's Python job installs scipy; CI skips pushes that only touch the history files.
+
 ## [Unreleased] — Storms on the Forecast map; the Map tab is one map; Past days open the ten years
 
 Forecast's map showed only the swell already bending into Choc, so there was no way to see the storms making it, and the forecast bot didn't fetch pressure at all. The Map tab opened on the 3D sea floor with the Sound Check map behind a second tab (Monitor | Model): two maps that both showed this week's forecast. And from a past day on the Sound Check map there was no way to the ten-year month tiles, which sat further down the Methods page.

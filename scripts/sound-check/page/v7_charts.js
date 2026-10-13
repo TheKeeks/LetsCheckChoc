@@ -279,8 +279,41 @@
     setTxt('qa2In', pct(n.in) + '%'); setTxt('qa2S', pct(n.south) + '%');
   }
 
+  // Numbers the text quotes from the history, which the history bot extends every day (data/history/ →
+  // research/hist.js): counted here from the same data, so the text keeps up with it. The markup carries the
+  // values as of the page's build, for a browser without script.
+  function histText() {
+    const set = (k, v) => document.querySelectorAll(`[data-hist="${k}"]`).forEach((n) => { n.textContent = v; });
+    const days = Object.keys(DAYS2).sort(), last = days[days.length - 1];
+    if (last) {
+      set('year', last.slice(0, 4));
+      set('month', new Date(last + 'T12:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
+      const inp = document.getElementById('dcDate'); if (inp) inp.max = last;
+    }
+    // swell trains at Choc's biggest hour each day: days with 2+ trains of 1 ft+ at the buoy; on Choc's 3 ft+
+    // days, the biggest buoy train's share of Choc's energy, and the days another train made the surf
+    let n = 0, multi = 0, notMain = 0; const share = [];
+    for (const k in TRAINS) {
+      const tr = TRAINS[k][1]; if (!tr) continue;
+      n++; if (tr.filter((t) => t[0] >= 1).length >= 2) multi++;
+      const tot = tr.reduce((a, t) => a + t[3] * t[3], 0);
+      if (!tr.length || Math.sqrt(tot) < 3) continue;
+      share.push(tr[0][3] * tr[0][3] / tot);
+      if (tr.reduce((b, t, i) => (t[3] > tr[b][3] ? i : b), 0) !== 0) notMain++;
+    }
+    share.sort((a, b) => a - b);
+    const pc = (v) => Math.round(100 * v) + '%', at = (q) => share[Math.floor(share.length * q)];
+    if (n) set('tr-multi', pc(multi / n));
+    if (share.length) { set('tr-med', at(0.5) >= 0.995 ? 'all' : pc(at(0.5))); set('tr-p10', pc(at(0.1))); set('tr-notmain', notMain); }
+    // Wilderness vs Choc: days 2.5 ft+ (the monthly shares are of whole days, so they give back the counts)
+    const W = WILDSTATS.months, count = (f) => W.reduce((a, m) => a + Math.round(m.days * m[f] / 100), 0), nd = W.reduce((a, m) => a + m.days, 0);
+    set('w-wild', count('wild').toLocaleString('en-US')); set('w-choc', count('choc').toLocaleString('en-US')); set('w-beats', count('wild_beats').toLocaleString('en-US'));
+    set('w-days', WILDSTATS.wild_days_total.toLocaleString('en-US'));
+    if (nd) set('w-year', Math.round(WILDSTATS.wild_days_total / (nd / 365.25)));
+  }
+
   function byDaylight() { takeaways(); months(); events(); goodMonths(); }
   window.CHOC.onChange(byDaylight);
-  byDaylight(); period(); sessChart(); modelAll(); q1Pair(); q2Share();
+  byDaylight(); period(); sessChart(); modelAll(); q1Pair(); q2Share(); histText();
   addEventListener('lcc-theme-change', () => { byDaylight(); period(); sessChart(); modelAll(); q1Pair(); q2Share(); });
 })();

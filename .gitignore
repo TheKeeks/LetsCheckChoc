@@ -5,3 +5,5 @@ map-data/
 __pycache__/
 # Firebase emulator logs (npm run test:rules)
 *-debug.log
+# the history bot's downloads (scripts/history/sources.py), kept between runs by its workflow
+history-cache/
