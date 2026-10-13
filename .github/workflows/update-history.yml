@@ -11,7 +11,7 @@ on:
     - cron: '23 9 * * *'  # every day at 09:23 UTC (5:23 AM EDT, 4:23 AM EST): yesterday is complete by then
   workflow_dispatch:      # Manual trigger
   push:                   # first update as soon as this lands, and after any change to the update
-    branches: [main, claude/choc-swell-animation-rpxw0v]   # TEMPORARY: one test run on the PR branch, removed before merge
+    branches: [main]
     paths:
       - 'scripts/history/**'
       - '.github/workflows/update-history.yml'
