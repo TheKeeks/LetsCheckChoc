@@ -58,10 +58,11 @@ jobs:
 
       # The files that don't change once published (NDBC's finished years and months, Montauk 44017, the tide
       # tables, ERA5 for 2016), refreshed once a month; the rest is fetched every run.
-      - name: Restore the published files
+      - name: This month (the published files' cache key)
         id: month
         run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - name: Restore the published files
+        uses: actions/cache@v4
         with:
           path: |
             history-cache
@@ -73,7 +74,10 @@ jobs:
       # the commit below is skipped.
       - name: Rebuild the history through yesterday
         id: update
-        run: echo "end=$(python scripts/history/update.py)" >> "$GITHUB_OUTPUT"
+        run: |
+          # (an assignment, so a failed update fails the step: inside echo's arguments bash would ignore it)
+          end=$(python scripts/history/update.py)
+          echo "end=$end" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push
         run: |
