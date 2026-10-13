@@ -255,6 +255,16 @@ html.hub-lock, html.hub-lock body { overflow: hidden; }
 .hub-mrow { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .hub-mrow b { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: .78rem; font-weight: 500; color: var(--fg); white-space: nowrap; }
 .hub-mb { width: 36px; height: 32px; padding: 0; border-radius: 6px; font-size: .95rem; line-height: 1; background: transparent; border-color: rgba(255,255,255,.18); }
+/* the month: opens the ten years, month by month, over the map */
+.hub-dec { display: inline-flex; align-items: center; gap: 6px; min-width: 0; height: 32px; padding: 0 9px; border-radius: 6px; background: transparent; border-color: rgba(255,255,255,.18); }
+.hub-dec svg { width: 13px; height: 13px; flex: none; color: var(--swell); }
+.hub-dec-t { font-size: .78rem; font-weight: 600; white-space: nowrap; }
+.trip-stage:not(.hub-wide) .hub-dec-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* a phone: room for the whole month ("Sep 2021") */
+.trip-stage:not(.hub-wide) .hub-mb { width: 30px; }
+.trip-stage:not(.hub-wide) .hub-dec { padding: 0 6px; gap: 4px; }
+.trip-stage:not(.hub-wide) #pastDate { width: 106px; }
+.trip-stage:not(.hub-wide) .hub-mrow { gap: 5px; }
 #pastDate { margin-left: auto; flex: none; width: 128px; font: .74rem var(--mono); color: var(--fg); background: var(--rule); border: 1px solid #2c3b49; border-radius: 4px; padding: 3px 5px; color-scheme: dark; }
 /* ten years, month by month */
 .dec-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
@@ -263,6 +273,15 @@ html.hub-lock, html.hub-lock body { overflow: hidden; }
 .dec-cell:focus-visible { outline: 2px solid var(--swell); }
 .dec-cell:hover rect:first-child { stroke: var(--fg-2); stroke-width: 1; }
 .dec-month:empty { display: none; }
+/* Ten years over the map (from the Past bar's month): the figure below moves in while it is open */
+.dec-ov { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; background: var(--ink); color: var(--fg); }
+.dec-ov-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid var(--rule); }
+.dec-ov-top h2 { font-size: 1.3rem; }
+.dec-ov-x { flex: none; min-height: 40px; border-radius: 999px; padding: 6px 14px; font-weight: 600; }
+.dec-ov-body { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 14px 16px 32px; display: grid; gap: 12px; align-content: start; }
+.dec-ov-body > * { box-sizing: border-box; width: 100%; max-width: 760px; margin-inline: auto; }
+.dec-ov-lede { font-size: .92rem; }
+@media (max-width: 520px) { .dec-ov-body { padding-inline: 8px; } .dec-ov-body > figure { padding-inline: 10px; } .dec-ov-lede { padding-inline: 8px; } }   /* the twelve months fit a phone */
 .dec-month { display: grid; gap: 12px; border-top: 1px solid var(--rule); padding-top: 14px; }
 .dec-mh { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
 .dec-mh span { font-size: .82rem; color: var(--fg-3); }
