@@ -1,0 +1,489 @@
+<div class="wrap">
+<header>
+  <h1 class="sc-title">Methods</h1>
+  <div class="eyebrow">Chocomount research · Block Island buoy 44097 · 2016 – 2026</div>
+  <p class="lede">Hourly swell at Block Island buoy 44097 since 2016, carried to Chocomount and Wilderness with a refraction model built on NOAA's sea-floor survey and checked against the surf log.</p>
+  <div class="qa-box">
+    <a class="qa" href="#q1-h"><span class="eyebrow">Question 1</span><b>What makes the surf good at Choc?</b><span>The swell that actually reaches the reef, not the buoy's number. The model's height at Choc picks the bigger of two of your sessions <span class="mono" id="qa1M">88%</span> of the time, the raw buoy <span class="mono" id="qa1B">77%</span>. After size comes offshore wind; the tide barely matters.</span></a>
+    <a class="qa" href="#q2-h"><span class="eyebrow">Question 2</span><b>How real is the swell window?</b><span>Real, but soft-edged. On only <span class="mono" id="qa2In">40%</span> of Choc's 3 ft+ days does the swell come straight through the gap between Block Island and Montauk; on <span class="mono" id="qa2S">45%</span> it bends in from south of Montauk.</span></a>
+  </div>
+  <p class="qs-more">Explore <a href="#how-h">how the model works</a>, <a href="#dec-h">ten years, month by month</a>, <a href="#week-h">the 7-day forecast</a> and <a href="#wild-h">Wilderness</a>. Forecast layers, past days and sea-floor exploration now live on the Map page.</p>
+  <a class="methods-map-link" href="../map/index.html" data-open-map>Explore the map <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8h10M8 3l5 5-5 5"/></svg></a>
+</header>
+<section aria-labelledby="trip-h">
+  <div class="eyebrow">The map</div>
+  <h2 id="trip-h">Map: forecast, past days, single-wave trace</h2>
+  <p>This week's swell from the open Atlantic to the reef from two forecast models, or any day since 2016. Open <strong>Layers</strong> to switch to the past, change the model, the spot or what's drawn, or drop your own wave and follow it in over the sea floor.</p>
+  <div class="hub">
+    <div class="trip-stage" id="tripStage">
+      <canvas id="tripCv" aria-label="Map from the Caribbean to Fishers Island showing the forecast swell, or one wave traced over the sea floor"></canvas>
+      <div class="trip-hud" aria-live="off"><div id="tripPhase" class="trip-phase">Loading…</div><div id="tripLine" class="mono trip-line"></div>
+        <div id="tripPow" class="trip-pow" hidden><span class="trip-pow-l">Energy along the crest</span><span class="trip-bar" title="The white tick is where it started (100%)"><i id="tripPowFill"></i><b></b></span><span id="tripPowV" class="trip-pow-v"></span><span id="tripPowH" class="trip-powh"></span></div></div>
+      <div class="hub-tr" id="hubTr">
+        <button type="button" class="hub-ib" id="hubLayers" aria-expanded="false" aria-controls="hubPanel" aria-label="Layers" title="Layers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 12.5 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg></button>
+        <button type="button" class="hub-ib" id="hubInfo" aria-expanded="false" aria-controls="hubInfoCard" aria-label="How to read this map" title="How to read this map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6" stroke-linecap="round"/><circle cx="12" cy="7.6" r="1.2" fill="currentColor" stroke="none"/></svg></button>
+        <button type="button" class="hub-ib" id="hubFull" aria-pressed="false" aria-label="Full screen" title="Full screen"><svg class="i-max" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><svg class="i-min" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg></button>
+      </div>
+      <div class="hub-panel" id="hubPanel" hidden>
+        <div class="hub-g"><div class="hub-h">View</div>
+          <div class="seg hub-seg" role="group" aria-label="View" id="tripModeSeg"><button type="button" data-v="week" aria-pressed="true">Forecast</button><button type="button" data-v="past" aria-pressed="false">Past</button><button type="button" data-v="drop" aria-pressed="false">Drop a wave</button></div></div>
+        <div class="hub-g" data-mode="week past"><div class="hub-h">Spot</div>
+          <div class="seg hub-seg" role="group" aria-label="Spot" id="fcSpot"><button type="button" data-v="choc" aria-pressed="true">Choc</button><button type="button" data-v="wild" aria-pressed="false">Wilderness</button></div></div>
+        <div class="hub-g" data-mode="week"><div class="hub-h">Model</div>
+          <div class="seg hub-seg" role="group" aria-label="Forecast model" id="fcModel"><button type="button" data-v="gfs" aria-pressed="true">GFS-Wave</button><button type="button" data-v="ec" aria-pressed="false">ECMWF</button></div></div>
+        <div class="hub-g" data-mode="week past"><div class="hub-h">Show</div>
+          <div class="hub-tgs" id="fcLayers">
+            <button type="button" class="hub-tg" data-l="field" aria-pressed="true"><i class="ck"></i>Wave height</button>
+            <button type="button" class="hub-tg" data-l="flow" aria-pressed="true"><i class="ck"></i>Swell motion</button>
+            <button type="button" class="hub-tg" data-l="aim" data-mode="week" aria-pressed="true"><i class="ck"></i>Swell headed our way</button>
+            <button type="button" class="hub-tg" data-l="wnd" data-mode="past" aria-pressed="false" hidden><i class="ck"></i>Wind arrows</button>
+            <button type="button" class="hub-tg" data-l="rays" aria-pressed="true"><i class="ck"></i>Rays near Fishers</button>
+          </div></div>
+        <div class="hub-g" data-mode="week past"><div class="hub-h">Go to</div>
+          <div class="seg hub-seg" role="group" aria-label="Go to" id="fcZoom"><button type="button" data-v="ocean" aria-pressed="false">Ocean</button><button type="button" data-v="reg" aria-pressed="true">Region</button><button type="button" data-v="fi" aria-pressed="false">Fishers</button></div></div>
+        <div class="hub-g" data-mode="drop" hidden><div class="hub-h">Swell</div>
+          <div class="hub-row"><label class="hub-f" for="tripSize">Size <input id="tripSize" type="number" min="0" max="40" step="0.5" value="6" inputmode="decimal"> ft</label><label class="hub-f" for="tripPer">Period <select id="tripPer"><option>6</option><option>8</option><option>10</option><option selected>12</option><option>14</option><option>16</option><option>18</option></select> s</label></div></div>
+        <div class="hub-g" data-mode="drop" hidden><div class="hub-h">Aim</div>
+          <div class="hub-col"><button type="button" id="tripAimC">At Choc</button><button type="button" id="tripAimW">At Wilderness</button><button type="button" id="tripAimM" title="Ditch Plains">At Montauk</button><button type="button" id="tripRand">Random start</button></div></div>
+        <div class="hub-g" data-mode="drop" hidden><div class="hub-h">Show</div>
+          <div class="hub-tgs"><button type="button" class="hub-tg" id="tripInsetTg" aria-pressed="false"><i class="ck"></i>Arrival close-up</button></div></div>
+      </div>
+      <div class="hub-info" id="hubInfoCard" role="dialog" aria-label="How to read this map" hidden>
+        <button type="button" class="hub-x" id="hubInfoX" aria-label="Close">×</button>
+        <div class="hub-ic" data-mode="week">
+          <h3>Reading the forecast</h3>
+          <ul>
+            <li><b>Color:</b> wave height from the model you pick, swell and wind sea together.</li>
+            <li><b>Streaks:</b> which way the swell travels. Longer period moves faster.</li>
+            <li><b>Pale dots:</b> open-ocean swell aimed at the spot from an angle its reef can see. Tap one: orange is the ray that reaches the spot, with when; gray is the rest of its spread.</li>
+            <li><b>Near Fishers:</b> the model's rays over the sea floor into the spot, colored by period.</li>
+            <li><b>Timeline:</b> GFS-Wave solid, ECMWF dashed, night shaded. Dots: wind at the spot (green clean, yellow cross-shore, red onshore). Gray bars: far-off swell arriving.</li>
+            <li><b>Spot height:</b> each model's swell at buoy 44097 (white diamond), run through the reef's response. On 177 past hours it beat reading the models at the survey map's edge.</li>
+            <li><b>↻ Refresh:</b> loads the newest forecast pull without reloading the page. A new pull comes every 3 hours; to make one now, run “Update Sound Check forecast” under Actions on GitHub.</li>
+          </ul>
+          <ul class="hub-fine">
+            <li>GFS-Wave (NOAA): 0.16° near the coast, 0.25° offshore, separate swells.</li>
+            <li>ECMWF open data: 0.25°, total sea only (CC BY 4.0).</li>
+            <li>Times are Eastern. The forecast is as of the time under the timeline.</li>
+          </ul>
+        </div>
+        <div class="hub-ic" data-mode="past" hidden>
+          <h3>Reading a past day</h3>
+          <ul>
+            <li><b>Pick a day:</b> the bars at the bottom, the arrows, the date box, or the calendar further down. Play steps day by day.</li>
+            <li><b>Offshore color:</b> Copernicus reanalysis 1° swell over the spot's best 3 hours (every 0.4° near the coast, 2° across the North Atlantic). Streaks show which way it traveled.</li>
+            <li><b>Survey map:</b> this page's ray model on what buoy 44097 measured. Tap the water for the height.</li>
+            <li><b>Rays near Fishers:</b> the buoy's swells at Choc's biggest hour. <b>Wind arrows</b> (under Show): that day's wind at 17 points.</li>
+            <li><b>Bars:</b> the spot's best 3 hours each day. Orange is a good day: Choc's ratings model 7/10+, or Wilderness 3 ft+ with clean wind. Dots: the wind then.</li>
+          </ul>
+          <ul class="hub-fine">
+            <li>Forecast and past share the camera, colors and layers.</li>
+            <li>Buoy 44097 gaps filled from Montauk 44017 (until Feb 2023). Wind: ECMWF at 17 over-water points (ERA5 for 2016).</li>
+            <li>Contains modified Copernicus Marine Service information.</li>
+          </ul>
+        </div>
+        <div class="hub-ic" data-mode="drop" hidden>
+          <h3>Drop a wave</h3>
+          <div id="hubWave" class="hub-wave"></div>
+          <ul>
+            <li><b>Tap the ocean</b> to start a wave, drag the white ring to aim, press Play. Tap the map to pause.</li>
+            <li><b>At Choc, Wilderness, Montauk:</b> the heading that gets closest to the takeoff peak (Ditch Plains at Montauk), or how close the best one gets.</li>
+            <li><b>Compare two places:</b> pick 50 km under the map, press Keep to compare, aim the same swell elsewhere. The kept wave stays dashed.</li>
+            <li><b>White ticks:</b> each half hour of travel. They bunch up where the wave slows.</li>
+            <li><b>Funnel:</b> rays that reach Choc start from 61°–206° but all arrive from 134°–155°.</li>
+            <li><b>Energy per meter of crest:</b> the shore against the start. Under 100% the bottom spread it out, over 100% it focused it. From deep water, a rough size only.</li>
+            <li><b>Depth lines:</b> thin 50, 100 and 200 m; dashed 1,000–4,000 m.</li>
+          </ul>
+          <details class="hub-more"><summary>How the energy is counted</summary><ul>
+            <li>A crest of rays 24 km wide, 100 m apart, leaves with your heading.</li>
+            <li>Along the way: rays within a wavelength-wide window of your wave (about 1.1 km at 8 s, 1.5 km at 12 s, 1.8 km at 16 s), since real waves smear out over about that width.</li>
+            <li>At the shore: the count again for directions out to ±10° in 2.5° steps, weighted like the main model's spread, each on the part of the swell headed for the spot.</li>
+            <li>Likely range: the wider of the ray-counting noise and the change between neighboring directions.</li>
+            <li>Height adds shallowing, read at 4 m of water.</li>
+          </ul></details>
+          <ul class="hub-fine">
+            <li>Ray tracing as in "How does the model work?": crest speed from depth and period, turning toward slower water (Snell's law).</li>
+            <li>Deep water: NOAA ETOPO 2022 (about 1 km, smoothed over 1.2 km, 400 m steps on the curved Earth). Survey map: 64 m, smoothed over 150 m, 32 m steps, traced live.</li>
+            <li>Wave speed at each depth from the exact wave equation, checked against Snell's law on a test beach. Times at group speed, how fast wave energy travels. No bottom friction or breaking.</li>
+            <li>Arrival close-up: 2016 New York State aerial photo with your reef map.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="trip-inset" id="tripInsetBox" hidden><canvas id="tripInset" aria-label="Close-up of where the wave arrives, over a 2016 aerial photo with your reef map"></canvas><button type="button" class="trip-inset-x" id="tripInsetClose" aria-label="Hide the arrival close-up">×</button></div>
+      <div class="hub-bot" id="fcBox" data-mode="week">
+        <div class="hub-over"><button type="button" id="fcBest" class="hub-chip" hidden></button><div class="hub-key" id="fcKey" role="img" aria-label="Wave height colors, 0 to 20 feet and up"><i></i><span><b>0</b><b style="left:22.4%">1</b><b style="left:50%">5</b><b>20+ ft</b></span></div></div>
+        <div class="hub-bar"><button type="button" id="fcPlay" class="hub-play" aria-label="Play the week">▶</button><div class="hub-tlw"><div id="fcTlSvg" class="fc-tl" aria-label="Drag along the week to scrub"></div><div class="hub-asofrow"><div id="fcAsOf" class="hub-asof mono" aria-live="polite">Loading the forecast…</div><button type="button" id="fcRefresh" class="hub-refresh" title="Load the latest forecast" aria-label="Load the latest forecast"><span aria-hidden="true">↻</span><b> Refresh</b></button></div></div></div>
+      </div>
+      <div class="hub-bot" id="pastBox" data-mode="past" hidden>
+        <div class="hub-over"><button type="button" id="pastBest" class="hub-chip" hidden></button><div class="hub-key" role="img" aria-label="Wave height colors, 0 to 20 feet and up"><i></i><span><b>0</b><b style="left:22.4%">1</b><b style="left:50%">5</b><b>20+ ft</b></span></div></div>
+        <div class="hub-bar"><button type="button" id="pastPlay" class="hub-play" aria-label="Play day by day">▶</button><div class="hub-tlw">
+          <div class="hub-mrow"><button type="button" id="pastPrev" class="hub-mb" aria-label="Previous month">‹</button><b id="pastMonth" class="mono"></b><button type="button" id="pastNext" class="hub-mb" aria-label="Next month">›</button><input id="pastDate" type="date" aria-label="Pick a day"></div>
+          <div id="pastTl" class="fc-tl" aria-label="Tap a day of the month"></div></div></div>
+      </div>
+      <div class="hub-bot" id="tripDropCtl" data-mode="drop" hidden>
+        <div class="hub-bar"><button type="button" id="tripPlay" class="hub-go">Play</button><p id="tripOut" class="hub-note" aria-live="polite"></p></div>
+      </div>
+    </div>
+  </div>
+  <figure class="chart cut" id="cutBox" hidden>
+    <div class="cut-top"><div class="fr-cap">Your wave over the sea floor</div>
+      <div class="seg" role="group" aria-label="View" id="cutView"><button type="button" data-v="side" aria-pressed="true">Side view</button><button type="button" data-v="3d" aria-pressed="false">3D</button></div>
+      <div class="seg" role="group" aria-label="Swell height offshore" id="cutFt"><button type="button" data-v="3" aria-pressed="false">3 ft</button><button type="button" data-v="6" aria-pressed="true">6 ft</button><button type="button" data-v="10" aria-pressed="false">10 ft</button></div>
+      <div class="seg" role="group" aria-label="How much of the trip" id="cutLen"><button type="button" data-v="0.3" aria-pressed="false">Last 300 m</button><button type="button" data-v="1" aria-pressed="true">1 km</button><button type="button" data-v="5" aria-pressed="false">5 km</button><button type="button" data-v="50" aria-pressed="false">50 km</button></div>
+      <button type="button" id="cutKeep">Keep to compare</button></div>
+    <canvas id="cutCv" aria-label="The wave side-on over the sea floor along its last kilometers"></canvas>
+    <p id="cutKey" class="cut-key" hidden></p>
+    <div id="w3Box" class="w3" hidden>
+      <canvas id="w3Cv" aria-label="3D view: the whole wave front crossing the sea floor"></canvas>
+      <div id="w3Compass" class="w3-cmp" role="button" aria-label="Compass: drag to turn or tilt, tap to face north"><svg viewBox="-20 -20 40 40" aria-hidden="true"><circle r="18" class="ring"/><g id="w3Needle"><path d="M0 -14 L4 0 L0 -2 L-4 0 Z" class="n"/><path d="M0 14 L4 0 L0 2 L-4 0 Z" class="s"/></g><text y="-6.5" x="0" text-anchor="middle" class="t">N</text></svg></div>
+      <p id="w3Note" class="w3-note"></p>
+      <div class="w3-bar"><button type="button" id="w3Play" class="hub-go">Pause</button><input type="range" id="w3Time" min="0" max="100" value="0" aria-label="Time since the wave left"><button type="button" id="w3Follow" aria-pressed="true">Follow</button><button type="button" id="w3Fishers">Fishers</button><button type="button" id="w3Reset">Reset</button></div>
+      <p id="w3Read" class="w3-read mono"></p>
+      <p class="w3-help"><strong>With a mouse: left-click and drag to pan, right-click and drag to rotate and tilt, scroll to zoom.</strong> On a touch screen: drag to move, pinch to zoom, twist two fingers to turn, slide two fingers up or down to tilt, double-tap to zoom in on a spot. Or use the compass: drag it to turn and tilt, tap it to face north. Fishers jumps to the west end of the island; Follow keeps the wave in view. The band is your wave's front, 30 km wide: the colored top is the wave, as tall as it is there (color is height, white where it's breaking), and the pale curtain under it is the water column down to the sea floor beneath that part of the front. Depths are stretched 70 times from afar (deeper than 60 m squeezed), easing to about 9 times as you zoom in close; the wave is stretched 4 times more than the depths. Faint lines are where each part of it went. Around Fishers and the Race the sea floor is drawn from the 16 m survey.</p>
+    </div>
+    <figcaption id="cutCap"></figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="how-h">
+  <div class="eyebrow">The method</div>
+  <h2 id="how-h">How does the model work?</h2>
+  <p>Swell arrives from the open ocean, and the sea floor bends it on the way in, the way a lens bends light: waves slow down over shallow water and turn toward it. Islands and points block it. So only some of the swell the buoy measures ever reaches a given beach, and which part depends on the swell's direction and period.</p>
+  <figure class="fr">
+    <div class="controls">
+      <label class="rl">Swell from <input id="frDir" type="range" min="60" max="220" step="5" value="140"> <b id="frDirV" class="mono"></b></label>
+      <label class="rl">Period <input id="frPer" type="range" min="6" max="16" step="2" value="10"> <b id="frPerV" class="mono"></b></label>
+    </div>
+    <div class="fr-maps">
+      <div><div class="fr-cap">Where the swell comes from</div><canvas id="frWorld" aria-label="Rays of swell entering the map and bending over the sea floor"></canvas></div>
+      <div><div class="fr-cap">Where it lands (dashed box on the left)</div><canvas id="frClose" aria-label="Close-up of Fishers Island with the rays that land at Choc and Wilderness"></canvas></div>
+    </div>
+    <p id="frNote" class="mono fr-note"></p>
+    <div id="frOut" class="fr-out" aria-live="polite"></div>
+    <figcaption>Orange edge: where this swell enters the map. Faint lines: rays 20 m apart (one in every ~40 drawn), each carrying an equal share of the swell. Bright lines: rays that land in a spot's zone. The dashed zones are centered on your Choc pin and your Wilderness shoreline and widen with the period, from about 450 m for 6 s swell to 900 m for 16 s: a longer wave can't be focused into, or hidden from, anything narrower than that, because it spreads sideways into shadows (diffraction), which single rays don't do on their own. Real swell also comes from a spread of directions, so the counts are a weighted average over the directions 5 and 10 degrees either side, and the bright lines show landing rays from all five of those directions, which is why there are more bright lines than the count.</figcaption>
+  </figure>
+  <h3>How size and shape are worked out</h3>
+  <ol>
+    <li><strong>Send the swell in.</strong> A line of rays, 20 m apart, enters wherever the swell crosses the open-ocean edge of the map, square to the swell. Each ray carries the same share of energy.</li>
+    <li><strong>Let the sea floor bend them.</strong> This is linear wave ray tracing (geometric optics, the standard refraction method in coastal engineering). Two rules:
+      <ul>
+        <li><b>Speed from depth.</b> A crest's speed <i>c</i> at each point comes from the swell's period <i>T</i> and the local depth <i>h</i> through the linear dispersion relation, solved exactly at every depth. That is about 1.56·<i>T</i> m/s in deep water, slowing toward √(<i>g·h</i>) in the shallows. The deeper the water a wave can feel, the longer its period: 6 s swell starts slowing in about 28 m, 15 s swell in about 175 m.</li>
+        <li><b>Turn toward slower water.</b> This is Snell's law applied continuously. Over each step <i>ds</i> the ray turns by d<i>θ</i> = −(1/<i>c</i>)·(∂<i>c</i>/∂<i>n</i>)·<i>ds</i>, where ∂<i>c</i>/∂<i>n</i> is how fast the speed changes across the ray. When one end of a crest is in shallower, slower water, the crest swings toward it.</li>
+      </ul>
+      The depth is NOAA's survey (CUDEM), averaged to 144 m cells and smoothed over about 350 m, so the rays follow the shape of the bottom on the scale of a wavelength rather than single survey pixels. The step is 72 m. Rays that hit land stop. Left out: diffraction (energy spreading sideways into shadows, allowed for roughly by the wavelength-wide landing zones below), currents, wind and bottom friction.</li>
+    <li><strong>Count who lands.</strong> Count the rays that pass through each spot's zone and compare with open water, where a patch that size would be crossed by a fixed number. More rays than that means the bottom funnels energy in; fewer means it spreads it out or blocks it. Waves also build a little as they slow down; both spots are measured at the same depth (4 m), so neither gets a boost from shallower water. The square root of all that is the share of the buoy's height that arrives: <b>size</b>.</li>
+    <li><strong>Check the angle they arrive at.</strong> For every ray that lands, we measure the angle between it and the bottom contours where it gets there, from the 3–8 m survey. Square-on (under 30°) means the whole wave breaks at once and closes out; at an angle, it breaks progressively along the contours and peels. The share arriving at 30° or more is the <b>shape</b>. Surf scientists call this the peel angle. It says whether a wave can peel, not how fast or how good.</li>
+  </ol>
+  <p>For real days the same counts are applied to every slice of the buoy's measured spectrum (each period with its own direction) and added up, giving a modeled height at each spot for every hour since 2016.</p>
+  <p>Does it work? <a href="#q1-h">Question 1</a> checks it against your logged sessions.</p>
+</section>
+
+<section aria-labelledby="q1-h">
+  <div class="eyebrow">Question 1</div>
+  <h2 id="q1-h">What makes the surf good at Choc?</h2>
+  <p>First, the swell that actually reaches the reef. The buoy's wave height counts every wave it feels: groundswell, local wind chop, and swell headed away from Fishers. The model keeps only what bends in to Choc. Checked against your 28 logged sessions, its height at Choc sorts them by size much better than the buoy does.</p>
+  <figure class="chart">
+    <h3>Size at the reef beats size at the buoy</h3>
+    <div id="q1Pair" class="q1-pair"></div>
+    <figcaption>One dot per logged session: the size you rated against the best 3 hours of that day, at the Block Island buoy and modeled at Choc. Blue-green dots are days you rated 3 or less while the buoy read over 4 ft: the model puts them where they belong. "Picks the bigger" counts the pairs of sessions you rated differently in which the higher reading went with the higher rating; a coin flip gets 50%. More measures are compared under Behind the numbers.</figcaption>
+  </figure>
+  <div class="takeaways" id="q1Takes">
+    <div class="take"><b class="mono">0.85</b><span>How closely modeled Choc height ranks your 28 logged sessions the way you rated their size (1 would match exactly). The raw buoy scores 0.66.</span></div>
+    <div class="take"><b class="mono">2.2 ft</b><span>Modeled at Choc on the day you logged as "completely flat", when the buoy peaked at 4.6 ft.</span></div>
+  </div>
+  <p>Then wind and tide (the ratings model below), and when in the year it all comes together.</p>
+</section>
+<section aria-labelledby="model-h">
+  <div class="eyebrow">Question 1 · trained on your 28 logged sessions</div>
+  <h2 id="model-h">What makes a good day at Choc</h2>
+  <p>Each logged session gets the conditions at the hour you logged it, from the same sources as the map. A small regression then learns how your ratings respond to them. It gets three inputs: modeled swell at the Choc reef (from the model above), offshore wind and tide rate. With 28 sessions, every extra input made it worse at predicting sessions it hadn't seen. Pick which rating to model:</p>
+  <div class="toggles">
+    <div class="seg" role="group" aria-label="Rating to model" id="targetSeg">
+      <button type="button" data-t="avg" aria-pressed="true">Overall</button>
+      <button type="button" data-t="size" aria-pressed="false">Size</button>
+      <button type="button" data-t="ride" aria-pressed="false">Ride</button>
+      <button type="button" data-t="wind_q" aria-pressed="false">Wind</button>
+    </div>
+  </div>
+  <div class="takeaways" id="modelTiles"></div>
+  <figure class="chart">
+    <h3>Does it get better as you log more?</h3>
+    <div id="learn"></div>
+    <div class="legend">
+      <span class="key"><span class="sw" style="background:var(--swell);height:3px"></span> model</span>
+      <span class="key"><span class="sw" style="background:var(--fg-3);height:3px"></span> guessing your average rating</span>
+    </div>
+    <figcaption id="learnCap">Each new session is predicted using only the sessions logged before it, then compared with the rating you actually gave. The lines show the average miss over the last 6 sessions. Lower is better. Once the orange line sits under the gray one, the model is beating a plain guess. Every new log adds a point on the right.</figcaption>
+  </figure>
+  <figure class="chart">
+    <h3>What it weighs</h3>
+    <div id="coefs"></div>
+    <figcaption>How many rating points one typical step in each input is worth (one standard deviation across your sessions), holding the other two fixed. Bars show 90% bootstrap ranges, and the label says how often the effect came out positive across 2,000 resamples.</figcaption>
+  </figure>
+  <figure class="chart">
+    <h3>Every input against your ratings</h3>
+    <div class="multiples" id="scatters"></div>
+    <figcaption>One dot per logged session. ρ is the rank correlation: +1 means the input sorts your sessions exactly the way you rated them. Panels with an orange border are the model's inputs. The rest are shown for reference: period, wind speed and tide height added nothing once modeled swell, offshore wind and tide rate were in.</figcaption>
+  </figure>
+  <figure class="chart">
+    <h3>Run back over ten years: predicted 7+ days</h3>
+    <div id="goodMonths"></div>
+    <figcaption>The model scored every hour from 2016 to 2026. A day counts when its best 3 hours average 7/10 or better. Hatched months have no logged sessions (all 28 are June–October), so the model has never seen winter water, winter wind or winter crowds, and those bars are extrapolation. Your log also leans toward days you chose to go, so treat this as "days that look like your good days," not a forecast.</figcaption>
+  </figure>
+</section>
+<section aria-labelledby="ans-h">
+  <div class="eyebrow">Question 1 · when it happens</div>
+  <h2 id="ans-h">Two seasons, neck and neck: fall and late winter</h2>
+  <div class="takeaways" id="takeaways"></div>
+  <figure class="chart">
+    <div id="months"></div>
+    <div class="legend">
+      <span class="key"><span class="sw" style="background:var(--swell)"></span> clean wind + incoming tide</span>
+      <span class="key"><span class="sw" style="background:var(--swell-soft)"></span> clean wind, outgoing tide</span>
+      <span class="key"><span class="sw" style="background:var(--blown)"></span> blown out</span>
+    </div>
+    <figcaption id="monthsCap"><span id="monthsLead">Share of hours, by month, when the buoy reads 4 ft+ from inside the window.</span> "Clean" means under 6 kn from any direction, or within 60° of offshore (335°) and under 20 kn. Wind is ERA5 at its over-water cell at 41.25 N 72.00 W, which matches GFS at the beach within 0.3 kn on average. Tide phase is from Silver Eel Pond predictions, with no offset.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="q2-h">
+  <div class="eyebrow">Question 2</div>
+  <h2 id="q2-h">How real is the swell window?</h2>
+  <p>From Choc, the straight-line gap to open ocean runs from Block Island (115°) to Montauk Point (158°). Swell from inside it has a straight shot at the reef, and that is still where Choc does best. But the sea floor bends swell around both islands, so the window's edges are soft, and most of Choc's 3 ft+ days get their swell from outside it.</p>
+  <figure class="chart">
+    <h3>Most of Choc's 3 ft+ days come from outside the window</h3>
+    <div id="q2Share" class="share-rows"></div>
+    <figcaption>On <span id="q2cIn">40%</span> of the <span id="q2cN">821</span> days in ten years when the model has Choc at 3 ft or more, the swell doing the work came through the 115–158° window. On <span id="q2cS">45%</span> it came from south of it, mostly 160–190° at about 10 s, and on <span id="q2cE">15%</span> from east of it. "Doing the work" means the swell bringing Choc the most energy at its biggest hour: the buoy's reading split into separate swells, each carried over the sea floor by the model.</figcaption>
+  </figure>
+  <figure class="chart">
+    <h3 id="krespTitle">How much of the buoy's swell reaches Choc</h3>
+    <div id="kresp"></div>
+    <figcaption>Forward-ray response (share of the buoy's height) for a typical swell spread, by offshore direction and period. Short swell (6–8 s) does best from 135–155°, still brings about half its height in from 165–175°, then fades: from 200° only a fifth to a third of it gets in. Long-period swell (14 s and up) keeps about half its height from every southerly direction, because it bends around Montauk. So just past the window the period hardly matters; well past it, toward the SSW, only long-period swell gets in.</figcaption>
+  </figure>
+  <div class="takeaways" id="q2Takes">
+    <div class="take"><b class="mono">54%</b><span>of Choc's modeled energy during your 29 Aug 2023 sessions ("chest high", "rippable Cardiff vibes", size 6) came from outside the 115–158° window. The buoy had one swell, 5.4 ft at 11 s from 165°: past Montauk, where there is no straight path to the reef, so more than half of what reached Choc bent around the point.</span></div>
+  </div>
+</section>
+<section aria-labelledby="tr-h">
+  <div class="eyebrow">Question 2 · swell trains</div>
+  <h2 id="tr-h">One swell or two?</h2>
+  <p>The buoy often feels more than one swell at once: a groundswell from a storm far away plus waves from the local wind, coming from different directions. A "swell train" is one of those. The model already splits the buoy's reading by period and direction, so it counts each train separately. Here are the trains it finds.</p>
+  <div class="takeaways">
+    <div class="take"><b class="mono">30%</b><span>of days have two or more trains of 1 ft+ at the buoy when Choc is at its biggest.</span></div>
+    <div class="take"><b class="mono">1 train</b><span>makes the surf on almost every 3 ft+ day at Choc. On a typical big day the biggest train at the buoy brings all of Choc's swell energy; even on the most mixed 10% of days it brings 98%.</span></div>
+    <div class="take"><b class="mono">20 days</b><span>in ten years (3 ft+ at Choc) where the buoy's biggest train wasn't the one making the surf. Usually a short north-to-east wind sea sat on top of a longer SE swell. Going by the buoy's single main direction, those days look blocked.</span></div>
+  </div>
+  <p><strong>The clearest case: 4 January 2018</strong>, the bomb cyclone. The buoy read 13.8 ft at 7 s from the NNE, which barely reaches Choc (2.2 ft). Underneath was 12.8 ft at 10.5 s from the ESE (121°), which reached Choc at 7.1 ft. Pick that date below to see it.</p>
+</section>
+<section aria-labelledby="dc-h">
+  <div class="eyebrow">Question 2 · any day you remember</div>
+  <h2 id="dc-h">Check a date</h2>
+  <figure class="chart">
+    <h3>Check any day, May 2016 – Oct 2026</h3>
+    <label class="rl">Date <input type="date" id="dcDate" value="2024-04-04" min="2016-05-13" max="2026-10-04"></label>
+    <div id="dcOut"></div>
+    <figcaption>Modeled best 3 hours at each spot from the buoy's full spectrum, the swell trains at Choc's biggest hour, and the wind during those hours ("clean" means light, or within 60° of offshore at Choc, or from north to east-southeast at Wilderness). Use it to line up a day you remember against what the model says. Picking a date here also moves the month calendar, the map's Past view and the panels under the calendar.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="dec-h">
+  <div class="eyebrow">Ten years</div>
+  <h2 id="dec-h">Good days, month by month</h2>
+  <p>Every month since the buoy went in. Tap a month to see its days, then a day for its details and a button that opens it on the map.</p>
+  <figure class="chart">
+    <div class="dec-top">
+      <div class="seg" role="group" aria-label="What to count" id="decMetric"><button type="button" data-v="good" aria-pressed="true">Good days</button><button type="button" data-v="big" aria-pressed="false">Big swell days</button><button type="button" data-v="c3" aria-pressed="false">Choc 3 ft+</button></div>
+      <div class="seg" role="group" aria-label="Hours counted" id="decHours"><button type="button" data-v="0" aria-pressed="true">All hours</button><button type="button" data-v="1" aria-pressed="false">Daylight</button></div>
+    </div>
+    <div class="scroll"><div id="decHeat" class="dec-heat"></div></div>
+    <div id="decMonth" class="dec-month" aria-live="polite"></div>
+    <figcaption id="decCap"></figcaption>
+  </figure>
+<figure class="chart" id="odWrap">
+    <h3>What the ocean was doing on <span id="odDay">…</span></h3>
+    <p id="odHint" class="od-hint">Follows the day picked on the map’s Past view, in the calendar or in “Check a date”.</p>
+    <ul class="tight">
+      <li><b>Rows:</b> two buoys that measured the day, and a wave model filling in the ocean between them.</li>
+      <li><b>Arrows:</b> one swell in one hour, pointing where it traveled. Higher up = longer period, bigger = bigger swell.</li>
+      <li><b>Bottom row:</b> what each source says reached Choc.</li>
+    </ul>
+    <div id="odLanes" class="od-lanes"></div>
+    <div class="od-map"><canvas id="odMap" aria-label="Map of the model's primary swell offshore at the chosen time"></canvas></div>
+    <label class="rl">Map time <input id="odT" type="range" min="0" max="7" step="1" value="4"> <b id="odTl" class="mono"></b></label>
+    <div id="odNote" class="od-note"></div>
+    <figcaption><ul class="tight">
+      <li><b>Buoys:</b> Block Island 44097 (CDIP 154), hourly. Montauk 44017 until it was pulled in Feb 2023, then Long Island 44025 (gaps in 2024–25).</li>
+      <li><b>Model:</b> Copernicus Marine wave reanalysis (WAVERYS, 0.2°), its live analysis after July 2026. Every 3 h, split into 1° swell, 2° swell and wind sea.</li>
+      <li><b>Map:</b> color is the model's 1° swell height; arrows its direction, longer for longer period.</li>
+      <li><b>Why the rest of the page uses the buoy:</b> fed by Block Island, the ray model predicts your size ratings best (0.85; the model alone 0.73–0.75; blends up to 0.82).</li>
+      <li>Contains modified Copernicus Marine Service information.</li>
+    </ul></figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="week-h">
+  <div class="eyebrow">Forecast</div>
+  <h2 id="week-h">7-day forecast</h2>
+  <figure class="chart">
+    <div class="scroll"><table id="fcDays"></table></div>
+    <figcaption>Best daylight hour each day (from half an hour after sunrise to half an hour before sunset), the average of the two models (each model underneath). "Clean" means the forecast wind suits that spot. Tap a cell to see that hour's swell as rays in How the model works.</figcaption>
+  </figure>
+  <figure class="chart">
+    <div id="fcChart"></div>
+    <div class="legend"><span class="key"><span class="sw" style="background:var(--swell)"></span> Choc</span><span class="key"><span class="sw" style="background:#9be3ee;height:2px"></span> Wilderness</span><span class="key"><span class="sw" style="background:var(--fg-3);height:2px"></span> offshore, at buoy 44097</span><span class="key">solid GFS-Wave · dashed ECMWF</span></div>
+    <figcaption>Hour by hour, Eastern time. Tap to see that hour in How the model works. The map at the top plays the same forecast over the ocean.</figcaption>
+    <p id="fcAsOf2" class="fc-asof mono"></p>
+  </figure>
+  <figure class="chart">
+    <div class="scroll"><table id="fcScore" class="fcs"></table></div>
+    <figcaption><strong>How far ahead can you trust it?</strong> For each of your 28 logged sessions since 2021, the GFS-Wave forecasts made 1, 2 and 3 days before, read at buoy 44097 and run through the same model and checked against what the buoy then showed arrived. "Orders your sessions" is how well it ranks them against your size ratings (1 is perfect). On average it lands within a twentieth of a foot of what arrived at every lead, and typically misses by 0.3–0.4 ft one to three days out. ECMWF only keeps its last few days of forecasts open, so it can’t be scored back in time; its score builds up from now on.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="wild-h">
+  <div class="eyebrow">Exploratory · a second spot</div>
+  <h2 id="wild-h">Wilderness: the east-swell, east-wind left</h2>
+  <p>Wilderness is a left point break on Fishers' south shore, about 4 km west of Choc, along 41.25286° N 72.00573° W to 41.25551° N 72.01117° W. The shore faces SSW, and the point at its east end shelters it from east wind. Its zone is the 150 m strip along that shoreline, and the same forward rays as Choc are counted there (How the model works shows both).</p>
+  <ul>
+    <li><strong>Size: it gets less swell than Choc.</strong> It faces SSW and sits behind the curve of Fishers, so it's more sheltered. Over ten years Wilderness models 2.5 ft+ on 698 days against Choc's 1,012, and only beats Choc by half a foot or more on 9 days. It does relatively best on east swell (about Choc's size when the buoy's swell comes from 0–120°) and worst on south to south-west swell (about 0.75× Choc).</li>
+    <li><strong>Wind: this is why Wilderness days exist.</strong> The point at its east end blocks east and north-east wind, which blows Choc out. "Wilderness days" (3 hours with Wilderness 2.5 ft+ and wind it likes, while Choc's wind is not clean) happened on 300 days in ten years, about 30 a year, mostly September–October and February–April.</li>
+    <li><strong>Shape: what decides whether you go, and the weakest part of the model.</strong> You surf it when it peels, and it peels best when long-period swell wraps the point. The model's shape read (the share of swell meeting the bottom contours at 30°+, the "peel angle") agrees that east swell peels better than south-east. But it says longer periods peel <em>less</em>, the opposite of what you see, and it barely varies from day to day (almost all days score 0.42–0.55). Most likely it measures the angle too far out (within 400 m, on 48 m cells) to see the wrap around the point. So treat the shape column below as experimental, not as a reason to go or not.</li>
+  </ul>
+  <figure class="chart">
+    <div id="wildMonths"></div>
+    <div class="legend"><span class="key"><span class="sw" style="background:var(--swell)"></span> Choc 2.5 ft+</span><span class="key"><span class="sw" style="background:#4fb6c9"></span> Wilderness 2.5 ft+</span><span class="key"><span class="sw" style="background:#9be3ee"></span> Wilderness day (works there, not at Choc)</span></div>
+    <figcaption>Share of days each month, 2016–2026, from the best 3 hours of each day. Wind is the ERA5 cell at 41.25 N 72.00 W, which sits right off Wilderness.</figcaption>
+  </figure>
+  <figure class="chart">
+    <div class="scroll"><table id="wildTop"></table></div>
+    <figcaption>Biggest modeled days at Wilderness (size). The very biggest are winter storms with south winds, which are blown out. The clean ones come with north-to-east wind.</figcaption>
+  </figure>
+  <p><strong>How much to trust it:</strong> less than Choc. A point break works by wrapping swell around the point and peeling down the shore, which is mostly diffraction plus refraction over the last few hundred meters. On 48 m cells the rays see the shape of the point, but not the wave breaking or wrapping in the last few dozen meters. So far there is one Wilderness session to check it against, below. One good day shows the model isn't wrong about that day; it can't validate the model. Logging a handful more Wilderness sessions, good and flat, would let us test it the way Choc was tested.</p>
+  <div class="takeaways">
+    <div class="take"><b class="mono">12 Oct 2025</b><span>Your Wilderness session, 3:30–5:30 pm. The buoy read 11–14 ft at 9–12 s from 136–151° (a nor'easter swell), with the wind NE at about 17–23 kn.</span></div>
+    <div class="take"><b class="mono">4.9–6.1 ft</b><span>What the model puts at Wilderness for those hours (Choc: 5.3–7.0 ft). It rates the day a "Wilderness day": the NE wind suits Wilderness but not Choc. It's the 33rd-biggest modeled Wilderness day of 3,692. Shape read: 0.48–0.51, right on the line between mixed and peeling.</span></div>
+  </div>
+</section>
+
+<section aria-labelledby="behind-h">
+  <h2 id="behind-h">Behind the numbers</h2>
+  <p>Method details, checks and the supporting charts. Tap to open.</p>
+<details class="more"><summary>How Choc and Wilderness are handled up close</summary>
+  <figure class="flat">
+    <h3>Up close at Choc and Wilderness</h3>
+    <ul>
+      <li><strong>Landing zones.</strong> Centered on your Choc pin (41.27591° N, 71.96359° W) and on your Wilderness shoreline (41.25286° N 72.00573° W to 41.25551° N 72.01117° W). The radius widens with the swell period, about 450 m at 6 s to 900 m at 16 s, because a long wave spreads sideways into gaps and shadows (diffraction) over roughly that distance; thin rays alone would leave sharp holes. Narrower fixed zones (250 m / 150 m) rank your sessions about the same (0.84 against 0.85), so your log can't tell them apart; the wider zone is the physically honest one. Both spots are compared at the same depth, 4 m.</li>
+      <li><strong>Rays and grid.</strong> Rays start 20 m apart where the swell crosses the open-ocean edge of the map and travel on 48 m cells, with wave speed smoothed over about 150 m, so they feel the shape of the shelf and the points rather than individual rocks. Each spot's numbers come from every period from 5 to 17 s and every direction in 2.5° steps.</li>
+      <li><strong>Agreement with the previous method.</strong> Tracing rays backward from the beach (the previous version) gives Choc heights within about 9% of the forward count and ranks your sessions almost the same (0.83 vs 0.85). At Wilderness the two differ more, because the previous version averaged points up to 300 m offshore of the point instead of your shoreline.</li>
+      <li><strong>The number.</strong> Wave height in the zone (about 2.5–3.5 m deep), just outside the break, including growth from the buoy's 48 m of water. It is not breaking height, and no tide is applied. How the wave peels and wraps over the last 100 m, which matters most at a point like Wilderness, is below this model's resolution.</li>
+    </ul>
+  </figure>
+</details>
+<details class="more"><summary>How the forecast is tied to Choc and Wilderness</summary>
+  <figure class="flat">
+    <h3>The forecast is read at buoy 44097</h3>
+    <ul>
+      <li><strong>Where.</strong> Each forecast hour, GFS-Wave's swell trains (and ECMWF's total sea) are read at buoy 44097 off Block Island (40.969° N, 71.127° W), the white diamond on the map. If the model has no value at that exact point, the average of the 25 model points around it (about 0.6° across) is used.</li>
+      <li><strong>Why there.</strong> It's the point the ten-year history reads. The history runs the buoy's measured swell through the ray model, so a forecast read at the same point and run through the same model gives a number that means the same thing as every past day on this page.</li>
+      <li><strong>Then the rays.</strong> Each train's height, period and direction at the buoy go through the model's response for that spot (how much of a swell from that direction and period reaches it), and the trains add up by energy.</li>
+      <li><strong>How it was chosen.</strong> On 177 past hours in 2021–25 (archived GFS-Wave runs), reading at the buoy came closer to what then arrived than reading the models along the open edge of the survey map: a typical miss of 0.22 ft against 0.30 ft a day ahead, with no bias. Against your 28 logged sessions the two rank about the same (0.70 vs 0.69 on the day, 0.66 vs 0.67 a day ahead, 0.64 vs 0.55 two days ahead; none of these differences is beyond chance with 28 sessions).</li>
+      <li><strong>What it can miss.</strong> Swell that reaches Choc without passing the buoy's patch of ocean, for example short south swell that the buoy sees less of than the open edge does. The "headed our way" dots on the map show swell still far offshore.</li>
+    </ul>
+  </figure>
+</details>
+<details class="more"><summary>How the model compares with simpler measures</summary>
+  <figure class="chart">
+    <div class="scroll"><table>
+      <thead><tr><th>Measure of the day's swell</th><th class="num">vs your size rating</th><th class="num">vs your overall rating</th></tr></thead>
+      <tbody>
+        <tr><td><b>Forward rays + full buoy spectrum (default)</b></td><td class="num"><b>0.85</b> (0.66–0.93)</td><td class="num">0.74 (0.48–0.89)</td></tr>
+        <tr><td>Backward rays + full buoy spectrum (previous version)</td><td class="num">0.83 (0.65–0.94)</td><td class="num">0.75 (0.50–0.89)</td></tr>
+        <tr><td>Coarse forward rays, single direction and period (first version)</td><td class="num">0.76 (0.47–0.90)</td><td class="num">0.82 (0.58–0.92)</td></tr>
+        <tr><td>Buoy energy through a soft window</td><td class="num">0.65 (0.38–0.84)</td><td class="num">0.70 (0.39–0.86)</td></tr>
+        <tr><td>Buoy height alone (CDIP)</td><td class="num">0.66 (0.38–0.84)</td><td class="num">0.53 (0.18–0.76)</td></tr>
+        <tr><td>Swell the app saved with each log (forecast pin)</td><td class="num">0.70 (0.41–0.88)</td><td class="num">—</td></tr>
+      </tbody>
+    </table></div>
+    <figcaption>Rank correlation with your 28 logged sessions (best 3 hours of the session day; bootstrap range in brackets). Size is what a swell model should predict, and there the new default is clearly best. Your "completely flat" day (12 Sep 2022) comes out at 2.2 ft at Choc although the buoy peaked at 4.6 ft, and 14 Oct 2022 comes out at 6.9 ft (best 3 hours of each day). Feeding it into the ratings model lifts the share of your size rating explained to <span id="sizeR2">62%</span>. Still not modeled: wind-chop made inside the sound, tidal currents, tide level over the reef, friction, and proper diffraction.</figcaption>
+  </figure>
+</details>
+<details class="more"><summary>Swell period of big hours</summary>
+<section aria-labelledby="per-h">
+  <div class="eyebrow">Period</div>
+  <h2 id="per-h">Most big hours are short-period</h2>
+  <figure class="chart">
+    <div id="period"></div>
+    <figcaption>Dominant period of every in-window 4 ft+ hour. 60% are 9 s or shorter, and only 8% are 13 s or longer. Long-period hurricane swells like Larry and Teddy are the rare highlights. The 8–10 s nor'easter and post-tropical storms supply most of the volume.</figcaption>
+  </figure>
+</section>
+</details>
+<details class="more"><summary>Top swells of the decade</summary>
+<section aria-labelledby="ev-h">
+  <div class="eyebrow">The biggest swells</div>
+  <h2 id="ev-h">Top in-window swells by total energy</h2>
+  <figure class="chart">
+    <div class="scroll"><table id="events"></table></div>
+    <figcaption>A swell is a run of in-window 4 ft+ hours with no gap over 4 h. Energy is total wave power through the window over the run. "Good hrs" means clean wind and an incoming tide, plus daylight when the Daylight switch (under Ten years) is on. Tap a row to open its first day on the map's Past view.</figcaption>
+  </figure>
+</section>
+</details>
+<details class="more"><summary>Peak reading or a sustained window?</summary>
+<section aria-labelledby="sess-h">
+  <div class="eyebrow">Tested on your 28 logged sessions</div>
+  <h2 id="sess-h">Peak reading or a sustained window?</h2>
+  <p>Each candidate daily measure was computed from the buoy for every logged session, using all hours, then ranked against the size you rated. The whiskers are 95% bootstrap ranges.</p>
+  <figure class="chart">
+    <div id="sesschart"></div>
+    <figcaption>"Soft edge" keeps full weight from 115° to 158° and fades to zero by 100° and 175°. The top row is the swell height the app saved with each log, from the forecast model at the Choc pin, for reference.</figcaption>
+  </figure>
+  <ul>
+    <li><strong>Peak and sustained are a tie.</strong> The best 3 h through a soft window scores 0.65, the in-window peak 0.67, and the any-direction peak 0.63. Every whisker overlaps, and the 3 h and 6 h windows are indistinguishable.</li>
+    <li><strong>The window edge matters more than the averaging.</strong> A hard 115–158° cut scores your Ian 10/10 (163° at the buoy) as nearly flat. The soft edge beat the hard cut in 93% of resamples.</li>
+    <li><strong>So the page uses the best 3 hours through a soft window.</strong> Three hours is about one session or one tide push, and one spiky hour can't make a day. The map's Past view still shows the buoy's peak, because that's how people talk about swell.</li>
+  </ul>
+</section>
+</details>
+<details class="more"><summary>How much the data sources disagree</summary>
+<section aria-labelledby="src-h">
+  <div class="eyebrow">Source check · Oct 2024 – Sep 2026, hour by hour</div>
+  <h2 id="src-h">How much the data sources disagree</h2>
+  <p>Every model tracks the buoy's ups and downs well. They part ways on how big the peak is and on whether swell is inside the window: the window is 43° wide and the models sit 12–16° off the buoy's direction on a typical hour.</p>
+  <figure class="chart">
+    <div class="scroll"><table>
+      <thead><tr><th>Wave source</th><th class="num">Tracks buoy (r)</th><th class="num">Avg vs buoy</th><th class="num">Big days (6 ft+)</th><th class="num">Dir. off</th><th class="num">Same big hrs</th></tr></thead>
+      <tbody>
+        <tr><td>Buoy 44097 (measured, 40 nm ESE)</td><td class="num">—</td><td class="num">—</td><td class="num">100%</td><td class="num">—</td><td class="num">—</td></tr>
+        <tr><td>ERA5 reanalysis</td><td class="num">0.96</td><td class="num">−0.3 ft</td><td class="num">90%</td><td class="num">16°</td><td class="num">29%</td></tr>
+        <tr><td>Météo-France MFWAM at the Choc pin (the site's forecast)</td><td class="num">0.94</td><td class="num">−0.9 ft</td><td class="num">75%</td><td class="num">15°</td><td class="num">36%</td></tr>
+        <tr><td>GFS-Wave 0.25° (Windy's GFS)</td><td class="num">0.92</td><td class="num">−0.9 ft</td><td class="num">75%</td><td class="num">12°</td><td class="num">43%</td></tr>
+        <tr><td>GFS-Wave 0.16°, cell inside the sound</td><td class="num">0.92</td><td class="num">−1.7 ft</td><td class="num">61%</td><td class="num">13°</td><td class="num">14%</td></tr>
+      </tbody>
+    </table></div>
+    <figcaption>"Big days" is the model's height as a share of the buoy's on hours when the buoy read 6 ft+. "Same big hrs" is the share of the buoy's in-window 4 ft+ hours (hard 115–158° window) that the model also called. Part of the size gap is real: the pins sit in the lee of Block Island and Montauk. Wind check: at Newport's gauge, GFS matched clean-vs-not 86% of the time and ERA5 82%.</figcaption>
+  </figure>
+</section>
+</details>
+<details class="more"><summary>Size × period is wave power</summary>
+<section aria-labelledby="energy-h">
+  <div class="eyebrow">Measuring "big"</div>
+  <h2 id="energy-h">Size × period is wave power</h2>
+  <div class="formula">power ≈ 0.49 × height² × period &nbsp;→&nbsp; kW per meter of wave crest</div>
+  <p>Double the height and you get 4× the power. Double the period and you get 2×. Your two 10/10 days, Larry (6.4 ft @ 15.4 s) and Ian (8.8 ft @ 8.1 s), land within 1% of each other on height² × period. Every energy number on this page is that power, counted only for the part of the swell coming through the window.</p>
+</section>
+</details>
+<details class="more"><summary>What's next</summary>
+<section aria-labelledby="next-h">
+  <div class="eyebrow">Research process</div>
+  <h2 id="next-h">What's next</h2>
+  <ol>
+    <li><strong>Keep logging, especially off-season, flat days and Wilderness.</strong> The ratings model has 28 Choc sessions, none from November to May, only two flat ones, and no logged Wilderness sessions. Wilderness numbers can't be checked against anything until there are some.</li>
+    <li><strong>Read the logs live.</strong> The ten-year calendar now reads photos from the site's surf log. The ratings model still fits from a CSV export; reading the logs live would let it refit after every new session.</li>
+    <li><strong>Sharper sea floor for Choc's number.</strong> Tracing the last kilometer and a half on the 8 m survey, with your reef sketch as the landing zone, puts rays on the reef itself instead of a 650 m circle. It would replace the ten-year numbers only if it ranks your logged sessions better than the current model.</li>
+    <li><strong>Sharper wind.</strong> The 17-point wind grid uses the ECMWF 9 km model. NOAA's HRRR (3 km, archived since 2018) would resolve the wind over the reef better.</li>
+  </ol>
+  <p class="eyebrow">Sources: NDBC 44097 stdmet · ERA5 10 m wind (Open-Meteo, over-water cell 41.25 N 72.00 W) · NOAA CO-OPS 8510719 high/low predictions · NOAA NCEI CUDEM 1/9″ (3 m) and 1/3″ (10 m) topo-bathymetry · NOAA ETOPO 2022 15″ (deep corner) · CDIP 154 directional spectra (Scripps) · NDBC 44017 (gap fill) · NOAA GFS-Wave 0.16° and ECMWF IFS wave 0.25° forecasts (ECMWF open data, CC BY 4.0) · GFS-Wave archive on AWS for the scorecard · ECMWF IFS 9 km daily wind, 17 points (Open-Meteo) · your surf log export (28 sessions)</p>
+</section>
+</details>
+</section>
+</div>
+<div id="tip" hidden></div>
