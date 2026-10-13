@@ -1,4 +1,6 @@
-/* Map page: Fishers Island's sea floor in 2D or 3D, with the forecast on the water.
+/* The sea floor in 3D: Fishers Island's sea floor in 2D or 3D, with the forecast on the water.
+ * Loaded by page.js (with MapLibre and geometry.js) the first time the 3D map is opened;
+ * window.LCCSeafloor(shell) builds it and returns its controls.
  *
  * One MapLibre map. "3D bathymetry" raises the terrain from the Fishers Island
  * viewer's elevation (0.8 m near the island, 4 m around it, then the Sound's
@@ -15,18 +17,15 @@
  * reach the map through the lccbathy:// protocol; aerial photos, the ocean
  * basemap and NOAA charts are live tile services.
  *
- * Embedded (?embed=1, ?compact=1) the parent page drives theme, spot and hour
- * with postMessage {type: 'lcc-map', theme, spot, time, active, ui}; ui 'peek'
- * (Forecast's collapsed window: no controls, no gestures) or 'full'. The map answers
- * {type: 'lcc-map-ready'} once and {type: 'lcc-map-spot', spot} when the spot
- * buttons are used. window.ChocMap is the same API for tests.
+ * The page (page.js) owns the theme, the spot, the hour and whether the map is
+ * on screen (shell.state); ui 'peek' (?compact=1&ui=peek: no controls, no
+ * gestures) or 'full'.
  */
-(function () {
+window.LCCSeafloor = function (shell) {
   'use strict';
   const $ = id => document.getElementById(id);
   const G = window.MapGeometry, ML = window.maplibregl;
-  const q = new URLSearchParams(location.search);
-  const EMBED = q.get('embed') === '1', COMPACT = q.get('compact') === '1';
+  const q = shell.q, EMBED = shell.EMBED, COMPACT = shell.COMPACT, state = shell.state, status = shell.status;
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const coarsePointer = matchMedia('(pointer: coarse)').matches;
   const DPR = Math.min(2, devicePixelRatio || 1);
@@ -49,16 +48,13 @@
     { name: 'The Race', at: [-72.052, 41.2335], cls: 'r' }
   ];
 
-  // ── State (preferences survive reloads; the view and hour do not)
+  // ── Preferences (survive reloads); the view, hour and theme come from the page
   const PREF_KEY = 'lcc-map-prefs';
-  const state = {
-    view: q.get('spot') === 'race' ? 'race' : VIEWS[q.get('view')] ? q.get('view') : 'choc',
+  Object.assign(state, {
     threeD: true, ex: 3, hill: 0.85, base: 'photo', model: 'gfs',
     layers: { waves: true, swell: true, rays: false, contours: false },
-    step: 0, playing: false, theme: document.documentElement.dataset.theme || 'light', active: true,
-    fc: null, wantTime: Date.parse(q.get('time') || '') || null,
-    ui: q.get('ui') === 'peek' ? 'peek' : 'full'
-  };
+    step: 0, playing: false, fc: null
+  });
   document.documentElement.classList.toggle('peek', state.ui === 'peek');
   try {
     const p = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
@@ -73,57 +69,15 @@
   function savePrefs() {
     try { localStorage.setItem(PREF_KEY, JSON.stringify({ threeD: state.threeD, ex: state.ex, hill: state.hill, base: state.base, model: state.model, layers: state.layers })); } catch (e) { /* private mode */ }
   }
-  const status = t => { $('status').textContent = t || ''; };
 
-  // ── Monitor | Model. Monitor is this map; Model is the Sound Check's own map
-  // (research/index.html?view=map: ocean-wide swell, any day since 2016, Drop a wave),
-  // loaded the first time it is opened. Embedded beside the forecast, only Monitor shows.
-  const TABS = ['monitor', 'model'];
-  let onTab = () => {};
-  state.tab = 'monitor';
-  if (!COMPACT) {
-    let t = q.get('tab') || location.hash.slice(1);
-    if (!TABS.includes(t)) { try { t = sessionStorage.getItem('lcc-map-tab'); } catch (e) { t = null; } }
-    if (TABS.includes(t)) state.tab = t;
-  }
-  function setTab(t, focus) {
-    if (!TABS.includes(t)) return;
-    state.tab = t;
-    TABS.forEach(k => {
-      const b = $('tab-' + k), on = k === t;
-      b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1;
-      $(k).classList.toggle('off', !on); $(k).setAttribute('aria-hidden', String(!on));
-      if (on && focus) b.focus();
-    });
-    if (t === 'model') {
-      const f = $('modelFrame');
-      if (!f.getAttribute('src')) f.src = '../research/index.html?view=map&fill=1&theme=' + (document.documentElement.dataset.theme || 'light') + (state.pastDate ? '&date=' + state.pastDate : '');
-      setPanel(false);
-    }
-    try { sessionStorage.setItem('lcc-map-tab', t); } catch (e) { /* private mode */ }
-    onTab(t);
-  }
-  document.querySelectorAll('[role="tab"]').forEach(b => {
-    b.addEventListener('click', () => setTab(b.dataset.tab));
-    b.addEventListener('keydown', e => {
-      const k = { ArrowRight: 1, ArrowLeft: -1, Home: -9, End: 9 }[e.key]; if (!k) return;
-      e.preventDefault();
-      const i = Math.max(0, Math.min(TABS.length - 1, TABS.indexOf(state.tab) + k));
-      setTab(TABS[i], true);
-    });
-  });
   function setPanel(open, focus) {
     $('panel').hidden = !open; $('layersBtn').setAttribute('aria-expanded', String(open));
     if (open && focus) $('panelClose').focus({ preventScroll: true });
   }
-  setTab(state.tab);
-
-  if (!ML || !hasWebGL()) {
-    status('This browser can’t draw the 3D map (WebGL is off). The Model tab still works.');
-    setTab('model');
-    return;
+  if (!ML || !shell.hasWebGL()) {
+    status('This browser can’t draw the 3D map (WebGL is off). The Sound Check map still works.');
+    return null;
   }
-  function hasWebGL() { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } }
 
   // ════════════════════════════════════════════════════════════════════
   // Sea-floor tiles: the lccbathy:// protocol, answered by bathy-worker.js
@@ -204,8 +158,8 @@
       fadeDuration: 0, maxTileCacheSize: 400
     });
   } catch (e) {
-    status('This browser can’t draw the 3D map. The Model tab still works.');
-    setTab('model'); return;
+    status('This browser can’t draw the 3D map. The Sound Check map still works.');
+    return null;
   }
   map.addControl(new ML.NavigationControl({ visualizePitch: true }), 'top-right');
   // Peek: a picture of the water at the forecast hour that the page scrolls past; 'full' hands the gestures back.
@@ -305,12 +259,6 @@
         ? { 'sky-color': '#0b1d2e', 'horizon-color': '#24384a', 'fog-color': '#1a2a38', 'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.7, 'fog-ground-blend': 0.9, 'atmosphere-blend': 0 }
         : { 'sky-color': '#9fcbe8', 'horizon-color': '#e4eef3', 'fog-color': '#dfeaf0', 'sky-horizon-blend': 0.55, 'horizon-fog-blend': 0.7, 'fog-ground-blend': 0.9, 'atmosphere-blend': 0 });
     } catch (e) { /* older engines: no sky */ }
-  }
-  function setTheme(t) {
-    t = t === 'dark' || t === 'night' ? 'dark' : 'light';
-    if (t === state.theme && mapReady) return;
-    state.theme = t; applyTheme();
-    const f = $('modelFrame'); if (f.getAttribute('src') && f.contentWindow) f.contentWindow.postMessage({ type: 'lcc-theme', theme: t }, location.origin);
   }
   function go(view, opts) {
     if (!VIEWS[view]) return;
@@ -545,7 +493,7 @@
     }
     p.age = p.life;   // nothing found this time; try again next frame
   }
-  function swellActive() { return mapReady && state.tab === 'monitor' && state.layers.swell && state.active && !document.hidden && SW.trains.length && SW.b; }
+  function swellActive() { return mapReady && state.tab === 'seafloor' && state.layers.swell && state.active && !document.hidden && SW.trains.length && SW.b; }
   function swellRun() {
     if (reduceMotion) { drawStill(); return; }
     if (!SW.raf && swellActive()) { SW.last = 0; SW.raf = requestAnimationFrame(swellFrame); }
@@ -683,41 +631,24 @@
   hud();
   document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === state.view)));
   $('threeD').setAttribute('aria-checked', String(state.threeD));
-  if (!COMPACT && innerWidth > 1100 && state.tab === 'monitor') setPanel(true);
-  // Back on Monitor the map may have been resized while hidden; restart the streaks.
-  onTab = t => { if (t === 'monitor' && mapReady) { map.resize(); swellBounds(true); } swellRun(); };
+  if (!COMPACT && innerWidth > 1100) setPanel(true);
 
   // ════════════════════════════════════════════════════════════════════
-  // Parent page and tests
+  // What the page drives
   // ════════════════════════════════════════════════════════════════════
-  function receive(d) {
-    if (!d || typeof d !== 'object') return;
-    if (d.type === 'lcc-theme') { setTheme(d.theme); return; }
-    if (d.type !== 'lcc-map') return;
-    if (d.theme) setTheme(d.theme);
-    if ((d.spot === 'choc' || d.spot === 'race') && d.spot !== state.view) go(d.spot);
-    const t = Date.parse(d.time || (d.forecast && d.forecast.time) || '');
-    if (Number.isFinite(t)) { state.wantTime = t; if (state.fc) { const i = nearestStep(t); if (i !== state.step) setStep(i); } }
-    if (d.ui === 'peek' || d.ui === 'full') { if (d.ui !== state.ui) setUI(d.ui); }
-    if (typeof d.active === 'boolean' && d.active !== state.active) { state.active = d.active; if (d.active && mapReady) map.resize(); swellRun(); }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(d.date || '')) {
-      state.pastDate = d.date;
-      const f = $('modelFrame');
-      if (f.getAttribute('src') && f.contentWindow) f.contentWindow.postMessage({ type: 'lcc-map-date', date: d.date }, location.origin);
-      if (!COMPACT) setTab('model');
-    }
-  }
-  addEventListener('message', e => { if (e.origin === location.origin && e.source === parent && parent !== window) receive(e.data); });
-
-  window.ChocMap = {
-    map, receive, setTheme, go, set3D, setStep, setTab, setUI,
-    setSpot: s => go(s),
+  return {
+    map, go, set3D, setStep, setUI, setPanel, applyTheme,
+    // the hour the page asks for (a time from the Sound Check map or the parent)
+    toTime(t) { state.wantTime = t; if (state.fc) { const i = nearestStep(t); if (i !== state.step) setStep(i); } },
+    // on screen again: the map may have been resized while hidden; restart the streaks
+    onShow() { if (state.tab === 'seafloor' && mapReady) { map.resize(); swellBounds(true); } swellRun(); },
+    onActive() { if (state.active && mapReady) map.resize(); swellRun(); },
     getState: () => ({
       ready: mapReady, threeD: state.threeD, terrain: !!(mapReady && map.getTerrain()), pitch: map.getPitch(), zoom: map.getZoom(),
-      tab: state.tab, ui: state.ui, view: state.view, base: state.base, layers: Object.assign({}, state.layers), ex: state.ex, model: state.model,
+      ui: state.ui, view: state.view, base: state.base, layers: Object.assign({}, state.layers), ex: state.ex, model: state.model,
       step: state.step, time: state.fc && state.fc.rows[state.step] ? new Date(state.fc.rows[state.step].t).toISOString() : null,
-      steps: state.fc ? state.fc.rows.length : 0, tilesServed, tileErrors, wavesReady, theme: state.theme, active: state.active,
+      steps: state.fc ? state.fc.rows.length : 0, tilesServed, tileErrors, wavesReady,
       swellTrains: SW.trains.length, particles: SW.parts.length, swellCanvas: [SW.W, SW.H]
     })
   };
-})();
+};

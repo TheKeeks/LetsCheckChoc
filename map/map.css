@@ -1,4 +1,5 @@
-/* Map page: one full-bleed map with controls floating over it.
+/* Map page: the Sound Check map full-bleed, and the 3D sea floor over it on request,
+   with its controls floating over it.
    Light by default; dark from ?theme=dark, the app's display setting, or the parent page. */
 :root {
   --bg: #ffffff;
@@ -32,25 +33,15 @@ button, input { font: inherit; color: inherit; }
 button { cursor: pointer; }
 #map { position: absolute; inset: 0; }
 
-/* ── Monitor | Model: two views of the water, one tab strip */
-:root { --tabs-h: 50px; }
-.tabs { position: absolute; z-index: 6; top: 0; left: 0; right: 0; height: calc(var(--tabs-h) + env(safe-area-inset-top)); padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left));
-  display: flex; justify-content: center; align-items: stretch; gap: 4px; background: var(--bg); border-bottom: 1px solid var(--hair); }
-.tabs button { border: 0; background: transparent; padding: 4px 18px 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 1px; min-width: 0;
-  color: var(--muted); border-bottom: 2.5px solid transparent; }
-.tabs b { font-size: 15px; font-weight: 600; }
-.tabs small { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
-.tabs button:hover { color: var(--ink); }
-.pane { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; top: calc(var(--tabs-h) + env(safe-area-inset-top)); overflow: hidden; }
+/* ── One map: the Sound Check map, or the sea floor in 3D over it */
+.pane { position: absolute; z-index: 2; inset: 0; overflow: hidden; }
 /* The hidden pane keeps its size (the map must not resize to zero) and sits under the other. */
 .pane.off { visibility: hidden; pointer-events: none; z-index: 1; }
 .pane.off * { visibility: hidden !important; }
-#model { background: var(--bg); }
-#model iframe { display: block; width: 100%; height: 100%; border: 0; }
-.compact .tabs { display: none; }
-.compact { --tabs-h: 0px; }
-@media (max-width: 520px) { .tabs small { display: none; } .tabs button { flex: 1; } }
+#explorer { background: var(--bg); }
+#explorer iframe { display: block; width: 100%; height: 100%; border: 0; }
+/* 3D unavailable (no WebGL, or it didn't load): only the way back and the note */
+.no3d #seafloor .bar > :not(#back), .no3d #seafloor .hud, .no3d #seafloor .timebar, .no3d #seafloor .legend { display: none !important; }
 
 /* ── shared pieces */
 .bar, .panel, .hud, .timebar, .legend, .probe, .status { position: absolute; z-index: 3; }
@@ -79,6 +70,8 @@ button { cursor: pointer; }
 .switch[aria-checked="true"] i::after { transform: translateX(16px); }
 .chip { font-weight: 600; min-height: 42px; }
 .chip[aria-expanded="true"] { background: var(--ink); color: var(--bg); }
+.back { padding: 0 14px 0 8px; }
+.back svg { stroke-width: 2.2; }
 .chip.small { min-height: 32px; padding: 0 10px; font-size: 13px; border: 1px solid var(--hair); }
 
 /* ── layers panel */
@@ -152,7 +145,7 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
   .bar { right: 60px; gap: 6px; }
   .seg button { padding: 0 8px; font-size: 13.5px; }
   .switch span { font-size: 13.5px; }
-  .chip span { display: none; }
+  .chip:not(.back) span { display: none; }
   .panel { left: 0; right: 0; bottom: 0; top: auto; width: auto; max-height: 72%; border-radius: 16px 16px 0 0; padding-bottom: max(14px, env(safe-area-inset-bottom)); }
   .legend { width: 150px; bottom: calc(max(12px, env(safe-area-inset-bottom)) + 62px); }
   .hud { max-width: calc(100% - 186px); bottom: calc(max(12px, env(safe-area-inset-bottom)) + 62px); }
@@ -168,7 +161,7 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 @media (max-width: 520px) { .compact .legend { display: none; } .compact .hud { max-width: calc(100% - 24px); } }
 
 /* Forecast's map window: collapsed it is only a picture (no controls); open, the view buttons, 3D and zoom. */
-.compact #layersBtn, .compact .legend, .compact .maplibregl-ctrl-bottom-left { display: none !important; }
+.compact #layersBtn, .compact #back, .compact .legend, .compact .maplibregl-ctrl-bottom-left { display: none !important; }
 .peek .bar, .peek .maplibregl-ctrl-top-right, .peek .probe, .peek .status { display: none !important; }
 .peek .hud { top: 8px; left: 8px; bottom: auto; padding: 4px 10px; border-radius: 999px; max-width: calc(100% - 16px); }
 .peek .hud-main { flex-wrap: nowrap; gap: 8px; white-space: nowrap; }

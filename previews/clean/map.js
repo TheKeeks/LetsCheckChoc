@@ -1,4 +1,5 @@
-// Dedicated, lazily loaded sea-floor and research map.
+// The Map tab: map/index.html, loaded the first time the tab is opened. It shows the Sound Check
+// map (this week, past days, drop a wave) and, from its "3D" button, the sea floor in 3D.
 (function () {
   'use strict';
   if (!window.CLEAN) return;
@@ -13,7 +14,7 @@
   }
   C.register('map', {
     mount: function (el) {
-      el.innerHTML = '<div class="cl-map-wrap"><iframe class="cl-map-frame" title="Map: bathymetry, terrain and swell layers" allow="fullscreen"></iframe><p class="cl-map-link"><a href="map/index.html" target="_blank" rel="noopener">Open map in its own window ↗</a></p></div>';
+      el.innerHTML = '<div class="cl-map-wrap"><iframe class="cl-map-frame" title="Map: this week’s swell, past days, drop a wave, and the sea floor in 3D" allow="fullscreen"></iframe><p class="cl-map-link"><a href="map/index.html" target="_blank" rel="noopener">Open map in its own window ↗</a></p></div>';
       frame = el.querySelector('iframe');
       frame.addEventListener('load', function () { sync(pendingDate ? { date: pendingDate } : {}); });
       C.on('tab', function () { sync(); });

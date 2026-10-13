@@ -1,7 +1,8 @@
 'use strict';
-// The Map page: Fishers Island's sea floor from the viewer's own grids (no tile
-// service needed), 3D on and off, wave height and swell motion for the forecast
-// hour, the parent page's messages, and the compact embed used beside the forecast.
+// The Map page's 3D map (opened straight away with ?show=3d): Fishers Island's sea
+// floor from the viewer's own grids (no tile service needed), 3D on and off, wave
+// height and swell motion for the forecast hour, the parent page's messages, and the
+// compact embed. How the page opens on the Sound Check map and gets here is map-one-map.js.
 // Esri / NOAA tile hosts are unrouted here (aborted), so this also proves the
 // sea floor and forecast layers stand on their own.
 
@@ -12,7 +13,7 @@ module.exports = {
   // scenario takes about 60 s here and has run past 150 s on a busy CI runner: 240 s, as w6-swell-map-3d.js.
   options: { viewport: { width: 1100, height: 800 }, timeoutMs: 240000, contextOptions: { reducedMotion: 'reduce' } },
   async run({ page, ctx, assert }) {
-    await ctx.open('/map/index.html?3d=1');
+    await ctx.open('/map/index.html?show=3d&3d=1');
     const S = () => page.evaluate(() => ChocMap.getState());
     await ctx.waitFor(() => window.ChocMap && ChocMap.getState().ready, { timeout: 45000, label: 'map ready' });
     await ctx.waitFor(() => ChocMap.getState().tilesServed > 10 && ChocMap.getState().wavesReady && ChocMap.getState().swellTrains > 0, { timeout: 60000, label: 'sea floor, waves and swell' });
@@ -69,28 +70,17 @@ module.exports = {
     assert.equal((await S()).active, false);
     await ctx.screenshot('choc-dark');
 
-    // Monitor | Model: Model loads the Sound Check map (map only) the first time it is opened.
-    ctx.serve('/research/index.html', '<!doctype html><html><body><p>Sound Check map</p></body></html>');
-    await page.evaluate(() => ChocMap.receive({ type: 'lcc-map', active: true }));
-    assert.equal(await page.getAttribute('#modelFrame', 'src'), null, 'Model not loaded until opened');
-    await page.click('#tab-model');
-    assert.equal((await S()).tab, 'model');
-    assert.match(await page.getAttribute('#modelFrame', 'src'), /research\/index\.html\?view=map&fill=1/);
-    assert.equal(await page.getAttribute('#tab-model', 'aria-selected'), 'true');
-    assert.ok(await page.evaluate(() => getComputedStyle(document.getElementById('monitor')).visibility === 'hidden'));
-    await page.keyboard.press('ArrowLeft');
-    assert.equal((await S()).tab, 'monitor');
-    assert.equal(await page.evaluate(() => document.activeElement.id), 'tab-monitor');
-    // A past day from the app opens Model.
-    await page.evaluate(() => ChocMap.receive({ type: 'lcc-map', date: '2021-09-10' }));
-    assert.equal((await S()).tab, 'model');
+    // Opened straight in 3D, the Sound Check map waits until "← Map".
+    assert.equal(s.tab, 'seafloor');
+    assert.equal(s.explorer, null, 'the Sound Check map not loaded until asked for');
 
     // Compact embed (Forecast's window): no tabs, no time bar; peek takes no gestures, full does.
     await ctx.open('/map/index.html?embed=1&compact=1&ui=peek&spot=race&theme=light');
     await ctx.waitFor(() => window.ChocMap && ChocMap.getState().ready, { timeout: 45000 });
     s = await S();
-    assert.equal(s.view, 'race'); assert.equal(s.ui, 'peek'); assert.equal(s.tab, 'monitor');
-    assert.equal(await page.isVisible('.tabs'), false);
+    assert.equal(s.view, 'race'); assert.equal(s.ui, 'peek'); assert.equal(s.tab, 'seafloor');
+    assert.equal(s.explorer, null, 'no Sound Check map in the compact embed');
+    assert.equal(await page.isVisible('#back'), false, 'nothing to go back to');
     assert.equal(await page.isVisible('#timebar'), false);
     assert.equal(await page.isVisible('.bar'), false, 'no controls in the collapsed window');
     assert.equal(await page.evaluate(() => ChocMap.map.dragPan.isEnabled()), false);
