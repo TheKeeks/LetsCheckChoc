@@ -35,12 +35,6 @@ module.exports = {
   async run({ page, ctx, assert, log }) {
     const cleanErrors = () => ctx.state(() => (window.CLEAN && CLEAN.errors || []).map(e => e.where + ': ' + e.message));
     const noCleanErrors = async (where) => assert.deepEqual(await cleanErrors(), [], where + ': CLEAN.errors');
-    // The spot name stays off screen (A2-Notes): it lives in config only.
-    const SPOT = /Chocomount|Fishers Island|\bChoc\b/i;
-    const noSpotName = async (where) => {
-      const hit = await ctx.state(rx => (document.body.innerText.match(new RegExp(rx, 'i')) || [])[0] || null, SPOT.source);
-      assert.equal(hit, null, where + ': the spot name is on screen');
-    };
     const boot = async (path) => {
       await ctx.open(path);
       await ctx.waitFor(() => window.CLEAN && CLEAN.ready, { label: 'clean shell up' });
@@ -162,7 +156,6 @@ module.exports = {
       assert.equal(s.legacy, LEGACY[t], t + ': the app\'s own tab follows');
       assert.equal(s.title, TITLE[t]);
       if (t !== 'forecast') await ctx.screenshot('clean-tab-' + t);
-      await noSpotName(t);
     }
     await noCleanErrors('phone tabs');
 
@@ -178,9 +171,8 @@ module.exports = {
     log('settings', JSON.stringify(set0));
     assert.equal(set0.title, 'Settings');
     assert.deepEqual(set0.heads, ['Account', 'Display', 'Forecast', 'Data sources', 'Spot']);
-    assert.equal(set0.checked, 'sunset', 'Display defaults to Automatic at sunset');
+    assert.equal(set0.checked, 'light', 'Display defaults to Always light');
     assert.equal(set0.account, 'Signed in as Test Surfer Sign out');
-    await noSpotName('Settings');
     await page.locator('#cl-sub-settings [data-mode="dark"]').click();
     await ctx.waitFor(() => document.documentElement.getAttribute('data-clean-theme') === 'night', { label: 'Always dark applies' });
     assert.equal(await ctx.state(() => localStorage.getItem('lcc-clean-display')), 'dark');
@@ -290,11 +282,9 @@ module.exports = {
     assert.deepEqual(tv0.legacyShown, [], 'the classic Choc TV panels stay hidden under the clean one');
     assert.ok(tv0.scrollW <= tv0.clientW, 'Choc TV fits the screen');
     await ctx.screenshot('clean-tv-days1');
-    await noSpotName('Choc TV');
     // Sources (kiosk.js's own card, restyled) opens over the panel and pauses.
     await page.locator('#cl-tv .cl-tv-btn[data-act="sources"]').click();
     await ctx.waitFor(() => { const o = document.getElementById('kiosk-info-overlay'); return o && o.closest('#cl-tv') && getComputedStyle(o).display !== 'none'; }, { label: 'Sources card open' });
-    await noSpotName('Choc TV Sources');
     assert.deepEqual(await ctx.state(() => ({ kiosk: KIOSK.state, cue: !document.querySelector('#cl-tv .cl-tv-ps').hidden })),
       { kiosk: 'paused', cue: true }, 'Sources pauses the rotation and says so');
     await page.locator('#kiosk-info-overlay').click();

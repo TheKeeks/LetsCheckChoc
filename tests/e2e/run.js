@@ -182,6 +182,15 @@ function startServer() {
       return send(v.status || 200, descriptorBody(v), (v.headers && v.headers['content-type']) || CONTENT_TYPES[path.extname(urlPath)]);
     }
     if (PINNED_FILES[urlPath]) return send(200, fs.readFileSync(fixturePath(PINNED_FILES[urlPath])), CONTENT_TYPES['.json']);
+    // The map's sea-floor grids live in their own repo (TheKeeks/LetsCheckChoc-data, served by Pages next to
+    // the site at /LetsCheckChoc-data/). Tests serve a local checkout: map-data/ (CI checks it out there) or
+    // E2E_MAP_DATA.
+    if (urlPath.startsWith('/LetsCheckChoc-data/')) {
+      const base = process.env.E2E_MAP_DATA || path.join(REPO_ROOT, 'map-data');
+      const f = path.join(base, urlPath.slice('/LetsCheckChoc-data/'.length));
+      if (!f.startsWith(base + path.sep)) return send(403, '');
+      return fs.readFile(f, (err, data) => (err ? send(404, '') : send(200, data, CONTENT_TYPES[path.extname(f).toLowerCase()] || 'application/octet-stream')));
+    }
     const file = path.join(REPO_ROOT, urlPath === '/' ? 'index.html' : urlPath);
     if (!file.startsWith(REPO_ROOT + path.sep) && file !== REPO_ROOT) return send(403, '');
     fs.readFile(file, (err, data) => {
@@ -300,7 +309,7 @@ function makeExternalRouter(ctx) {
         return await fulfill(route, { status: host === 'fonts.googleapis.com' ? 200 : 404, headers: { 'content-type': 'text/css', 'access-control-allow-origin': '*' }, body: '' });
       }
 
-      if (/(^|\.)basemaps\.cartocdn\.com$|(^|\.)tile\.openstreetmap\.org$/.test(host)) {
+      if (/(^|\.)basemaps\.cartocdn\.com$|(^|\.)tile\.openstreetmap\.org$|^(server|services)\.arcgisonline\.com$/.test(host)) {
         if (net.tiles === 'abort') return await route.abort('connectionfailed');
         return await fulfill(route, { status: 200, headers: { 'content-type': 'image/png', 'access-control-allow-origin': '*' }, body: PNG_1PX });
       }

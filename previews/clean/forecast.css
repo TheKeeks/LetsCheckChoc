@@ -8,6 +8,25 @@
    ════════════════════════════════════════════════════════════════════ */
 
 .cl-f { padding-bottom: 4px; }
+/* ── Map window above This week (map/index.html, compact) ─────────────
+   Collapsed: a short, untouchable picture of the water at the forecast hour;
+   the whole window is one button that opens it. Open: taller, and the map takes
+   the gestures (view buttons, 3D, zoom). */
+.cl-f-map { margin: 18px var(--gut) 6px; }
+.cl-f-map-win { position: relative; height: 150px; border: 1px solid var(--hair); border-radius: 14px; overflow: hidden; background: #9cc3d5; transition: height 220ms ease; }
+.cl-f-map.open .cl-f-map-win { height: min(62vh, 560px); height: min(62svh, 560px); }
+.cl-f-map-win iframe { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; }
+.cl-f-map.open .cl-f-map-win iframe { pointer-events: auto; }
+.cl-f-map-peek { position: absolute; inset: 0; width: 100%; display: flex; align-items: flex-end; justify-content: flex-end; padding: 10px; background: linear-gradient(180deg, transparent 55%, rgba(13, 18, 23, .28)); border-radius: 0; }
+.cl-f-map-peek span { background: rgba(13, 18, 23, .78); color: #fff; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 999px; }
+.cl-f-map.open .cl-f-map-peek { display: none; }
+.cl-f-map-bar { display: flex; align-items: center; gap: 12px; min-height: 40px; font-size: 13px; color: var(--muted); }
+.cl-f-map-tg { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; font-weight: 600; color: var(--ink); padding: 0 2px; }
+.cl-f-map-tg svg { transition: transform 200ms ease; }
+.cl-f-map.open .cl-f-map-tg svg { transform: rotate(180deg); }
+.cl-f-map-src { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cl-f-map-bar a { color: var(--in); font-weight: 600; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .cl-f-map-win, .cl-f-map-tg svg { transition: none; } }
 .cl-f-lead { margin: 0; line-height: 1.4; }
 
 /* ── Now block ──────────────────────────────────────────────────────── */
@@ -304,3 +323,9 @@ html[data-clean-theme="night"] .cl-f-scene {
 @media (prefers-reduced-motion: reduce) {
   .cl-f-jb { transition: none; }
 }
+
+/* Sound Check: the swell at the reef leads; Open-Meteo's offshore swell sits under it */
+.cl-f-scl { margin: 2px 0 0; font-size: 13px; color: var(--cl-fg-2, inherit); opacity: .85; }
+.cl-f-off { opacity: .8; }
+.cl-f-sc-d { font-weight: 600; margin-right: 6px; }
+.cl-f-scl + .cl-f-meta { font-size: 17px; }

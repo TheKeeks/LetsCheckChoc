@@ -19,19 +19,77 @@ Your site will be live at `https://[username].github.io/LetsCheckChoc/`
 
 ## The look
 
-The site opens in the clean design (white by day, dark green after sunset
-at the spot): the swell that reaches the reef up top, this week below it,
-then the chart, the lineup and the details, with Forecast / Log / Model tabs
-and Settings behind the icon in the top right. Choc TV (`?kiosk=1`) uses the
-same design. The old Windows-style look is still there at `?classic=1`
-(`?kiosk=1&classic=1` for Choc TV), and Settings links to it. The new look
-skips the boat question below; the classic look still asks it.
+The site opens on Forecast in the clean, light design. The bottom navigation
+shows **Forecast, Map, Methods, Log**. Log asks you to sign in with Google;
+after signing in, **Model** joins the navigation and your surf journal opens.
+Settings (top right) controls Light, Dark, Follow system, or Sunset to sunrise
+across Forecast, Map, Methods, Log, and Model. Choc TV still follows the sun.
+
+**Map** has two tabs. **Monitor** is Fishers Island's sea floor from the Fishers Island viewer's own
+elevation: NOAA's 2023 topobathy lidar and multibeam surveys at 0.8 m near the
+island and 4 m around it, then the Sound Check 16 m and 144 m grids across Block
+Island Sound. **3D bathymetry** raises it (depth stretch 1–10×, land always
+1.25×); off, the same map lies flat. Drag to move, scroll or pinch to zoom,
+right-drag or two fingers to tilt and turn; Choc, The Race, Fishers and Sound
+jump to set views. On the water, for any 3-hour forecast step (GFS-Wave or
+ECMWF, play or scrub along the bottom bar):
+
+- **Wave height**: the Sound Check refraction model (each swell train at buoy
+  44097 times its refraction coefficient, capped at 0.78 × depth).
+- **Swell motion**: streaks that follow wave rays traced over the bottom, bend
+  around the reefs and slow down as they shoal; more streaks where rays bunch
+  up (focused swell).
+- **Swell paths to Choc**: the model's rays, the ones reaching Choc and
+  Wilderness bright.
+
+All three are draped on the terrain, so in 3D they ride over the bottom.
+Base layers: sea floor with aerial land (Esri), sea floor with elevation
+colors, aerial photo everywhere, or the NOAA nautical chart; optional 5 m
+contours. Hover (or tap on a phone) for depth, its survey and the modeled wave
+height. **Model** is the Sound Check's own map: GFS-Wave and ECMWF across the
+Atlantic, any day since 2016, and Drop a wave.
+
+On Forecast, the map sits in a short window right above **This week**.
+Collapsed it is only a picture of the water at the forecast hour, and the page
+scrolls over it. Tap it (or **Open the map**) and it grows into a live map with
+the view buttons, 3D on/off and zoom; **Close the map** folds it back. It
+follows the hour on the forecast chart and pauses when off screen. The map's
+heights are the Sound Check model's, which can differ from the headline
+forecast. There is no surf or current forecast for the Race.
+
+**Methods** is the research page, now in the shared light/dark design. Its
+historical-day links open the Map explorer at that date.
+
+On Forecast, **Forecast + sea floor** opens the current forecast and an
+interactive terrain panel side by side (stacked on phones). The forecast
+chart's selected hour drives the direction overlays. Terrain can be switched
+between Choc and The Race. The forecast remains the existing Chocomount
+forecast: there is no calibrated Race surf/current model in the source data.
+
+The old Windows-style look remains at `?classic=1` (`?kiosk=1&classic=1`
+for Choc TV), and Settings links to it. The clean look skips the boat question.
+
+### Testing this branch locally
+
+From the checkout, run `python3 -m http.server 8765 --bind 127.0.0.1`, then
+open `http://127.0.0.1:8765/`. Run `npm test` for unit/regression checks;
+`npm run test:e2e` uses the documented Playwright dependency and Chromium.
+The site still needs no build step for GitHub Pages. `node scripts/build-preview.js`
+packages static files into ignored `dist/` for the separate private branch
+preview defined in `.openai/hosting.json`.
+
+Google sign-in uses the existing Firebase project. A new hosted preview domain
+must be added to Firebase Authentication → Settings → Authorized domains by a
+project administrator before Google login works there. The login screen
+reports that condition; it never substitutes a simulated account. No Firebase
+rules or production deployment settings are changed by this branch.
 
 ## File Structure
 
 ```
 LetsCheckChoc/
-├── index.html                  Page shell (3 tabs: Forecast / Regression / Log)
+├── index.html                  Page shell (Forecast / Map / Methods / Log / Model)
+├── map/                        Map page: sea floor (~117 MB of gzip grids in the TheKeeks/LetsCheckChoc-data repo), workers, forecast layers
 ├── app.js                      All JavaScript
 ├── kiosk.js                    Choc TV kiosk mode (?kiosk=1) — see below
 ├── style.css                   All styles
@@ -152,7 +210,7 @@ radar scope's coastline outline with the swell-window cone
 
 ## App Structure
 
-The app is organised as three tabs that share a global header (buoy
+The classic view is organised as three original tabs that share a global header (buoy
 selector + auth bar):
 
 1. **Current Conditions & Forecast** — lineup map (Choc only), swell

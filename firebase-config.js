@@ -13,6 +13,23 @@ const firebaseConfig = {
 window._fbUserId = null;
 window._fbUserIsAnon = true;
 window._fbDisplayName = '';
+window._fbAuthError = '';
+window._fbSignInPending = false;
+
+// Auth errors belong beside the login button as well as in the console.
+// Keep the existing account-linking and session migration paths intact.
+function setAuthStatus(pending, error) {
+  window._fbSignInPending = pending;
+  var code = error && error.code;
+  window._fbAuthError = !error ? '' :
+    code === 'auth/unauthorized-domain' ? 'Google sign-in is not enabled for this preview address. Try the main site, or add this address to Firebase Authentication’s authorized domains.' :
+    code === 'auth/popup-blocked' ? 'Your browser blocked Google sign-in. Allow pop-ups for this site, then try again.' :
+    code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request' ? 'Sign-in was cancelled. Try again when you’re ready.' :
+    code === 'auth/network-request-failed' ? 'Google sign-in could not connect. Check your connection and try again.' :
+    code === 'auth/unavailable' ? 'Google sign-in is unavailable. Check your connection and reload the page.' :
+    'Google sign-in did not finish. Please try again.';
+  window.dispatchEvent(new CustomEvent('lcc-auth-status'));
+}
 
 // Created before the SDK calls below, so it exists (and resolves) even when
 // Firebase fails to load or initialise: loadSurfLog awaits it.
@@ -105,11 +122,14 @@ if (fbAuth) setTimeout(function() {
 // Sign in with Google; tries to link the existing anonymous account first
 var _signingIn = false;
 function signInWithGoogle() {
-  if (_signingIn || !fbAuth) return;
+  if (_signingIn) return;
+  if (!fbAuth) { setAuthStatus(false, { code: 'auth/unavailable' }); return; }
   _signingIn = true;
+  setAuthStatus(true);
   var provider = new firebase.auth.GoogleAuthProvider();
   var currentUser = fbAuth.currentUser;
-  var done = function() { _signingIn = false; };
+  var done = function() { _signingIn = false; setAuthStatus(false); };
+  var failed = function(error) { _signingIn = false; setAuthStatus(false, error); };
   if (currentUser && currentUser.isAnonymous) {
     currentUser.linkWithPopup(provider).then(done).catch(function(err) {
       if (err.code === 'auth/credential-already-in-use' ||
@@ -131,7 +151,7 @@ function signInWithGoogle() {
             ? fbAuth.signInWithCredential(err.credential)
             : fbAuth.signInWithPopup(provider);
           return signIn.then(done).catch(function(e) {
-            done();
+            failed(e);
             // Still anonymous: put the released sessions back under this uid.
             if (released.length && typeof restoreReleasedEntries === 'function') {
               restoreReleasedEntries(released);
@@ -143,7 +163,7 @@ function signInWithGoogle() {
           });
         });
       }
-      done();
+      failed(err);
       if (err.code !== 'auth/popup-closed-by-user' &&
           err.code !== 'auth/cancelled-popup-request') {
         console.warn('Google sign-in failed:', err);
@@ -151,7 +171,7 @@ function signInWithGoogle() {
     });
   } else {
     fbAuth.signInWithPopup(provider).then(done).catch(function(err) {
-      done();
+      failed(err);
       if (err.code !== 'auth/popup-closed-by-user' &&
           err.code !== 'auth/cancelled-popup-request') {
         console.warn('Google sign-in failed:', err);

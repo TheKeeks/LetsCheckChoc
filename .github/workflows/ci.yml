@@ -51,6 +51,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      # The map's sea-floor grids (~120 MB) live in their own repo; the runner serves them from map-data/.
+      - uses: actions/checkout@v4
+        with:
+          repository: TheKeeks/LetsCheckChoc-data
+          path: map-data
       - uses: actions/setup-node@v4
         with:
           node-version: 22

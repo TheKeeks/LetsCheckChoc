@@ -1,5 +1,45 @@
 # Changelog
 
+## [Unreleased] — Forecast leads with the Sound Check height at Choc; the front-door preview retires into the tabs
+
+The Forecast tab's big number was Open-Meteo's offshore swell, the open-ocean reading before the Sound and the sea floor have had their say. The number checked against the surf log is the Sound Check model's: GFS-Wave and ECMWF read at buoy 44097 and carried over the bottom to the reef. It now leads. The headline is Choc's height for this hour (GFS-Wave and ECMWF averaged, between their 3-hour steps), labeled "at Choc now · Sound Check model", with the offshore swell under it labeled "Offshore". After dark the next-window board shows Choc's best height over the incoming tide. Each This-week row starts with Choc's best daylight height; on days when the offshore swell comes from outside the 115–158° window the row says so instead of "Nothing reaches the reef", because the model's Choc number has already weighed the window. The tab reads the forecast that ships with Sound Check and the bot's newer pull on the `fc-data` branch, whichever is newer. When neither covers the hour (the bot stalled for a week), the tab shows the offshore swell exactly as before.
+
+The `?preview=site` front door (Home / Map / Methods on the Sound Check page) is gone: the app's own Forecast, Map, Methods and Log tabs below do the same job inside the app. Methods frames Sound Check with the shared light and dark themes; the Map tab carries the sea floor.
+
+The map's sea-floor grids (about 120 MB) are not in this repo. They live in TheKeeks/LetsCheckChoc-data, which GitHub Pages serves at thekeeks.github.io/LetsCheckChoc-data/, the same address as the site, so the map reads them with no cross-site setup and this repo's history stays small. The e2e runner serves a checkout of that repo (`map-data/`, git-ignored), and CI checks it out there. The 3D map test now runs with reduced motion, because software WebGL in CI is too slow to animate the camera within the time limit.
+
+Verified with the new e2e scenario `preview-clean-forecast-soundcheck.js`: with the shipped forecast a week old the tab shows the offshore swell as before; with a forecast covering the morning (GFS 1.0 ft and ECMWF 2.0 ft at Choc) it reads 1.5 ft, the offshore 1.6 ft sits under it labeled, and Friday's row shows its midday 3.4 ft peak. The runner now answers the Esri tile servers the map asks for with a blank tile instead of leaving them unrouted.
+
+## [Unreleased] — Map: Monitor and Model tabs; Forecast's map in a window above This week
+
+The Sound Check's ocean-wide and past-days map was a button inside the Layers panel that opened an overlay. The Map page now has two tabs: Monitor (the 3D sea floor with the forecast on the water) and Model (the Sound Check's map, map only and full size, loaded the first time it is opened). Arrow keys move between them, a past day sent from the app opens Model, and the tab is remembered for the session.
+
+On Forecast, the side-by-side "Forecast + 3D map" mode is replaced by a map window right above This week. Collapsed it is a short picture of the water at the forecast hour with no controls and no gestures, so the page scrolls over it; opened it grows and takes taps, with the view buttons, 3D on/off and zoom. It follows the chart's hour and pauses off screen or on another tab.
+
+MapLibre's image queue could throw when a tile was cancelled mid-request (a fast fly-to or a sea-floor reload); the vendored copy skips such a request as cancelled (`vendor/maplibre/PATCHES.md`).
+
+Verified with the e2e scenarios `map-terrain.js` (tabs, keyboard, Model loaded on demand, past day opens Model, peek with no gestures and full with view buttons and zoom) and `forecast-terrain.js` (window above This week, collapsed untouchable, open live, hour, theme, pause off screen and off tab, phone fit).
+
+## [Unreleased] — Map rebuilt on the Fishers Island viewer's sea floor; Forecast + 3D map
+
+The Map page's 3D view had lost the Fishers Island viewer's resolution: it drew a 16 m grid as one mesh rebuilt on every pan and zoom, which flickered, and its controls were hand-rolled. The Forecast page's side-by-side view was a small link to a separate sheet, and the swell overlays were static arrows.
+
+The map is now one MapLibre GL map (5.24.0, vendored). Its sea floor comes from the viewer's own grids, kept unchanged in their own repo (TheKeeks/LetsCheckChoc-data, served by GitHub Pages next to the site) (0.8 m detail chunks loaded only where you zoom in, the 4 m overview, then the Sound Check 16 m and 144 m grids), drawn tile by tile in a worker with the viewer's nautical colors and relief shading. "3D bathymetry" raises the same tiles as terrain (depth stretch 1–10×, land 1.25×) or lays the map flat. Wave height (the Sound Check refraction model, ported to a worker) and swell motion (streaks along wave rays traced over the bottom, slowing as they shoal) are draped on the terrain for any forecast step, with a time bar to scrub or play. Aerial photos, the ocean basemap and NOAA charts are live tile services.
+
+Forecast has a "Forecast | Forecast + 3D map" switch: the map sits beside the forecast on wide screens and above it on phones, follows the forecast chart's hour and theme, pauses when Forecast is hidden, and the choice is remembered. The Map tab's frame now fits the screen.
+
+Verified with `tests/unit/map-geometry.test.js` (Mercator tiles, dispersion, terrain encoding, colors) and the e2e scenarios `map-terrain.js` (sea floor without any tile service, 3D on/off, layers, depth probe, parent messages, compact embed) and `forecast-terrain.js` (split beside/above, hour and theme sync, pause, remembered), plus manual checks at 60 fps on a desktop GPU in 3D with swell motion running.
+
+## [Unreleased] — Forecast, Map, Methods and account navigation
+
+The home page now has Forecast, Map, Methods and Log navigation; Model appears after Google sign-in. Log explains why an account is needed, direct Model links use the same login gate, and sign-in failures show useful feedback. Light is the default, with shared theme settings for every page.
+
+Methods retains the research narrative and diagrams while Map houses the existing forecast, historical and wave-path exploration alongside a Choc/Race 3D bathymetry viewer. Existing survey elevations form the terrain; NOAA relief, aerial imagery and topography stream from geographic tile services and follow it. Layer controls, a flat/3D switch, source-resolution notes and a 2D fallback keep the map usable across devices. Forecast + sea floor reuses the live forecast and its selected hour in a two-panel view. Race terrain is explicitly paired with the Chocomount reference forecast because no calibrated Race forecast exists in the repository.
+
+The existing forecast calculations, bot-owned data and Firebase rules are unchanged.
+
+Verified with unit and legacy checks, focused browser scenarios for navigation/auth, Methods/maps, forecast comparison, and the existing clean Forecast/Log/Model/TV views; geometry and rendered-map checks cover the new terrain viewer.
+
 ## [Unreleased] — Let's Check Choc front door, as a preview: Home, Map and Methods
 
 Sound Check had grown into the site's real forecast, but it lived as one long page behind the app's fourth tab. It can now open as the front door: `?preview=site` on the main address opens it split into three pages under one top bar. **Home** is this week at Choc: the 7-day swell at Choc and Wilderness from GFS-Wave and ECMWF carried over the sea floor, then the tide at Silver Eel Pond (NOAA 8510719, highs and lows marked) and the wind at the beach (speed, gusts and direction hour by hour, green where it's clean at Choc: under 6 kn or within 60° of offshore). **Map** is the map on its own, as tall as the screen, with every layer and the timeline. **Methods** is how it works and what it found: the two questions, the model, the forecast's track record, the ten years, Check a date and Wilderness. **Log** goes back to the app's surf log. Links and buttons that jump to a part of the page (Show the ocean that day, a tapped forecast hour, the question cards) open the page that holds it, and Back works between pages.

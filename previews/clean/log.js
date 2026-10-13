@@ -489,9 +489,13 @@
       '<div class="cl-l-wait" aria-hidden="true"></div>' +
       '<div class="cl-l-gate" hidden>' +
         '<div class="cl-pad">' +
-          '<p class="cl-l-gt">Sign in to log sessions</p>' +
-          '<p class="cl-fine cl-l-gf">Sign in with Google in Settings. Your sessions train your model.</p>' +
-          '<button type="button" class="cl-btn cl-btn-block" data-act="settings">Open Settings</button>' +
+          '<div class="cl-l-gicon" aria-hidden="true">' + C.icon.log(36) + '</div>' +
+          '<h2 class="cl-l-gt cl-serif">Your next session starts here.</h2>' +
+          '<p class="cl-l-gf">To log surfs and model them, you need to be logged in.</p>' +
+          '<p class="cl-fine cl-l-gdetail">Keep a surf journal, save what the water felt like, and train your personal forecast with each session.</p>' +
+          '<button type="button" class="cl-btn cl-btn-fill cl-btn-block cl-l-signin" data-act="signin">Sign in with Google</button>' +
+          '<p class="cl-fine cl-l-auth-status" role="status" aria-live="polite" hidden></p>' +
+          '<button type="button" class="cl-btn cl-btn-quiet cl-btn-block cl-l-browse" data-act="forecast">Back to the forecast</button>' +
         '</div>' +
       '</div>' +
       '<form class="cl-l-form" hidden novalidate autocomplete="off">' +
@@ -544,6 +548,7 @@
     var q = function (s) { return root.querySelector(s); };
     S.el = {
       wait: q('.cl-l-wait'), gate: q('.cl-l-gate'), form: q('.cl-l-form'),
+      signIn: q('.cl-l-signin'), authStatus: q('.cl-l-auth-status'),
       edit: q('.cl-l-edit'), editT: q('.cl-l-et'),
       whnB: q('.cl-l-whn b'), whnT: q('.cl-l-whn span'), whn: q('.cl-l-whn'),
       quick: root.querySelectorAll('.cl-l-chips:not(.cl-l-dayc) .cl-chip'),
@@ -624,6 +629,8 @@
       case 'delete': onDelete(b.getAttribute('data-id')); break;
       case 'more': S.shown += PAGE; renderList(); break;
       case 'settings': C.openSettings('account'); break;
+      case 'signin': C.signIn(); break;
+      case 'forecast': C.show('forecast'); break;
       default: break;
     }
   }
@@ -656,6 +663,12 @@
     e.wait.hidden = settled;
     e.gate.hidden = !settled || signedIn;
     e.form.hidden = !signedIn;
+    var status = C.authStatus();
+    e.signIn.disabled = status.pending;
+    setText(e.signIn, status.pending ? 'Opening Google…' : 'Sign in with Google');
+    var message = status.error || (!status.available ? 'Google sign-in is unavailable. Check your connection and reload the page.' : '');
+    setText(e.authStatus, message);
+    e.authStatus.hidden = !message;
   }
 
   function renderWhen() {
@@ -855,7 +868,7 @@
       : (a.signedIn ? '<p class="cl-l-empty">Your sessions show up here once you save one.</p>' : '');
     if (html !== S.listHTML) { e.list.innerHTML = html; S.listHTML = html; }
     e.list.setAttribute('role', shown.length ? 'list' : 'presentation');
-    e.past.hidden = !html || !(S.authSettled || a.signedIn);
+    e.past.hidden = !html || !a.signedIn;
     e.more.hidden = keyed.length <= S.shown;
   }
 
@@ -943,6 +956,7 @@
     renderAll();
     if (a && a.signedIn && S.active && S.lookup.state === 'idle') scheduleLookup(0);
   });
+  C.on('authStatus', function () { if (S.root) renderAuth(); });
   C.on('tick', function () {
     if (!S.root) return;
     followNow();
