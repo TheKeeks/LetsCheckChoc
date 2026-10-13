@@ -3,6 +3,8 @@ forward-ray model.
 
   GFS-Wave (NOAA, Atlantic grid 0.16 deg, hourly to 120 h then 3-hourly): total sea, three swell trains and
     wind sea, each with height, period and direction.  Source: noaa-gfs-bdp-pds on AWS (public).
+  GFS atmosphere (the same run, 1 deg): sea-level pressure over the North Atlantic, for the Forecast tab's storm
+    view (isobars, lows and where they go).  Same source.
   ECMWF IFS wave (open data, 0.25 deg, 3-hourly to 144 h, 6-hourly after): total sea height, mean direction,
     peak period, plus significant height in long-period bands (10-12, 12-14, 14-17, 17-21, 21-25, 25-30 s).
     No direction per train.  Source: ECMWF open data (CC-BY 4.0), read from ECMWF's mirror on Google Cloud
@@ -15,7 +17,10 @@ the page uses. A test against 177 hours in 2021-25 (fctest.py, archived GFS-Wave
 what arrived than the earlier edge-weighted version: typical miss 0.20 ft vs 0.30 ft a day ahead, with less
 bias. Where the model has no value at the buoy, the mean over a 5x5 block of points around it is used.
 
-Usage: python3 scripts/forecast/fcpull.py OUTDIR   -> OUTDIR/fc.json, OUTDIR/field_<model>_<grid>.png
+Usage: python3 scripts/forecast/fcpull.py OUTDIR   -> OUTDIR/fc.json, OUTDIR/field_<model>_<grid>.png,
+                                                       OUTDIR/field_gfs_mslp.png
+       python3 scripts/forecast/fcpull.py --pressure DIR   adds the sea-level pressure of the GFS run named in
+                                                       DIR/fc.json (for a pull made before the pressure was added)
 
 Run every few hours by .github/workflows/update-forecast.yml, which publishes the output to the fc-data branch;
 the Sound Check page reads it from there (research/fc/ holds the copy that ships with the page). Inputs: world.json
@@ -54,8 +59,11 @@ def decode(msg):
     la0, lo0 = eccodes.codes_get(g, 'latitudeOfFirstGridPointInDegrees'), eccodes.codes_get(g, 'longitudeOfFirstGridPointInDegrees')
     dl = eccodes.codes_get(g, 'iDirectionIncrementInDegrees'); dj = eccodes.codes_get(g, 'jDirectionIncrementInDegrees')
     v = eccodes.codes_get_values(g).reshape(nj, ni).astype(np.float32); miss = eccodes.codes_get(g, 'missingValue')
+    masked = eccodes.codes_get(g, 'bitmapPresent')
     eccodes.codes_release(g)
-    v[v >= miss * 0.99] = np.nan
+    # cells with no value (land in the wave grids) carry the missing value (9999) where the field has a bitmap;
+    # a field without one (sea-level pressure, about 101000 Pa) has none, and its values sit above 9999
+    if masked: v[v >= miss * 0.99] = np.nan
     return dict(v=v, la0=la0, lo0=((lo0 + 180) % 360) - 180, dl=dl, dj=dj, ni=ni, nj=nj)
 
 def sample(f, lat, lon):
@@ -123,6 +131,12 @@ def gfs_glob_step(c, s):
         i = next(n for n, l in enumerate(idx) if (':'.join(l.split(':')[3:5])) == name)
         out[k] = decode(get(u, offs[i], (offs[i + 1] - 1) if i + 1 < len(offs) else ''))
     return s, out
+def gfs_mslp_step(c, s):
+    # the atmosphere's 1 deg file: sea-level pressure is its first record, a small range read
+    u = f"https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{c:%Y%m%d}/{c:%H}/atmos/gfs.t{c:%H}z.pgrb2.1p00.f{s:03d}"
+    idx = get(u + '.idx').decode().splitlines(); offs = [int(l.split(':')[1]) for l in idx]
+    i = next(n for n, l in enumerate(idx) if ':'.join(l.split(':')[3:5]) == 'PRMSL:mean sea level')
+    return s, decode(get(u, offs[i], (offs[i + 1] - 1) if i + 1 < len(offs) else ''))
 def ec_step(c, src, s):
     base = f"{src}/{c:%Y%m%d}/{c:%H}z/ifs/0p25/wave/{c:%Y%m%d%H}0000-{s}h-wave-fc"
     idx = [json.loads(l) for l in get(base + '.index').decode().splitlines()]
@@ -211,6 +225,26 @@ def grid_axes(g):
 def q8(a, s, top=254):
     return np.where(np.isnan(a), 255, np.clip(np.round(a * s), 0, top)).astype(np.uint8)
 
+# sea-level pressure in the field images: tenths of a hPa above 800 in two bytes (red = high, green = low), blue 0;
+# no data = 255, 255. 0.1 hPa steps from 800 to 7353 hPa: every real pressure fits, and isobars need no more.
+HPA0, HPA_NONE = 800.0, 65535
+def enc_hpa(p):
+    v = np.round((np.asarray(p, float) - HPA0) * 10.0)
+    v = np.where(np.isfinite(v) & (v >= 0) & (v < HPA_NONE), v, HPA_NONE).astype(np.uint32)
+    return np.stack([(v >> 8).astype(np.uint8), (v & 255).astype(np.uint8), np.zeros(v.shape, np.uint8)], -1)
+def dec_hpa(rgb):
+    rgb = np.asarray(rgb, np.uint32); v = (rgb[..., 0] << 8) | rgb[..., 1]
+    return np.where(v == HPA_NONE, np.nan, v / 10.0 + HPA0)
+def mslp_image(P, g='ocean'):
+    """P: {step: decoded PRMSL field (Pa)} -> uint8 [steps, cells, 3] on grid g, cells in the same order as the swell
+    field images (north row first, west to east)"""
+    la, lo = grid_axes(g); LA, LO = np.meshgrid(la, lo, indexing='ij')
+    return np.stack([enc_hpa(sample(P[s], LA.ravel(), LO.ravel()) / 100.0) for s in STEPS])
+MSLP_META = dict(file='field_gfs_mslp.png', grid='ocean', unit='hPa', enc='(R*256+G)/10+800; R=G=255 no data')
+def write_mslp(OUT, P):
+    Image.fromarray(mslp_image(P), 'RGB').save(os.path.join(OUT, MSLP_META['file']), optimize=True)
+    return dict(MSLP_META)
+
 def main(OUT):
     os.makedirs(OUT, exist_ok=True)
     cg, (ce, esrc) = latest_gfs(), latest_ec()
@@ -219,6 +253,9 @@ def main(OUT):
         G = dict(ex.map(lambda s: gfs_step(cg, s), STEPS)); print('gfs done', flush=True)
         GG = dict(ex.map(lambda s: gfs_glob_step(cg, s), STEPS)); print('gfs global done', flush=True)
         E = dict(ex.map(lambda s: ec_step(ce, esrc, s), STEPS)); print('ec done', flush=True)
+        # the storms are a nice-to-have: a pull without them still publishes the swell
+        try: P = dict(ex.map(lambda s: gfs_mslp_step(cg, s), STEPS)); print('gfs pressure done', flush=True)
+        except Exception as e: P = None; print('no sea-level pressure this run:', e, flush=True)
     elat = np.array([p[0] for p in EDGE]); elon = np.array([p[1] for p in EDGE])
     t0g, t0e = cg, ce
     times = sorted({t0g + dt.timedelta(hours=s) for s in STEPS} & {t0e + dt.timedelta(hours=s) for s in STEPS} | {t0g + dt.timedelta(hours=s) for s in STEPS})
@@ -279,8 +316,20 @@ def main(OUT):
         meta[g] = dict(lat=[float(la[0]), float(la[-1]), GRIDS[g]['d'], len(la)], lon=[float(lo[0]), float(lo[-1]), GRIDS[g]['d'], len(lo)])
     fc = dict(made=dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), runs=dict(gfs=t0g.strftime('%Y-%m-%dT%HZ'), ec=t0e.strftime('%Y-%m-%dT%HZ')),
               steps=STEPS, buoy=BUOY, grids=meta, gfs=series['gfs'], ec=series['ec'])
+    if P: fc['mslp'] = write_mslp(OUT, P)
     with open(os.path.join(OUT, 'fc.json'), 'w') as f: json.dump(fc, f, separators=(',', ':'))
     print('wrote', OUT, 'steps', len(STEPS), 'peak Choc gfs', max(x['choc'] for x in series['gfs']), 'ec', max(x['choc'] for x in series['ec']))
 
+def add_pressure(DIR):
+    """the sea-level pressure of the GFS run in DIR/fc.json, added to that pull (its other files untouched)"""
+    p = os.path.join(DIR, 'fc.json'); fc = jload(p)
+    c = dt.datetime.strptime(fc['runs']['gfs'], '%Y-%m-%dT%HZ').replace(tzinfo=dt.timezone.utc)
+    if fc.get('steps') != STEPS: raise SystemExit('that pull has other steps')
+    with cf.ThreadPoolExecutor(8) as ex: P = dict(ex.map(lambda s: gfs_mslp_step(c, s), STEPS))
+    fc['mslp'] = write_mslp(DIR, P)
+    with open(p, 'w') as f: json.dump(fc, f, separators=(',', ':'))
+    print('added', fc['mslp']['file'], 'for GFS', fc['runs']['gfs'])
+
 if __name__ == '__main__':
-    main(sys.argv[1] if len(sys.argv) > 1 else 'fc')
+    if len(sys.argv) > 2 and sys.argv[1] == '--pressure': add_pressure(sys.argv[2])
+    else: main(sys.argv[1] if len(sys.argv) > 1 else 'fc')

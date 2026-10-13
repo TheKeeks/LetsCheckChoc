@@ -36,6 +36,20 @@
     }
   });
 
+  // The spot and, on the forecast, the hour the map shows, for the 3D map to open on.
+  function open3D() {
+    var trip = window.CHOC && window.CHOC.trip, fc = trip && trip.fc, st = trip && trip.state;
+    var row = fc && fc.d && fc.d.gfs && fc.d.gfs[fc.i];
+    var msg = { type: 'lcc-open-3d', spot: fc && fc.spot === 'wild' ? 'wild' : 'choc', time: st && st.phase === 'week' && row ? row.t : null };
+    if (window.parent !== window) { window.parent.postMessage(msg, location.origin); return; }
+    var target = new URL('../map/index.html', location.href);
+    target.searchParams.set('show', '3d');
+    target.searchParams.set('theme', root.dataset.researchTheme);
+    if (msg.spot === 'wild') target.searchParams.set('view', 'fishers');
+    if (msg.time) target.searchParams.set('time', msg.time);
+    location.href = target.href;
+  }
+
   window.addEventListener('DOMContentLoaded', function () {
     document.title = root.dataset.researchView === 'map' ? 'Map explorer · LetsCheckChoc' : 'Methods · LetsCheckChoc';
     function openMap(date) {
@@ -52,6 +66,18 @@
       link.addEventListener('click', function (event) { event.preventDefault(); openMap(); });
     });
     if (root.dataset.researchView === 'methods' && window.CHOC) window.CHOC.showPast = openMap;
+    // The Map page's map: a "3D" button beside Layers, the key and Full screen opens the sea floor
+    // around Fishers in 3D at the same spot and hour (the Map page answers lcc-open-3d).
+    var tr = document.getElementById('hubTr');
+    if (root.dataset.researchView === 'map' && tr && !document.getElementById('hub3d')) {
+      var b3 = document.createElement('button');
+      b3.type = 'button'; b3.className = 'hub-ib hub-3d'; b3.id = 'hub3d';
+      b3.title = 'The sea floor in 3D';
+      b3.setAttribute('aria-label', 'Explore the sea floor around Fishers in 3D');
+      b3.innerHTML = '<span aria-hidden="true">3D</span>';
+      b3.addEventListener('click', open3D);
+      tr.appendChild(b3);
+    }
     var date = query.get('date');
     if (root.dataset.researchView === 'map' && /^\d{4}-\d{2}-\d{2}$/.test(date || '') && window.CHOC && window.CHOC.showPast) window.CHOC.showPast(date);
   });

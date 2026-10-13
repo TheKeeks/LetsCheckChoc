@@ -117,13 +117,17 @@
       <div class="hub-bot" id="pastBox" data-mode="past" hidden>
         <div class="hub-over"><button type="button" id="pastBest" class="hub-chip" hidden></button><div class="hub-key" role="img" aria-label="Wave height colors, 0 to 20 feet and up"><i></i><span><b>0</b><b style="left:22.4%">1</b><b style="left:50%">5</b><b>20+ ft</b></span></div></div>
         <div class="hub-bar"><button type="button" id="pastPlay" class="hub-play" aria-label="Play day by day">▶</button><div class="hub-tlw">
-          <div class="hub-mrow"><button type="button" id="pastPrev" class="hub-mb" aria-label="Previous month">‹</button><b id="pastMonth" class="mono"></b><button type="button" id="pastNext" class="hub-mb" aria-label="Next month">›</button><input id="pastDate" type="date" aria-label="Pick a day"></div>
+          <div class="hub-mrow"><button type="button" id="pastPrev" class="hub-mb" aria-label="Previous month">‹</button><button type="button" id="pastDec" class="hub-dec" aria-haspopup="dialog" aria-controls="decOv" title="Ten years, month by month"><b id="pastMonth" class="mono"></b><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h3v3H2zM6.5 2h3v3h-3zM11 2h3v3h-3zM2 6.5h3v3H2zM6.5 6.5h3v3h-3zM11 6.5h3v3h-3zM2 11h3v3H2zM6.5 11h3v3h-3zM11 11h3v3h-3z" fill="currentColor"/></svg><span class="hub-dec-t">Ten years</span></button><button type="button" id="pastNext" class="hub-mb" aria-label="Next month">›</button><input id="pastDate" type="date" aria-label="Pick a day"></div>
           <div id="pastTl" class="fc-tl" aria-label="Tap a day of the month"></div></div></div>
       </div>
       <div class="hub-bot" id="tripDropCtl" data-mode="drop" hidden>
         <div class="hub-bar"><button type="button" id="tripPlay" class="hub-go">Play</button><p id="tripOut" class="hub-note" aria-live="polite"></p></div>
       </div>
     </div>
+  </div>
+  <div class="dec-ov" id="decOv" role="dialog" aria-modal="true" aria-labelledby="decOvH" hidden>
+    <div class="dec-ov-top"><h2 id="decOvH">Ten years, month by month</h2><button type="button" class="dec-ov-x" id="decOvX">Back to the map</button></div>
+    <div class="dec-ov-body" id="decOvBody"><p class="dec-ov-lede">Every month since the buoy went in. Tap a month for its days, a day for its details, then open it on the map.</p></div>
   </div>
   <figure class="chart cut" id="cutBox" hidden>
     <div class="cut-top"><div class="fr-cap">Your wave over the sea floor</div>

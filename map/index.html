@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <title>Map · Let's Check Choc</title>
-  <link rel="stylesheet" href="../vendor/maplibre/maplibre-gl.css">
   <link rel="stylesheet" href="map.css">
   <script>
     // Theme and embedding before first paint: ?theme= wins, then the app's display setting.
@@ -22,15 +21,17 @@
   </script>
 </head>
 <body>
-  <nav class="tabs" role="tablist" aria-label="Map views">
-    <button type="button" role="tab" id="tab-monitor" data-tab="monitor" aria-controls="monitor" aria-selected="true"><b>Monitor</b><small>Fishers in 3D · this week</small></button>
-    <button type="button" role="tab" id="tab-model" data-tab="model" aria-controls="model" aria-selected="false" tabindex="-1"><b>Model</b><small>Ocean-wide swell · past days · drop a wave</small></button>
-  </nav>
+  <!-- The Sound Check map: this week, past days, drop a wave. Its "3D" button opens the sea floor below. -->
+  <div id="explorer" class="pane" role="region" aria-label="Sound Check map">
+    <iframe id="explorerFrame" title="Sound Check map: this week's swell, any day since 2016, drop a wave"></iframe>
+  </div>
 
-  <div id="monitor" class="pane" role="tabpanel" aria-labelledby="tab-monitor">
+  <!-- The sea floor around Fishers in 3D, with the forecast on the water (map.js, loaded when first opened). -->
+  <div id="seafloor" class="pane off" role="region" aria-label="The sea floor in 3D" aria-hidden="true">
   <div id="map" role="region" aria-label="Map of Fishers Island and Block Island Sound. Drag to move, scroll or pinch to zoom, right-drag or two fingers to tilt and turn."></div>
 
   <header class="bar" aria-label="Map controls">
+    <button type="button" id="back" class="chip back" aria-label="Back to the Sound Check map"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg><span>Map</span></button>
     <div class="seg" role="group" aria-label="Go to">
       <button type="button" data-view="choc" aria-pressed="true">Choc</button>
       <button type="button" data-view="race" aria-pressed="false">The Race</button>
@@ -73,7 +74,7 @@
       <p><b>Sea floor and island:</b> NOAA NGS 2023 topobathy lidar (1 m), NOAA NCEI multibeam surveys (0.4–2 m, MLLW shifted to NAVD88), NOAA CUDEM (3 m) and USGS 3DEP lidar, built into 0.8 m and 4 m grids for the Fishers Island viewer. Beyond Fishers: the Sound Check 16 m survey grid and its 144 m refraction grid. Heights are NAVD88.</p>
       <p><b>Wave height:</b> the Sound Check refraction model: each GFS-Wave (or ECMWF) swell train at buoy 44097, times the model's refraction coefficient for its period and direction, trains added as energy, capped at 0.78 × depth.</p>
       <p><b>Swell motion:</b> wave rays traced across the same depth grids (144 m across the Sound, 32 m around Fishers); streaks follow the rays' direction and slow to the waves' group speed in shallow water. More streaks where the rays bunch up (focused energy).</p>
-      <p><b>Model tab:</b> the Sound Check's own map: GFS-Wave and ECMWF across the Atlantic, any day since 2016, and Drop a wave.</p>
+      <p><b>Map (← Map):</b> the Sound Check's own map: GFS-Wave and ECMWF across the Atlantic, any day since 2016, and Drop a wave.</p>
       <p><b>Live map layers:</b> Esri World Imagery and Ocean Base (Esri, Maxar, Earthstar Geographics, GEBCO, NOAA); NOAA Office of Coast Survey ENC chart display.</p>
     </details>
   </aside>
@@ -99,12 +100,6 @@
 
   </div>
 
-  <div id="model" class="pane off" role="tabpanel" aria-labelledby="tab-model">
-    <iframe id="modelFrame" title="Sound Check model map: ocean-wide swell, any day since 2016, drop a wave"></iframe>
-  </div>
-
-  <script src="../vendor/maplibre/maplibre-gl.js"></script>
-  <script src="geometry.js"></script>
-  <script src="map.js"></script>
+  <script src="page.js"></script>
 </body>
 </html>

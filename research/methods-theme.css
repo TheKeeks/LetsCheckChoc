@@ -71,3 +71,5 @@
 [data-research-fill] .wrap > section:not([aria-labelledby="trip-h"]) { display: none !important; }
 [data-research-fill] .trip-stage { height: 100vh; height: 100svh; }
 @media (max-width: 520px) { [data-research-fill] .trip-stage { height: 100vh; height: 100svh; } }
+/* The Map page's "3D" button (methods-theme.js): text in the icon column. */
+.hub-3d span { font: 700 14px/1 system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: .02em; }

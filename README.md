@@ -43,7 +43,21 @@ before ("forecasts on track" when they were within half a foot or 15 %). Tap
 it for the last two days. If the model run doesn't reach the present (the
 forecast bot stalled), Forecast says so instead of showing an old number.
 
-**Map** has two tabs. **Monitor** is Fishers Island's sea floor from the Fishers Island viewer's own
+The map has two views: **Swell at Choc** (the rays above) and **Storms**, the
+North Atlantic at the same hour from the Gulf of Mexico to Africa: GFS-Wave's
+wave height in colour, GFS's sea-level pressure as lines every 4 hPa, the
+lows (L) and highs (H) with their pressure, and each storm's track over the
+run (lows that last a day and get down to 1000 hPa), brighter for the hours
+still to come. ▶ plays the week, so you can watch a storm cross the ocean
+and the swell it makes head for the coast.
+
+**Map** is one map: the Sound Check map, this week's swell from the open
+Atlantic to the reef (GFS-Wave or ECMWF), any day since 2016 (Past), and Drop
+a wave. On a past day the month in the bottom bar (with the small grid) opens
+the ten years, month by month; tap a month, then a day, then "Open this day
+on the map" to come back on it. The **3D** button opens Fishers Island's sea
+floor in 3D at the same spot and hour (Wilderness opens the Fishers view);
+**← Map** goes back. The 3D map is built from the Fishers Island viewer's own
 elevation: NOAA's 2023 topobathy lidar and multibeam surveys at 0.8 m near the
 island and 4 m around it, then the Sound Check 16 m and 144 m grids across Block
 Island Sound. **3D bathymetry** raises it (depth stretch 1–10×, land always
@@ -64,8 +78,8 @@ All three are draped on the terrain, so in 3D they ride over the bottom.
 Base layers: sea floor with aerial land (Esri), sea floor with elevation
 colors, aerial photo everywhere, or the NOAA nautical chart; optional 5 m
 contours. Hover (or tap on a phone) for depth, its survey and the modeled wave
-height. **Model** is the Sound Check's own map: GFS-Wave and ECMWF across the
-Atlantic, any day since 2016, and Drop a wave.
+height. The 3D map (about 1 MB of MapLibre) loads only the first time it is
+opened.
 
 **Methods** is the research page, now in the shared light/dark design. Its
 historical-day links open the Map explorer at that date.
