@@ -125,7 +125,21 @@
         g.addEventListener('click', pick); g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
       }
     });
-    document.getElementById('decCap').textContent = CAP[metric] + ' Hatched months have under 300 hours of buoy data (gaps in late 2017 and August 2026; the current month is still filling in).';
+    document.getElementById('decCap').textContent = CAP[metric] + ' Hatched months have under 300 hours of buoy data' + gapNote() + '.';
+  }
+  // the months short of buoy data, from the history itself (the history bot adds a day every day and fills gaps
+  // when late readings arrive): "(gaps in Oct–Nov 2017; the latest month is still filling in)"
+  function gapNote() {
+    const ym = DATA.ym.all, ks = Object.keys(ym).filter((k) => k >= '2016').sort(), lastK = ks[ks.length - 1], runs = [];
+    for (const k of ks) {
+      if (k === lastK || ym[k][2] >= 300) continue;
+      const [y, m] = k.split('-').map(Number), r = runs[runs.length - 1];
+      if (r && r.y === y && r.m1 === m - 1) r.m1 = m; else runs.push({ y, m0: m, m1: m });
+    }
+    const gaps = runs.map((r) => (r.m0 === r.m1 ? MON[r.m0 - 1] : `${MON[r.m0 - 1]}–${MON[r.m1 - 1]}`) + ' ' + r.y), notes = [];
+    if (gaps.length) notes.push('gaps in ' + (gaps.length > 1 ? gaps.slice(0, -1).join(', ') + ' and ' + gaps[gaps.length - 1] : gaps[0]));
+    if (lastK && ym[lastK][2] < 300) notes.push('the latest month is still filling in');
+    return notes.length ? ' (' + notes.join('; ') + ')' : '';
   }
   function month() {
     const out = document.getElementById('decMonth'); if (!sel) { out.innerHTML = ''; return; }

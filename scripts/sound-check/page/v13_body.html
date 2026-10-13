@@ -1,7 +1,7 @@
 <div class="wrap">
 <header>
   <h1 class="sc-title">Methods</h1>
-  <div class="eyebrow">Chocomount research · Block Island buoy 44097 · 2016 – 2026</div>
+  <div class="eyebrow">Chocomount research · Block Island buoy 44097 · 2016 – <span data-hist="year">2026</span></div>
   <p class="lede">Hourly swell at Block Island buoy 44097 since 2016, carried to Chocomount and Wilderness with a refraction model built on NOAA's sea-floor survey and checked against the surf log.</p>
   <div class="qa-box">
     <a class="qa" href="#q1-h"><span class="eyebrow">Question 1</span><b>What makes the surf good at Choc?</b><span>The swell that actually reaches the reef, not the buoy's number. The model's height at Choc picks the bigger of two of your sessions <span class="mono" id="qa1M">88%</span> of the time, the raw buoy <span class="mono" id="qa1B">77%</span>. After size comes offshore wind; the tide barely matters.</span></a>
@@ -232,7 +232,7 @@
   <figure class="chart">
     <h3>Run back over ten years: predicted 7+ days</h3>
     <div id="goodMonths"></div>
-    <figcaption>The model scored every hour from 2016 to 2026. A day counts when its best 3 hours average 7/10 or better. Hatched months have no logged sessions (all 28 are June–October), so the model has never seen winter water, winter wind or winter crowds, and those bars are extrapolation. Your log also leans toward days you chose to go, so treat this as "days that look like your good days," not a forecast.</figcaption>
+    <figcaption>The model scored every hour from 2016 to <span data-hist="year">2026</span>. A day counts when its best 3 hours average 7/10 or better. Hatched months have no logged sessions (all 28 are June–October), so the model has never seen winter water, winter wind or winter crowds, and those bars are extrapolation. Your log also leans toward days you chose to go, so treat this as "days that look like your good days," not a forecast.</figcaption>
   </figure>
 </section>
 <section aria-labelledby="ans-h">
@@ -273,9 +273,9 @@
   <h2 id="tr-h">One swell or two?</h2>
   <p>The buoy often feels more than one swell at once: a groundswell from a storm far away plus waves from the local wind, coming from different directions. A "swell train" is one of those. The model already splits the buoy's reading by period and direction, so it counts each train separately. Here are the trains it finds.</p>
   <div class="takeaways">
-    <div class="take"><b class="mono">30%</b><span>of days have two or more trains of 1 ft+ at the buoy when Choc is at its biggest.</span></div>
-    <div class="take"><b class="mono">1 train</b><span>makes the surf on almost every 3 ft+ day at Choc. On a typical big day the biggest train at the buoy brings all of Choc's swell energy; even on the most mixed 10% of days it brings 98%.</span></div>
-    <div class="take"><b class="mono">20 days</b><span>in ten years (3 ft+ at Choc) where the buoy's biggest train wasn't the one making the surf. Usually a short north-to-east wind sea sat on top of a longer SE swell. Going by the buoy's single main direction, those days look blocked.</span></div>
+    <div class="take"><b class="mono" data-hist="tr-multi">30%</b><span>of days have two or more trains of 1 ft+ at the buoy when Choc is at its biggest.</span></div>
+    <div class="take"><b class="mono">1 train</b><span>makes the surf on almost every 3 ft+ day at Choc. On a typical big day the biggest train at the buoy brings <span data-hist="tr-med">all</span> of Choc's swell energy; even on the most mixed 10% of days it brings <span data-hist="tr-p10">98%</span>.</span></div>
+    <div class="take"><b class="mono"><span data-hist="tr-notmain">20</span> days</b><span>in ten years (3 ft+ at Choc) where the buoy's biggest train wasn't the one making the surf. Usually a short north-to-east wind sea sat on top of a longer SE swell. Going by the buoy's single main direction, those days look blocked.</span></div>
   </div>
   <p><strong>The clearest case: 4 January 2018</strong>, the bomb cyclone. The buoy read 13.8 ft at 7 s from the NNE, which barely reaches Choc (2.2 ft). Underneath was 12.8 ft at 10.5 s from the ESE (121°), which reached Choc at 7.1 ft. Pick that date below to see it.</p>
 </section>
@@ -283,7 +283,7 @@
   <div class="eyebrow">Question 2 · any day you remember</div>
   <h2 id="dc-h">Check a date</h2>
   <figure class="chart">
-    <h3>Check any day, May 2016 – Oct 2026</h3>
+    <h3>Check any day, May 2016 – <span data-hist="month">Oct 2026</span></h3>
     <label class="rl">Date <input type="date" id="dcDate" value="2024-04-04" min="2016-05-13" max="2026-10-04"></label>
     <div id="dcOut"></div>
     <figcaption>Modeled best 3 hours at each spot from the buoy's full spectrum, the swell trains at Choc's biggest hour, and the wind during those hours ("clean" means light, or within 60° of offshore at Choc, or from north to east-southeast at Wilderness). Use it to line up a day you remember against what the model says. Picking a date here also moves the month calendar, the map's Past view and the panels under the calendar.</figcaption>
@@ -349,14 +349,14 @@
   <h2 id="wild-h">Wilderness: the east-swell, east-wind left</h2>
   <p>Wilderness is a left point break on Fishers' south shore, about 4 km west of Choc, along 41.25286° N 72.00573° W to 41.25551° N 72.01117° W. The shore faces SSW, and the point at its east end shelters it from east wind. Its zone is the 150 m strip along that shoreline, and the same forward rays as Choc are counted there (How the model works shows both).</p>
   <ul>
-    <li><strong>Size: it gets less swell than Choc.</strong> It faces SSW and sits behind the curve of Fishers, so it's more sheltered. Over ten years Wilderness models 2.5 ft+ on 698 days against Choc's 1,012, and only beats Choc by half a foot or more on 9 days. It does relatively best on east swell (about Choc's size when the buoy's swell comes from 0–120°) and worst on south to south-west swell (about 0.75× Choc).</li>
-    <li><strong>Wind: this is why Wilderness days exist.</strong> The point at its east end blocks east and north-east wind, which blows Choc out. "Wilderness days" (3 hours with Wilderness 2.5 ft+ and wind it likes, while Choc's wind is not clean) happened on 300 days in ten years, about 30 a year, mostly September–October and February–April.</li>
+    <li><strong>Size: it gets less swell than Choc.</strong> It faces SSW and sits behind the curve of Fishers, so it's more sheltered. Over ten years Wilderness models 2.5 ft+ on <span data-hist="w-wild">698</span> days against Choc's <span data-hist="w-choc">1,012</span>, and only beats Choc by half a foot or more on <span data-hist="w-beats">9</span> days. It does relatively best on east swell (about Choc's size when the buoy's swell comes from 0–120°) and worst on south to south-west swell (about 0.75× Choc).</li>
+    <li><strong>Wind: this is why Wilderness days exist.</strong> The point at its east end blocks east and north-east wind, which blows Choc out. "Wilderness days" (3 hours with Wilderness 2.5 ft+ and wind it likes, while Choc's wind is not clean) happened on <span data-hist="w-days">300</span> days in ten years, about <span data-hist="w-year">30</span> a year, mostly September–October and February–April.</li>
     <li><strong>Shape: what decides whether you go, and the weakest part of the model.</strong> You surf it when it peels, and it peels best when long-period swell wraps the point. The model's shape read (the share of swell meeting the bottom contours at 30°+, the "peel angle") agrees that east swell peels better than south-east. But it says longer periods peel <em>less</em>, the opposite of what you see, and it barely varies from day to day (almost all days score 0.42–0.55). Most likely it measures the angle too far out (within 400 m, on 48 m cells) to see the wrap around the point. So treat the shape column below as experimental, not as a reason to go or not.</li>
   </ul>
   <figure class="chart">
     <div id="wildMonths"></div>
     <div class="legend"><span class="key"><span class="sw" style="background:var(--swell)"></span> Choc 2.5 ft+</span><span class="key"><span class="sw" style="background:#4fb6c9"></span> Wilderness 2.5 ft+</span><span class="key"><span class="sw" style="background:#9be3ee"></span> Wilderness day (works there, not at Choc)</span></div>
-    <figcaption>Share of days each month, 2016–2026, from the best 3 hours of each day. Wind is the ERA5 cell at 41.25 N 72.00 W, which sits right off Wilderness.</figcaption>
+    <figcaption>Share of days each month, 2016–<span data-hist="year">2026</span>, from the best 3 hours of each day. Wind is the ERA5 cell at 41.25 N 72.00 W, which sits right off Wilderness.</figcaption>
   </figure>
   <figure class="chart">
     <div class="scroll"><table id="wildTop"></table></div>
