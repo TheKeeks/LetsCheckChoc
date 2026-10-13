@@ -136,10 +136,13 @@ const DEFAULT_NET = {
 };
 
 // Same-origin files pinned to fixtures: the bot rewrites data/buoy.json and
-// data/verification.json every 2 h, so live copies would drift from FIXTURE_NOW.
+// data/verification.json every 2 h, so live copies would drift from FIXTURE_NOW;
+// the history bot adds a day to the Sound Check history every day, which would
+// move every count the research scenarios check.
 const PINNED_FILES = {
   '/data/buoy.json': 'pipeline/buoy.json',
-  '/data/verification.json': 'pipeline/verification.json'
+  '/data/verification.json': 'pipeline/verification.json',
+  '/research/hist.js': 'soundcheck/hist.js'
 };
 
 const CONTENT_TYPES = {
@@ -181,7 +184,7 @@ function startServer() {
       if (Buffer.isBuffer(v) || typeof v === 'string') return send(200, v, CONTENT_TYPES[path.extname(urlPath)]);
       return send(v.status || 200, descriptorBody(v), (v.headers && v.headers['content-type']) || CONTENT_TYPES[path.extname(urlPath)]);
     }
-    if (PINNED_FILES[urlPath]) return send(200, fs.readFileSync(fixturePath(PINNED_FILES[urlPath])), CONTENT_TYPES['.json']);
+    if (PINNED_FILES[urlPath]) return send(200, fs.readFileSync(fixturePath(PINNED_FILES[urlPath])), CONTENT_TYPES[path.extname(urlPath)] || CONTENT_TYPES['.json']);
     // The map's sea-floor grids live in their own repo (TheKeeks/LetsCheckChoc-data, served by Pages next to
     // the site at /LetsCheckChoc-data/). Tests serve a local checkout: map-data/ (CI checks it out there) or
     // E2E_MAP_DATA.
