@@ -69,6 +69,7 @@
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
+const zlib = require('zlib');
 const assert = require('node:assert/strict');
 const { REPO_ROOT, FIXTURE_NOW, apiFixtureFor, descriptorBody, fixturePath, readFixture, ERRORS } = require('../helpers/fixtures');
 
@@ -142,8 +143,13 @@ const DEFAULT_NET = {
 const PINNED_FILES = {
   '/data/buoy.json': 'pipeline/buoy.json',
   '/data/verification.json': 'pipeline/verification.json',
-  '/research/hist.js': 'soundcheck/hist.js'
+  '/research/hist.js': 'soundcheck/hist.js.gz'      // gzipped (fixtures stay small), unzipped when served
 };
+
+function pinned(urlPath) {
+  const f = fixturePath(PINNED_FILES[urlPath]), data = fs.readFileSync(f);
+  return f.endsWith('.gz') ? zlib.gunzipSync(data) : data;
+}
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -184,7 +190,7 @@ function startServer() {
       if (Buffer.isBuffer(v) || typeof v === 'string') return send(200, v, CONTENT_TYPES[path.extname(urlPath)]);
       return send(v.status || 200, descriptorBody(v), (v.headers && v.headers['content-type']) || CONTENT_TYPES[path.extname(urlPath)]);
     }
-    if (PINNED_FILES[urlPath]) return send(200, fs.readFileSync(fixturePath(PINNED_FILES[urlPath])), CONTENT_TYPES[path.extname(urlPath)] || CONTENT_TYPES['.json']);
+    if (PINNED_FILES[urlPath]) return send(200, pinned(urlPath), CONTENT_TYPES[path.extname(urlPath)] || CONTENT_TYPES['.json']);
     // The map's sea-floor grids live in their own repo (TheKeeks/LetsCheckChoc-data, served by Pages next to
     // the site at /LetsCheckChoc-data/). Tests serve a local checkout: map-data/ (CI checks it out there) or
     // E2E_MAP_DATA.
@@ -551,4 +557,4 @@ if (require.main === module) {
   main().catch(e => { console.error(e); process.exit(1); });
 }
 
-module.exports = { DEFAULT_OPTIONS, DEFAULT_NET, PINNED_FILES };
+module.exports = { DEFAULT_OPTIONS, DEFAULT_NET, PINNED_FILES, pinned };
