@@ -1,0 +1,73 @@
+/* The research and its charts share the display choice in the app's Settings. */
+:root[data-research-theme="light"] {
+  color-scheme: light;
+  --ink: #f7f6f2;
+  --panel: #ffffff;
+  --rule: #deded5;
+  --fg: #203731;
+  --fg-2: #53625c;
+  --fg-3: #69746d;
+  --swell: #ac542b;
+  --swell-soft: #d6a286;
+  --cool: #187a8b;
+  --offshore: #2c7950;
+  --blown: #cbd2ca;
+}
+:root[data-research-theme="light"] button,
+:root[data-research-theme="light"] select,
+:root[data-research-theme="light"] input {
+  border-color: var(--rule);
+}
+:root[data-research-theme="light"] button:hover,
+:root[data-research-theme="light"] tr.clickable:hover td { background: #e7e9df; }
+:root[data-research-theme="light"] .seg { border-color: var(--rule); }
+:root[data-research-theme="light"] .seg button + button { border-color: var(--rule); }
+:root[data-research-theme="light"] .seg button[aria-pressed="true"],
+:root[data-research-theme="light"] #w3Follow[aria-pressed="true"] { background: #dce8dc; color: #203731; }
+:root[data-research-theme="light"] #tip { background: #ffffff; border-color: #cbd2ca; box-shadow: 0 4px 18px #20373115; }
+:root[data-research-theme="light"] .tr-bar { background: #2037310a; }
+:root[data-research-theme="light"] .dec-log-n { border-color: #cbd2ca; }
+:root[data-research-theme="light"] .dec-go { color: #fff; }
+:root[data-research-theme="light"] .fr-n { color: var(--fg); }
+/* Preserve the existing ocean color scale and white labels on the map itself. */
+.trip-stage {
+  --ink: #070b10;
+  --panel: #0e151d;
+  --rule: #1f2b37;
+  --fg: #e7edf2;
+  --fg-2: #a3b1bd;
+  --fg-3: #93a0ad;
+  --swell: #f08a4b;
+  --cool: #4fb6c9;
+  color-scheme: dark;
+}
+:root[data-research-theme="light"] .trip-stage button:hover { background: #2a3846; }
+:root[data-research-theme="light"] .trip-stage .seg button[aria-pressed="true"] { background: #23384a; color: var(--fg); }
+.w3-note { color: #d3dce4; text-shadow: 0 1px 4px #000; }
+.methods-map-link { display: inline-flex; align-items: center; justify-self: start; gap: 8px; padding: 9px 14px; border: 1px solid var(--rule); border-radius: 999px; color: var(--fg); text-decoration: none; font-size: .86rem; font-weight: 600; }
+.methods-map-link:hover { border-color: var(--fg-3); }
+.methods-map-link svg { width: 15px; height: 15px; }
+[data-research-view="methods"] .sc-title { font-size: clamp(2.5rem, 7vw, 3.8rem); }
+[data-research-view="methods"] section[aria-labelledby="trip-h"] { display: none; }
+[data-research-view="map"] .wrap { max-width: 1200px; gap: 28px; padding: 0 0 24px; }
+[data-research-view="map"] .wrap > header,
+[data-research-view="map"] .wrap > section:not([aria-labelledby="trip-h"]):not([aria-labelledby="how-h"]):not([aria-labelledby="dec-h"]) { display: none; }
+[data-research-view="map"] section[aria-labelledby="trip-h"] > .eyebrow,
+[data-research-view="map"] #trip-h,
+[data-research-view="map"] section[aria-labelledby="trip-h"] > p { display: none; }
+[data-research-view="map"] .hub { width: 100%; margin: 0; }
+[data-research-view="map"] .trip-stage { height: max(500px, 85svh); border-radius: 0; }
+[data-research-view="map"] section[aria-labelledby="how-h"],
+[data-research-view="map"] section[aria-labelledby="dec-h"],
+[data-research-view="map"] #cutBox { margin-inline: 16px; }
+[data-research-view="map"] section[aria-labelledby="how-h"] > :not(h2):not(figure),
+[data-research-view="map"] section[aria-labelledby="dec-h"] > :not(#odWrap) { display: none; }
+@media (max-width: 520px) {
+  [data-research-view="methods"] .wrap { gap: 32px; padding-top: 20px; }
+  [data-research-view="map"] .trip-stage { height: max(550px, 90svh); }
+}
+/* The Map page's Model tab (?view=map&fill=1): the map alone, filling the tab. */
+[data-research-fill] .wrap { max-width: none; padding: 0; gap: 0; }
+[data-research-fill] .wrap > section:not([aria-labelledby="trip-h"]) { display: none !important; }
+[data-research-fill] .trip-stage { height: 100vh; height: 100svh; }
+@media (max-width: 520px) { [data-research-fill] .trip-stage { height: 100vh; height: 100svh; } }

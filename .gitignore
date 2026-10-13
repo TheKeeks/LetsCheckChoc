@@ -1,5 +1,7 @@
 node_modules/
 tests/e2e/artifacts/
+# the map's sea-floor grids, checked out from TheKeeks/LetsCheckChoc-data for tests
+map-data/
 __pycache__/
 # Firebase emulator logs (npm run test:rules)
 *-debug.log

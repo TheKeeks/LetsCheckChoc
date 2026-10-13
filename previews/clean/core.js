@@ -389,6 +389,8 @@
   // ════════════════════════════════════════════════════════════════════
   var P = {
     forecast: 'M3 9c3-3 6 3 9 0s6-3 9 0M3 15c3-3 6 3 9 0s6-3 9 0',
+    map: 'M3 5l6-2 6 2 6-2v16l-6 2-6-2-6 2zM9 3v16M15 5v16',
+    methods: 'M4 4h6c2 0 2 2 2 2s0-2 2-2h6v15h-6c-2 0-2 2-2 2s0-2-2-2H4zM12 6v15',
     log: 'M4 20l1-4.5L16 4.5 19.5 8 8.5 19zM14 6.5l3.5 3.5',
     model: '<path d="M4 18l5-6 4 3 7-9"/><path d="M15 6h5v5"/>',
     settings: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
@@ -447,6 +449,8 @@
   var icon = {
     paths: P,
     forecast: function (s) { return svgIcon(P.forecast, s || 24); },
+    map: function (s) { return svgIcon(P.map, s || 24); },
+    methods: function (s) { return svgIcon(P.methods, s || 24); },
     log: function (s) { return svgIcon(P.log, s || 24); },
     model: function (s) { return svgIcon(P.model, s || 24); },
     settings: function (s) { return svgIcon(P.settings, s || 22); },
@@ -1120,14 +1124,14 @@
   // ════════════════════════════════════════════════════════════════════
   // THEME — day / night
   // ════════════════════════════════════════════════════════════════════
-  // Modes: 'sunset' (default; night from sunset to sunrise at the spot),
+  // Modes: 'light' (default), 'sunset' (night at the spot),
   // 'system' (the phone's light/dark), 'light', 'dark'. Kept in
   // localStorage lcc-clean-display. Choc TV always follows the sun.
   var THEME_KEY = 'lcc-clean-display';
   var MODES = ['sunset', 'system', 'light', 'dark'];
-  var mode = 'sunset', curTheme = null, fadeTimer = null, mqDark = null;
+  var mode = 'light', curTheme = null, fadeTimer = null, mqDark = null;
   function readMode() {
-    try { var v = localStorage.getItem(THEME_KEY); return MODES.indexOf(v) >= 0 ? v : 'sunset'; } catch (_) { return 'sunset'; }
+    try { var v = localStorage.getItem(THEME_KEY); return MODES.indexOf(v) >= 0 ? v : 'light'; } catch (_) { return 'light'; }
   }
   function themeMode() { return IS_TV ? 'sunset' : mode; }
   function computeTheme() {
@@ -1172,14 +1176,28 @@
     emit('themeMode', m);
     refreshSettings();
   };
+  // Embedded pages load lazily; send both the current theme on load and
+  // subsequent changes. The receiver checks source and origin as well.
+  CLEAN.bindFrameTheme = function (frame) {
+    function send() {
+      if (!frame || !frame.contentWindow) return;
+      frame.contentWindow.postMessage({ type: 'lcc-theme', theme: CLEAN.theme() }, location.origin);
+    }
+    frame.addEventListener('load', send);
+    var stop = on('theme', send);
+    send();
+    return function () { frame.removeEventListener('load', send); stop(); };
+  };
 
   // ════════════════════════════════════════════════════════════════════
   // SHELL
   // ════════════════════════════════════════════════════════════════════
   var TABS = [
     { id: 'forecast', label: 'Forecast', legacy: 'forecast' },
+    { id: 'map', label: 'Map', legacy: null },
+    { id: 'methods', label: 'Methods', legacy: null },
     { id: 'log', label: 'Log', legacy: 'surflog' },
-    { id: 'model', label: 'Model', legacy: 'regression' }
+    { id: 'model', label: 'Model', legacy: 'regression', requiresAuth: true }
   ];
   var appEl = null, tvEl = null, titleEl = null, subtitleEl = null, tabBtns = {}, views = {};
   var curTab = 'forecast', scrollMem = {}, titleOverride = {};
@@ -1209,11 +1227,13 @@
       var b = h('button', { type: 'button', class: 'cl-tab', 'data-tab': tb.id, onclick: function () { showTab(tb.id); } },
         icon[tb.id](24) + '<span>' + tb.label + '</span>');
       if (tb.id === curTab) b.setAttribute('aria-current', 'page');
+      b.hidden = !!tb.requiresAuth && !authInfo().signedIn;
       tabBtns[tb.id] = b;
       nav.appendChild(b);
     });
     appEl.appendChild(nav);
     document.body.appendChild(appEl);
+    document.documentElement.setAttribute('data-active-tab', curTab);
     updateHeader();
   }
   function buildTV() {
@@ -1227,6 +1247,8 @@
     if (o) { t = o.title; s = o.sub; }
     else if (curTab === 'forecast') { t = isAfterDark() ? 'Tonight' : 'Today'; s = fmt.date(new Date()); }
     else if (curTab === 'log') { t = 'Log'; s = ''; }
+    else if (curTab === 'map') { t = 'Map'; s = 'Explore the water'; }
+    else if (curTab === 'methods') { t = 'Methods'; s = 'How the forecast works'; }
     else { t = 'Your model'; s = ''; }
     if (titleEl.textContent !== t) titleEl.textContent = t;
     if (subtitleEl.textContent !== (s || '')) subtitleEl.textContent = s || '';
@@ -1241,7 +1263,9 @@
   function showTab(id, opts) {
     opts = opts || {};
     if (IS_TV || !views[id]) return;
+    if (id === 'model' && !authInfo().signedIn) id = 'log';
     while (subStack.length) closeTop();
+    try { history.replaceState(null, '', location.pathname + location.search + '#' + id); } catch (_) { /* cosmetic */ }
     if (id === curTab && !opts.force) {
       // Tapping the active tab: back to the top.
       try { window.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' }); } catch (_) { window.scrollTo(0, 0); }
@@ -1256,6 +1280,7 @@
     if (!reducedMotion()) { void v.offsetWidth; v.classList.add('cl-enter'); }
     curTab = id;
     appEl.setAttribute('data-tab', id);
+    document.documentElement.setAttribute('data-active-tab', id);
     Object.keys(tabBtns).forEach(function (k) {
       if (k === id) tabBtns[k].setAttribute('aria-current', 'page');
       else tabBtns[k].removeAttribute('aria-current');
@@ -1265,7 +1290,7 @@
     // Keep the app's own tab state in step: Tab 2 / Tab 3 renderers and
     // STATE.activeTab checks run as they would on the classic page.
     var legacy = TABS.filter(function (t) { return t.id === id; })[0].legacy;
-    try { if (typeof switchTab === 'function') switchTab(legacy); } catch (e) { err('switchTab', e); }
+    try { if (legacy && typeof switchTab === 'function') switchTab(legacy); } catch (e) { err('switchTab', e); }
     var p = parts[id];
     if (p && p.mounted) {
       if (typeof p.def.onShow === 'function') { try { p.def.onShow(); } catch (e) { err(id + '.onShow', e); } }
@@ -1352,8 +1377,19 @@
     return { signedIn: signedIn, uid: window._fbUserId || null, name: signedIn ? (window._fbDisplayName || '') : '' };
   }
   CLEAN.auth = authInfo;
+  CLEAN.authStatus = function () {
+    return { available: typeof fbAuth !== 'undefined' && !!fbAuth, pending: !!window._fbSignInPending, error: window._fbAuthError || '' };
+  };
   CLEAN.signIn = function () { try { if (typeof signInWithGoogle === 'function') signInWithGoogle(); } catch (e) { err('signIn', e); } };
   CLEAN.signOut = function () { try { if (typeof signOutUser === 'function') signOutUser(); } catch (e) { err('signOut', e); } };
+  function refreshAuth() {
+    var a = authInfo();
+    TABS.forEach(function (tb) { if (tabBtns[tb.id]) tabBtns[tb.id].hidden = !!tb.requiresAuth && !a.signedIn; });
+    if (!IS_TV && !a.signedIn && curTab === 'model') showTab('log');
+    emit('auth', a);
+    refreshSettings();
+  }
+  window.addEventListener('lcc-auth-status', function () { emit('authStatus', CLEAN.authStatus()); refreshSettings(); });
 
   function modelLabel(v) {
     if (!v) return 'Auto';
@@ -1397,6 +1433,7 @@
             '<button type="button" class="cl-btn cl-btn-block" data-act="signout">Sign out</button>'
           : '<button type="button" class="cl-btn cl-btn-block" data-act="signin">Sign in with Google</button>' +
             '<p class="cl-fine">Sign in to log sessions and train your model.</p>') +
+        (CLEAN.authStatus().error ? '<p class="cl-fine" role="alert">' + esc(CLEAN.authStatus().error) + '</p>' : '') +
       '</div>' +
       '<div class="cl-gap"></div>' +
       '<h2 class="cl-h2" id="cl-set-display">Display</h2>' +
@@ -1536,7 +1573,7 @@
   // PARTS
   // ════════════════════════════════════════════════════════════════════
   var parts = {};
-  var PART_NAMES = ['forecast', 'log', 'model', 'tv'];
+  var PART_NAMES = ['forecast', 'map', 'methods', 'log', 'model', 'tv'];
   function eachPart(fn) { Object.keys(parts).forEach(function (k) { fn(parts[k]); }); }
   function onThisDevice(name) { return name === 'tv' ? IS_TV : !IS_TV; }
 
@@ -1618,7 +1655,7 @@
     after('renderPinForecastSet', function () { CLEAN._ctx = null; scheduleData('forecast'); });
     // End of every load: STATE.dataAsOf / dataHealth are now true.
     after('recordDataHealth', function () { scheduleData('health'); });
-    after('updateAuthUI', function () { emit('auth', authInfo()); refreshSettings(); });
+    after('updateAuthUI', refreshAuth);
     after('renderSurfLogTable', function () { emitSoon('log'); });
     after('slRetrain', function () { bump(); renderAll('model'); emitSoon('model'); });
     after('applyScrubberToHour', function (r, idx) { emit('hour', idx); });
@@ -1739,9 +1776,10 @@
       TABS.forEach(function (tb) { if (!parts[tb.id] || parts[tb.id].failed) showFallback(views[tb.id]); });
       var want = null;
       var hash = (location.hash || '').replace('#', '');
-      if (/^(forecast|log|model)$/.test(hash)) want = hash;
+      if (/^(forecast|map|methods|log|model)$/.test(hash)) want = hash;
       if (want && want !== curTab) showTab(want, { force: true });
       if (hash === 'settings') CLEAN.openSettings();
+      refreshAuth();
     }
   }
   function onLoad() {
@@ -1784,6 +1822,11 @@
     document.addEventListener('visibilitychange', guard('visible', function () { if (!document.hidden) tick(); }));
     document.addEventListener('DOMContentLoaded', onReady);
     window.addEventListener('load', onLoad);
+    window.addEventListener('hashchange', function () {
+      var tab = location.hash.slice(1);
+      if (views[tab]) showTab(tab);
+      else if (tab === 'settings') CLEAN.openSettings();
+    });
     // Parts registered before the shell existed (none today) mount now.
     eachPart(function (p) { if (onThisDevice(p.name)) mountPart(p); });
   }

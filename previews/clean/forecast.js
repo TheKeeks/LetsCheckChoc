@@ -59,6 +59,7 @@
   var chart = null, chartKey = '', lastW = 0;
   var slide = null, scrollAnim = null, drag = null, pendingChart = false;
   var pushTimer = null, lastHapticHour = null;
+  var mapOpen = false, mapSeen = false, terrainFrame = null, terrainSpot = 'choc';
 
   function err(where, e) { C.err('forecast.' + where, e); }
   function run(where, fn) { try { fn(); } catch (e) { err(where, e); } }
@@ -87,6 +88,17 @@
       '<div class="cl-f">' +
         '<p class="cl-lead cl-f-lead" hidden></p>' +
         '<div class="cl-f-now"></div>' +
+        '<section class="cl-f-map" aria-label="Sea floor, wave height and swell at the forecast hour">' +
+          '<div class="cl-f-map-win">' +
+            '<iframe title="3D sea floor with wave height and swell motion for the forecast hour" tabindex="-1" allow="fullscreen"></iframe>' +
+            '<button type="button" class="cl-f-map-peek" aria-expanded="false"><span>Open the map</span></button>' +
+          '</div>' +
+          '<div class="cl-f-map-bar">' +
+            '<button type="button" class="cl-f-map-tg" aria-expanded="false">' + I.chevronDown(16) + '<span>Open the map</span></button>' +
+            '<span class="cl-f-map-src">Sound Check model · imagery Esri, NOAA</span>' +
+            '<a href="#map">Full map</a>' +
+          '</div>' +
+        '</section>' +
         '<h2 class="cl-h2">This week</h2>' +
         '<div class="cl-f-wk"></div>' +
         '<div class="cl-gap"></div>' +
@@ -122,6 +134,10 @@
     E.ctl = el.querySelector('.cl-f-ctl');
     E.lu = el.querySelector('.cl-f-lu');
     E.det = el.querySelector('.cl-f-det');
+    E.map = el.querySelector('.cl-f-map');
+    terrainFrame = E.map.querySelector('iframe');
+    E.map.querySelector('.cl-f-map-peek').addEventListener('click', C.guard('forecast.map', function () { setMapOpen(true); }));
+    E.map.querySelector('.cl-f-map-tg').addEventListener('click', C.guard('forecast.map', function () { setMapOpen(!mapOpen); }));
 
     E.wk.addEventListener('click', C.guard('forecast.week.click', onWeekClick));
     E.ctl.addEventListener('click', C.guard('forecast.jump', onJump));
@@ -141,7 +157,65 @@
     // Every app repaint (drawForecastChart) puts the app's own scrubber
     // back to now; the cursor on screen is this one, so bring the app's
     // back to it whenever the two part (Model details read the app's).
-    C.on('hour', function () { if (!drag) schedulePush(); });
+    C.on('hour', function () { if (!drag) schedulePush(); syncTerrain(); });
+    C.on('theme', syncTerrain);
+    C.on('tab', syncTerrain);
+    C.on('sub', syncTerrain);
+    window.addEventListener('message', function (event) {
+      if (!terrainFrame || event.origin !== location.origin || event.source !== terrainFrame.contentWindow || !event.data) return;
+      if (event.data.type === 'lcc-map-ready') syncTerrain();
+      if (event.data.type === 'lcc-map-spot') { terrainSpot = event.data.spot === 'race' ? 'race' : 'choc'; syncTerrain(); }
+    });
+    // The map loads once its window comes near the screen, and runs only while on it.
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (es) {
+        mapSeen = es.some(function (e) { return e.isIntersecting; });
+        if (mapSeen && !terrainFrame.getAttribute('src')) loadMap();
+        syncTerrain();
+      }, { rootMargin: '200px 0px' }).observe(E.map);
+    } else { mapSeen = true; loadMap(); }
+    scLoad();
+  }
+
+  // The map window above This week: collapsed it is a picture of the water at the
+  // forecast hour (the page scrolls over it); opened it takes taps, with the view
+  // buttons, 3D and zoom. One forecast, one cursor: the map follows the chart's hour.
+  function loadMap() {
+    terrainFrame.src = 'map/index.html?embed=1&compact=1&ui=' + (mapOpen ? 'full' : 'peek') + '&spot=' + terrainSpot +
+      '&theme=' + (C.theme() === 'night' ? 'dark' : 'light') + timeParam();
+  }
+  function setMapOpen(open) {
+    mapOpen = !!open;
+    E.map.classList.toggle('open', mapOpen);
+    var tg = E.map.querySelector('.cl-f-map-tg');
+    tg.setAttribute('aria-expanded', String(mapOpen));
+    tg.querySelector('span').textContent = mapOpen ? 'Close the map' : 'Open the map';
+    E.map.querySelector('.cl-f-map-peek').setAttribute('aria-expanded', String(mapOpen));
+    terrainFrame.tabIndex = mapOpen ? 0 : -1;
+    if (!terrainFrame.getAttribute('src')) loadMap();
+    syncTerrain();
+    if (mapOpen) {
+      // Bring the whole window on screen once it has grown.
+      setTimeout(function () {
+        var r = E.map.getBoundingClientRect();
+        if (r.bottom > innerHeight - 70 || r.top < 0) {
+          try { E.map.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); } catch (_) { E.map.scrollIntoView(); }
+        }
+      }, 260);
+    }
+  }
+  function hourAt() { var hr = D.hour(C.cursor.get()) || D.now(); return hr && hr.at ? new Date(hr.at) : null; }
+  function timeParam() { var t = hourAt(); return t ? '&time=' + encodeURIComponent(t.toISOString()) : ''; }
+
+  function syncTerrain() {
+    if (!terrainFrame || !terrainFrame.contentWindow || !terrainFrame.getAttribute('src')) return;
+    var t = hourAt();
+    terrainFrame.contentWindow.postMessage({
+      type: 'lcc-map', spot: terrainSpot, theme: C.theme() === 'night' ? 'dark' : 'light',
+      active: mapSeen && C.tab() === 'forecast' && C.sub.depth() === 0,
+      ui: mapOpen ? 'full' : 'peek',
+      time: t ? t.toISOString() : null
+    }, location.origin);
   }
 
   // Column width of the chart (the view may be hidden: keep the last one).
@@ -168,6 +242,7 @@
     if (drag && drag.active) pendingChart = true; else run('chart', renderChart);
     run('lineup', renderLineup);
     run('details', renderDetails);
+    run('terrain', syncTerrain);
   }
 
   // ════════════════════════════════════════════════════════════════════
@@ -197,6 +272,60 @@
     }
     E.lead.hidden = !txt;
     if (E.lead.textContent !== txt) E.lead.textContent = txt;
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // SOUND CHECK: the swell at the reef (research/fc/fc.json, or the bot's newer pull on the fc-data branch).
+  // GFS-Wave and ECMWF read at buoy 44097 and carried over the sea floor to Choc: the number checked against
+  // the surf log, so it leads. Open-Meteo's offshore swell stays underneath, labeled as offshore.
+  // ════════════════════════════════════════════════════════════════════
+  var SC = { rows: null, made: null };
+  var SC_LIVE = 'https://raw.githubusercontent.com/TheKeeks/LetsCheckChoc/fc-data/fc/fc.json';
+  function scGet(url) {
+    return fetch(url, { cache: 'no-cache' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+  }
+  function scUse(d) {
+    if (!d || !d.gfs || !d.gfs.length) return false;
+    if (SC.made && Date.parse(d.made) <= Date.parse(SC.made)) return false;
+    var ec = {};
+    (d.ec || []).forEach(function (r) { ec[Math.round(Date.parse(r.t) / HOUR)] = r; });
+    SC.rows = d.gfs.map(function (g) {
+      var t = Date.parse(g.t), e = ec[Math.round(t / HOUR)] || null;
+      var avg = function (k) { var v = [g[k], e && e[k]].filter(isNum); return v.length ? v.reduce(function (a, b) { return a + b; }, 0) / v.length : null; };
+      return { t: t, choc: avg('choc'), wild: avg('wild') };
+    }).filter(function (r) { return isNum(r.t); });
+    SC.made = d.made;
+    return true;
+  }
+  function scLoad() {
+    scGet('research/fc/fc.json').then(function (d) {
+      if (scUse(d)) render('sc');
+      return scGet(SC_LIVE);
+    }).then(function (d) { if (scUse(d)) render('sc'); });
+  }
+  // Choc (or Wilderness) at time ms, linear between the 3-hour steps; null outside the forecast.
+  function scAt(ms, spot) {
+    var r = SC.rows, k = spot || 'choc';
+    if (!r || !r.length || ms < r[0].t || ms > r[r.length - 1].t) return null;
+    for (var i = 1; i < r.length; i++) {
+      if (r[i].t >= ms) {
+        var a = r[i - 1], b = r[i];
+        if (!isNum(a[k]) || !isNum(b[k])) return isNum(b[k]) ? b[k] : isNum(a[k]) ? a[k] : null;
+        return a[k] + (b[k] - a[k]) * (ms - a.t) / (b.t - a.t || 1);
+      }
+    }
+    return r[0][k];
+  }
+  // The biggest Choc reading between two instants (the steps inside, and both ends).
+  function scMax(t0, t1, spot) {
+    var best = scAt(t0, spot), e = scAt(t1, spot), k = spot || 'choc';
+    if (isNum(e) && (!isNum(best) || e > best)) best = e;
+    (SC.rows || []).forEach(function (r) { if (r.t >= t0 && r.t <= t1 && isNum(r[k]) && (!isNum(best) || r[k] > best)) best = r[k]; });
+    return isNum(best) ? best : null;
+  }
+  function scHero(v, sub) {
+    return '<div class="cl-f-hero cl-f-sc"><span class="cl-f-num">' + F.num(v) + '</span><span class="cl-f-unit">ft</span></div>' +
+      '<p class="cl-f-scl">' + esc(sub) + '</p>';
   }
 
   function metaHTML(period, dir, dirText) {
@@ -254,8 +383,12 @@
   }
 
   function nowHTML(n) {
-    var sw = n.swell, h;
-    if (sw) {
+    var sw = n.swell, h, sc = scAt(Date.now());
+    if (isNum(sc)) {
+      h = scHero(sc, 'at Choc now · Sound Check model');
+      if (sw) h += '<div class="cl-f-meta"><span class="cl-f-off">Offshore ' + esc(F.num(sw.h)) + NB + 'ft</span><span class="cl-f-sep" aria-hidden="true">·</span>' + metaHTML(sw.period, sw.dir, (sw.compass || '') + ' ' + F.deg(sw.dir)) + '</div>';
+      if (sw && sw.status) h += '<div class="cl-f-st">' + C.html.status(sw.status, { pill: true }) + '</div>';
+    } else if (sw) {
       h = '<div class="cl-f-hero"><span class="cl-f-num">' + F.num(sw.h) + '</span><span class="cl-f-unit">ft</span></div>';
       h += '<div class="cl-f-meta">' + metaHTML(sw.period, sw.dir, (sw.compass || '') + ' ' + F.deg(sw.dir)) + '</div>';
       if (sw.status) h += '<div class="cl-f-st">' + C.html.status(sw.status, { pill: true }) + '</div>';
@@ -287,9 +420,15 @@
     var noon = new Date(day.date.getTime() + 12 * HOUR);
     var label = nw.dayOffset === 0 ? 'Today, ' + F.day(noon) : nw.dayOffset === 1 ? 'Tomorrow, ' + F.day(noon) : F.dayLong(noon);
     var h = '<p class="cl-f-day cl-serif">' + esc(label) + '</p>';
-    h += '<div class="cl-f-hero"><span class="cl-f-num">' + F.range(b.min, b.max) + '</span><span class="cl-f-unit">ft</span></div>';
-    // A day band: compass letters only, as the week rows (A2-Phone-Late).
-    h += '<div class="cl-f-meta">' + metaHTML(b.period, b.dir, b.compass || '') + '</div>';
+    var scw = scMax(nw.t.getTime() - HOUR, (nw.until || new Date(nw.t.getTime() + 6 * HOUR)).getTime());
+    if (isNum(scw)) {
+      h += scHero(scw, 'at Choc on the incoming tide · Sound Check model');
+      h += '<div class="cl-f-meta"><span class="cl-f-off">Offshore ' + esc(F.range(b.min, b.max)) + NB + 'ft</span><span class="cl-f-sep" aria-hidden="true">·</span>' + metaHTML(b.period, b.dir, b.compass || '') + '</div>';
+    } else {
+      h += '<div class="cl-f-hero"><span class="cl-f-num">' + F.range(b.min, b.max) + '</span><span class="cl-f-unit">ft</span></div>';
+      // A day band: compass letters only, as the week rows (A2-Phone-Late).
+      h += '<div class="cl-f-meta">' + metaHTML(b.period, b.dir, b.compass || '') + '</div>';
+    }
     if (day.status) h += '<div class="cl-f-st">' + C.html.status(day.status, { pill: true }) + '</div>';
     var o = day.other;
     if (o && o.status === 'blocked') h += '<p class="cl-f-dim">' + esc(F.swell([o.min, o.max], o.period, o.compass) + ' · blocked') + '</p>';
@@ -327,7 +466,15 @@
     var note = down ? '<p class="cl-fine cl-f-wkn">No tide times: each day shows the swell over all daylight</p>' : '';
     return note + wk.map(function (d, k) {
       var past = k === 0 && d.sun && d.sun.lastLight && nowMs >= d.sun.lastLight.getTime();
-      var sw = d.swell
+      var dc = d.date ? scMax(d.sun && d.sun.firstLight ? d.sun.firstLight.getTime() : d.date.getTime() + 6 * HOUR,
+        d.sun && d.sun.lastLight ? d.sun.lastLight.getTime() : d.date.getTime() + 19 * HOUR) : null;
+      var scs = isNum(dc) ? '<span class="cl-f-sc-d">Choc ' + F.num(dc) + NB + 'ft</span>' : '';
+      // With the model, Choc's own number leads every row (it already carries the sea floor and the
+      // swell window); the offshore swell follows, or says it comes from outside the window.
+      var sw = scs
+        ? '<span class="cl-f-s">' + scs + '<span class="cl-f-off">' + (!d.swell ? '' : d.reaches
+          ? 'offshore ' + F.swell([d.swell.min, d.swell.max], d.swell.period, d.swell.compass) : 'offshore swell outside the window') + '</span></span>'
+        : d.swell
         ? (d.reaches ? '<span class="cl-f-s">' + F.swell([d.swell.min, d.swell.max], d.swell.period, d.swell.compass) + '</span>'
           : '<span class="cl-f-s cl-f-none">Nothing reaches the reef</span>')
         : '<span class="cl-f-s cl-f-none">' + DASH + '</span>';
