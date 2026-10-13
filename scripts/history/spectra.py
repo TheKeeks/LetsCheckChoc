@@ -81,6 +81,14 @@ def _kernel_for_freq(KP, KR2, fr):
 
 def angdiff(a, b): return abs((a - b + 180) % 360 - 180)
 
+def total(xs):
+    """xs added left to right, as Python's sum() added floats until 3.12 (which compensates for rounding): the history
+    was built that way, so it comes out the same on any Python"""
+    t = 0
+    for x in xs: t = t + x
+    return t
+
+
 
 def partition(E, a1, b1, bw):
     """Split one spectrum into trains: a list of frequency-index arrays (trains.py's partition, unchanged)."""
@@ -207,7 +215,7 @@ def trains_days(trains):
     days = {}
     for tt, trs in trains:
         d, hr = local_day(tt)
-        c = math.sqrt(sum(x[3] ** 2 for x in trs)); w = math.sqrt(sum(x[4] ** 2 for x in trs))
+        c = math.sqrt(total(x[3] ** 2 for x in trs)); w = math.sqrt(total(x[4] ** 2 for x in trs))
         D = days.setdefault(d, {'c': (-1, None, None), 'w': (-1, None, None)})
         if c > D['c'][0]: D['c'] = (c, hr, trs)
         if w > D['w'][0]: D['w'] = (w, hr, trs)

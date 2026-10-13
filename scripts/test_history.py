@@ -232,6 +232,20 @@ class TestReadings(unittest.TestCase):
         self.assertNotIn(et(2), buoy, '99 is NDBC\'s missing value')
         self.assertEqual(filled, 1)
 
+    def test_floats_add_up_as_the_history_was_built(self):
+        """Python 3.12's sum() compensates for rounding; the history was built with plain left-to-right addition, so the
+        scripts add that way on any Python (the daily wind and the best 3 hours otherwise shift by a tenth on ~60 days)"""
+        import functools, operator
+        xs = [0.1] * 10
+        self.assertEqual(self.an.total(xs), 0.9999999999999999)
+        self.assertEqual(self.an.total(xs), functools.reduce(operator.add, xs, 0))
+        speeds = [7.25, 7.15, 7.15, 7.05, 7.15, 7.25]          # a day whose mean sits on a rounding edge
+        self.assertEqual(self.an.total(speeds), functools.reduce(operator.add, speeds, 0))
+        self.assertEqual(self.an.total([]), 0)
+        for name in ('derive.py', 'spectra.py'):
+            m = load(os.path.join(HISTORY, name), name[:-3])
+            self.assertEqual(m.total(xs), 0.9999999999999999, name)
+
     def test_soft_window(self):
         for d, w in ((137, 1), (115, 1), (158, 1), (107.5, 0.5), (166.5, 0.5), (100, 0), (175, 0), (200, 0), (60, 0)):
             self.assertAlmostEqual(self.an.w_soft(d), w, msg=d)

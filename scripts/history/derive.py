@@ -16,6 +16,14 @@ ET = ZoneInfo('America/New_York'); UTC = dt.timezone.utc
 M = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split()
 def gap(a, b): return abs((a - b + 180) % 360 - 180)
 
+def total(xs):
+    """xs added left to right, as Python's sum() added floats until 3.12 (which compensates for rounding): the history
+    was built that way, so it comes out the same on any Python"""
+    t = 0
+    for x in xs: t = t + x
+    return t
+
+
 
 def two(heights):
     """{UTC hour: [buoy ft, spot ft]} (the pages' older spec_*.json form) from spectra.py's [buoy ft, spot ft, peel]"""
@@ -52,14 +60,14 @@ def days2(C, W, wind, B):
         b, bi = -1, None
         for i in range(len(v) - 2):
             if v[i + 2][0] - v[i][0] > 3: continue
-            m = sum(x[j] for x in v[i:i + 3]) / 3
+            m = total(x[j] for x in v[i:i + 3]) / 3
             if m > b: b, bi = m, i
         return (round(b, 1), v[bi:bi + 3]) if bi is not None else (None, [])
     def wsum(win, off, sect):
         ws = [x[4] for x in win if x[4]]
         if not ws: return None
-        sx = sum(s * math.sin(math.radians(a)) for s, a in ws); cx = sum(s * math.cos(math.radians(a)) for s, a in ws)
-        dd = round(math.degrees(math.atan2(sx, cx)) % 360); sp = round(sum(s for s, _ in ws) / len(ws))
+        sx = total(s * math.sin(math.radians(a)) for s, a in ws); cx = total(s * math.cos(math.radians(a)) for s, a in ws)
+        dd = round(math.degrees(math.atan2(sx, cx)) % 360); sp = round(total(s for s, _ in ws) / len(ws))
         return [dd, sp, int(sp < 6 or gap(dd, off) <= sect)]
     out = {}
     for d, v in days.items():
@@ -86,7 +94,7 @@ def wild_stats(C, W, PW, wind):
         for i in range(len(v) - 2):
             win = v[i:i + 3]
             if win[2][0] - win[0][0] > 3: continue
-            m = sum(x[j] for x in win) / 3
+            m = total(x[j] for x in win) / 3
             if best is None or m > best: best, bi = m, i
         return best, (v[bi:bi + 3] if bi is not None else [])
     mon = collections.defaultdict(lambda: [0, 0, 0, 0, 0])   # days, choc>=thr, wild>=thr, wild>=thr & east/offshore wind, wild beats choc by 0.5
@@ -140,7 +148,7 @@ def wild_stats(C, W, PW, wind):
         for i in range(len(v) - 2):
             win = v[i:i + 3]
             if win[2][0] - win[0][0] > 3: continue
-            h = sum(x[1] for x in win) / 3; p = sum(x[2] for x in win) / 3
+            h = total(x[1] for x in win) / 3; p = total(x[2] for x in win) / 3
             if best is None or h > best[0]: best = (h, p)
             if not hit and all(x[1] >= 2.5 and x[3] for x in win) and p >= 0.5: hit = True
         if best: daypeel[str(d)] = round(best[1], 2)

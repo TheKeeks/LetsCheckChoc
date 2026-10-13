@@ -32,6 +32,14 @@ def w_soft(d):
 def gap(a, b): return abs((a - b + 180) % 360 - 180)
 def power(hs_ft, per): return 0.49 * (hs_ft / FT) ** 2 * 0.9 * per   # kW per m of crest
 
+def total(xs):
+    """xs added left to right, as Python's sum() added floats until 3.12 (which compensates for rounding): the history
+    was built that way, so it comes out the same on any Python"""
+    t = 0
+    for x in xs: t = t + x
+    return t
+
+
 
 def lines(text):
     """an NDBC stdmet file's lines, split into fields (comment lines skipped)"""
@@ -132,15 +140,15 @@ def analyze(buoy, cspec, wind, turns, kavg, model):
     hr1 = dt.timedelta(hours=1)
     for t in times:
         v = [H[x]['e'] for x in (t - hr1, t, t + hr1) if x in H]
-        H[t]['e3'] = sum(v) / len(v) if v else None     # 3 h centred mean of soft in-window energy
+        H[t]['e3'] = total(v) / len(v) if v else None     # 3 h centred mean of soft in-window energy
     for t in times:
         v = [H[x]['mce'] for x in (t - hr1, t, t + hr1) if x in H]
-        H[t]['m3'] = sum(v) / len(v)
+        H[t]['m3'] = total(v) / len(v)
         v = [H[x]['mc'] for x in (t - hr1, t, t + hr1) if x in H]
-        H[t]['mh3'] = sum(v) / len(v)
+        H[t]['mh3'] = total(v) / len(v)
     for t in times:
         v = [power(H[x]['hs'], H[x]['per']) for x in (t - hr1, t, t + hr1) if x in H]
-        H[t]['ea3'] = sum(v) / len(v)
+        H[t]['ea3'] = total(v) / len(v)
     def clean(r): return r['ws'] is not None and (r['ws'] < 6 or (gap(r['wdir'], OFFSHORE) <= 60 and r['ws'] < 20))
     def big(r): return r['hs'] >= 4 and r['w'] >= 0.5
 
@@ -163,7 +171,7 @@ def analyze(buoy, cspec, wind, turns, kavg, model):
         for i in range(len(ts)):
             win = [H[x][key] for x in ts[i:i + 3] if H[x][key] is not None and (x - ts[i]) <= dt.timedelta(hours=2)]
             if len(win) >= 2:
-                m = sum(win) / len(win); best = m if best is None or m > best else best
+                m = total(win) / len(win); best = m if best is None or m > best else best
         return best
 
     def ym(day_only):
@@ -187,7 +195,7 @@ def analyze(buoy, cspec, wind, turns, kavg, model):
     for e in events:
         rs = [H[t] for t in e['ts']]; pk = max(rs, key=lambda r: r['hs'])
         ev.append(dict(start=e['start'].isoformat()[:16], hours=len(rs), peak_ft=round(pk['hs'], 1), peak_period=pk['per'], peak_dir=pk['dir'],
-                       energy=round(sum(r['e'] for r in rs)), clean=sum(clean(r) for r in rs),
+                       energy=round(total(r['e'] for r in rs)), clean=sum(clean(r) for r in rs),
                        good=sum(1 for r in rs if clean(r) and (r['tr'] or 0) > 0),
                        good_day=sum(1 for r in rs if clean(r) and (r['tr'] or 0) > 0 and r['day'])))
     ev.sort(key=lambda e: -e['energy'])
@@ -233,8 +241,8 @@ def analyze(buoy, cspec, wind, turns, kavg, model):
         pk = max((H[t] for t in ts), key=lambda r: r['hs'])
         ws = [(H[t]['wdir'], H[t]['ws']) for t in ts if H[t]['ws'] is not None]
         if ws:
-            sx = sum(s * math.sin(math.radians(a_)) for a_, s in ws); cx = sum(s * math.cos(math.radians(a_)) for a_, s in ws)
-            wdir = round(math.degrees(math.atan2(sx, cx)) % 360); wspd = round(sum(s for _, s in ws) / len(ws), 1)
+            sx = total(s * math.sin(math.radians(a_)) for a_, s in ws); cx = total(s * math.cos(math.radians(a_)) for a_, s in ws)
+            wdir = round(math.degrees(math.atan2(sx, cx)) % 360); wspd = round(total(s for _, s in ws) / len(ws), 1)
             cl = round(100 * sum(clean(H[t]) for t in ts if H[t]['ws'] is not None) / len(ws))
         else: wdir = wspd = cl = None
         series.append([d.strftime('%y%m%d'), round(pk['hs'], 1), round(pk['dir']), round(pk['per'], 1),
