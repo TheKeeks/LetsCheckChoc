@@ -24,8 +24,11 @@
   <!-- Looks: the approved "A refined" design (previews/clean/) is the default
        on the phone and on Choc TV. ?classic=1 opens the old look; ?preview=
        draft-paper | draft-navy | shader-pack | one-instrument | chart-room
-       still layers a candidate look over the app instead. -->
+       still layers a candidate look over the app instead. ?preview=site opens
+       the candidate front door instead: Sound Check as Home / Map / Methods
+       (research/index.html?site=1), with Log coming back here. -->
   <script>
+    if (/[?&]preview=site(?:&|$)/.test(location.search)) location.replace('research/index.html?site=1' + location.hash);
     var LCC_CLASSIC = /[?&]classic=1(?:&|$)/.test(location.search);
     var LCC_PREVIEW = (/[?&]preview=(shader-pack|one-instrument|chart-room|draft-paper|draft-navy|clean)(?:&|$)/.exec(location.search) || [])[1] || (LCC_CLASSIC ? null : 'clean');
     if (LCC_PREVIEW) document.write('<link rel="stylesheet" href="previews/' + LCC_PREVIEW + '/theme.css">');

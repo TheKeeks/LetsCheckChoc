@@ -29,11 +29,11 @@ module.exports = {
     const card = await kv('#decDay');
     log('calendar: ' + card.join(' | '));
     assert.ok(card.includes('Buoy: 13.6 ft at its peak, all swells') || card.includes('Buoy: 13.7 ft at its peak, all swells'), 'the buoy height is named as all swells combined');
-    assert.deepEqual(card.slice(0, 3), ['1°: 9.1 ft @ 17 s SSE 167° → 58% of Choc', '2°: 7.3 ft @ 8 s ESE 109° → 38%', '3°: 6.4 ft @ 5 s NNE 33° → 4%'], 'each swell\'s share of Choc');
-    assert.ok(card.includes('Bent in: 44% from outside the 115–158° window'), 'how much bent in');
+    assert.deepEqual(card.slice(0, 3), ['1°: 9.1 ft @ 17 s SSE 167° → 54% of Choc', '2°: 7.3 ft @ 8 s ESE 109° → 42%', '3°: 6.4 ft @ 5 s NNE 33° → 4%'], 'each swell\'s share of Choc');
+    assert.ok(card.includes('Bent in: 43% from outside the 115–158° window'), 'how much bent in');
     const hud = await lines('#tripLine');
     log('map: ' + hud.join(' | '));
-    assert.deepEqual(hud.slice(0, 2), ['1° 9.1 ft @ 17 s SSE 167° → 58% of Choc', '2° 7.3 ft @ 8 s ESE 109° → 38%'], 'map headline');
+    assert.deepEqual(hud.slice(0, 2), ['1° 9.1 ft @ 17 s SSE 167° → 54% of Choc', '2° 7.3 ft @ 8 s ESE 109° → 42%'], 'map headline');
     assert.match(hud[2], /^Wind \d+ kn N, clean · best ~3am · Buoy 13\.[67] ft, all swells$/);
 
     // Check a date, same day: shares on each swell and the bent-in share.
@@ -41,11 +41,14 @@ module.exports = {
     await page.waitForTimeout(400);
     const dc = await page.$$eval('#dcOut .tr', ts => ts.map(t => t.querySelector('.tr-l').textContent.trim() + ' ' + t.querySelector('.tr-r').textContent.trim()));
     log('check a date: ' + dc.join(' | '));
-    assert.deepEqual(dc, ['1° 9.1 ft @ 17 s SSE 167° → Choc 4.3 ft (58%) · Wilderness 2.7 ft', '2° 7.3 ft @ 8 s ESE 109° → Choc 3.5 ft (38%) · Wilderness 3.7 ft',
+    assert.deepEqual(dc, ['1° 9.1 ft @ 17 s SSE 167° → Choc 4.0 ft (54%) · Wilderness 2.8 ft', '2° 7.3 ft @ 8 s ESE 109° → Choc 3.5 ft (42%) · Wilderness 3.5 ft',
       '3° 6.4 ft @ 5 s NNE 33° → Choc 1.1 ft (4%) · Wilderness 1.2 ft']);
+    // heights keep their decimal: a round value read "5 ft" next to "4.3 ft" (and "Choc 4 ft" above)
+    const best = await page.$$eval('#dcOut table.dct tbody tr', rs => rs.map(r => r.cells[0].textContent + ' ' + r.cells[1].textContent.trim()));
+    assert.deepEqual(best, ['Choc 5.0 ft from 2am', 'Wilderness 4.3 ft from 2am'], 'best 3 hours at each spot');
     const dk = await kv('#dcOut');
     assert.ok(dk.includes('Buoy: 13.7 ft at its peak, all swells (18 s, 169°)'), dk.join(' | '));
-    assert.ok(dk.includes('Bent in: 44% from outside the 115–158° window'));
+    assert.ok(dk.includes('Bent in: 43% from outside the 115–158° window'));
     await page.locator('#dcOut').scrollIntoViewIfNeeded();
     await ctx.screenshot('swell-shares-check-a-date');
 
@@ -55,7 +58,7 @@ module.exports = {
     const one = await kv('#decDay');
     log('29 Aug 2023: ' + one.join(' | '));
     assert.equal(one[0], '1°: 5.8 ft @ 12 s S 170° → 97% of Choc');
-    assert.ok(one.includes('Bent in: 63% from outside the 115–158° window'));
+    assert.ok(one.includes('Bent in: 61% from outside the 115–158° window'));
     await page.locator('#decDay').scrollIntoViewIfNeeded();
     await ctx.screenshot('swell-shares-calendar');
 
@@ -64,7 +67,7 @@ module.exports = {
     const how = await txt('#q2Takes');
     assert.ok(!/172°/.test(how) && /29 Aug 2023/.test(how), 'Question 2 tile uses a session the swell really came from outside the window');
     assert.match(await page.evaluate(() => document.body.textContent), /only long-period swell gets in/);
-    assert.match(await page.evaluate(() => document.body.textContent), /40%of the 784 days|40% ?of the 784 days/);
+    assert.match(await page.evaluate(() => document.body.textContent), /40%of the 821 days|40% ?of the 821 days/);
     assert.deepEqual(errors, [], 'no page errors');
   }
 };
