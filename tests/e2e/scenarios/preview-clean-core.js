@@ -4,18 +4,18 @@
 //     0 ft tide, "3 / 10"), and a wind barb that never shows the calm ring
 //     beside "3 mph";
 //   • the wave forecast down (no saved copy): the wind and the CO-OPS tides
-//     that did load still show, on the phone (Now block, week lows) and on
-//     Choc TV ("Incoming 7:28 AM");
+//     that did load still show, on the phone (Forecast's wind and tide line,
+//     the week's lows in CLEAN.data) and on Choc TV ("Incoming 7:28 AM");
 //   • CO-OPS down: a day whose bigger band is blocked but whose other band
-//     is in the window headlines the band that reaches the reef (Fri);
-//   • the reef's swell leads the Now block: at Fri 7:05 AM the 9 s SE
+//     is in the window headlines the band that reaches the reef (Fri, the
+//     day summaries Choc TV draws);
+//   • the reef's swell leads CLEAN.data.now(): at Fri 7:05 AM the 9 s SE
 //     groundswell (in the window) beats the bigger 4 s wind swell from S
-//     174° (blocked), which drops to the dim "· blocked" line;
+//     174° (blocked), which goes to the blocked list;
 //   • a Wi-Fi blip on the buoy list at boot: the phone gives up "Loading…"
 //     after a minute and, once the list answers, loads by itself;
 //   • keyboard focus: the build's green ring (not the classic blue one), and
-//     a focused week row is never left under the tab bar; Details values
-//     share one left edge (A2-Phone-Sat).
+//     a focused control low on the Forecast tab is never left under the tab bar.
 'use strict';
 
 const fs = require('fs');
@@ -26,7 +26,7 @@ const TV = { width: 1180, height: 820 };
 const BUOYS = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'data', 'buoys-east-coast.json'));
 
 module.exports = {
-  name: 'clean preview core: number style, wind and tides without the wave forecast, reach-first hero and week, boot recovery, focus ring',
+  name: 'clean preview core: number style, wind and tides without the wave forecast, reach-first now and week, boot recovery, focus ring',
   options: {
     gate: null,                                   // the preview skips the boat question itself
     viewport: PHONE,
@@ -45,7 +45,7 @@ module.exports = {
       await ctx.waitFor(() => window.CLEAN && CLEAN.ready, { label: 'clean shell up' });
       if (load) {
         await ctx.waitForLoad();
-        await ctx.waitFor(() => CLEAN.data.generation() > 0 && document.querySelector('#cl-view-forecast .cl-f-now, #cl-tv .cl-tv-card'), { label: 'first paint' });
+        await ctx.waitFor(() => CLEAN.data.generation() > 0 && document.querySelector('#cl-view-forecast .cl-f-head, #cl-tv .cl-tv-card'), { label: 'first paint' });
         await page.waitForTimeout(400);
       }
     };
@@ -113,30 +113,18 @@ module.exports = {
       await page.keyboard.press('Tab');
       row = await ctx.state(() => {
         const e = document.activeElement;
-        if (!e || !e.matches('#cl-view-forecast .cl-f-row[data-k="3"]')) return null;
+        if (!e || !e.matches('#cl-view-forecast .cl-f-bc')) return null;
         const cs = getComputedStyle(e), r = e.getBoundingClientRect();
         const bar = document.querySelector('.cl-tabs').getBoundingClientRect();
         return { color: cs.outlineColor, width: cs.outlineWidth, offset: cs.outlineOffset, bottom: r.bottom, barTop: bar.top };
       });
     }
-    log('focused week row', JSON.stringify(row));
-    assert.ok(row, 'Tab reaches the Sun week row');
+    log('focused buoy check', JSON.stringify(row));
+    assert.ok(row, 'Tab reaches the buoy check');
     assert.equal(row.color, 'rgb(0, 105, 62)', 'focus ring is --in (the build\'s green), not the classic slate blue');
     assert.equal(row.width, '2px');
     assert.equal(row.offset, '2px');
-    assert.ok(row.bottom <= row.barTop, `the focused row sits above the tab bar (row bottom ${row.bottom}, bar top ${row.barTop})`);
-
-    // Details › Light and water: the values share one left edge.
-    if (await ctx.state(() => document.querySelector('#cl-view-forecast .cl-f-dr[data-dd="light"]').getAttribute('aria-expanded')) !== 'true') {
-      await page.locator('#cl-view-forecast .cl-f-dr[data-dd="light"]').click();
-    }
-    await ctx.waitFor(() => document.querySelector('#cl-view-forecast .cl-f-kv'), { label: 'light details open' });
-    const xs = await ctx.state(() => [...document.querySelectorAll('#cl-view-forecast .cl-f-kv > :nth-child(even)')].map(e => {
-      const r = document.createRange(); r.selectNodeContents(e); return Math.round(r.getBoundingClientRect().left);
-    }));
-    log('kv value left edges', xs.join(' '));
-    assert.ok(xs.length >= 4, 'light rows');
-    assert.equal(new Set(xs).size, 1, 'values left-aligned in one column');
+    assert.ok(row.bottom <= row.barTop, `the focused control sits above the tab bar (bottom ${row.bottom}, bar top ${row.barTop})`);
     assert.deepEqual(await cleanErrors(), [], 'CLEAN.errors (fresh boot)');
 
     // ── 3. Wave forecast down, no saved copy: wind and tides still show ──
@@ -149,18 +137,14 @@ module.exports = {
       events: CLEAN.data.tideEvents().length,
       lows: CLEAN.data.week().map(d => d.low ? CLEAN.fmt.time(d.low.t).replace(/ /g, ' ') : null)
     }));
-    const nowBlock = await txt('#cl-view-forecast .cl-f-now');
-    const week = await txt('#cl-view-forecast .cl-f-wk');
-    log('marine down', JSON.stringify(md), '| now:', nowBlock, '| week:', week);
+    const cond = await txt('#cl-view-forecast .cl-f-cond');
+    log('marine down', JSON.stringify(md), '| wind and tide:', cond);
     assert.equal(md.fd, false, 'the app has no wave forecast (STATE.forecastData null)');
     assert.deepEqual(md.health, { marine: 'failed', wind: 'live', tides: 'live' });
-    assert.match(nowBlock, /No wave forecast right now/);
-    assert.match(nowBlock, /7 mph SW/, 'Now block: the wind that loaded');
-    assert.match(nowBlock, /Low 8:33 PM/, 'Now block: the next low from the tides that loaded');
+    assert.match(cond, /Wind 7 mph SW/, 'Forecast: the wind that loaded');
+    assert.match(cond, /Tide 2\.3 ft ▲ · high 1:37 PM/, 'Forecast: the tide that loaded');
     assert.ok(md.events > 20, 'tide events from the loaded hi/lo');
     assert.deepEqual(md.lows.slice(0, 3), ['7:28 AM', '8:29 AM', '9:34 AM'], 'week lows');
-    assert.match(week, /Today.*7:28 AM.*Fri.*8:29 AM.*Sat.*9:34 AM/, 'week rows show the lows');
-    assert.doesNotMatch(week, /didn.t load/);
     assert.deepEqual(await cleanErrors(), [], 'CLEAN.errors (marine down)');
 
     // Same outage on Choc TV.
@@ -183,15 +167,13 @@ module.exports = {
       const b = x => x && { min: x.min, max: x.max, period: x.period, compass: x.compass, status: x.status };
       return { swell: b(d.swell), other: b(d.other), status: d.status, reaches: d.reaches };
     });
-    const friRow = await txt('#cl-view-forecast .cl-f-row[data-k="1"]');
-    log('Fri, no tides', JSON.stringify(fri), '|', friRow);
+    log('Fri, no tides', JSON.stringify(fri));
     assert.equal(fri.swell.status, 'in', 'Fri headlines the in-window band');
     assert.equal(fri.swell.compass, 'SE');
     assert.equal(fri.other.status, 'blocked', 'the bigger blocked band becomes the other');
     assert.equal(fri.other.compass, 'S');
     assert.equal(fri.reaches, true);
-    assert.doesNotMatch(friRow, /Nothing reaches the reef|BLOCKED/);
-    assert.match(friRow, /0–1 ft @ 8 s SE/);
+    assert.deepEqual([fri.swell.min, fri.swell.max, Math.round(fri.swell.period)], [0, 1, 8], '0–1 ft @ 8 s SE');
     ctx.net.coops = 'ok';
 
     // ── 5. Buoy list blip at boot: give up "Loading…", then recover ──
@@ -203,22 +185,19 @@ module.exports = {
     assert.deepEqual(b0, { fresh: 'loading', sel: false }, 'first seconds: still loading, nothing selected');
     await page.clock.fastForward('01:05');                // retry at 15 s fails too; a minute passes
     await ctx.waitFor(() => CLEAN.data.freshness() === 'dead', { label: 'loading gave up', timeout: 10000 });
-    await ctx.waitFor(() => /No wave forecast right now/.test(document.querySelector('#cl-view-forecast .cl-f-now').innerText), { label: 'Now block says it did not load', timeout: 5000 });
-    const gaveUp = await txt('#cl-view-forecast .cl-f-wk');
-    log('gave up', gaveUp, '| catalog requests', catalogHits);
-    assert.doesNotMatch(gaveUp, /Loading/, 'the week stops saying Loading');
+    log('gave up | catalog requests', catalogHits);
     assert.ok(catalogHits >= 2, 'the phone retried the buoy list');
     mode = 'ok';
     await page.clock.fastForward('01:05');                // next retry (once a minute) succeeds
     await ctx.waitForLoad({ timeout: 20000 });
-    await ctx.waitFor(() => document.querySelector('#cl-view-forecast .cl-f-now .cl-f-num'), { label: 'Now block hero after recovery', timeout: 10000 });
+    await ctx.waitFor(() => CLEAN.data.loaded() && CLEAN.data.now().swell, { label: 'wave forecast after recovery', timeout: 10000 });
     const rec = await ctx.state(() => ({ fresh: CLEAN.data.freshness(), sel: STATE.selectedBuoy && STATE.selectedBuoy.home }));
     log('recovered', JSON.stringify(rec), '| catalog requests', catalogHits);
     assert.equal(rec.sel, 'chocomount', 'the home spot was selected without a reload');
     assert.notEqual(rec.fresh, 'loading');
     await ctx.screenshot('clean-core-recovered');
 
-    // ── 6. Fri 2 Oct 7:05 AM: the reef's swell leads the Now block ──
+    // ── 6. Fri 2 Oct 7:05 AM: the reef's swell leads CLEAN.data.now() (Choc TV's hero) ──
     await page.clock.setSystemTime(new Date('2026-10-02T07:05:00-04:00'));
     await boot('/?preview=clean');
     const raw = await ctx.state(() => {
@@ -227,16 +206,14 @@ module.exports = {
         s: [m.secondary_swell_wave_height[i], m.secondary_swell_wave_period[i], m.secondary_swell_wave_direction[i]] };
     });
     const hero = await ctx.state(() => {
-      const q = s => { const e = document.querySelector('#cl-view-forecast .cl-f-now ' + s); return e ? e.textContent.replace(/[  ]/g, ' ').trim() : null; };
-      return { num: q('.cl-f-num'), meta: q('.cl-f-meta'), status: q('.cl-st'), dim: q('.cl-f-dim') };
+      const n = CLEAN.data.now(), F = CLEAN.fmt, sp = s => s.replace(/[\u00a0\u202f]/g, ' ');
+      return { h: F.num(n.swell.h), period: Math.round(n.swell.period), dir: Math.round(n.swell.dir), compass: n.swell.compass, status: n.swell.status,
+        blocked: n.blocked.map(b => sp(F.swell(b.h, b.period, b.compass))) };
     });
     log('Fri 7:05 AM', JSON.stringify(raw), JSON.stringify(hero));
     assert.equal(raw.t, '2026-10-02T07:00');
     assert.ok(raw.p[2] > 163 && raw.s[2] >= 115 && raw.s[2] <= 158, 'fixture: primary blocked from the south, secondary in the window');
-    assert.equal(hero.num, '1.1', 'hero = the in-window 9 s train');
-    assert.match(hero.meta, /^9 s\s*·\s*SE 124°$/);
-    assert.equal(hero.status, 'IN WINDOW');
-    assert.equal(hero.dim, '1.6 ft @ 4 s S · blocked', 'the bigger blocked train is the dim line');
+    assert.deepEqual(hero, { h: '1.1', period: 9, dir: 124, compass: 'SE', status: 'in', blocked: ['1.6 ft @ 4 s S'] }, 'the in-window 9 s train leads; the bigger 4 s S train is blocked');
     assert.deepEqual(await cleanErrors(), [], 'CLEAN.errors (Fri)');
     await ctx.screenshot('clean-core-fri-hero');
   }

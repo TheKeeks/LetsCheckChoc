@@ -19,11 +19,29 @@ Your site will be live at `https://[username].github.io/LetsCheckChoc/`
 
 ## The look
 
-The site opens on Forecast in the clean, light design. The bottom navigation
-shows **Forecast, Map, Methods, Log**. Log asks you to sign in with Google;
-after signing in, **Model** joins the navigation and your surf journal opens.
-Settings (top right) controls Light, Dark, Follow system, or Sunset to sunrise
-across Forecast, Map, Methods, Log, and Model. Choc TV still follows the sun.
+The site opens on Forecast in the clean, light design. The navigation shows
+**Forecast, Map, Methods, Log**: along the bottom on a phone, across the top on
+a computer or a sideways iPad. Log asks you to sign in with Google; after
+signing in, **My ratings** (what your logged sessions say about size, ride and
+wind) joins the navigation and your surf journal opens. Settings (top right)
+controls Light, Dark, Follow system, or Sunset to sunrise on every tab. Choc TV
+still follows the sun.
+
+**Forecast** is the Sound Check model, one hour at a time. The big number is
+the height at Choc (or Wilderness, one tap on the map) for that hour: the
+average of GFS-Wave and ECMWF, read at buoy 44097 and carried over the sea
+floor, with each model under it. Under it, every swell at the buoy and its
+share of the energy that reaches Choc, e.g. "1° 2.9 ft @ 8 s S 178° → 66% of
+Choc" with a bar. The map draws those swells' rays bending into Choc, thicker
+for a bigger share, coloured by where they come from (teal E, orange SE,
+violet S, grey anything else). The week chart underneath is the scrubber:
+drag it, use the arrow keys, « day / ‹ / Now / › / day »; nights are shaded,
+the tide and the wind (blue offshore, grey cross-shore, orange onshore) run
+along the bottom. Then the wind and tide for that hour, and the buoy check:
+44097's latest reading next to what was forecast for that hour 1, 2 and 3 days
+before ("forecasts on track" when they were within half a foot or 15 %). Tap
+it for the last two days. If the model run doesn't reach the present (the
+forecast bot stalled), Forecast says so instead of showing an old number.
 
 **Map** has two tabs. **Monitor** is Fishers Island's sea floor from the Fishers Island viewer's own
 elevation: NOAA's 2023 topobathy lidar and multibeam surveys at 0.8 m near the
@@ -49,22 +67,8 @@ contours. Hover (or tap on a phone) for depth, its survey and the modeled wave
 height. **Model** is the Sound Check's own map: GFS-Wave and ECMWF across the
 Atlantic, any day since 2016, and Drop a wave.
 
-On Forecast, the map sits in a short window right above **This week**.
-Collapsed it is only a picture of the water at the forecast hour, and the page
-scrolls over it. Tap it (or **Open the map**) and it grows into a live map with
-the view buttons, 3D on/off and zoom; **Close the map** folds it back. It
-follows the hour on the forecast chart and pauses when off screen. The map's
-heights are the Sound Check model's, which can differ from the headline
-forecast. There is no surf or current forecast for the Race.
-
 **Methods** is the research page, now in the shared light/dark design. Its
 historical-day links open the Map explorer at that date.
-
-On Forecast, **Forecast + sea floor** opens the current forecast and an
-interactive terrain panel side by side (stacked on phones). The forecast
-chart's selected hour drives the direction overlays. Terrain can be switched
-between Choc and The Race. The forecast remains the existing Chocomount
-forecast: there is no calibrated Race surf/current model in the source data.
 
 The old Windows-style look remains at `?classic=1` (`?kiosk=1&classic=1`
 for Choc TV), and Settings links to it. The clean look skips the boat question.

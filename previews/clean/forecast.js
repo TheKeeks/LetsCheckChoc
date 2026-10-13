@@ -1,31 +1,31 @@
 // ════════════════════════════════════════════════════════════════════
-// CLEAN — forecast.js (owner: Forecast part) · ?preview=clean
+// CLEAN — forecast.js (owner: Forecast part)
 // ────────────────────────────────────────────────────────────────────
-// The Forecast tab of the "A refined" boards (A2-Phone-Day, -Night,
-// -Late, -Sat), drawn from the real app's data through CLEAN.data:
-//   • Now block: the hero swell, its period and direction, the window
-//     status, any blocked train, the wind (barb) and the tide (time of
-//     the next low first), your model, the buoy and the data age. After
-//     last light it leads with the next window instead ("Tomorrow, Fri").
-//   • This week: one row per day (Choc TV's day summaries). Tapping a
-//     row tints it, scrolls to the chart and slides the cursor to that
-//     day's low.
-//   • Forecast chart: a new SVG renderer of STATE.forecastData (the
-//     legacy canvas chart stays hidden): the swell that reaches the
-//     reef (alignment-weighted) solid over a ghost of all the swell,
-//     the window band, wind bars coloured by quality with direction
-//     arrows, the tide with the day's low and its daylight incoming
-//     tide. One cursor, dragged hour by hour or moved by the jump
-//     buttons; it is the app's own scrubber hour (CLEAN.cursor), so
-//     other parts can read it.
-//   • Lineup: flat colour blocks (water, reef shallows, sand, land)
-//     from the Choc TV radar's coastline vectors (kiosk.js KIOSK_COAST),
-//     the 115–158° window cone and the cursor hour's swell and wind
-//     arrows with their readings in dark pills.
-//   • Details: light and water, tide table, buoy waves, data sources.
-// Every block renders inside try/catch: one failing block never blanks
-// the tab. Missing data stays null and shows "—". Times are the spot's
-// (America/New_York) through CLEAN.fmt.
+// The Forecast tab, built on the Sound Check model: GFS-Wave and ECMWF
+// read at buoy 44097 and carried over the sea floor to Choc (research/,
+// scripts/forecast/fcpull.py). One hour at a time, picked on the week
+// scrubber:
+//   • Headline: the height at the spot (Choc, or Wilderness), the mean of
+//     the two models, each model under it.
+//   • Swells: each GFS-Wave swell at the buoy and its share of the
+//     energy that reaches the spot ("1° 2.9 ft @ 8 s S 178° → 66% of
+//     Choc"), with a bar. Colour = where it comes from (E, SE, S, other),
+//     the same on the rows, the map and the bars.
+//   • Ray map: those swells' rays bending over the bottom into the spot
+//     (research/fr/land.json over research/fr_world.jpg), thicker for a
+//     bigger share; the buoy and the spot pinned.
+//   • Week scrubber: the spot's height for the run's 7 days (both models'
+//     mean, the GFS-to-ECMWF band, each model), nights shaded, the tide
+//     and the wind (green when offshore at Choc) underneath. Drag, arrow
+//     keys, or the jump buttons; "Now" follows the clock.
+//   • Wind and tide at that hour, then the buoy check: buoy 44097's
+//     latest reading against the forecasts made 1, 2 and 3 days before
+//     for that hour (Open-Meteo's earlier runs at the buoy); tap for the
+//     last two days.
+// The model forecast is research/fc/fc.json or the bot's newer pull on
+// the fc-data branch, whichever is newer. When neither covers the hour
+// the tab says so instead of showing an old number as now. Missing data
+// stays null and shows "—". Times are the spot's (America/New_York).
 // ════════════════════════════════════════════════════════════════════
 (function () {
   'use strict';
@@ -33,51 +33,114 @@
 
   var C = window.CLEAN, D = C.data, F = C.fmt, U = C.util, I = C.icon;
   var NB = F.NB, DASH = F.DASH, esc = U.esc, isNum = U.isNum;
-  var HOUR = 3600e3, MIN = 60e3, DAY = 864e5;
-  var WIN_MIN = (typeof CONFIG !== 'undefined' && CONFIG.chocomount && CONFIG.chocomount.swellWindowMin) || 115;
-  var WIN_MAX = (typeof CONFIG !== 'undefined' && CONFIG.chocomount && CONFIG.chocomount.swellWindowMax) || 158;
-
-  // Chart geometry: the board's 232 px tall panel (A2-Phone-Day viewBox
-  // 0 0 358 232). Width is the real column width, measured.
-  var G = {
-    H: 232,
-    swTop: 6, swBase: 110, swPx: 30,     // swell panel: 30 px per foot, less when it would overflow
-    bandY: 116, bandH: 8,                // window band
-    windBase: 170, windMax: 30,          // wind bars
-    winY: 178, winH: 52,                 // daylight incoming-tide bands
-    tideTop: 186, tideBot: 228,          // tide line
-    nightH: 228
-  };
-  var ARROW7 = (I.paths && I.paths.chartArrow) || 'M0 3.5V-3.5M-3 -0.5L0 -3.5L3 -0.5';
+  var HOUR = 3600e3, DAY = 864e5, M2FT = 3.28084;
+  var FC_SHIP = 'research/fc/fc.json';
+  var FC_LIVE = 'https://raw.githubusercontent.com/TheKeeks/LetsCheckChoc/fc-data/fc/fc.json';
+  var LAND = 'research/fr/land.json', BACKDROP = 'research/fr_world.jpg';
+  var VERIF = 'data/verification.json';
+  var PREV = 'https://marine-api.open-meteo.com/v1/marine';
+  var BUOY_LL = [40.969, -71.127];        // NDBC 44097 (fc.json carries it as fc.buoy)
+  var PERIODS = [6, 8, 10, 12, 14, 16];   // the ray pictures' periods (s)
+  var SPOTS = { choc: { k: 'choc', ray: 'c', name: 'Choc' }, wild: { k: 'wild', ray: 'w', name: 'Wilderness' } };
+  // Where a swell comes from: one colour everywhere on the tab (rows, bars, rays).
+  var FAM = [
+    { name: 'E', rgb: [64, 190, 198] },      //  60-115°
+    { name: 'SE', rgb: [240, 138, 75] },     // 115-160°
+    { name: 'S', rgb: [170, 128, 236] },     // 160-205°
+    { name: 'other', rgb: [140, 154, 168] }
+  ];
+  function fam(d) { return d >= 60 && d < 115 ? 0 : d >= 115 && d < 160 ? 1 : d >= 160 && d < 205 ? 2 : 3; }
+  function rgb(c, a) { return a == null ? 'rgb(' + c.join(',') + ')' : 'rgba(' + c.join(',') + ',' + a + ')'; }
 
   var root = null, E = {};
-  // The cursor: 'now' follows the clock; 'time' is a picked instant
-  // (an hour from a drag, or a low's exact time from a jump or a day tap).
-  var cur = { mode: 'now', t: 0, low: false };
-  var selDay = -1;                       // week row the viewer tapped
-  var openRows = { light: true, tides: false, buoy: false, sources: false };
-  var chart = null, chartKey = '', lastW = 0;
-  var slide = null, scrollAnim = null, drag = null, pendingChart = false;
-  var pushTimer = null, lastHapticHour = null;
-  var mapOpen = false, mapSeen = false, terrainFrame = null, terrainSpot = 'choc';
+  var fc = { steps: null, made: null, runs: null, buoy: BUOY_LL, status: 'loading' };
+  var land = { data: null, status: 'loading' };
+  var backdrop = null;
+  var spot = 'choc';
+  var cur = { mode: 'now', i: -1 };       // 'now' follows the clock; 'pick' holds a picked step
+  var geom = null, drag = null, rz = null;
+  var prev = { status: 'idle', data: null, at: 0 };
+  var verif = { status: 'idle', rows: null, at: 0 };
+  var sheet = null;                       // the open buoy-check sub-page
+  var drawn = { rays: 0, labels: [], note: '' };  // what the map last drew (CLEAN.forecastInfo, for tests)
+
+  try { if (localStorage.getItem('lcc-f-spot') === 'wild') spot = 'wild'; } catch (_) { /* private mode */ }
 
   function err(where, e) { C.err('forecast.' + where, e); }
   function run(where, fn) { try { fn(); } catch (e) { err(where, e); } }
-  function r1(v) { return Math.round(v * 10) / 10; }
-  function norm360(d) { return ((d % 360) + 360) % 360; }
-  function reduced() { return U.reducedMotion(); }
-
-  // Keep focus on the same control across an innerHTML refresh.
-  function keepFocus(container, attr, fn) {
-    var ae = document.activeElement, key = null;
-    if (ae && container.contains(ae)) key = ae.getAttribute(attr);
-    fn();
-    if (key != null) {
-      var f = container.querySelector('[' + attr + '="' + key + '"]');
-      if (f) try { f.focus({ preventScroll: true }); } catch (_) { /* fine */ }
-    }
-  }
   function setHTML(el, html) { if (el && el.__html !== html) { el.innerHTML = html; el.__html = html; } }
+  function mean(a, b) { var v = [a, b].filter(isNum); return v.length ? v.reduce(function (x, y) { return x + y; }, 0) / v.length : null; }
+  function getJSON(url) {
+    return fetch(url, { cache: 'no-cache' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+  }
+  // "Thu 2 PM"; a week out the weekday repeats, so the date comes along: "Thu 8 Oct, 2 PM".
+  function hourLabel(t) {
+    var hm = F.time(t).replace(':00' + NB, NB);
+    return Math.abs(t.getTime() - Date.now()) >= 6 * DAY ? F.date(t) + ', ' + hm : F.day(t) + ' ' + hm;
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // THE MODEL FORECAST
+  // ════════════════════════════════════════════════════════════════════
+  function useForecast(d) {
+    if (!d || !d.gfs || !d.gfs.length) return false;
+    if (fc.made && !(Date.parse(d.made) > Date.parse(fc.made))) return false;
+    var ec = {};
+    (d.ec || []).forEach(function (r) { ec[Math.round(Date.parse(r.t) / HOUR)] = r; });
+    var steps = d.gfs.map(function (g) {
+      var t = Date.parse(g.t), e = ec[Math.round(t / HOUR)] || null;
+      return {
+        t: t,
+        choc: { g: isNum(g.choc) ? g.choc : null, e: e && isNum(e.choc) ? e.choc : null },
+        wild: { g: isNum(g.wild) ? g.wild : null, e: e && isNum(e.wild) ? e.wild : null },
+        trains: (g.trains || []).filter(function (x) { return isNum(x.ft) && isNum(x.T) && isNum(x.D); })
+      };
+    }).filter(function (s) { return isNum(s.t); });
+    if (!steps.length) return false;
+    steps.forEach(function (s) { s.choc.m = mean(s.choc.g, s.choc.e); s.wild.m = mean(s.wild.g, s.wild.e); });
+    fc.steps = steps;
+    fc.made = d.made || null;
+    fc.runs = d.runs || null;
+    if (d.buoy && isNum(d.buoy[0]) && isNum(d.buoy[1])) fc.buoy = d.buoy;
+    fc.status = 'ok';
+    return true;
+  }
+  function loadForecast() {
+    getJSON(FC_SHIP).then(function (d) {
+      if (useForecast(d)) render('fc');
+      return getJSON(FC_LIVE);
+    }).then(function (d) {
+      if (useForecast(d)) render('fc');
+      if (fc.status === 'loading') { fc.status = 'failed'; render('fc'); }
+    });
+  }
+  // The step nearest the clock, when the run covers it; -1 when it doesn't.
+  function nowStep() {
+    var s = fc.steps; if (!s) return -1;
+    var t = Date.now();
+    if (t < s[0].t - 3 * HOUR || t > s[s.length - 1].t + 90 * 60e3) return -1;
+    var b = 0;
+    for (var i = 1; i < s.length; i++) if (Math.abs(s[i].t - t) < Math.abs(s[b].t - t)) b = i;
+    return b;
+  }
+  function curStep() {
+    if (!fc.steps) return -1;
+    if (cur.mode === 'pick') return Math.max(0, Math.min(fc.steps.length - 1, cur.i));
+    return nowStep();
+  }
+  // The swells at a step, each with its share of the energy reaching the spot.
+  function parts(s, sp) {
+    var k = SPOTS[sp].k;
+    var tr = s.trains.filter(function (x) { return isNum(x[k]); });
+    var e2 = tr.reduce(function (a, x) { return a + x[k] * x[k]; }, 0);
+    return tr.map(function (x) { return { t: x, v: x[k], share: e2 > 0 ? x[k] * x[k] / e2 : 0 }; })
+      .filter(function (p) { return p.share >= 0.005; })
+      .sort(function (a, b) { return b.share - a.share; });
+  }
+  function madeAge() {
+    var m = Date.parse(fc.made);
+    return isNum(m) ? Date.now() - m : null;
+  }
 
   // ════════════════════════════════════════════════════════════════════
   // MOUNT
@@ -86,1208 +149,499 @@
     root = el;
     el.innerHTML =
       '<div class="cl-f">' +
-        '<p class="cl-lead cl-f-lead" hidden></p>' +
-        '<div class="cl-f-now"></div>' +
-        '<section class="cl-f-map" aria-label="Sea floor, wave height and swell at the forecast hour">' +
-          '<div class="cl-f-map-win">' +
-            '<iframe title="3D sea floor with wave height and swell motion for the forecast hour" tabindex="-1" allow="fullscreen"></iframe>' +
-            '<button type="button" class="cl-f-map-peek" aria-expanded="false"><span>Open the map</span></button>' +
+        '<div class="cl-f-head" aria-live="polite"></div>' +
+        '<div class="cl-f-map">' +
+          '<canvas aria-hidden="true"></canvas>' +
+          '<div class="cl-f-seg" role="group" aria-label="Spot">' +
+            '<button type="button" data-spot="choc">Choc</button><button type="button" data-spot="wild">Wilderness</button>' +
           '</div>' +
-          '<div class="cl-f-map-bar">' +
-            '<button type="button" class="cl-f-map-tg" aria-expanded="false">' + I.chevronDown(16) + '<span>Open the map</span></button>' +
-            '<span class="cl-f-map-src">Sound Check model · imagery Esri, NOAA</span>' +
-            '<a href="#map">Full map</a>' +
-          '</div>' +
-        '</section>' +
-        '<h2 class="cl-h2">This week</h2>' +
-        '<div class="cl-f-wk"></div>' +
-        '<div class="cl-gap"></div>' +
-        '<h2 class="cl-h2 cl-f-fch">Forecast</h2>' +
-        '<div class="cl-f-ch">' +
-          '<div class="cl-f-rd"><div class="cl-f-rdt"></div><div class="cl-f-rdv"><span></span><span></span><span></span></div></div>' +
-          '<div class="cl-f-cxw" tabindex="0" role="slider" aria-label="Forecast hour. Drag, or use the arrow keys" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></div>' +
-          '<div class="cl-f-dl" aria-hidden="true"></div>' +
+          '<p class="cl-f-mapnote" hidden></p>' +
+        '</div>' +
+        '<div class="cl-f-wk">' +
+          '<div class="cl-f-cx" tabindex="0" role="slider" aria-label="Forecast hour. Drag, or use the arrow keys" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></div>' +
           '<div class="cl-f-ctl">' +
-            '<button type="button" class="cl-f-jb" data-j="pl" aria-label="Previous low">' + I.jumpsLeft(14) + '<span>low</span></button>' +
-            '<button type="button" class="cl-f-jb" data-j="ph" aria-label="Previous hour">' + I.jumpLeft(14) + '<span>hr</span></button>' +
+            '<button type="button" class="cl-f-jb" data-j="-day" aria-label="A day earlier">' + I.jumpsLeft(14) + '<span>day</span></button>' +
+            '<button type="button" class="cl-f-jb" data-j="-1" aria-label="Previous forecast step">' + I.jumpLeft(14) + '</button>' +
             '<button type="button" class="cl-f-jb" data-j="now" aria-label="Back to now"><span>Now</span></button>' +
-            '<button type="button" class="cl-f-jb" data-j="nh" aria-label="Next hour"><span>hr</span>' + I.jumpRight(14) + '</button>' +
-            '<button type="button" class="cl-f-jb" data-j="nl" aria-label="Next low"><span>low</span>' + I.jumpsRight(14) + '</button>' +
+            '<button type="button" class="cl-f-jb" data-j="1" aria-label="Next forecast step">' + I.jumpRight(14) + '</button>' +
+            '<button type="button" class="cl-f-jb" data-j="day" aria-label="A day later"><span>day</span>' + I.jumpsRight(14) + '</button>' +
           '</div>' +
         '</div>' +
-        '<div class="cl-gap"></div>' +
-        '<h2 class="cl-h2">Lineup</h2>' +
-        '<div class="cl-f-ch cl-f-lu"></div>' +
-        '<div class="cl-gap"></div>' +
-        '<h2 class="cl-h2">Details</h2>' +
-        '<div class="cl-f-ch cl-f-det"></div>' +
-        '<div class="cl-gap"></div>' +
+        '<div class="cl-f-side">' +
+          '<div class="cl-f-cond"></div>' +
+          '<button type="button" class="cl-f-bc" aria-label="Buoy check: open the last two days"></button>' +
+          '<p class="cl-fine cl-f-src"></p>' +
+        '</div>' +
       '</div>';
-    E.lead = el.querySelector('.cl-f-lead');
-    E.now = el.querySelector('.cl-f-now');
-    E.wk = el.querySelector('.cl-f-wk');
-    E.fch = el.querySelector('.cl-f-fch');
-    E.rdt = el.querySelector('.cl-f-rdt');
-    E.rdv = el.querySelectorAll('.cl-f-rdv span');
-    E.cxw = el.querySelector('.cl-f-cxw');
-    E.dl = el.querySelector('.cl-f-dl');
-    E.ctl = el.querySelector('.cl-f-ctl');
-    E.lu = el.querySelector('.cl-f-lu');
-    E.det = el.querySelector('.cl-f-det');
+    E.head = el.querySelector('.cl-f-head');
     E.map = el.querySelector('.cl-f-map');
-    terrainFrame = E.map.querySelector('iframe');
-    E.map.querySelector('.cl-f-map-peek').addEventListener('click', C.guard('forecast.map', function () { setMapOpen(true); }));
-    E.map.querySelector('.cl-f-map-tg').addEventListener('click', C.guard('forecast.map', function () { setMapOpen(!mapOpen); }));
+    E.cv = E.map.querySelector('canvas');
+    E.seg = E.map.querySelector('.cl-f-seg');
+    E.mapnote = E.map.querySelector('.cl-f-mapnote');
+    E.wk = el.querySelector('.cl-f-wk');
+    E.cx = el.querySelector('.cl-f-cx');
+    E.ctl = el.querySelector('.cl-f-ctl');
+    E.cond = el.querySelector('.cl-f-cond');
+    E.bc = el.querySelector('.cl-f-bc');
+    E.src = el.querySelector('.cl-f-src');
 
-    E.wk.addEventListener('click', C.guard('forecast.week.click', onWeekClick));
+    E.seg.addEventListener('click', C.guard('forecast.spot', function (ev) {
+      var b = ev.target.closest('button[data-spot]'); if (!b) return;
+      spot = b.getAttribute('data-spot') === 'wild' ? 'wild' : 'choc';
+      try { localStorage.setItem('lcc-f-spot', spot); } catch (_) { /* private mode */ }
+      render('spot');
+    }));
     E.ctl.addEventListener('click', C.guard('forecast.jump', onJump));
-    E.det.addEventListener('click', C.guard('forecast.details.click', onDetailsClick));
-    E.cxw.addEventListener('pointerdown', C.guard('forecast.down', onDown));
-    E.cxw.addEventListener('pointermove', C.guard('forecast.move', onMove));
-    E.cxw.addEventListener('pointerup', C.guard('forecast.up', onUp));
-    E.cxw.addEventListener('pointercancel', C.guard('forecast.cancel', onCancel));
-    E.cxw.addEventListener('lostpointercapture', C.guard('forecast.lost', onCancel));
-    E.cxw.addEventListener('keydown', C.guard('forecast.key', onKey));
-    var rz = null;
+    E.cx.addEventListener('pointerdown', C.guard('forecast.down', onDown));
+    E.cx.addEventListener('pointermove', C.guard('forecast.move', onMove));
+    E.cx.addEventListener('pointerup', C.guard('forecast.up', onUp));
+    E.cx.addEventListener('pointercancel', C.guard('forecast.cancel', onUp));
+    E.cx.addEventListener('keydown', C.guard('forecast.key', onKey));
+    E.bc.addEventListener('click', C.guard('forecast.buoycheck', openBuoyCheck));
     window.addEventListener('resize', function () {
       clearTimeout(rz);
-      rz = setTimeout(C.guard('forecast.resize', function () { if (measure()) { renderChart(); renderLineup(); } }), 120);
+      rz = setTimeout(C.guard('forecast.resize', function () { renderChart(); drawMap(); }), 120);
     });
     C.on('tick', function () { render('tick'); });
-    // Every app repaint (drawForecastChart) puts the app's own scrubber
-    // back to now; the cursor on screen is this one, so bring the app's
-    // back to it whenever the two part (Model details read the app's).
-    C.on('hour', function () { if (!drag) schedulePush(); syncTerrain(); });
-    C.on('theme', syncTerrain);
-    C.on('tab', syncTerrain);
-    C.on('sub', syncTerrain);
-    window.addEventListener('message', function (event) {
-      if (!terrainFrame || event.origin !== location.origin || event.source !== terrainFrame.contentWindow || !event.data) return;
-      if (event.data.type === 'lcc-map-ready') syncTerrain();
-      if (event.data.type === 'lcc-map-spot') { terrainSpot = event.data.spot === 'race' ? 'race' : 'choc'; syncTerrain(); }
+
+    backdrop = new Image();
+    backdrop.onload = function () { run('map', drawMap); };
+    backdrop.src = BACKDROP;
+    getJSON(LAND).then(function (d) {
+      land.data = d && d.T && d.frame ? d : null;
+      land.status = land.data ? 'ok' : 'failed';
+      run('map', drawMap);
     });
-    // The map loads once its window comes near the screen, and runs only while on it.
-    if ('IntersectionObserver' in window) {
-      new IntersectionObserver(function (es) {
-        mapSeen = es.some(function (e) { return e.isIntersecting; });
-        if (mapSeen && !terrainFrame.getAttribute('src')) loadMap();
-        syncTerrain();
-      }, { rootMargin: '200px 0px' }).observe(E.map);
-    } else { mapSeen = true; loadMap(); }
-    scLoad();
+    loadForecast();
+    loadPrevRuns();
   }
 
-  // The map window above This week: collapsed it is a picture of the water at the
-  // forecast hour (the page scrolls over it); opened it takes taps, with the view
-  // buttons, 3D and zoom. One forecast, one cursor: the map follows the chart's hour.
-  function loadMap() {
-    terrainFrame.src = 'map/index.html?embed=1&compact=1&ui=' + (mapOpen ? 'full' : 'peek') + '&spot=' + terrainSpot +
-      '&theme=' + (C.theme() === 'night' ? 'dark' : 'light') + timeParam();
-  }
-  function setMapOpen(open) {
-    mapOpen = !!open;
-    E.map.classList.toggle('open', mapOpen);
-    var tg = E.map.querySelector('.cl-f-map-tg');
-    tg.setAttribute('aria-expanded', String(mapOpen));
-    tg.querySelector('span').textContent = mapOpen ? 'Close the map' : 'Open the map';
-    E.map.querySelector('.cl-f-map-peek').setAttribute('aria-expanded', String(mapOpen));
-    terrainFrame.tabIndex = mapOpen ? 0 : -1;
-    if (!terrainFrame.getAttribute('src')) loadMap();
-    syncTerrain();
-    if (mapOpen) {
-      // Bring the whole window on screen once it has grown.
-      setTimeout(function () {
-        var r = E.map.getBoundingClientRect();
-        if (r.bottom > innerHeight - 70 || r.top < 0) {
-          try { E.map.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); } catch (_) { E.map.scrollIntoView(); }
-        }
-      }, 260);
-    }
-  }
-  function hourAt() { var hr = D.hour(C.cursor.get()) || D.now(); return hr && hr.at ? new Date(hr.at) : null; }
-  function timeParam() { var t = hourAt(); return t ? '&time=' + encodeURIComponent(t.toISOString()) : ''; }
-
-  function syncTerrain() {
-    if (!terrainFrame || !terrainFrame.contentWindow || !terrainFrame.getAttribute('src')) return;
-    var t = hourAt();
-    terrainFrame.contentWindow.postMessage({
-      type: 'lcc-map', spot: terrainSpot, theme: C.theme() === 'night' ? 'dark' : 'light',
-      active: mapSeen && C.tab() === 'forecast' && C.sub.depth() === 0,
-      ui: mapOpen ? 'full' : 'peek',
-      time: t ? t.toISOString() : null
-    }, location.origin);
-  }
-
-  // Column width of the chart (the view may be hidden: keep the last one).
-  function measure() {
-    var w = E.cxw ? E.cxw.clientWidth : 0;
-    if (!w && E.cxw && E.cxw.parentNode) w = E.cxw.parentNode.clientWidth;
-    w = Math.round(w);
-    if (w > 0 && w !== lastW) { lastW = w; return true; }
-    if (!lastW) lastW = 358;
-    return false;
-  }
-
-  var lastDayKey = '';
   function render(reason) {
     if (!root) return;
-    measure();
-    // Past midnight the week shifts by a day: drop a stale row selection.
-    var dk = U.dayKey(new Date());
-    if (lastDayKey && dk !== lastDayKey) selDay = -1;
-    lastDayKey = dk;
-    run('lead', renderLead);
-    run('now', renderNow);
-    run('week', renderWeek);
-    if (drag && drag.active) pendingChart = true; else run('chart', renderChart);
-    run('lineup', renderLineup);
-    run('details', renderDetails);
-    run('terrain', syncTerrain);
+    if (reason === 'tick' && Date.now() - prev.at > 3 * HOUR) loadPrevRuns();
+    run('head', renderHead);
+    run('chart', renderChart);
+    run('map', drawMap);
+    run('cond', renderCond);
+    run('buoy', renderBuoyLine);
+    run('src', renderSource);
+    if (sheet) run('sheet', function () { renderSheet(sheet.body); });
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // NOW BLOCK
+  // HEADLINE AND SWELLS
   // ════════════════════════════════════════════════════════════════════
-  // After last light the board leads with the next window (A2-Phone-Late).
-  function nextWindowDay() {
-    if (!D.isAfterDark()) return null;
-    var nw = D.nextWindow();
-    if (!nw) return null;
-    var wk = D.week();
-    var day = nw.dayOffset >= 0 && nw.dayOffset < wk.length ? wk[nw.dayOffset] : null;
-    if (!day || !day.swell) return null;
-    return { nw: nw, day: day };
-  }
-
-  function renderLead() {
-    var txt = '';
-    if (D.isAfterDark()) {
-      var du = D.darkUntil();
-      var nw = D.nextWindow();
-      var parts = [];
-      if (du) parts.push('Dark until ' + F.time(du));
-      if (nw) parts.push('next window ' + (nw.dayOffset === 0 ? 'today' : F.day(nw.t)) + ', low ' + F.time(nw.t));
-      txt = parts.join(' · ');
-      if (txt) txt = txt.charAt(0).toUpperCase() + txt.slice(1);
+  function renderHead() {
+    var sp = SPOTS[spot], i = curStep();
+    if (i < 0) {
+      var msg = fc.status === 'loading' ? 'Loading the Sound Check forecast…'
+        : fc.status === 'failed' ? 'The Sound Check forecast didn’t load.'
+        : 'The Sound Check forecast doesn’t reach now: its newest run is from ' + F.when(new Date(Date.parse(fc.made))) + '.';
+      setHTML(E.head, '<p class="cl-f-msg">' + esc(msg) + '</p>');
+      return;
     }
-    E.lead.hidden = !txt;
-    if (E.lead.textContent !== txt) E.lead.textContent = txt;
+    var s = fc.steps[i], v = s[sp.k], at = new Date(s.t);
+    var now = cur.mode === 'now' || i === nowStep();
+    var h = '<p class="cl-f-when"><span class="cl-serif">' + esc(hourLabel(at)) + '</span>' + (now ? '<span class="cl-f-now">now</span>' : '') + '</p>';
+    h += '<p class="cl-f-big"><span class="cl-f-num">' + (isNum(v.m) ? F.num(v.m) : DASH) + '</span><span class="cl-f-unit">ft at ' + esc(sp.name) + '</span></p>';
+    h += '<p class="cl-f-models">GFS-Wave ' + (isNum(v.g) ? F.num(v.g) : DASH) + ' · ECMWF ' + (isNum(v.e) ? F.num(v.e) : DASH) + NB + 'ft</p>';
+    var ps = parts(s, spot);
+    h += '<ul class="cl-f-tr" aria-label="Swells at buoy 44097 and their share of ' + esc(sp.name) + '">';
+    ps.forEach(function (p, n) {
+      var x = p.t, c = FAM[fam(x.D)].rgb, pct = Math.round(p.share * 100);
+      h += '<li><i class="cl-f-dot" style="background:' + rgb(c) + '"></i>' +
+        '<span class="cl-f-trt"><b>' + (n + 1) + '°</b> ' + esc(F.swell(x.ft, x.T, F.compass(x.D))) + ' ' + esc(F.deg(x.D)) +
+        (x.k === 'ww' ? ' <small>wind sea</small>' : '') + ' → ' + pct + '% of ' + esc(sp.name) + '</span>' +
+        '<span class="cl-f-bar" aria-hidden="true"><i style="width:' + Math.max(2, pct) + '%;background:' + rgb(c) + '"></i></span></li>';
+    });
+    if (!ps.length) h += '<li class="cl-f-none">No swell reaches ' + esc(sp.name) + ' this hour</li>';
+    h += '</ul>';
+    setHTML(E.head, h);
+    E.seg.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-spot') === spot)); });
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // SOUND CHECK: the swell at the reef (research/fc/fc.json, or the bot's newer pull on the fc-data branch).
-  // GFS-Wave and ECMWF read at buoy 44097 and carried over the sea floor to Choc: the number checked against
-  // the surf log, so it leads. Open-Meteo's offshore swell stays underneath, labeled as offshore.
+  // RAY MAP
   // ════════════════════════════════════════════════════════════════════
-  var SC = { rows: null, made: null };
-  var SC_LIVE = 'https://raw.githubusercontent.com/TheKeeks/LetsCheckChoc/fc-data/fc/fc.json';
-  function scGet(url) {
-    return fetch(url, { cache: 'no-cache' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+  function spread(d0) {
+    // the research page's directional spread (cos^2s, s = 15: about ±10°) over its 5° ray bins
+    var out = [], c = Math.round(d0 / 5) * 5, tot = 0;
+    for (var d = c - 10; d <= c + 10; d += 5) { var w = Math.pow(Math.cos((d - d0) * Math.PI / 360), 30); out.push([d, w]); tot += w; }
+    return out.map(function (p) { return [p[0], p[1] / tot]; });
   }
-  function scUse(d) {
-    if (!d || !d.gfs || !d.gfs.length) return false;
-    if (SC.made && Date.parse(d.made) <= Date.parse(SC.made)) return false;
-    var ec = {};
-    (d.ec || []).forEach(function (r) { ec[Math.round(Date.parse(r.t) / HOUR)] = r; });
-    SC.rows = d.gfs.map(function (g) {
-      var t = Date.parse(g.t), e = ec[Math.round(t / HOUR)] || null;
-      var avg = function (k) { var v = [g[k], e && e[k]].filter(isNum); return v.length ? v.reduce(function (a, b) { return a + b; }, 0) / v.length : null; };
-      return { t: t, choc: avg('choc'), wild: avg('wild') };
-    }).filter(function (r) { return isNum(r.t); });
-    SC.made = d.made;
-    return true;
-  }
-  function scLoad() {
-    scGet('research/fc/fc.json').then(function (d) {
-      if (scUse(d)) render('sc');
-      return scGet(SC_LIVE);
-    }).then(function (d) { if (scUse(d)) render('sc'); });
-  }
-  // Choc (or Wilderness) at time ms, linear between the 3-hour steps; null outside the forecast.
-  function scAt(ms, spot) {
-    var r = SC.rows, k = spot || 'choc';
-    if (!r || !r.length || ms < r[0].t || ms > r[r.length - 1].t) return null;
-    for (var i = 1; i < r.length; i++) {
-      if (r[i].t >= ms) {
-        var a = r[i - 1], b = r[i];
-        if (!isNum(a[k]) || !isNum(b[k])) return isNum(b[k]) ? b[k] : isNum(a[k]) ? a[k] : null;
-        return a[k] + (b[k] - a[k]) * (ms - a.t) / (b.t - a.t || 1);
-      }
+  function nearestPeriod(T) { return PERIODS.reduce(function (b, v) { return Math.abs(v - T) < Math.abs(b - T) ? v : b; }, PERIODS[0]); }
+
+  function drawMap() {
+    if (!root || !E.cv) return;
+    var w = E.map.clientWidth; if (!w) return;
+    var fr = land.data && land.data.frame;
+    var WKM = fr ? (fr.world[1] - fr.world[0]) * fr.kmlon : 130.1, HKM = fr ? (fr.world[3] - fr.world[2]) * fr.kmlat : 99.9;
+    var h = Math.round(w * HKM / WKM), dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (E.cv.width !== Math.round(w * dpr) || E.cv.height !== Math.round(h * dpr)) { E.cv.width = Math.round(w * dpr); E.cv.height = Math.round(h * dpr); }
+    E.cv.style.height = h + 'px';
+    var g = E.cv.getContext('2d'); if (!g) return;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = '#0b1219'; g.fillRect(0, 0, w, h);
+    if (backdrop && backdrop.complete && backdrop.naturalWidth) g.drawImage(backdrop, 0, 0, w, h);
+    g.fillStyle = 'rgba(8,13,19,0.28)'; g.fillRect(0, 0, w, h);
+    var note = land.status === 'failed' ? 'The ray pictures didn’t load' : '';
+    if (!fr) { setNote(note); return; }
+    var s = w / WKM, unit = land.data.unit_km;
+    var km = function (lon, lat) { return [(lon - fr.world[0]) * fr.kmlon * s, (fr.world[3] - lat) * fr.kmlat * s]; };
+    var sp = SPOTS[spot], i = curStep(), labels = [], nrays = 0;
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    if (i >= 0) {
+      var ps = parts(fc.steps[i], spot).slice().reverse();         // biggest share drawn last, on top
+      ps.forEach(function (p) {
+        var x = p.t, per = land.data.T[String(nearestPeriod(x.T))] || {}, col = FAM[fam(x.D)].rgb, best = null;
+        spread(x.D).forEach(function (bw) {
+          var rays = per[String(bw[0])] && per[String(bw[0])][sp.ray]; if (!rays) return;
+          var a = (0.22 + 0.7 * p.share) * (0.45 + 0.55 * bw[1] / 0.3);
+          g.strokeStyle = rgb(col, Math.min(0.95, a).toFixed(2));
+          g.lineWidth = 0.7 + 2.6 * p.share;
+          rays.forEach(function (r) {
+            nrays++;
+            g.beginPath();
+            for (var k = 0; k < r.length; k += 2) { var X = r[k] * unit * s, Y = r[k + 1] * unit * s; if (k) g.lineTo(X, Y); else g.moveTo(X, Y); }
+            g.stroke();
+          });
+          if (!best || bw[1] > best.w) best = { w: bw[1], r: rays[Math.floor(rays.length / 2)] };
+        });
+        if (best) labels.push({ x: best.r[0] * unit * s, y: best.r[1] * unit * s, col: col, txt: (ps.length - ps.indexOf(p)) + '° ' + F.swell(x.ft, x.T, F.compass(x.D)) });
+      });
+      if (!ps.length) note = 'No swell reaches ' + sp.name + ' this hour';
+    } else if (fc.status !== 'loading') note = 'No model forecast for this hour';
+    g.font = '600 11px ' + (getComputedStyle(root).getPropertyValue('--sans') || 'sans-serif');
+    g.textBaseline = 'middle';
+    var placed = [];
+    function pill(txt, x, y, col, right) {
+      var tw = g.measureText(txt).width, pw = tw + 14, x0 = right ? x - pw : x;
+      x0 = Math.max(4, Math.min(w - pw - 4, x0)); y = Math.max(13, Math.min(h - 13, y));
+      for (var n = 0; n < 6 && placed.some(function (b) { return x0 < b[0] + b[2] && x0 + pw > b[0] && Math.abs(y - b[1]) < 21; }); n++) y = y + (y > h / 2 ? -22 : 22);
+      placed.push([x0, y, pw]);
+      g.fillStyle = 'rgba(10,15,21,0.86)'; g.beginPath();
+      if (g.roundRect) g.roundRect(x0, y - 10, pw, 20, 10); else g.rect(x0, y - 10, pw, 20);
+      g.fill(); g.fillStyle = col; g.fillText(txt, x0 + 7, y);
     }
-    return r[0][k];
-  }
-  // The biggest Choc reading between two instants (the steps inside, and both ends).
-  function scMax(t0, t1, spot) {
-    var best = scAt(t0, spot), e = scAt(t1, spot), k = spot || 'choc';
-    if (isNum(e) && (!isNum(best) || e > best)) best = e;
-    (SC.rows || []).forEach(function (r) { if (r.t >= t0 && r.t <= t1 && isNum(r[k]) && (!isNum(best) || r[k] > best)) best = r[k]; });
-    return isNum(best) ? best : null;
-  }
-  function scHero(v, sub) {
-    return '<div class="cl-f-hero cl-f-sc"><span class="cl-f-num">' + F.num(v) + '</span><span class="cl-f-unit">ft</span></div>' +
-      '<p class="cl-f-scl">' + esc(sub) + '</p>';
-  }
-
-  function metaHTML(period, dir, dirText) {
-    var h = '<span>' + F.period(period) + '</span>';
-    if (isNum(dir)) h += '<span class="cl-f-sep" aria-hidden="true">·</span>' + I.swell(dir, 22) + '<span>' + esc(dirText) + '</span>';
-    return h;
-  }
-
-  function windCell(w, extra, gusts) {
-    var ico = w ? I.barb(w.mph, w.dir, 44) : '';
-    var big, sub = '';
-    if (w) {
-      big = Math.round(w.mph) + NB + '<small>mph</small>' + (w.compass ? ' ' + w.compass : '');
-      var bits = [];
-      if (w.quality) bits.push(C.html.quality(w.quality, 'caps'));
-      if (gusts && isNum(w.gust)) bits.push('gusts ' + Math.round(w.gust));
-      if (extra) bits.push(extra);
-      sub = bits.join(' · ');
+    // the spot
+    var v = i >= 0 ? fc.steps[i][sp.k].m : null;
+    if (spot === 'wild') {
+      var a = [fr.w1[0] * s, fr.w1[1] * s], b = [fr.w2[0] * s, fr.w2[1] * s];
+      g.strokeStyle = 'rgb(130,226,240)'; g.lineWidth = 3; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+      pill('Wilderness ' + (isNum(v) ? F.num(v) + NB + 'ft' : DASH), a[0] - 8, a[1] - 14, 'rgb(130,226,240)', true);
     } else {
-      big = DASH;
-      sub = 'Wind';
+      var cx = fr.choc[0] * s, cy = fr.choc[1] * s;
+      g.fillStyle = 'rgb(255,196,140)'; g.beginPath(); g.arc(cx, cy, 5, 0, 7); g.fill();
+      g.strokeStyle = '#0a0f15'; g.lineWidth = 1.5; g.stroke();
+      pill('Choc ' + (isNum(v) ? F.num(v) + NB + 'ft' : DASH), cx + 9, cy - 14, 'rgb(255,196,140)');
     }
-    return '<div class="cl-f-cell"><span class="cl-f-ico">' + ico + '</span><div class="cl-f-cv"><div class="cl-f-big">' + big + '</div>' +
-      '<div class="cl-f-sub">' + sub + '</div></div></div>';
+    // the buoy
+    var bp = km(fc.buoy[1], fc.buoy[0]);
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(bp[0], bp[1], 3.5, 0, 7); g.fill();
+    pill('Buoy 44097', bp[0] + 7, bp[1] + 2, '#e7edf2', bp[0] > w - 100);
+    labels.forEach(function (L) { pill(L.txt, L.x + 4, L.y - 14, rgb(L.col)); });
+    setNote(note);
+    drawn = { rays: nrays, labels: labels.map(function (L) { return L.txt; }), note: note };
   }
-
-  function tideCell(big, sub) {
-    return '<div class="cl-f-cell"><span class="cl-f-ico">' + I.tide(44) + '</span><div class="cl-f-cv"><div class="cl-f-big">' + big + '</div>' +
-      '<div class="cl-f-sub">' + (sub || '') + '</div></div></div>';
-  }
-
-  function modelRow(label, v) {
-    if (!isNum(v)) return '';
-    return '<div class="cl-f-model"><span>' + esc(label) + '</span><b>' + F.score(v) + ' <small>/ 10</small></b></div>';
-  }
-
-  function updatedLine(n) {
-    var cls = n.freshness === 'stale' ? ' cl-stale' : n.freshness === 'dead' ? ' cl-dead' : '';
-    var txt;
-    if (n.updatedAt) txt = 'Updated ' + F.when(n.updatedAt) + (n.freshness === 'stale' || n.freshness === 'dead' ? ' · ' + F.age(n.updatedAt) : '');
-    else if (n.freshness === 'loading') { txt = 'Loading the forecast…'; cls = ''; }
-    else txt = 'No forecast loaded';
-    return '<p class="cl-fine cl-f-fine' + cls + '">' + esc(txt) + '</p>';
-  }
-
-  function buoyLine(n) {
-    var b = n.buoy;
-    if (!b || D.isNight()) return '';   // the buoy line sleeps after sunset (A2-Notes)
-    var cls = b.level === 'stale' ? ' cl-stale' : b.level === 'dead' ? ' cl-dead' : '';
-    var s = 'Buoy ' + F.swell(b.h, b.period, b.compass);
-    if (b.obsAt) s += ' · ' + F.when(b.obsAt) + ' (' + F.age(b.obsAt) + ')';
-    // F.when: a reading from yesterday reached the reef "~Thu 11:48 AM", not "~11:48 AM".
-    if (b.reachesAt) s += ' · ' + (b.reachesAt.getTime() >= Date.now() ? 'reaches' : 'reached') + ' the reef ~' + F.when(b.reachesAt);
-    return '<p class="cl-fine cl-f-fine' + cls + '">' + esc(s) + '</p>';
-  }
-
-  function nowHTML(n) {
-    var sw = n.swell, h, sc = scAt(Date.now());
-    if (isNum(sc)) {
-      h = scHero(sc, 'at Choc now · Sound Check model');
-      if (sw) h += '<div class="cl-f-meta"><span class="cl-f-off">Offshore ' + esc(F.num(sw.h)) + NB + 'ft</span><span class="cl-f-sep" aria-hidden="true">·</span>' + metaHTML(sw.period, sw.dir, (sw.compass || '') + ' ' + F.deg(sw.dir)) + '</div>';
-      if (sw && sw.status) h += '<div class="cl-f-st">' + C.html.status(sw.status, { pill: true }) + '</div>';
-    } else if (sw) {
-      h = '<div class="cl-f-hero"><span class="cl-f-num">' + F.num(sw.h) + '</span><span class="cl-f-unit">ft</span></div>';
-      h += '<div class="cl-f-meta">' + metaHTML(sw.period, sw.dir, (sw.compass || '') + ' ' + F.deg(sw.dir)) + '</div>';
-      if (sw.status) h += '<div class="cl-f-st">' + C.html.status(sw.status, { pill: true }) + '</div>';
-    } else {
-      // No swell reading: say so plainly instead of a 104 px dash.
-      h = '<p class="cl-f-nodata">' + (n.freshness === 'loading' ? 'Loading the forecast…' : 'No wave forecast right now') + '</p>';
-    }
-    var bl = (n.blocked || []).filter(function (t) { return t && t !== sw && isNum(t.h); })
-      .map(function (t) { return F.swell(t.h, t.period, t.compass) + ' · blocked'; });
-    if (bl.length) h += '<p class="cl-f-dim">' + esc(bl.join('; ')) + '</p>';
-
-    var t = n.tide, tBig = DASH, tSub = '';
-    if (t) {
-      if (t.nextLow) tBig = 'Low ' + F.when(t.nextLow.t);
-      var bits = [];
-      if (isNum(t.h)) bits.push(F.tide(t.h, t.rising) + (t.rising === true ? ' rising' : t.rising === false ? ' falling' : ''));
-      if (t.nextHigh && (!t.nextLow || t.nextHigh.t < t.nextLow.t)) bits.push('high ' + F.when(t.nextHigh.t));
-      tSub = bits.join(' · ');
-    }
-    if (tBig === DASH && !tSub) tSub = 'Tide';
-    h += '<div class="cl-f-two">' + windCell(n.wind, '', true) + tideCell(tBig, esc(tSub)) + '</div>';
-    h += modelRow('Your model', n.model);
-    h += '<div class="cl-f-fines">' + buoyLine(n) + updatedLine(n) + '</div>';
-    return h;
-  }
-
-  function nextHTML(n, nw, day) {
-    var b = day.swell;
-    var noon = new Date(day.date.getTime() + 12 * HOUR);
-    var label = nw.dayOffset === 0 ? 'Today, ' + F.day(noon) : nw.dayOffset === 1 ? 'Tomorrow, ' + F.day(noon) : F.dayLong(noon);
-    var h = '<p class="cl-f-day cl-serif">' + esc(label) + '</p>';
-    var scw = scMax(nw.t.getTime() - HOUR, (nw.until || new Date(nw.t.getTime() + 6 * HOUR)).getTime());
-    if (isNum(scw)) {
-      h += scHero(scw, 'at Choc on the incoming tide · Sound Check model');
-      h += '<div class="cl-f-meta"><span class="cl-f-off">Offshore ' + esc(F.range(b.min, b.max)) + NB + 'ft</span><span class="cl-f-sep" aria-hidden="true">·</span>' + metaHTML(b.period, b.dir, b.compass || '') + '</div>';
-    } else {
-      h += '<div class="cl-f-hero"><span class="cl-f-num">' + F.range(b.min, b.max) + '</span><span class="cl-f-unit">ft</span></div>';
-      // A day band: compass letters only, as the week rows (A2-Phone-Late).
-      h += '<div class="cl-f-meta">' + metaHTML(b.period, b.dir, b.compass || '') + '</div>';
-    }
-    if (day.status) h += '<div class="cl-f-st">' + C.html.status(day.status, { pill: true }) + '</div>';
-    var o = day.other;
-    if (o && o.status === 'blocked') h += '<p class="cl-f-dim">' + esc(F.swell([o.min, o.max], o.period, o.compass) + ' · blocked') + '</p>';
-
-    var w = day.low && day.low.t && Math.abs(day.low.t.getTime() - nw.t.getTime()) < 5 * MIN ? day.low.wind : null;
-    if (!w) { var i = D.indexAt(nw.t); var hr = i >= 0 ? D.hour(i) : null; w = hr ? hr.wind : null; }
-    h += '<div class="cl-f-two">' + windCell(w, 'at the low', false) +
-      tideCell('Low ' + F.time(nw.t), nw.until ? 'Incoming until ' + F.time(nw.until) : '') + '</div>';
-    h += modelRow('Your model, ' + F.day(noon), day.model);
-    var t = n.tide, fines = '';
-    if (t && isNum(t.h)) fines += '<p class="cl-fine cl-f-fine">Now ' + esc(F.tide(t.h, t.rising) + (t.rising === true ? ' rising' : t.rising === false ? ' falling' : '') + ' · ' + F.time(new Date())) + '</p>';
-    h += '<div class="cl-f-fines">' + fines + updatedLine(n) + '</div>';
-    return h;
-  }
-
-  function renderNow() {
-    var n = D.now();
-    var nx = nextWindowDay();
-    setHTML(E.now, nx ? nextHTML(n, nx.nw, nx.day) : nowHTML(n));
-  }
+  function setNote(t) { E.mapnote.hidden = !t; if (E.mapnote.textContent !== t) E.mapnote.textContent = t; }
 
   // ════════════════════════════════════════════════════════════════════
-  // THIS WEEK
+  // WEEK SCRUBBER
   // ════════════════════════════════════════════════════════════════════
-  function weekHTML() {
-    var wk = D.week();
-    var any = wk.some(function (d) { return d && (d.swell || d.low); });
-    if (!any) return '<p class="cl-f-empty">' + (D.freshness() === 'loading' ? 'Loading the week…' : 'No days to show: the forecast and tides didn’t load.') + '</p>';
-    var nowMs = Date.now();
-    // NOAA's tide predictions down: each day's swell falls back to all
-    // daylight (kioskDaySummary tidesDown), not its incoming tide. Say so
-    // once, and put "all day" where the low would be, so a verdict that
-    // changed with the reading doesn't change silently.
-    var down = wk.some(function (d) { return d && d.tidesDown && d.swell; });
-    var note = down ? '<p class="cl-fine cl-f-wkn">No tide times: each day shows the swell over all daylight</p>' : '';
-    return note + wk.map(function (d, k) {
-      var past = k === 0 && d.sun && d.sun.lastLight && nowMs >= d.sun.lastLight.getTime();
-      var dc = d.date ? scMax(d.sun && d.sun.firstLight ? d.sun.firstLight.getTime() : d.date.getTime() + 6 * HOUR,
-        d.sun && d.sun.lastLight ? d.sun.lastLight.getTime() : d.date.getTime() + 19 * HOUR) : null;
-      var scs = isNum(dc) ? '<span class="cl-f-sc-d">Choc ' + F.num(dc) + NB + 'ft</span>' : '';
-      // With the model, Choc's own number leads every row (it already carries the sea floor and the
-      // swell window); the offshore swell follows, or says it comes from outside the window.
-      var sw = scs
-        ? '<span class="cl-f-s">' + scs + '<span class="cl-f-off">' + (!d.swell ? '' : d.reaches
-          ? 'offshore ' + F.swell([d.swell.min, d.swell.max], d.swell.period, d.swell.compass) : 'offshore swell outside the window') + '</span></span>'
-        : d.swell
-        ? (d.reaches ? '<span class="cl-f-s">' + F.swell([d.swell.min, d.swell.max], d.swell.period, d.swell.compass) + '</span>'
-          : '<span class="cl-f-s cl-f-none">Nothing reaches the reef</span>')
-        : '<span class="cl-f-s cl-f-none">' + DASH + '</span>';
-      var low = d.low ? '<span class="cl-f-g">' + I.tide(15) + '<span>' + F.time(d.low.t) + '</span></span>'
-        : d.tidesDown && d.swell ? '<span class="cl-f-g cl-f-ad">all day</span>'
-        : '<span class="cl-f-g">' + I.tide(15) + '<span>' + DASH + '</span></span>';
-      var w = d.low && d.low.wind;
-      var wind = w ? '<span class="cl-f-g cl-f-wg">' + (isNum(w.dir) ? '<span class="cl-f-wa">' + I.wind(w.dir, 15) + '</span>' : '') +
-        '<span>' + F.wind(w.mph, w.dir) + '</span>' + (w.quality ? ' ' + C.html.quality(w.quality) : '') + '</span>' : '';
-      var right = '<span class="cl-f-r">' + (d.status ? C.html.status(d.status, { short: true, small: true }) : '') +
-        (isNum(d.model) ? '<span class="cl-f-m">' + F.score(d.model) + '</span>' : '') + '</span>';
-      var sel = k === selDay;
-      // The grid lives on an inner span: older WebKit can't make a <button> a grid container.
-      return '<button type="button" class="cl-f-row' + (sel ? ' sel' : '') + (past ? ' past' : '') + '" data-k="' + k + '" aria-pressed="' + sel + '">' +
-        '<span class="cl-f-ri"><span class="cl-f-d">' + esc(d.label) + '</span>' +
-        '<span class="cl-f-mid">' + sw + '<span class="cl-f-w">' + low + wind + '</span></span>' + right + '</span></button>';
-    }).join('');
-  }
-  function renderWeek() {
-    keepFocus(E.wk, 'data-k', function () { setHTML(E.wk, weekHTML()); });
-  }
-  function onWeekClick(e) {
-    var b = e.target.closest ? e.target.closest('.cl-f-row') : null;
-    if (!b) return;
-    var k = +b.getAttribute('data-k');
-    var d = D.week()[k];
-    if (!d) return;
-    selDay = k;
-    // The tint lands at once; then the page glides to the chart.
-    E.wk.querySelectorAll('.cl-f-row').forEach(function (r) {
-      var on = +r.getAttribute('data-k') === k;
-      r.classList.toggle('sel', on);
-      r.setAttribute('aria-pressed', on);
-    });
-    E.wk.__html = null;
-    scrollToChart();
-    var target = d.low ? d.low.t.getTime() : d.window ? d.window.start.getTime() : d.date.getTime() + 9 * HOUR;
-    if (chart) target = U.clamp(target, chart.t0, chart.tLast);
-    setCursor({ mode: 'time', t: target, low: !!d.low }, { slide: 300, keepSel: true });
-  }
-
-  function scrollToChart() {
-    if (!E.fch) return;
-    var y = E.fch.getBoundingClientRect().top + (window.scrollY || 0) - 4;
-    var maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-    y = U.clamp(y, 0, maxY);
-    if (scrollAnim) cancelAnimationFrame(scrollAnim);
-    var y0 = window.scrollY || 0;
-    if (reduced() || Math.abs(y - y0) < 2) { window.scrollTo(0, y); return; }
-    var t0 = performance.now(), dur = 300;
-    var step = function (now) {
-      var p = Math.min(1, (now - t0) / dur);
-      var e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
-      window.scrollTo(0, y0 + (y - y0) * e);
-      scrollAnim = p < 1 ? requestAnimationFrame(step) : null;
-    };
-    scrollAnim = requestAnimationFrame(step);
-  }
-
-  // ════════════════════════════════════════════════════════════════════
-  // FORECAST CHART (SVG, from STATE.forecastData through CLEAN.data)
-  // ════════════════════════════════════════════════════════════════════
-  function buildChart(W) {
-    var hrs = D.hours();
-    if (!hrs.length || !hrs[0] || !hrs[0].at) return null;
-    var n = hrs.length;
-    var t0 = hrs[0].at.getTime(), tLast = hrs[n - 1].at.getTime();
-    var days = Math.max(1, Math.ceil((tLast - t0 + HOUR) / DAY - 1e-6));
-    var span = days * DAY;
-    var X = function (t) { return (t - t0) / span * W; };
-    var hs = W / (span / HOUR);                       // one hour in px
-    var times = hrs.map(function (h) { return h && h.at ? h.at.getTime() : NaN; });
-    var o = [];
-
-    // Swell, per hour, as the model reads the reef (app.js
-    // _effectiveInWindowSwell): solid = the part that reaches the reef,
-    // each train (primary + secondary) weighted by its alignment with
-    // the window (1 inside 115–158°, fading to 0 over 30° outside);
-    // ghost = all the swell out there, both trains, behind it. A train
-    // sitting on the window's edge then fades in and out instead of
-    // flicking the fill on and off hour to hour. The band is the hero's
-    // in / edge / blocked call, with calls under 3 hours folded into
-    // their neighbours (U.steadyRuns); the readout keeps each hour's own.
-    var sw = [], gh = [], st = [], maxH = 0;
-    hrs.forEach(function (hr, i) {
-      var tr = splitTrains(hr);
-      if (!tr.any) { sw[i] = gh[i] = st[i] = null; return; }   // no swell reading: a gap, not 0 ft
-      var inW = 0, tot = 0;
-      tr.all.forEach(function (t) { inW += U.alignment(t.dir) * t.h; tot += t.h; });
-      sw[i] = inW;
-      gh[i] = tot;
-      st[i] = tr.reach ? tr.reach.status : tr.blocked ? 'blocked' : null;
-      maxH = Math.max(maxH, tot);
-    });
-    var ppf = Math.min(G.swPx, (G.swBase - G.swTop) / Math.max(1, maxH));
-    var ySw = function (v) { return G.swBase - v * ppf; };
-
-    // Night: sunset → sunrise, for every day on the chart.
-    var night = '';
-    var rect = function (a, b, y, h) {
-      var x1 = Math.max(0, X(a)), x2 = Math.min(W, X(b));
-      return x2 - x1 > 0.2 ? 'M' + r1(x1) + ' ' + y + 'h' + r1(x2 - x1) + 'v' + h + 'h' + r1(x1 - x2) + 'z' : '';
-    };
-    var dayStarts = [];
-    for (var k = 0; k <= days; k++) dayStarts.push(U.startOfDay(t0, k).getTime());
-    for (k = 0; k < days; k++) {
-      var s = D.sun(new Date(dayStarts[k] + 12 * HOUR));
-      if (!s) continue;
-      if (s.alwaysNight) { night += rect(dayStarts[k], dayStarts[k + 1], 0, G.nightH); continue; }
-      if (s.alwaysDay || !s.sunrise || !s.sunset) continue;
-      night += rect(dayStarts[k], s.sunrise.getTime(), 0, G.nightH) + rect(s.sunset.getTime(), dayStarts[k + 1], 0, G.nightH);
+  function renderChart() {
+    if (!fc.steps) { setHTML(E.cx, ''); E.wk.hidden = true; return; }
+    E.wk.hidden = false;
+    var S = fc.steps, W = E.cx.clientWidth || 358, wide = W >= 560, sp = SPOTS[spot];
+    var PL = 30, PR = 8, PT = 10, CH = wide ? 170 : 140, LT = 20, LW = 16;
+    var t0 = S[0].t, t1 = S[S.length - 1].t;
+    var yT = PT + CH + 18, yW = yT + LT + 12, HH = yW + LW / 2 + 6;
+    var x = function (t) { return PL + (t - t0) / (t1 - t0) * (W - PL - PR); };
+    var vmax = 0;
+    S.forEach(function (s) { [s[sp.k].g, s[sp.k].e].forEach(function (v) { if (isNum(v) && v > vmax) vmax = v; }); });
+    var stepFt = vmax > 6 ? 2 : 1, ymax = Math.max(2, Math.ceil((vmax + 0.3) / stepFt) * stepFt);
+    var y = function (v) { return PT + CH - v / ymax * CH; };
+    var o = '<svg width="' + W + '" height="' + HH + '" viewBox="0 0 ' + W + ' ' + HH + '" aria-hidden="true">';
+    // nights and the past
+    for (var d = U.startOfDay(new Date(t0)).getTime() - DAY; d < t1 + DAY; d += DAY) {
+      var sa = D.sun(new Date(d + 12 * HOUR)), sb = D.sun(new Date(d + 36 * HOUR));
+      if (!sa || !sb || !sa.sunset || !sb.sunrise) continue;
+      var a = Math.max(t0, sa.sunset.getTime()), b = Math.min(t1, sb.sunrise.getTime());
+      if (b > a) o += '<rect class="cl-f-night" x="' + x(a).toFixed(1) + '" y="' + PT + '" width="' + (x(b) - x(a)).toFixed(1) + '" height="' + CH + '"/>';
     }
-    if (night) o.push('<path class="nt" d="' + night + '"/>');
-
-    // Grid: whole feet (the board: 1, 2, 3 ft with "2 ft" named).
-    var stepFt = maxH <= 4 ? 1 : maxH <= 8 ? 2 : 5, grid = '', labY = null, labV = null;
-    for (var v = stepFt; ySw(v) >= G.swTop - 0.5; v += stepFt) {
-      var gy = r1(ySw(v)) + 0.5;
-      grid += 'M0 ' + gy + 'H' + W;
-      if (labY == null || Math.abs(gy - 50) < Math.abs(labY - 50)) { labY = gy; labV = v; }
+    var nowT = Date.now();
+    if (nowT > t0) o += '<rect class="cl-f-past" x="' + PL + '" y="' + PT + '" width="' + (Math.min(x(nowT), W - PR) - PL).toFixed(1) + '" height="' + CH + '"/>';
+    for (var v = stepFt; v < ymax; v += stepFt) {
+      o += '<line class="cl-f-grid" x1="' + PL + '" x2="' + (W - PR) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/>' +
+        '<text class="cl-f-ax" x="' + (PL - 6) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + v + '</text>';
     }
-    if (grid) o.push('<path class="gl" d="' + grid + '"/>');
-    if (labY != null) o.push('<text class="ax" x="2" y="' + r1(labY - 3.5) + '">' + labV + NB + 'ft</text>');
-
-    // Areas: one continuous shape, hour to hour in straight lines (the
-    // board's polygons). 0 ft lies on the baseline, so the shape thins
-    // out and comes back without vertical edges. Only a missing reading
-    // breaks it, and then it slopes to the baseline over half an hour.
-    var area = function (vals, cls) {
-      var d = '', run = null;
-      var flush = function () {
-        if (!run) return;
-        var first = run[0], last = run[run.length - 1];
-        var x0 = first.i === 0 ? 0 : Math.max(0, first.x - hs / 2);
-        var x1 = last.i === n - 1 ? W : Math.min(W, last.x + hs / 2);
-        var pts = run.map(function (p) { return r1(p.x) + ' ' + r1(p.y); });
-        if (last.i === n - 1 && x1 - last.x > 0.05) pts.push(r1(x1) + ' ' + r1(last.y));   // the last hour holds to the edge
-        d += 'M' + r1(x0) + ' ' + G.swBase + 'L' + pts.join('L') + 'L' + r1(x1) + ' ' + G.swBase + 'Z';
-        run = null;
-      };
-      for (var i = 0; i < n; i++) {
-        var val = vals[i];
-        if (isNum(val) && isFinite(times[i])) {
-          if (!run) run = [];
-          run.push({ i: i, x: X(times[i]), y: ySw(Math.max(0, val)) });
-        } else flush();
-      }
-      flush();
-      return d ? '<path class="' + cls + '" d="' + d + '"/>' : '';
-    };
-    o.push(area(gh, 'gh'));
-    o.push(area(sw, 'sw'));
-
-    // Window band, by the hero's status: blocks, not 2 px slivers (a call
-    // that lasts under 3 hours joins its neighbour, as the board draws it).
-    var band = '', segStart = 0;
-    var bandCls = { 'in': 'bi', edge: 'be', blocked: 'bb' };
-    st = U.steadyRuns(st, 3);
-    for (var i = 1; i <= n; i++) {
-      if (i < n && st[i] === st[segStart]) continue;
-      var c = bandCls[st[segStart]];
-      if (c && isFinite(times[segStart])) {
-        var bx1 = segStart === 0 ? 0 : Math.max(0, X(times[segStart]) - hs / 2);
-        var bx2 = i === n ? W : Math.min(W, X(times[i - 1]) + hs / 2);
-        band += '<rect class="' + c + '" x="' + r1(bx1) + '" y="' + G.bandY + '" width="' + r1(Math.max(0, bx2 - bx1)) + '" height="' + G.bandH + '"/>';
-      }
-      segStart = i;
+    o += '<text class="cl-f-ax" x="' + (PL - 6) + '" y="' + (PT + 7) + '" text-anchor="end">ft</text>';
+    // days
+    for (d = U.startOfDay(new Date(t0)).getTime(); d <= t1; d += DAY) {
+      if (d > t0) o += '<line class="cl-f-day" x1="' + x(d).toFixed(1) + '" x2="' + x(d).toFixed(1) + '" y1="' + PT + '" y2="' + (PT + CH) + '"/>';
+      var mid = Math.max(t0, d) + (Math.min(t1, d + DAY) - Math.max(t0, d)) / 2;
+      if (Math.min(t1, d + DAY) - Math.max(t0, d) >= 8 * HOUR) o += '<text class="cl-f-dl" x="' + x(mid).toFixed(1) + '" y="' + (PT + CH + 13) + '" text-anchor="middle">' + esc(F.day(new Date(mid))) + '</text>';
     }
-    o.push(band);
-
-    // Wind: one bar per 6 h (the board's 28 bars), mean speed, vector-mean
-    // direction, coloured by quality; onshore hatched. A small arrow on
-    // top points where the wind blows.
-    var slots = Math.max(1, Math.round(span / (6 * HOUR)));
-    var slotW = W / slots, barW = slotW * 0.76;
-    var acc = [];
-    hrs.forEach(function (hr, idx) {
-      if (!hr || !hr.wind || !isNum(hr.wind.mph) || !isFinite(times[idx])) return;
-      var sIdx = Math.floor((times[idx] - t0) / (6 * HOUR));
-      if (sIdx < 0 || sIdx >= slots) return;
-      var a = acc[sIdx] || (acc[sIdx] = { n: 0, mph: 0, sx: 0, sy: 0, nd: 0 });
-      a.n++; a.mph += hr.wind.mph;
-      if (isNum(hr.wind.dir)) {
-        var rad = hr.wind.dir * Math.PI / 180, wgt = Math.max(0.5, hr.wind.mph);
-        a.sx += Math.sin(rad) * wgt; a.sy += Math.cos(rad) * wgt; a.nd++;
-      }
-    });
-    var bars = '', arrows = '';
-    acc.forEach(function (a, sIdx) {
-      if (!a || !a.n) return;
-      var mph = a.mph / a.n;
-      var dir = a.nd ? norm360(Math.atan2(a.sx, a.sy) * 180 / Math.PI) : null;
-      var q = U.windQuality(mph, dir);
-      var cls = q === 'offshore' ? 'off' : q === 'onshore' ? 'on' : 'crs';
-      var bh = Math.min(G.windMax, 3 + mph * 1.35);
-      var bx = sIdx * slotW + (slotW - barW) / 2, by = G.windBase - bh;
-      bars += '<rect class="' + cls + '" x="' + r1(bx) + '" y="' + r1(by) + '" width="' + r1(barW) + '" height="' + r1(bh) + '"/>';
-      if (dir != null) arrows += '<path d="' + ARROW7 + '" transform="translate(' + r1(bx + barW / 2) + ',' + r1(by - 6) + ') rotate(' + Math.round(norm360(dir + 180)) + ')"/>';
-    });
-    o.push(bars);
-    if (arrows) o.push('<g class="ar">' + arrows + '</g>');
-
-    // Daylight incoming tide (each day's low → high, inside daylight),
-    // faint green; fainter on days nothing reaches the reef.
-    var wk = D.week(), win = '', lows = [];
-    wk.forEach(function (d) {
-      if (!d || !d.low || !d.low.t) return;
-      var lt = d.low.t.getTime();
-      if (lt >= t0 && lt <= t0 + span) lows.push(lt);
-      if (!d.low.until || !d.sun || !d.sun.sunrise) return;
-      var a = Math.max(lt, d.sun.sunrise.getTime()), b = Math.min(d.low.until.getTime(), d.sun.sunset.getTime());
-      if (b <= a) return;
-      var x1 = Math.max(0, X(a)), x2 = Math.min(W, X(b));
-      if (x2 - x1 > 0.5) win += '<rect class="win' + (d.reaches ? '' : ' dim') + '" x="' + r1(x1) + '" y="' + G.winY + '" width="' + r1(x2 - x1) + '" height="' + G.winH + '"/>';
-    });
-    o.push(win);
-
-    // Tide line (6-min predictions), scaled to its own range.
-    var curve = D.tideCurve().filter(function (p) { var ms = p.t.getTime(); return isNum(p.h) && ms >= t0 - HOUR && ms <= t0 + span + HOUR; });
-    var tideY = null, tideMin = null, tideMax = null;
-    if (curve.length > 1) {
-      tideMin = Infinity; tideMax = -Infinity;
-      curve.forEach(function (p) { if (p.h < tideMin) tideMin = p.h; if (p.h > tideMax) tideMax = p.h; });
-      var rng = Math.max(0.1, tideMax - tideMin);
-      tideY = function (h) { return G.tideBot - (h - tideMin) / rng * (G.tideBot - G.tideTop); };
-      var every = Math.max(1, Math.floor(curve.length / (W * 0.8)));
-      var pts = [];
-      for (var j = 0; j < curve.length; j += every) pts.push(curve[j]);
-      if (pts[pts.length - 1] !== curve[curve.length - 1]) pts.push(curve[curve.length - 1]);
-      o.push('<path class="tl" d="M' + pts.map(function (p) { return r1(X(p.t.getTime())) + ' ' + r1(tideY(p.h)); }).join('L') + '"/>');
-      lows.forEach(function (lt) {
-        var td = D.tideAt(new Date(lt));
-        if (td && isNum(td.h)) o.push('<circle class="lo" cx="' + r1(X(lt)) + '" cy="' + r1(tideY(td.h)) + '" r="2.5"/>');
+    // the two models: band between them, their mean bold, each thin
+    var both = S.filter(function (s) { return isNum(s[sp.k].g) && isNum(s[sp.k].e); });
+    if (both.length > 1) {
+      o += '<path class="cl-f-band" d="M' + both.map(function (s) { return x(s.t).toFixed(1) + ',' + y(Math.max(s[sp.k].g, s[sp.k].e)).toFixed(1); }).join('L') +
+        'L' + both.slice().reverse().map(function (s) { return x(s.t).toFixed(1) + ',' + y(Math.min(s[sp.k].g, s[sp.k].e)).toFixed(1); }).join('L') + 'Z"/>';
+    }
+    o += line(S, function (s) { return s[sp.k].g; }, 'cl-f-gfs', x, y);
+    o += line(S, function (s) { return s[sp.k].e; }, 'cl-f-ec', x, y);
+    o += line(S, function (s) { return s[sp.k].m; }, 'cl-f-mean', x, y);
+    if (nowT >= t0 && nowT <= t1) o += '<line class="cl-f-nowl" x1="' + x(nowT).toFixed(1) + '" x2="' + x(nowT).toFixed(1) + '" y1="' + PT + '" y2="' + (PT + CH) + '"/>';
+    // tide lane
+    var tc = D.tideCurve().filter(function (p, k) { return k % 3 === 0 && p.t.getTime() >= t0 && p.t.getTime() <= t1 && isNum(p.h); });
+    if (tc.length > 1) {
+      var hs = tc.map(function (p) { return p.h; }), lo = Math.min.apply(null, hs), hi = Math.max.apply(null, hs);
+      var ty = function (hh) { return yT + LT - (hh - lo) / ((hi - lo) || 1) * LT; };
+      o += '<path class="cl-f-tide" d="M' + tc.map(function (p) { return x(p.t.getTime()).toFixed(1) + ',' + ty(p.h).toFixed(1); }).join('L') + '"/>';
+      D.tideEvents().forEach(function (e) {
+        var te = e.t.getTime(); if (e.type !== 'L' || te < tc[0].t.getTime() || te > tc[tc.length - 1].t.getTime() || !isNum(e.h)) return;
+        o += '<circle class="cl-f-low" cx="' + x(te).toFixed(1) + '" cy="' + ty(Math.max(lo, e.h)).toFixed(1) + '" r="2.2"/>';
       });
     }
-
-    var labels = [];
-    for (k = 0; k < days; k++) labels.push({ x: X(dayStarts[k]), text: F.day(new Date(dayStarts[k] + 12 * HOUR)) });
-
-    return {
-      W: W, n: n, t0: t0, tLast: tLast, span: span, days: days, X: X, tideY: tideY, times: times,
-      labels: labels,
-      svg: '<svg class="cl-f-cx" width="' + W + '" height="' + G.H + '" viewBox="0 0 ' + W + ' ' + G.H + '" aria-hidden="true" focusable="false">' +
-        '<defs><pattern id="cl-f-hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path class="hp" d="M0 0v5"/></pattern></defs>' +
-        o.join('') +
-        '<g class="cl-f-cur"><line class="cur" x1="0" y1="0" x2="0" y2="' + G.H + '"/><circle class="cd" cx="0" cy="0" r="3.5"/></g></svg>'
-    };
-  }
-
-  function renderChart() {
-    var W = lastW || 358;
-    var key = D.generation() + '|' + W + '|' + U.dayKey(new Date()) + '|' + (D.loaded() ? 1 : 0);
-    if (key !== chartKey || !chart) {
-      chartKey = key;
-      chart = buildChart(W);
-      if (chart) {
-        E.cxw.innerHTML = chart.svg;
-        E.svg = E.cxw.querySelector('svg');
-        E.curLine = E.svg.querySelector('.cur');
-        E.curDot = E.svg.querySelector('.cd');
-        E.dl.innerHTML = chart.labels.map(function (l) {
-          return '<span style="left:' + r1(l.x / W * 100) + '%">' + esc(l.text) + '</span>';
-        }).join('');
-        E.cxw.setAttribute('aria-valuemax', String(chart.n - 1));
-      } else {
-        E.cxw.innerHTML = '<p class="cl-f-chempty">' + (D.freshness() === 'loading' ? 'Loading the forecast…' : 'No forecast to draw.') + '</p>';
-        E.svg = E.curLine = E.curDot = null;
-        E.dl.innerHTML = '';
-      }
+    o += '<text class="cl-f-ax" x="' + (PL - 6) + '" y="' + (yT + LT / 2 + 3) + '" text-anchor="end">tide</text>';
+    // wind lane: arrows where the wind blows to, coloured by what it does at Choc
+    var every = wide ? 3 * HOUR : 6 * HOUR, arrow = (I.paths && I.paths.chartArrow) || 'M0 3.5V-3.5M-3 -0.5L0 -3.5L3 -0.5';
+    for (var t = Math.ceil(t0 / every) * every; t <= t1; t += every) {
+      var wd = D.windAt(new Date(t)); if (!wd || !isNum(wd.dir)) continue;
+      o += '<path class="cl-f-wa ' + U.qualityClass(wd.quality) + '" d="' + arrow + '" transform="translate(' + x(t).toFixed(1) + ',' + yW + ') rotate(' + Math.round(wd.dir + 180) + ') scale(1.15)"/>';
     }
-    if (cur.mode === 'time' && chart) cur.t = U.clamp(cur.t, chart.t0, chart.tLast);
-    if (!slide) placeCursor(curTime());
-    updateReadout();
-    updateButtons();
-    pushCursor(true);
+    o += '<text class="cl-f-ax" x="' + (PL - 6) + '" y="' + (yW + 3) + '" text-anchor="end">wind</text>';
+    o += '<g class="cl-f-cur"></g></svg>';
+    geom = { x: x, y: y, t0: t0, t1: t1, PL: PL, PR: PR, W: W, PT: PT, HH: HH };
+    var key = o;
+    if (E.cx.__key !== key) { E.cx.innerHTML = o; E.cx.__key = key; }
+    E.cx.setAttribute('aria-valuemax', String(S.length - 1));
+    drawCursor();
   }
-
-  // An hour's trains → { reach: biggest in-window/edge train, blocked:
-  // biggest blocked train (either may be null), all, any: the hour has
-  // a swell reading at all (0 ft counts, missing doesn't) }.
-  function splitTrains(hr) {
-    var all = [], reach = null, blocked = null, any = false;
-    if (hr) [hr.swell].concat(hr.others || []).forEach(function (t) {
-      if (t && isNum(t.h)) any = true;
-      if (!t || !isNum(t.h) || t.h <= 0 || all.indexOf(t) >= 0) return;
-      all.push(t);
-      if (t.status === 'in' || t.status === 'edge') { if (!reach || t.h > reach.h) reach = t; }
-      else if (t.status === 'blocked') { if (!blocked || t.h > blocked.h) blocked = t; }
-    });
-    return { reach: reach, blocked: blocked, all: all, any: any };
+  function line(S, f, cls, x, y) {
+    var segs = [], seg = [];
+    S.forEach(function (s) { var v = f(s); if (isNum(v)) seg.push(x(s.t).toFixed(1) + ',' + y(v).toFixed(1)); else if (seg.length) { segs.push(seg); seg = []; } });
+    if (seg.length) segs.push(seg);
+    return segs.filter(function (q) { return q.length > 1; }).map(function (q) { return '<path class="' + cls + '" d="M' + q.join('L') + '"/>'; }).join('');
   }
-
-  // ── Cursor ─────────────────────────────────────────────────────────
-  function curTime() {
-    var t = cur.mode === 'now' ? Date.now() : cur.t;
-    return chart ? U.clamp(t, chart.t0, chart.tLast + HOUR - 1) : t;
+  function drawCursor() {
+    var g = E.cx.querySelector('.cl-f-cur'); if (!g || !geom) return;
+    var i = curStep();
+    if (i < 0) { g.innerHTML = ''; E.cx.setAttribute('aria-valuetext', 'No forecast for now'); return; }
+    var s = fc.steps[i], v = s[SPOTS[spot].k].m, X = geom.x(s.t).toFixed(1);
+    g.innerHTML = '<line x1="' + X + '" x2="' + X + '" y1="' + (geom.PT - 4) + '" y2="' + (geom.HH - 2) + '"/>' +
+      (isNum(v) ? '<circle cx="' + X + '" cy="' + geom.y(v).toFixed(1) + '" r="4.5"/>' : '');
+    E.cx.setAttribute('aria-valuenow', String(i));
+    E.cx.setAttribute('aria-valuetext', hourLabel(new Date(s.t)) + ', ' + (isNum(v) ? F.ft(v) : 'no height') + ' at ' + SPOTS[spot].name);
   }
-  function idxAt(T) {
-    if (!chart) return D.indexAt(new Date(T));
-    var i = U.clamp(Math.round((T - chart.t0) / HOUR), 0, chart.n - 1);
-    if (isFinite(chart.times[i]) && Math.abs(chart.times[i] - T) <= 90 * MIN) return i;
-    return D.indexAt(new Date(T));
+  function setStep(i, now) {
+    if (!fc.steps) return;
+    var n = nowStep();
+    if (now || i === n && n >= 0) cur = { mode: 'now', i: -1 };
+    else cur = { mode: 'pick', i: Math.max(0, Math.min(fc.steps.length - 1, i)) };
+    run('head', renderHead); run('cursor', drawCursor); run('map', drawMap); run('cond', renderCond);
   }
-  // At "now" the hour is the app's current hour (marineNowIndex), as the
-  // Now block reads it; elsewhere the nearest forecast hour.
-  function idxAtCursor(T) { return cur.mode === 'now' ? D.nowIndex() : idxAt(T); }
-  function tideYAt(T) {
-    if (!chart || !chart.tideY) return null;
-    var td = D.tideAt(new Date(T));
-    return td && isNum(td.h) ? chart.tideY(td.h) : null;
+  function stepAtX(clientX) {
+    var r = E.cx.getBoundingClientRect();
+    var t = geom.t0 + (clientX - r.left - geom.PL) / (geom.W - geom.PL - geom.PR) * (geom.t1 - geom.t0), b = 0;
+    fc.steps.forEach(function (s, k) { if (Math.abs(s.t - t) < Math.abs(fc.steps[b].t - t)) b = k; });
+    return b;
   }
-  function placeCursor(T) {
-    if (!chart || !E.curLine) return;
-    var x = r1(U.clamp(chart.X(T), 0.75, chart.W - 0.75));
-    E.curLine.setAttribute('x1', x);
-    E.curLine.setAttribute('x2', x);
-    var y = tideYAt(T);
-    if (y == null) E.curDot.setAttribute('visibility', 'hidden');
-    else { E.curDot.removeAttribute('visibility'); E.curDot.setAttribute('cx', x); E.curDot.setAttribute('cy', r1(y)); }
+  function onDown(ev) {
+    if (!fc.steps || !geom) return;
+    drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, moved: false, horiz: ev.pointerType === 'mouse' };
+    if (drag.horiz) { try { E.cx.setPointerCapture(ev.pointerId); } catch (_) { /* fine */ } setStep(stepAtX(ev.clientX)); }
   }
-  function slideCursor(from, to, ms) {
-    if (slide) cancelAnimationFrame(slide);
-    slide = null;
-    if (reduced() || !chart || Math.abs(chart.X(to) - chart.X(from)) < 1) { placeCursor(to); return; }
-    var start = performance.now();
-    var step = function (now) {
-      var p = Math.min(1, (now - start) / ms);
-      var e = 1 - Math.pow(1 - p, 3);
-      placeCursor(from + (to - from) * e);
-      slide = p < 1 ? requestAnimationFrame(step) : null;
-      if (!slide) placeCursor(curTime());
-    };
-    slide = requestAnimationFrame(step);
-  }
-
-  function readout(T) {
-    var i = idxAtCursor(T);
-    var hr = i >= 0 ? D.hour(i) : null;
-    var tr = splitTrains(hr);
-    var sw = tr.reach || (hr && hr.swell);
-    var td = D.tideAt(new Date(T));
-    return {
-      idx: i,
-      time: F.day(new Date(T)) + ' ' + F.time(new Date(T)) + (cur.low ? ' · low' : ''),
-      swell: sw ? F.swell(sw.h, sw.period) : DASH,
-      blocked: !!(sw && sw.status === 'blocked'),
-      wind: hr && hr.wind ? F.wind(hr.wind.mph, hr.wind.dir) : DASH,
-      tide: td && isNum(td.h) ? F.tide(td.h, cur.low && cur.mode === 'time' ? true : td.rising) : DASH
-    };
-  }
-  function updateReadout() {
-    var T = curTime(), r = readout(T);
-    E.rdt.parentNode.hidden = !chart;
-    if (E.rdt.textContent !== r.time) E.rdt.textContent = r.time;
-    var vals = [r.swell, r.wind, r.tide];
-    for (var i = 0; i < 3; i++) if (E.rdv[i].textContent !== vals[i]) E.rdv[i].textContent = vals[i];
-    E.rdv[0].classList.toggle('cl-f-blk', r.blocked);
-    if (chart) {
-      E.cxw.setAttribute('aria-valuenow', String(Math.max(0, r.idx)));
-      E.cxw.setAttribute('aria-valuetext', r.time + ': swell ' + r.swell + (r.blocked ? ', blocked' : '') + ', wind ' + r.wind + ', tide ' + r.tide);
+  function onMove(ev) {
+    if (!drag || ev.pointerId !== drag.id) return;
+    if (!drag.horiz) {
+      // touch: a mostly sideways start scrubs; a vertical one scrolls the page
+      var dx = Math.abs(ev.clientX - drag.x), dy = Math.abs(ev.clientY - drag.y);
+      if (dx < 6 && dy < 6) return;
+      if (dy > dx) { drag = null; return; }
+      drag.horiz = true; try { E.cx.setPointerCapture(ev.pointerId); } catch (_) { /* fine */ }
     }
+    drag.moved = true;
+    setStep(stepAtX(ev.clientX));
   }
-
-  // Jump targets from the cursor: lows (CO-OPS hi/lo) and whole hours.
-  function lowsInRange() {
-    if (!chart) return [];
-    return D.tideEvents().filter(function (e) {
-      var ms = e.t.getTime();
-      return e.type === 'L' && ms >= chart.t0 && ms <= chart.tLast + HOUR - 1;
-    }).map(function (e) { return e.t.getTime(); });
+  function onUp(ev) {
+    if (drag && ev.type === 'pointerup' && !drag.moved && ev.pointerType !== 'mouse') setStep(stepAtX(ev.clientX));
+    drag = null;
   }
-  function targets() {
-    if (!chart) return {};
-    var T = curTime(), lows = lowsInRange(), out = {};
-    for (var i = lows.length - 1; i >= 0; i--) if (lows[i] < T - MIN) { out.pl = lows[i]; break; }
-    for (i = 0; i < lows.length; i++) if (lows[i] > T + MIN) { out.nl = lows[i]; break; }
-    var fl = Math.floor(T / HOUR) * HOUR;
-    var ph = T - fl > 30e3 ? fl : fl - HOUR;
-    var nh = fl + HOUR;
-    if (ph >= chart.t0) out.ph = ph;
-    if (nh <= chart.tLast) out.nh = nh;
-    return out;
+  function onKey(ev) {
+    if (!fc.steps) return;
+    var i = curStep(); if (i < 0) i = 0;
+    var k = ev.key, n = fc.steps.length - 1, j = null;
+    if (k === 'ArrowLeft' || k === 'ArrowDown') j = i - 1;
+    else if (k === 'ArrowRight' || k === 'ArrowUp') j = i + 1;
+    else if (k === 'PageDown') j = dayFrom(i, -1);
+    else if (k === 'PageUp') j = dayFrom(i, 1);
+    else if (k === 'Home') j = 0;
+    else if (k === 'End') j = n;
+    if (j == null) return;
+    ev.preventDefault();
+    setStep(Math.max(0, Math.min(n, j)));
   }
-  // Now stays a live ink button at rest, as on every board (a tap there
-  // does nothing); the others go muted at the chart's ends.
-  function updateButtons() {
-    var tg = targets();
-    E.ctl.querySelectorAll('[data-j]').forEach(function (b) {
-      var j = b.getAttribute('data-j');
-      var dis = !chart || (j !== 'now' && tg[j] == null);
-      if (b.disabled !== dis) b.disabled = dis;
-    });
+  // The step nearest a day later (or earlier): runs step every 3 h early on and every 6 h later.
+  function dayFrom(i, dir) {
+    var t = fc.steps[i].t + dir * DAY, b = i;
+    fc.steps.forEach(function (s, k) { if (Math.abs(s.t - t) < Math.abs(fc.steps[b].t - t)) b = k; });
+    return b;
   }
-  function onJump(e) {
-    var b = e.target.closest ? e.target.closest('[data-j]') : null;
-    if (!b || b.disabled || !chart) return;
+  function onJump(ev) {
+    var b = ev.target.closest('button[data-j]'); if (!b || !fc.steps) return;
     var j = b.getAttribute('data-j');
-    if (j === 'now') { if (cur.mode !== 'now') setCursor({ mode: 'now', t: 0, low: false }, { slide: 250 }); return; }
-    var t = targets()[j];
-    if (t == null) return;
-    setCursor({ mode: 'time', t: t, low: j === 'pl' || j === 'nl' }, { slide: 180 });
-  }
-
-  // One way in for every cursor move.
-  function setCursor(next, opts) {
-    opts = opts || {};
-    var from = curTime();
-    cur = next;
-    var to = curTime();
-    if (!opts.keepSel && selDay >= 0) {
-      var d = D.week()[selDay];
-      if (cur.mode === 'now' || !d || U.dayKey(new Date(to)) !== U.dayKey(d.date)) {
-        selDay = -1;
-        E.wk.querySelectorAll('.cl-f-row.sel').forEach(function (r) { r.classList.remove('sel'); r.setAttribute('aria-pressed', 'false'); });
-        E.wk.__html = null;
-      }
-    }
-    updateReadout();
-    updateButtons();
-    if (opts.slide) slideCursor(from, to, opts.slide);
-    else { if (slide) { cancelAnimationFrame(slide); slide = null; } placeCursor(to); }
-    run('lineup', renderLineup);
-    if (opts.soon) schedulePush(); else pushCursor(false);
-  }
-
-  // The app's scrubber follows (CLEAN.cursor: Model and the app read it).
-  function pushCursor(onlyIfDiff) {
-    clearTimeout(pushTimer);
-    pushTimer = null;
-    if (!chart) return;
-    var idx = cur.mode === 'now' ? D.nowIndex() : idxAt(cur.t);
-    if (idx < 0) return;
-    var have = typeof STATE !== 'undefined' ? STATE.scrubberIdx : -1;
-    if (onlyIfDiff && have === idx) return;
-    if (have === idx && C.cursor.get() === idx) return;
-    try { C.cursor.set(idx); } catch (e) { err('cursor', e); }
-  }
-  function schedulePush() {
-    if (pushTimer) return;
-    pushTimer = setTimeout(function () { pushTimer = null; pushCursor(false); }, 120);
-  }
-
-  // ── Touch / mouse: the cursor snaps to whole hours as you drag ─────
-  // touch-action: pan-y in CSS, so a vertical swipe still scrolls the
-  // page (the browser cancels the pointer); a sideways one scrubs.
-  function hourFromClientX(clientX) {
-    var rect = E.svg ? E.svg.getBoundingClientRect() : E.cxw.getBoundingClientRect();
-    var x = U.clamp(clientX - rect.left, 0, rect.width || chart.W);
-    var T = chart.t0 + (x / (rect.width || chart.W)) * chart.span;
-    var snapped = chart.t0 + Math.round((T - chart.t0) / HOUR) * HOUR;
-    return U.clamp(snapped, chart.t0, chart.tLast);
-  }
-  function scrubTo(clientX) {
-    if (!chart) return;
-    var t = hourFromClientX(clientX);
-    if (cur.mode === 'time' && cur.t === t && !cur.low) return;
-    setCursor({ mode: 'time', t: t, low: false }, { soon: true });
-    if (lastHapticHour !== t) {
-      lastHapticHour = t;
-      try { if (drag && drag.active && navigator.vibrate) navigator.vibrate(4); } catch (_) { /* no haptics */ }
-    }
-  }
-  function onDown(e) {
-    if (!chart || (e.pointerType === 'mouse' && e.button !== 0)) return;
-    drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, active: false };
-    lastHapticHour = null;
-  }
-  function onMove(e) {
-    if (!drag || e.pointerId !== drag.id) return;
-    if (!drag.active) {
-      var dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
-      if (Math.abs(dx) < 6 || Math.abs(dx) < Math.abs(dy)) return;
-      drag.active = true;
-      try { E.cxw.setPointerCapture(e.pointerId); } catch (_) { /* fine */ }
-      if (slide) { cancelAnimationFrame(slide); slide = null; }
-    }
-    if (e.cancelable) e.preventDefault();
-    scrubTo(e.clientX);
-  }
-  function onUp(e) {
-    if (!drag || e.pointerId !== drag.id) return;
-    var d = drag;
-    drag = null;
-    if (!d.active && Math.abs(e.clientX - d.x0) < 10 && Math.abs(e.clientY - d.y0) < 10) scrubTo(e.clientX);   // a tap
-    try { E.cxw.releasePointerCapture(e.pointerId); } catch (_) { /* fine */ }
-    pushCursor(false);
-    if (pendingChart) { pendingChart = false; run('chart', renderChart); }
-  }
-  function onCancel(e) {
-    if (!drag || (e && e.pointerId != null && e.pointerId !== drag.id)) return;
-    var was = drag.active;
-    drag = null;
-    if (was) pushCursor(false);
-    if (pendingChart) { pendingChart = false; run('chart', renderChart); }
-  }
-  function onKey(e) {
-    if (!chart) return;
-    var T = curTime(), t = null;
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') t = targets().ph;
-    else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') t = targets().nh;
-    else if (e.key === 'PageUp') t = Math.max(chart.t0, Math.floor(T / HOUR) * HOUR - DAY);
-    else if (e.key === 'PageDown') t = Math.min(chart.tLast, Math.floor(T / HOUR) * HOUR + DAY);
-    else if (e.key === 'Home') t = chart.t0;
-    else if (e.key === 'End') t = chart.tLast;
-    else return;
-    e.preventDefault();
-    if (t != null) setCursor({ mode: 'time', t: t, low: false }, {});
+    if (j === 'now') { setStep(-1, true); return; }
+    var i = curStep(); if (i < 0) i = 0;
+    var k = j === 'day' ? dayFrom(i, 1) : j === '-day' ? dayFrom(i, -1) : i + Number(j);
+    setStep(Math.max(0, Math.min(fc.steps.length - 1, k)));
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // LINEUP — flat colour blocks (A2-Phone-Sat; A-Green "Lineup picture,
-  // flat colour blocks"): water, the lighter shallows round the reef, a
-  // sand edge along the coast and green land, all from the Choc TV
-  // radar's coastline vectors (A2-Notes: one set of shapes for phone and
-  // TV), then the window cone, the hour's swell and wind arrows and dark
-  // label pills on top. viewBox 358 × 220; colours are forecast.css
-  // --lu-* (day: the Sat board, night: A-Green "Deep").
+  // WIND AND TIDE AT THE HOUR
   // ════════════════════════════════════════════════════════════════════
-  var LU = { W: 358, H: 220, crop: 0.15, lx: 140, R: 125, pillH: 20, pad: 5, ch: 6.6 };
-  function coast() { try { return typeof KIOSK_COAST !== 'undefined' && KIOSK_COAST && KIOSK_COAST.shore ? KIOSK_COAST : null; } catch (_) { return null; } }
+  function renderCond() {
+    var i = curStep(), t = i >= 0 ? new Date(fc.steps[i].t) : new Date();
+    var w = D.windAt(t), td = D.tideAt(t), h = '';
+    h += '<p><span class="cl-lab">Wind</span> ' + (w && isNum(w.mph)
+      ? esc(F.wind(w.mph, w.dir)) + (w.quality ? ', ' + C.html.quality(w.quality, 'long') : '') + (isNum(w.gust) ? ' · gusts ' + Math.round(w.gust) : '')
+      : DASH) + '</p>';
+    var next = D.tideEvents().filter(function (e) { return e.t.getTime() > t.getTime(); })[0];
+    h += '<p><span class="cl-lab">Tide</span> ' + (td && isNum(td.h) ? esc(F.tide(td.h, td.rising)) : DASH) +
+      (next ? ' · ' + (next.type === 'L' ? 'low ' : 'high ') + esc(F.time(next.t)) + (U.dayKey(next.t) !== U.dayKey(t) ? ' ' + esc(F.day(next.t)) : '') : '') + '</p>';
+    setHTML(E.cond, h);
+  }
 
-  function lineupSVG(T) {
-    var CO = coast();
-    var W = LU.W, H = LU.H, M = 40;      // M: how far the land runs on past the frame
-    var aspect = CO ? CO.aspect : 1992 / 949;
-    var fh = H / (1 - LU.crop), fw = fh * aspect;
-    var cxF = CO ? CO.lineup[0] : 0.5, cyF = CO ? CO.lineup[1] : 0.5;
-    var fx = LU.lx - cxF * fw, fy = -LU.crop * fh;
-    var lx = LU.lx, ly = fy + cyF * fh;
-    var P = function (p) { return [fx + p[0] * fw, fy + p[1] * fh]; };
-    var pt = function (x, y) { return r1(x) + ' ' + r1(y); };
-    var path = function (pts) { return 'M' + pts.map(function (p) { return pt(p[0], p[1]); }).join('L'); };
-    var o = [];
-    o.push('<rect class="wt" width="' + W + '" height="' + H + '"/>');
-    // The reef's shallows: the board's ellipse, 12 px right of and 11 px
-    // below the reef mark.
-    o.push('<ellipse class="shl" cx="' + r1(lx + 12) + '" cy="' + r1(ly + 11) + '" rx="50" ry="32"/>');
-    if (CO) {
-      // Land is everything above / left of the traced shore (kiosk.js).
-      // The coast runs on past the frame at both ends, so neither the
-      // sand nor the land stops mid-picture.
-      var shore = CO.shore.map(P);
-      var s0 = shore[0], sN = shore[shore.length - 1], xR = Math.max(W + M, sN[0]);
-      var coastD = path([[s0[0], H + M]].concat(shore, [[xR, sN[1]]]));
-      var landD = coastD + 'L' + pt(xR, -M) + 'L' + pt(-M, -M) + 'L' + pt(-M, H + M) + 'Z';
-      // The traced "pond" is a round knob of land on the shore (it reads
-      // as a stray outline otherwise): filled as land, with the same sand.
-      var knobs = (CO.ponds || []).map(function (pond) { return path(pond.map(P)) + 'Z'; });
-      // Sand: one wide stroke along the coast and round the knobs; the
-      // land fills then cover its landward half, leaving an even edge.
-      o.push('<path class="sand" d="' + coastD + knobs.join('') + '"/>');
-      o.push('<path class="land" d="' + landD + '"/>');
-      // Separate paths: a knob overlapping the land must not cut a hole.
-      knobs.forEach(function (d) { o.push('<path class="land" d="' + d + '"/>'); });
+  // ════════════════════════════════════════════════════════════════════
+  // BUOY CHECK: the latest reading against the forecasts made before
+  // ════════════════════════════════════════════════════════════════════
+  function loadPrevRuns() {
+    if (prev.status === 'loading') return;
+    prev.status = 'loading'; prev.at = Date.now();
+    var url = PREV + '?latitude=' + fc.buoy[0] + '&longitude=' + fc.buoy[1] +
+      '&hourly=wave_height,wave_height_previous_day1,wave_height_previous_day2,wave_height_previous_day3&past_days=3&forecast_days=1&timezone=GMT';
+    getJSON(url).then(function (d) {
+      var hr = d && d.hourly;
+      if (!hr || !Array.isArray(hr.time)) { prev.status = 'failed'; prev.data = null; render('prev'); return; }
+      var rows = {};
+      hr.time.forEach(function (ts, k) {
+        var t = Date.parse(ts + 'Z'); if (!isNum(t)) return;
+        var f = function (n) { var v = hr['wave_height_previous_day' + n] && hr['wave_height_previous_day' + n][k]; return isNum(v) ? v * M2FT : null; };
+        rows[t] = { t: t, d1: f(1), d2: f(2), d3: f(3) };
+      });
+      prev.data = rows; prev.status = 'ok';
+      render('prev');
+    });
+  }
+  function prevAt(t) { if (!prev.data || !isNum(t)) return null; return prev.data[Math.round(t / HOUR) * HOUR] || null; }
+  // How the earlier forecasts did against a reading: within max(0.5 ft, 15 %) is on track.
+  function verdict(b, fs) {
+    var v = fs.filter(isNum); if (!isNum(b) || !v.length) return null;
+    var tol = Math.max(0.5, 0.15 * b), d = v.map(function (f) { return f - b; });
+    if (d.every(function (x) { return Math.abs(x) <= tol; })) return { cls: 'ok', txt: 'forecasts on track' };
+    if (d.every(function (x) { return x > tol; })) return { cls: 'off', txt: 'forecasts ran high' };
+    if (d.every(function (x) { return x < -tol; })) return { cls: 'off', txt: 'forecasts ran low' };
+    return { cls: 'off', txt: 'forecasts mixed' };
+  }
+  function renderBuoyLine() {
+    var b = D.buoy(), h;
+    if (!b || !isNum(b.total)) {
+      h = '<span class="cl-f-bc1"><b>Buoy 44097</b> no reading</span>';
     } else {
-      // No vectors for this spot: the satellite photo, same frame.
-      o.push('<image href="project/assets/lineup.jpg" x="' + r1(fx) + '" y="' + r1(fy) + '" width="' + r1(fw) + '" height="' + r1(fh) + '" preserveAspectRatio="none"/>');
+      var at = b.obsAt ? b.obsAt.getTime() : null, p = prevAt(at), v = p ? verdict(b.total, [p.d1, p.d2, p.d3]) : null;
+      var age = b.level === 'stale' ? ' cl-stale' : b.level === 'dead' ? ' cl-dead' : '';
+      h = '<span class="cl-f-bc1"><b>Buoy 44097</b> ' + esc(F.ft(b.total)) + ' <span class="cl-muted">all waves</span> · <span class="' + age.trim() + '">' + (b.obsAt ? esc(F.when(b.obsAt)) : DASH) + '</span>' +
+        (v ? '<span class="cl-f-chip cl-f-chip-' + v.cls + '">' + esc(v.txt) + '</span>' : '') + '</span>';
+      h += '<span class="cl-fine cl-f-bc2">' + (p
+        ? 'Forecast for ' + esc(F.time(new Date(Math.round(at / HOUR) * HOUR)).replace(':00' + NB, NB)) + ', made 1 · 2 · 3 days before: ' + [p.d1, p.d2, p.d3].map(function (x) { return isNum(x) ? F.num(x) : DASH; }).join(' · ') + NB + 'ft'
+        : prev.status === 'loading' || prev.status === 'idle' ? 'Loading the earlier forecasts…' : 'The earlier forecasts didn’t load') + '</span>';
     }
-    // Window cone (compass bearing θ: x = sin θ, y = −cos θ).
-    var at = function (deg, r) { var th = deg * Math.PI / 180; return [lx + Math.sin(th) * r, ly - Math.cos(th) * r]; };
-    var e1 = at(WIN_MIN, LU.R), e2 = at(WIN_MAX, LU.R);
-    o.push('<path class="cone" d="M' + pt(lx, ly) + 'L' + pt(e1[0], e1[1]) + 'A' + LU.R + ' ' + LU.R + ' 0 0 1 ' + pt(e2[0], e2[1]) + 'Z"/>');
-
-    var i = idxAtCursor(T), hr = i >= 0 ? D.hour(i) : null;
-    var tr = splitTrains(hr);
-    var sw = tr.reach || (hr && hr.swell);
-    var w = hr && hr.wind;
-    var mid = (WIN_MIN + WIN_MAX) / 2;
-    var arrow = function (fromDeg, len, gap, cls) {
-      var u = at(fromDeg, 1), ux = u[0] - lx, uy = u[1] - ly;
-      var tip = [lx + ux * gap, ly + uy * gap], tail = [lx + ux * (gap + len), ly + uy * (gap + len)];
-      var arm = function (deg) {
-        var a = deg * Math.PI / 180, cs = Math.cos(a), sn = Math.sin(a);
-        return [tip[0] + (ux * cs - uy * sn) * 9, tip[1] + (ux * sn + uy * cs) * 9];
-      };
-      var a1 = arm(38), a2 = arm(-38);
-      o.push('<path class="' + cls + '" d="M' + pt(tail[0], tail[1]) + 'L' + pt(tip[0], tip[1]) + 'M' + pt(a1[0], a1[1]) + 'L' + pt(tip[0], tip[1]) + 'L' + pt(a2[0], a2[1]) + '"/>');
-      return { tail: tail, ux: ux, uy: uy, from: fromDeg };
-    };
-    var labels = [];
-    if (sw && isNum(sw.dir)) {
-      var blk = sw.status === 'blocked';
-      var len = U.clamp(Math.sqrt(sw.h * sw.h * (sw.period || 1)) * 28, 56, 112);
-      var a = arrow(sw.dir, len, 5, 'sa' + (blk ? ' sa-blk' : ''));
-      labels.push(readLabel(F.swell(sw.h, sw.period, sw.compass) + (blk ? ' · blocked' : ''), a, mid));
-    }
-    if (w && isNum(w.dir) && isNum(w.mph)) {
-      var wa = arrow(w.dir, U.clamp(w.mph * 5.5, 36, 100), 9, 'wa');
-      labels.push(readLabel(F.wind(w.mph, w.dir), wa, mid));
-    }
-    o.push('<circle class="mk" cx="' + r1(lx) + '" cy="' + r1(ly) + '" r="5"/>');
-    // The cone's real-world ends, as the board: Block Island's SW Point
-    // under the east edge (kept inside the frame), Montauk Point beside
-    // the south one.
-    labels.push({ text: 'SW Pt Block ' + WIN_MIN + '°', x: W - 6, y: e1[1] + 20, anchor: 'end' });
-    labels.push({ text: 'Montauk Pt ' + WIN_MAX + '°', x: e2[0] + 4, y: e2[1] - 3, anchor: 'start' });
-    placeLabels(labels, W, H).forEach(function (l) {
-      o.push('<g class="pill" data-a="' + l.anchor + '"><rect x="' + r1(l.x1) + '" y="' + r1(l.y1) + '" width="' + r1(l.w) + '" height="' + LU.pillH + '" rx="6"/>' +
-        '<text x="' + r1(l.x1 + LU.pad) + '" y="' + r1(l.y1 + 14) + '">' + esc(l.text) + '</text></g>');
-    });
-
-    var aria = 'Lineup: swell window from ' + WIN_MIN + ' to ' + WIN_MAX + ' degrees' +
-      (sw ? '; swell ' + F.swell(sw.h, sw.period, sw.compass) + (sw.status ? ', ' + F.status(sw.status).toLowerCase() : '') : '') +
-      (w ? '; wind ' + F.wind(w.mph, w.dir) : '');
-    return '<svg class="cl-f-scene" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(aria) + '">' + o.join('') + '</svg>';
+    setHTML(E.bc, h + '<span class="cl-f-bcc" aria-hidden="true">' + I.chevronRight(18) + '</span>');
   }
-  // A reading's pill sits just past its arrow's tail, pushed off the
-  // shaft to the side away from the window's centre so it never sits on
-  // the cone. x is the pill's edge on the anchor side, y the baseline.
-  function readLabel(text, a, midDeg) {
-    var d = ((a.from - midDeg) % 360 + 540) % 360 - 180;          // signed bearing from the window centre
-    var nx = d >= 0 ? -a.uy : a.uy, ny = d >= 0 ? a.ux : -a.ux;   // unit normal, away from the cone
-    var px = a.tail[0] + a.ux * 6 + nx * 8, py = a.tail[1] + a.uy * 6 + ny * 8;
-    var ex = a.ux + nx * 0.8;                                      // which way the text runs
-    var anchor = ex > 0.3 ? 'start' : ex < -0.3 ? 'end' : 'middle';
-    var x = anchor === 'start' ? px - LU.pad : anchor === 'end' ? px + LU.pad : px;
-    var y = ny < -0.3 ? py - 6 : ny > 0.3 ? py + 14 : py + 4;      // pill above, below or beside
-    return { text: text, x: x, y: y, anchor: anchor };
-  }
-  // Pills inside the picture and off each other (first placed wins).
-  // Widths are estimated here and trued up once laid out (fitPills).
-  function placeLabels(labels, W, H) {
-    var boxes = [], PH = LU.pillH;
-    return labels.map(function (l) {
-      var wpx = l.text.length * LU.ch + 2 * LU.pad;
-      var x1 = l.anchor === 'end' ? l.x - wpx : l.anchor === 'middle' ? l.x - wpx / 2 : l.x;
-      x1 = U.clamp(x1, 4, W - 4 - wpx);
-      var y1 = U.clamp(l.y - 14, 4, H - 4 - PH);
-      for (var g = 0; g < 6; g++) {
-        var hit = boxes.filter(function (b) { return x1 < b.x2 && x1 + wpx > b.x1 && y1 < b.y2 && y1 + PH > b.y1; })[0];
-        if (!hit) break;
-        var down = hit.y2 + 4, up = hit.y1 - 4 - PH;
-        y1 = down + PH <= H - 4 ? down : Math.max(4, up);
-      }
-      boxes.push({ x1: x1, x2: x1 + wpx, y1: y1, y2: y1 + PH });
-      return { text: l.text, x1: x1, y1: y1, w: wpx, anchor: l.anchor };
+  function loadVerif() {
+    if (verif.status === 'loading' || verif.status === 'ok' && Date.now() - verif.at < HOUR) return;
+    verif.status = 'loading'; verif.at = Date.now();
+    getJSON(VERIF).then(function (d) {
+      verif.rows = d && Array.isArray(d.rows) ? d.rows.map(function (r) { return { t: Date.parse(r.t), hs: r.buoy && isNum(r.buoy.hs) ? r.buoy.hs : null }; }).filter(function (r) { return isNum(r.t) && isNum(r.hs); }) : null;
+      verif.status = verif.rows ? 'ok' : 'failed';
+      if (sheet) run('sheet', function () { renderSheet(sheet.body); });
     });
   }
-  // Size each pill to its laid-out text, keeping its anchor edge (a
-  // hidden tab has no layout yet: the estimate stands until onShow).
-  function fitPills(svg) {
-    if (!svg) return;
-    var pills = svg.querySelectorAll('g.pill');
-    for (var k = 0; k < pills.length; k++) {
-      var g = pills[k], t = g.querySelector('text'), r = g.querySelector('rect'), tw = 0;
-      try { tw = t.getComputedTextLength(); } catch (_) { tw = 0; }
-      if (!(tw > 0)) continue;
-      var bw = tw + 2 * LU.pad, x1 = +r.getAttribute('x'), ow = +r.getAttribute('width'), an = g.getAttribute('data-a');
-      var nx = an === 'end' ? x1 + ow - bw : an === 'middle' ? x1 + (ow - bw) / 2 : x1;
-      nx = U.clamp(nx, 4, LU.W - 4 - bw);
-      r.setAttribute('x', r1(nx));
-      r.setAttribute('width', r1(bw));
-      t.setAttribute('x', r1(nx + LU.pad));
-    }
-  }
-  function renderLineup() {
-    var T = curTime();
-    var key = chartKey + '|' + idxAtCursor(T) + '|' + Math.floor(T / MIN) + '|' + (D.loaded() ? 1 : 0);
-    if (E.lu.__key === key) return;
-    E.lu.__key = key;
-    E.lu.innerHTML = lineupSVG(T) +
-      '<p class="cl-fine cl-f-cap">' + (D.loaded() ? esc(F.day(new Date(T)) + ' ' + F.time(new Date(T))) + ', swell and wind at the reef'
-        : D.freshness() === 'loading' ? 'Waiting for the forecast' : 'No forecast for the swell and wind arrows') + '</p>';
-    fitPills(E.lu.querySelector('svg'));
-  }
-
-  // ════════════════════════════════════════════════════════════════════
-  // DETAILS — expandable rows
-  // ════════════════════════════════════════════════════════════════════
-  var ROWS = [
-    { key: 'light', title: 'Light and water, today', body: lightHTML },
-    { key: 'tides', title: 'Tide table', body: tidesHTML },
-    { key: 'buoy', title: 'Buoy waves', body: buoyHTML },
-    { key: 'sources', title: 'Data sources', body: sourcesHTML }
-  ];
-  function detailsHTML() {
-    return ROWS.map(function (r) {
-      var on = !!openRows[r.key], body = '';
-      if (on) { try { body = r.body(); } catch (e) { err('details.' + r.key, e); body = '<p class="cl-f-empty">' + DASH + '</p>'; } }
-      return '<div class="cl-f-dd' + (on ? ' open' : '') + '">' +
-        '<button type="button" class="cl-dr cl-f-dr" data-dd="' + r.key + '" aria-expanded="' + on + '"' + (on ? ' aria-controls="cl-f-dd-' + r.key + '"' : '') + '>' +
-          '<span>' + esc(r.title) + '</span><span class="cl-f-chev">' + (on ? I.chevronDown(18) : I.chevronRight(18)) + '</span></button>' +
-        (on ? '<div class="cl-f-ddb" id="cl-f-dd-' + r.key + '">' + body + '</div>' : '') + '</div>';
-    }).join('');
-  }
-  function renderDetails() {
-    keepFocus(E.det, 'data-dd', function () { setHTML(E.det, detailsHTML()); });
-  }
-  function onDetailsClick(e) {
-    var b = e.target.closest ? e.target.closest('[data-dd]') : null;
-    if (!b) return;
-    var k = b.getAttribute('data-dd');
-    openRows[k] = !openRows[k];
-    renderDetails();
-  }
-  function kv(rows) {
-    return '<div class="cl-kv cl-f-kv">' + rows.map(function (r) {
-      return '<span>' + esc(r[0]) + '</span><span' + (r[2] ? ' class="' + r[2] + '"' : '') + '>' + esc(r[1]) + '</span>';
-    }).join('') + '</div>';
-  }
-  // Water temperature: the app's own chain (CO-OPS Montauk, then the
-  // buoy, then the model's sea surface), as its condition card shows it.
-  function waterText() {
-    var e = document.getElementById('val-water-temp');
-    var t = e ? String(e.textContent || '').trim() : '';
-    return /^-?\d+°F$/.test(t) ? t : DASH;
-  }
-  function lightHTML() {
-    var s = D.sun(new Date());
-    var tm = function (k) { return s && s[k] ? F.time(s[k]) : DASH; };
-    return kv([['First light', tm('firstLight')], ['Sunrise', tm('sunrise')], ['Sunset', tm('sunset')], ['Last light', tm('lastLight')], ['Water', waterText()]]);
-  }
-  function tidesHTML() {
-    var ev = D.tideEvents();
-    if (!ev.length) return '<p class="cl-f-empty">No tide predictions loaded.</p>';
-    var start = U.startOfDay(new Date(), 0).getTime(), end = U.startOfDay(new Date(), 4).getTime(), nowMs = Date.now();
-    var byDay = [], last = '';
-    ev.forEach(function (e) {
-      var ms = e.t.getTime();
-      if (ms < start || ms >= end) return;
-      var k = U.dayKey(e.t);
-      if (k !== last) { byDay.push({ t: e.t, rows: [] }); last = k; }
-      byDay[byDay.length - 1].rows.push(e);
+  function openBuoyCheck() {
+    loadVerif();
+    if (prev.status === 'failed') loadPrevRuns();
+    sheet = C.sub.open({
+      id: 'buoycheck',
+      title: 'Buoy vs earlier forecasts',
+      mount: function (body) { body.classList.add('cl-f-sheet'); renderSheet(body); },
+      onClose: function () { sheet = null; }
     });
-    if (!byDay.length) return '<p class="cl-f-empty">No tide predictions for the next days.</p>';
-    return '<div class="cl-f-tt">' + byDay.map(function (d) {
-      return '<p class="cl-f-tth">' + esc(U.dayKey(d.t) === U.dayKey(new Date()) ? 'Today' : F.date(d.t)) + '</p>' +
-        d.rows.map(function (e) {
-          var past = e.t.getTime() < nowMs;
-          return '<div class="cl-f-ttr' + (past ? ' past' : '') + '">' + (e.type === 'L' ? I.tide(18) : I.tideHigh(18)) +
-            '<span>' + (e.type === 'L' ? 'Low' : 'High') + '</span><span>' + F.time(e.t) + '</span><span>' + F.tide(e.h) + '</span></div>';
-        }).join('');
-    }).join('') + '</div>';
   }
-  function buoyHTML() {
+  function renderSheet(body) {
+    var now = Date.now(), t0 = now - 48 * HOUR, t1 = now + HOUR;
+    var obs = (verif.rows || []).filter(function (r) { return r.t >= t0 && r.t <= t1; });
     var b = D.buoy();
-    if (!b) return '<p class="cl-f-empty">No buoy reading.</p>';
-    var cls = b.level === 'stale' ? 'cl-stale' : b.level === 'dead' ? 'cl-dead' : '';
-    var h = '<p class="cl-fine cl-f-obs' + (cls ? ' ' + cls : '') + '">' + esc('Wave buoy, observed ' + (b.obsAt ? F.when(b.obsAt) + ' · ' + F.age(b.obsAt) : DASH)) + '</p>';
-    var rows = [];
-    rows.push([b.band ? 'Swell 8 s and longer' : 'Waves', F.swell(b.h, b.period, b.compass)]);
-    if (b.reachesAt) rows.push([b.reachesAt.getTime() >= Date.now() ? 'Reaches the reef' : 'Reached the reef', '~' + F.when(b.reachesAt)]);
-    rows.push(['Total sea', F.ft(b.total)]);
-    var sp = typeof STATE !== 'undefined' ? STATE.lastSpecSummary : null;
-    var m2f = function (v) { return isNum(v) ? v * 3.28084 : null; };
-    if (sp) {
-      rows.push(['Swell 10 s and longer', F.swell(m2f(sp.swellHt), sp.swellPeriod, isNum(sp.swellDir) ? F.compass(sp.swellDir) : null)]);
-      rows.push(['Wind waves under 10 s', F.swell(m2f(sp.windHt), sp.windPeriod, isNum(sp.windDir) ? F.compass(sp.windDir) : null)]);
+    if (b && isNum(b.total) && b.obsAt && (!obs.length || b.obsAt.getTime() > obs[obs.length - 1].t + 30 * 60e3)) obs.push({ t: b.obsAt.getTime(), hs: b.total });
+    var fs = prev.data ? Object.keys(prev.data).map(function (k) { return prev.data[k]; }).filter(function (r) { return r.t >= t0 && r.t <= t1; }).sort(function (a, c) { return a.t - c.t; }) : [];
+    var W = Math.min(640, (body.clientWidth || 358)) - 32, H = 190, PL = 28, PR = 6, PT = 8, CH = H - 30;
+    var vals = obs.map(function (r) { return r.hs; });
+    fs.forEach(function (r) { [r.d1, r.d2, r.d3].forEach(function (v) { if (isNum(v)) vals.push(v); }); });
+    var vmax = vals.length ? Math.max.apply(null, vals) : 4, stp = vmax > 8 ? 2 : 1, ymax = Math.ceil((vmax + 0.4) / stp) * stp;
+    var x = function (t) { return PL + (t - t0) / (t1 - t0) * (W - PL - PR); }, y = function (v) { return PT + CH - v / ymax * CH; };
+    var o = '<svg class="cl-f-bcx" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Buoy readings and the forecasts made 1, 2 and 3 days before, last two days">';
+    for (var v = stp; v < ymax; v += stp) o += '<line class="cl-f-grid" x1="' + PL + '" x2="' + (W - PR) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/><text class="cl-f-ax" x="' + (PL - 5) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + v + '</text>';
+    for (var d = U.startOfDay(new Date(t0)).getTime(); d <= t1; d += DAY) {
+      if (d > t0) o += '<line class="cl-f-day" x1="' + x(d).toFixed(1) + '" x2="' + x(d).toFixed(1) + '" y1="' + PT + '" y2="' + (PT + CH) + '"/>';
+      var mid = Math.max(t0, d) + (Math.min(t1, d + DAY) - Math.max(t0, d)) / 2;
+      if (Math.min(t1, d + DAY) - Math.max(t0, d) > 6 * HOUR) o += '<text class="cl-f-dl" x="' + x(mid).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + esc(F.day(new Date(mid))) + '</text>';
     }
-    h += kv(rows);
-    h += roseSVG();
-    return h;
-  }
-  // The app's directional spectrum (STATE.lastSpectral, the bins its
-  // compass rose draws), restyled as 10° slices.
-  function roseSVG() {
-    var sp = typeof STATE !== 'undefined' ? STATE.lastSpectral : null;
-    var bins = sp && Array.isArray(sp.bins) ? sp.bins : [];
-    var measured = typeof binsHaveMeasuredDir === 'function' ? binsHaveMeasuredDir(bins) : bins.some(function (b) { return isNum(b.dir1) && b.dir1 > 0 && b.dir1 < 999; });
-    if (!measured) return '';
-    var S = 220, c = S / 2, R = 84, SEC = 10;
-    // Energy per 10° sector (energy × bandwidth, as the app's m0), split
-    // into 8 s and longer vs shorter; radius ∝ √energy so small seas show.
-    var secs = {}, maxE = 0;
-    bins.forEach(function (b, i) {
-      if (!b || !(b.energy > 0) || !(b.period > 0) || !isNum(b.dir1) || b.dir1 >= 999) return;
-      var nb = bins[i + 1] || bins[i - 1];
-      var df = nb && isNum(nb.freq) && isNum(b.freq) ? Math.abs(nb.freq - b.freq) : 0.005;
-      var k = Math.floor(norm360(b.dir1) / SEC);
-      var sc = secs[k] || (secs[k] = { lng: 0, sht: 0 });
-      if (b.period >= 8) sc.lng += b.energy * df; else sc.sht += b.energy * df;
+    [['d3', 'cl-f-l3'], ['d2', 'cl-f-l2'], ['d1', 'cl-f-l1']].forEach(function (q) { o += line(fs, function (r) { return r[q[0]]; }, q[1], function (t) { return x(t); }, y); });
+    obs.forEach(function (r) { o += '<circle class="cl-f-obs" cx="' + x(r.t).toFixed(1) + '" cy="' + y(r.hs).toFixed(1) + '" r="2.4"/>'; });
+    o += '</svg>';
+    // how each lead did over the two days, hour by hour where both exist
+    var stats = [1, 2, 3].map(function (n) {
+      var e = [], rel = [];
+      obs.forEach(function (r) { var p = prevAt(r.t); var f = p && p['d' + n]; if (isNum(f)) { e.push(f - r.hs); if (r.hs > 0.3) rel.push((f - r.hs) / r.hs); } });
+      if (!e.length) return null;
+      var m = e.reduce(function (a, c) { return a + c; }, 0) / e.length, mr = rel.length ? rel.reduce(function (a, c) { return a + c; }, 0) / rel.length : null;
+      return { n: n, m: m, mr: mr, k: e.length };
     });
-    Object.keys(secs).forEach(function (k) { maxE = Math.max(maxE, secs[k].lng + secs[k].sht); });
-    if (!(maxE > 0)) return '';
-    var at = function (deg, r) { var th = deg * Math.PI / 180; return r1(c + Math.sin(th) * r) + ' ' + r1(c - Math.cos(th) * r); };
-    var wedge = function (k, r0, r, cls) {
-      if (r - r0 < 0.6) return '';
-      var a0 = k * SEC + 0.6, a1 = (k + 1) * SEC - 0.6;
-      return '<path class="' + cls + '" d="M' + at(a0, r0) + 'L' + at(a0, r) + 'A' + r1(r) + ' ' + r1(r) + ' 0 0 1 ' + at(a1, r) +
-        'L' + at(a1, r0) + (r0 > 0 ? 'A' + r1(r0) + ' ' + r1(r0) + ' 0 0 0 ' + at(a0, r0) : '') + 'Z"/>';
-    };
-    var o = [];
-    [0.33, 0.66, 1].forEach(function (f) { o.push('<circle class="rg" cx="' + c + '" cy="' + c + '" r="' + r1(R * f) + '"/>'); });
-    var cone = 'M' + c + ' ' + c + 'L' + at(WIN_MIN, R) + 'A' + R + ' ' + R + ' 0 0 1 ' + at(WIN_MAX, R) + 'Z';
-    o.push('<path class="rc" d="' + cone + '"/>');
-    Object.keys(secs).forEach(function (k) {
-      var sc = secs[k];
-      var rl = Math.sqrt(sc.lng / maxE) * R, rt = Math.sqrt((sc.lng + sc.sht) / maxE) * R;
-      o.push(wedge(+k, 0, rl, 'wl'));
-      o.push(wedge(+k, rl, rt, 'ws'));
-    });
-    o.push('<path class="rco" d="' + cone + '"/>');
-    [['N', 0], ['E', 90], ['S', 180], ['W', 270]].forEach(function (p) {
-      var xy = at(p[1], R + 14).split(' ');
-      o.push('<text x="' + xy[0] + '" y="' + (+xy[1] + 4) + '" text-anchor="middle">' + p[0] + '</text>');
-    });
-    return '<figure class="cl-f-rose"><svg viewBox="0 0 ' + S + ' ' + S + '" role="img" aria-label="Wave energy at the buoy by direction, with the swell window from ' + WIN_MIN + ' to ' + WIN_MAX + ' degrees">' + o.join('') + '</svg>' +
-      '<figcaption class="cl-fine">Wave energy at the buoy by direction: the solid part of each slice is 8 s and longer, the pale part shorter. The green cone is the swell window, ' + WIN_MIN + '–' + WIN_MAX + '°.</figcaption></figure>';
-  }
-  function sourcesHTML() {
-    var src = D.sources();
-    if (!src.length) return '<p class="cl-f-empty">' + DASH + '</p>';
-    return kv(src.map(function (s) {
-      return [s.label, s.text, s.level === 'stale' ? 'cl-stale' : s.level === 'dead' ? 'cl-dead' : ''];
-    }));
+    var h = '<p class="cl-pad cl-f-sl">What buoy 44097 measured (dots: all waves, swell and wind chop) against the wave forecast for the same spot, made 1, 2 and 3 days before each hour (lines). When the lines have been tracking the dots, trust this week’s forecast more.</p>';
+    h += '<div class="cl-pad">' + (obs.length || fs.length ? o : '<p class="cl-muted">' + (verif.status === 'loading' || prev.status === 'loading' ? 'Loading…' : 'No buoy readings or earlier forecasts for the last two days') + '</p>') + '</div>';
+    h += '<p class="cl-pad cl-f-lg"><span class="cl-f-k cl-f-k-obs">● buoy</span><span class="cl-f-k cl-f-k1">— 1 day before</span><span class="cl-f-k cl-f-k2">- - 2 days</span><span class="cl-f-k cl-f-k3">··· 3 days</span></p>';
+    h += '<div class="cl-list">' + stats.map(function (st, k) {
+      var lab = (k + 1) + ' day' + (k ? 's' : '') + ' before';
+      if (!st) return '<div class="cl-sr"><span>' + lab + '</span><span class="cl-v">' + DASH + '</span></div>';
+      var sgn = st.m >= 0 ? '+' : '−', pct = isNum(st.mr) ? ' (' + Math.abs(Math.round(st.mr * 100)) + '%' + NB + (st.mr >= 0 ? 'high' : 'low') + ')' : '';
+      return '<div class="cl-sr"><span>' + lab + '<small>' + st.k + ' hours compared</small></span><span class="cl-v">' + sgn + F.num(Math.abs(st.m)) + NB + 'ft' + pct + '</span></div>';
+    }).join('') + '</div>';
+    h += '<p class="cl-pad cl-fine cl-f-sn">Forecasts: Open-Meteo’s wave model at the buoy, as it stood 1, 2 and 3 days earlier. The Sound Check’s own GFS-Wave and ECMWF runs aren’t archived yet. The buoy reports heights in 0.3' + NB + 'ft steps.' +
+      (b && b.reachesAt ? ' The latest reading’s swell reaches Choc about ' + esc(F.time(b.reachesAt)) + '.' : '') + '</p>';
+    setHTML(body, h);
   }
 
   // ════════════════════════════════════════════════════════════════════
+  // SOURCE LINE
+  // ════════════════════════════════════════════════════════════════════
+  function renderSource() {
+    var h = 'Sound Check model: GFS-Wave and ECMWF read at buoy 44097 and carried over the sea floor';
+    if (fc.made) {
+      var age = madeAge(), cls = age > 2 * DAY ? 'cl-dead' : age > 12 * HOUR ? 'cl-stale' : '';
+      h += ' · <span class="' + cls + '">run ' + esc(F.when(new Date(Date.parse(fc.made)))) + ' (' + esc(F.age(new Date(Date.parse(fc.made)))) + ')</span>';
+    }
+    h += ' · <a href="#methods">How it works</a>';
+    setHTML(E.src, h);
+  }
+
+  // Read-only state for tests and debugging.
+  C.forecastInfo = function () {
+    var i = curStep();
+    return { fc: fc.status, made: fc.made, step: i, t: i >= 0 ? fc.steps[i].t : null, mode: cur.mode, spot: spot,
+      rays: drawn.rays, labels: drawn.labels.slice(), note: drawn.note, land: land.status, prev: prev.status, verif: verif.status };
+  };
+
   C.register('forecast', {
     mount: mount,
-    render: render,
-    onShow: function () {
-      if (measure()) { chartKey = ''; run('chart', renderChart); E.lu.__key = null; run('lineup', renderLineup); }
-    }
+    render: function (reason) { render(reason); },
+    onShow: function () { render('show'); }
   });
 })();

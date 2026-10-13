@@ -1,177 +1,188 @@
-// ?preview=clean, Forecast tab: the readings that must not mislead, on the
-// morning after the last buoy report (Fri 2 Oct 2026, 8:00 AM ET) with
-// NOAA's tide predictions down (CO-OPS answers "No Predictions", HTTP 200).
-//   • This week: without tide times each day's swell is read over all
-//     daylight (kioskDaySummary tidesDown), not its incoming tide. The list
-//     says so once, and every row reads "all day" where its low would be,
-//     so a verdict that changed with the reading doesn't change silently.
-//   • The buoy line: yesterday's 8:30 AM reading "reached the reef ~Thu
-//     11:48 AM", with its day; "~11:48 AM" on Friday morning read as a time
-//     still to come.
-//   • The chart's swell is one continuous shape (no gaps or slivers when
-//     every hour has a reading) and Now is a live ink button at rest, as on
-//     every board.
-//   • The lineup is flat colour blocks: water, sand, filled land (the traced
-//     round knob on the shore included), readings in dark pills.
+// Default look, Forecast tab: the Sound Check model, hour by hour, on the
+// fixture day (Thu 1 Oct 2026, 11:00 ET) with the model run moved there
+// (tests/fixtures/soundcheck/fc.json):
+//   • the headline is the height at Choc for 11 AM, the mean of GFS-Wave
+//     (0.5 ft) and ECMWF (0.4 ft), with each model under it;
+//   • each swell at the buoy and its share of Choc's energy, written
+//     "1° 0.5 ft @ 7 s SE 138° → 41% of Choc" with a bar as wide as the
+//     share, coloured by where it comes from (SE orange, SSW grey);
+//   • the ray map draws those swells' rays into Choc (landing rays only),
+//     labels each swell where it enters, and pins Choc;
+//   • the week scrubber moves the hour (keys, the day jump, a mouse drag)
+//     and Now brings it back; the headline, swells and map follow;
+//   • Wilderness switches every reading and is remembered;
+//   • the wind and tide for the hour; the buoy check: 44097's 8:30 AM reading
+//     (2 ft, stale) against Open-Meteo's forecast for 9 AM made 1, 2 and 3
+//     days before (2.4 ft each: on track), and its sub-page with the last
+//     two days and how each lead did on average;
+//   • on a wide screen the tabs run across the top and the map sits left of
+//     the readout.
 'use strict';
 
+const sp = s => (s || '').replace(/[  ]/g, ' ').replace(/\s+/g, ' ').trim();
+
 module.exports = {
-  name: 'clean preview forecast: tides down → "all day" week, buoy arrival with its day, continuous swell, live Now, filled lineup',
-  options: {
-    gate: null,
-    now: '2026-10-02T08:00:00-04:00',
-    viewport: { width: 390, height: 844 },
-    contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 },
-    firebase: { mode: 'google', logs: [] },
-    net: { coops: 'error' }
-  },
+  name: 'clean forecast: Sound Check headline and swells with share bars, ray map, week scrubber, Wilderness, buoy check, wide layout',
+  options: { gate: null, viewport: { width: 390, height: 844 }, contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 } },
   async run({ page, ctx, assert, log }) {
+    ctx.serve('/research/fc/fc.json', { status: 200, headers: { 'content-type': 'application/json' }, body: ctx.fixture('soundcheck/fc.json') });
+    await ctx.state(() => { try { localStorage.removeItem('lcc-f-spot'); } catch (_) { /* fine */ } }).catch(() => {});
     await ctx.open('/?preview=clean');
-    await ctx.waitFor(() => window.CLEAN && CLEAN.ready, { label: 'clean shell up' });
-    await ctx.waitForChart();
+    await ctx.waitFor(() => window.CLEAN && CLEAN.ready && CLEAN.forecastInfo && CLEAN.forecastInfo().fc === 'ok' && CLEAN.forecastInfo().rays > 0, { label: 'model forecast and rays' });
+    await ctx.waitFor(() => CLEAN.forecastInfo().prev === 'ok', { label: 'earlier forecasts at the buoy' });
     await ctx.waitForLoad();
-    await ctx.waitFor(() => document.querySelectorAll('#cl-view-forecast .cl-f-row').length === 7, { label: 'seven week rows' });
+    await ctx.waitFor(() => /mph/.test(document.querySelector('#cl-view-forecast .cl-f-cond').textContent) && /ft/.test(document.querySelector('#cl-view-forecast .cl-f-bc').textContent), { label: 'wind, tide and buoy painted' });
 
-    // ── This week without tide times ──
-    const wk = await ctx.state(() => {
-      const box = document.querySelector('#cl-view-forecast .cl-f-wk');
-      const note = box.querySelector('.cl-f-wkn');
+    const read = () => ctx.state(() => {
+      const q = s => { const e = document.querySelector('#cl-view-forecast ' + s); return e ? e.textContent : null; };
       return {
-        tidesDown: CLEAN.data.week().map(d => !!d.tidesDown),
-        note: note ? note.textContent : null,
-        noteFirst: !!note && box.firstElementChild === note,
-        rows: [...box.querySelectorAll('.cl-f-row')].map(r => ({
-          day: r.querySelector('.cl-f-d').textContent,
-          swell: r.querySelector('.cl-f-s').textContent,
-          slot: r.querySelector('.cl-f-w .cl-f-g').textContent.trim()
-        }))
+        info: CLEAN.forecastInfo(),
+        when: q('.cl-f-when'), num: q('.cl-f-num'), unit: q('.cl-f-unit'), models: q('.cl-f-models'),
+        rows: [...document.querySelectorAll('#cl-view-forecast .cl-f-tr li')].map(li => ({
+          text: (li.querySelector('.cl-f-trt') || li).textContent,
+          bar: li.querySelector('.cl-f-bar i') && li.querySelector('.cl-f-bar i').style.width,
+          dot: li.querySelector('.cl-f-dot') && getComputedStyle(li.querySelector('.cl-f-dot')).backgroundColor
+        })),
+        cond: document.querySelector('#cl-view-forecast .cl-f-cond').innerText,
+        bc: document.querySelector('#cl-view-forecast .cl-f-bc').innerText,
+        bcStale: !!document.querySelector('#cl-view-forecast .cl-f-bc .cl-stale'),
+        valuetext: document.querySelector('#cl-view-forecast .cl-f-cx').getAttribute('aria-valuetext'),
+        errors: CLEAN.errors.map(e => e.where + ': ' + e.message)
       };
     });
-    log('week', JSON.stringify(wk));
-    assert.deepEqual(wk.tidesDown, [true, true, true, true, true, true, true], 'CO-OPS down: every day falls back to all daylight');
-    assert.equal(wk.note, 'No tide times: each day shows the swell over all daylight');
-    assert.ok(wk.noteFirst, 'the note sits above the rows');
-    for (const r of wk.rows) {
-      if (r.swell === '—') continue;                  // no swell either: nothing to qualify
-      assert.equal(r.slot, 'all day', r.day + ': "all day" where the low would be');
-    }
-    await ctx.screenshot('week-tides-down');
 
-    // ── Buoy line: an arrival from yesterday names its day ──
-    // Times and units are joined by no-break spaces; compare them as spaces.
-    const sp = t => t == null ? t : t.replace(/[\u00a0\u202f]/g, ' ');
-    const buoy = sp(await ctx.state(() => [...document.querySelectorAll('#cl-view-forecast .cl-f-now .cl-f-fine')].map(p => p.textContent).find(t => /^Buoy /.test(t)) || null));
-    log('buoy', buoy);
-    assert.ok(buoy, 'the buoy line shows by day');
-    assert.match(buoy, / · Thu 8:30 AM \(/, 'the reading is Thursday 8:30 AM');
-    assert.match(buoy, /reached the reef ~Thu \d{1,2}:\d\d [AP]M$/, 'its arrival on the reef carries the day');
-    await page.locator('#cl-view-forecast .cl-f-dr[data-dd="buoy"]').click();
-    const det = await ctx.state(() => {
-      const kv = [...document.querySelectorAll('#cl-view-forecast .cl-f-ddb .cl-f-kv span')].map(s => s.textContent);
-      const i = kv.indexOf('Reached the reef');
-      return i >= 0 ? kv[i + 1] : null;
+    // ── 11 AM at Choc ──
+    let r = await read();
+    log('now', JSON.stringify(r));
+    assert.equal(sp(r.when), 'Thu 11 AMnow');
+    assert.equal(r.info.mode, 'now');
+    assert.equal(r.num, '0.5', 'the mean of GFS-Wave 0.5 and ECMWF 0.4 ft');
+    assert.equal(sp(r.unit), 'ft at Choc');
+    assert.equal(sp(r.models), 'GFS-Wave 0.5 · ECMWF 0.4 ft');
+    assert.deepEqual(r.rows.map(x => sp(x.text)), [
+      '1° 0.5 ft @ 7 s SE 138° → 41% of Choc',
+      '2° 0.5 ft @ 8 s SE 124° → 41% of Choc',
+      '3° 1.5 ft @ 5 s SSW 205° → 18% of Choc'
+    ], 'swells at the buoy, biggest share of Choc first; the wind sea that reaches nothing is left out');
+    assert.deepEqual(r.rows.map(x => x.bar), ['41%', '41%', '18%'], 'bars as wide as the share');
+    assert.deepEqual(r.rows.map(x => x.dot), ['rgb(240, 138, 75)', 'rgb(240, 138, 75)', 'rgb(140, 154, 168)'], 'SE orange; SSW (205°) grey');
+    assert.deepEqual(r.info.labels.map(sp), ['3° 1.5 ft @ 5 s SSW', '2° 0.5 ft @ 8 s SE', '1° 0.5 ft @ 7 s SE'], 'map labels each swell (biggest drawn last)');
+    assert.ok(r.info.rays > 50, `landing rays drawn (${r.info.rays})`);
+    assert.equal(r.info.note, '');
+    const pin = await ctx.state(async () => {
+      const fr = (await (await fetch('research/fr/land.json')).json()).frame;
+      const cv = document.querySelector('#cl-view-forecast .cl-f-map canvas');
+      const w = cv.clientWidth, WKM = (fr.world[1] - fr.world[0]) * fr.kmlon, k = cv.width / w;
+      const x = Math.round(fr.choc[0] * w / WKM * k), y = Math.round(fr.choc[1] * w / WKM * k);
+      return Array.from(cv.getContext('2d').getImageData(x, y, 1, 1).data.slice(0, 3));
     });
-    assert.match(sp(det) || '', /^~Thu \d{1,2}:\d\d [AP]M$/, 'Details › Buoy waves: the arrival carries the day');
+    assert.ok(pin[0] > 230 && pin[1] > 170 && pin[1] < 215 && pin[2] > 110 && pin[2] < 170, `Choc pin painted at its place (${pin})`);
+    assert.match(sp(r.cond), /^Wind 7 mph SW, cross-shore · gusts 11 Tide 2\.3 ft ▲ · high 1:37 PM$/);
+    assert.equal(sp(r.bc), 'Buoy 44097 2 ft all waves · 8:30 AM forecasts on track Forecast for 9 AM, made 1 · 2 · 3 days before: 2.4 · 2.4 · 2.4 ft');
+    assert.ok(r.bcStale, 'a 2.5 h old reading is marked stale');
+    assert.equal(sp(r.valuetext), 'Thu 11 AM, 0.5 ft at Choc');
+    await ctx.screenshot('forecast-phone', { fullPage: true });
 
-    // ── Chart: one continuous swell shape, Now live at rest ──
-    const ch = await ctx.state(() => {
-      const sw = document.querySelector('#cl-view-forecast .cl-f-cx path.sw');
-      const d = sw ? sw.getAttribute('d') : '';
-      const pts = d.replace(/[MZ]/g, '').split('L').map(p => p.trim().split(/\s+/).map(Number));
-      let vertical = 0;
-      for (let k = 1; k < pts.length; k++) if (Math.abs(pts[k][0] - pts[k - 1][0]) < 0.05 && Math.abs(pts[k][1] - pts[k - 1][1]) > 0.5) vertical++;
-      const now = document.querySelector('#cl-view-forecast .cl-f-jb[data-j="now"]');
-      const nh = document.querySelector('#cl-view-forecast .cl-f-jb[data-j="nh"]');
-      const ax = document.querySelector('#cl-view-forecast .cl-f-cx .ax');
-      return {
-        subpaths: (d.match(/M/g) || []).length, vertical, points: pts.length, hours: CLEAN.data.hours().length,
-        nowDisabled: now.disabled, nowColor: getComputedStyle(now).color, nowOpacity: getComputedStyle(now).opacity,
-        inkColor: getComputedStyle(nh).color, axWeight: ax ? getComputedStyle(ax).fontWeight : null
-      };
-    });
-    log('chart', JSON.stringify(ch));
-    assert.equal(ch.subpaths, 1, 'the in-window swell is one shape across the week');
-    assert.ok(ch.points >= ch.hours, 'a point for every forecast hour');
-    assert.ok(ch.vertical <= 2, 'vertical edges only at the chart\'s two ends');
-    assert.equal(ch.nowDisabled, false, 'Now is a live button at rest');
-    assert.equal(ch.nowOpacity, '1');
-    assert.equal(ch.nowColor, ch.inkColor, 'Now is ink, like the hour buttons');
-    assert.equal(ch.axWeight, '400', 'the chart\'s "2 ft" label is regular weight');
-
-    // The window band under the swell: blocks, not slivers. Open-Meteo's
-    // second swell flips direction for an hour or two; those hours keep
-    // their own call in the readout, but the band folds any call under
-    // 3 hours into its neighbour (the board's few blocks).
-    const band = await ctx.state(() => {
-      const svg = document.querySelector('#cl-view-forecast .cl-f-cx');
-      const W = svg.viewBox.baseVal.width;
-      const hrs = CLEAN.data.hours();
-      const hs = W / hrs.length;
-      const raw = hrs.map(hr => {
-        let reach = null, blk = null;
-        [hr && hr.swell].concat(hr && hr.others || []).forEach(t => {
-          if (!t || !(t.h > 0)) return;
-          if (t.status === 'in' || t.status === 'edge') { if (!reach || t.h > reach.h) reach = t; }
-          else if (t.status === 'blocked' && (!blk || t.h > blk.h)) blk = t;
-        });
-        return reach ? reach.status : blk ? 'blocked' : null;
-      });
-      const runs = []; raw.forEach(s => { const r = runs[runs.length - 1]; if (r && r.s === s) r.n++; else runs.push({ s, n: 1 }); });
-      const rects = [...svg.querySelectorAll('rect.bi, rect.be, rect.bb')].map(r => ({ c: r.getAttribute('class'), x: +r.getAttribute('x'), w: +r.getAttribute('width') }));
-      return { hs, rawShort: runs.filter(r => r.s && r.n < 3).length, rects: rects.length, short: rects.filter(r => r.w < 2.5 * hs).map(r => r.c + '@' + Math.round(r.x) + ' ' + r.w) };
-    });
-    log('band', JSON.stringify(band));
-    assert.ok(band.rawShort > 0, 'the fixtures have hour-by-hour calls that flip for under 3 hours');
-    assert.ok(band.rects > 1 && band.rects <= 12, 'the band is a few blocks (' + band.rects + ')');
-    assert.deepEqual(band.short, [], 'no band block under 3 hours');
-    const before = await ctx.state(() => STATE.scrubberIdx);
+    // ── A day later with the keys; the map and swells follow ──
+    await page.locator('#cl-view-forecast .cl-f-cx').focus();
+    await page.keyboard.press('PageUp');
+    r = await read();
+    log('PageUp', JSON.stringify(r));
+    assert.equal(sp(r.when), 'Fri 11 AM', 'one day on, no "now"');
+    assert.equal(r.info.mode, 'pick');
+    assert.equal(r.num, '0.3', 'GFS-Wave 0.6 and ECMWF 0 ft');
+    assert.equal(sp(r.rows[0].text), '1° 1 ft @ 8 s SE 140° → 97% of Choc');
+    assert.match(sp(r.rows[1].text), /^2° 1\.9 ft @ \d s N 351° wind sea → 3% of Choc$/);
+    assert.equal(sp(r.info.labels[r.info.labels.length - 1]), '1° 1 ft @ 8 s SE');
+    await page.keyboard.press('End');
+    r = await read();
+    assert.equal(sp(r.when), 'Thu 8 Oct, 8 AM', 'a week out the date comes along');
+    await page.keyboard.press('ArrowLeft');
+    assert.equal(sp((await read()).when), 'Thu 8 Oct, 2 AM', 'late in the run the steps are 6 h apart');
     await page.locator('#cl-view-forecast .cl-f-jb[data-j="now"]').click();
-    assert.equal(await ctx.state(() => STATE.scrubberIdx), before, 'Now at now changes nothing');
+    r = await read();
+    assert.equal(sp(r.when), 'Thu 11 AMnow', 'Now');
+    assert.equal(r.info.mode, 'now');
+    await page.locator('#cl-view-forecast .cl-f-jb[data-j="day"]').click();
+    assert.equal(sp((await read()).when), 'Fri 11 AM', 'day »');
+    await page.locator('#cl-view-forecast .cl-f-jb[data-j="-1"]').click();
+    assert.equal(sp((await read()).when), 'Fri 8 AM', '‹ one step');
+    for (let k = 0; k < 4; k++) await page.locator('#cl-view-forecast .cl-f-jb[data-j="day"]').click();
+    assert.equal(sp((await read()).when), 'Tue 8 AM', 'day » four times');
+    await page.locator('#cl-view-forecast .cl-f-jb[data-j="day"]').click();
+    assert.equal(sp((await read()).when), 'Wed 8 AM', 'day » where the steps are 6 h apart');
+    await page.locator('#cl-view-forecast .cl-f-jb[data-j="now"]').click();
 
-    // "Tomorrow, Fri" after dark is a label, not a heading (A2-Phone-Late: 400).
-    const dayWeight = await ctx.state(() => {
-      const p = document.createElement('p');
-      p.className = 'cl-f-day cl-serif';
-      p.textContent = 'Tomorrow, Sat';
-      document.querySelector('#cl-view-forecast .cl-f-now').appendChild(p);
-      const w = getComputedStyle(p).fontWeight;
-      p.remove();
-      return w;
+    // ── Wilderness: every reading switches, and it is remembered ──
+    await page.locator('#cl-view-forecast .cl-f-seg button[data-spot="wild"]').click();
+    r = await read();
+    log('Wilderness', JSON.stringify(r));
+    assert.equal(sp(r.unit), 'ft at Wilderness');
+    assert.equal(sp(r.models), 'GFS-Wave 0.4 · ECMWF 0.3 ft');
+    assert.ok(r.rows.length >= 1 && r.rows.every(x => / of Wilderness$/.test(sp(x.text))), 'shares of Wilderness');
+    assert.equal(r.info.spot, 'wild');
+    assert.ok(r.info.rays > 0, 'Wilderness rays');
+    assert.equal(await page.getAttribute('#cl-view-forecast .cl-f-seg button[data-spot="wild"]', 'aria-pressed'), 'true');
+    await ctx.screenshot('forecast-wilderness');
+    await ctx.open('/?preview=clean');
+    await ctx.waitFor(() => window.CLEAN && CLEAN.forecastInfo && CLEAN.forecastInfo().fc === 'ok', { label: 'reloaded' });
+    assert.equal((await read()).info.spot, 'wild', 'Wilderness remembered across a reload');
+    await page.locator('#cl-view-forecast .cl-f-seg button[data-spot="choc"]').click();
+    assert.equal(sp((await read()).unit), 'ft at Choc');
+    await ctx.waitFor(() => CLEAN.forecastInfo().prev === 'ok', { label: 'earlier forecasts again' });
+
+    // ── Buoy check: the last two days ──
+    await page.locator('#cl-view-forecast .cl-f-bc').click();
+    await ctx.waitFor(() => document.querySelector('#cl-sub-buoycheck .cl-f-obs') && CLEAN.forecastInfo().verif === 'ok', { label: 'buoy check sub-page' });
+    await page.waitForTimeout(200);
+    const sheet = await ctx.state(() => ({
+      title: document.querySelector('#cl-sub-buoycheck h1') && document.querySelector('#cl-sub-buoycheck h1').textContent,
+      dots: document.querySelectorAll('#cl-sub-buoycheck .cl-f-obs').length,
+      lines: ['.cl-f-l1', '.cl-f-l2', '.cl-f-l3'].map(c => document.querySelectorAll('#cl-sub-buoycheck ' + c).length),
+      rows: [...document.querySelectorAll('#cl-sub-buoycheck .cl-sr')].map(e => e.innerText)
+    }));
+    log('buoy check', JSON.stringify(sheet));
+    assert.equal(sheet.title, 'Buoy vs earlier forecasts');
+    assert.ok(sheet.dots >= 6, `buoy readings over two days (${sheet.dots})`);
+    assert.deepEqual(sheet.lines.map(n => n > 0), [true, true, true], 'a line for each lead');
+    assert.deepEqual(sheet.rows.map(sp), [
+      '1 day before 8 hours compared +0.4 ft (17% high)',
+      '2 days before 8 hours compared +0.4 ft (17% high)',
+      '3 days before 8 hours compared +0.3 ft (15% high)'
+    ], 'how each lead did against the buoy');
+    await ctx.screenshot('forecast-buoycheck');
+    await page.keyboard.press('Escape');
+    await ctx.waitFor(() => !document.querySelector('#cl-sub-buoycheck'), { label: 'sub-page closed' });
+
+    // ── Dark theme: the chart and readout follow the tokens (the map is imagery, dark in both) ──
+    await ctx.state(() => CLEAN.setThemeMode('dark'));
+    await ctx.waitFor(() => CLEAN.theme() === 'night', { label: 'dark theme' });
+    await page.waitForTimeout(500);
+    await ctx.screenshot('forecast-dark');
+    await ctx.state(() => CLEAN.setThemeMode('light'));
+    await ctx.waitFor(() => CLEAN.theme() === 'day', { label: 'light again' });
+
+    // ── Wide screen: tabs on top, map left of the readout; a mouse drag scrubs ──
+    await page.setViewportSize({ width: 1280, height: 860 });
+    await page.waitForTimeout(400);
+    const lay = await ctx.state(() => {
+      const R = s => document.querySelector(s).getBoundingClientRect();
+      return { tabs: R('#cl-app .cl-tabs').top, tabsH: R('#cl-app .cl-tabs').height, map: R('#cl-view-forecast .cl-f-map'), head: R('#cl-view-forecast .cl-f-head'), wk: R('#cl-view-forecast .cl-f-wk') };
     });
-    assert.equal(dayWeight, '400');
-
-    // ── Lineup: flat colour blocks ──
-    await page.locator('#cl-view-forecast .cl-f-lu').scrollIntoViewIfNeeded();
-    const lu = await ctx.state(() => {
-      const svg = document.querySelector('#cl-view-forecast .cl-f-lu svg');
-      const fill = e => e ? getComputedStyle(e).fill : null;
-      return {
-        water: fill(svg.querySelector('.wt')),
-        shallows: fill(svg.querySelector('.shl')),
-        land: [...svg.querySelectorAll('.land')].map(fill),
-        sand: svg.querySelector('.sand') ? getComputedStyle(svg.querySelector('.sand')).stroke : null,
-        ponds: KIOSK_COAST.ponds.length,
-        outlines: svg.querySelectorAll('.pond, .shore').length,
-        pills: [...svg.querySelectorAll('g.pill')].map(g => {
-          const t = g.querySelector('text'), r = g.querySelector('rect');
-          return { text: t.textContent, fits: +r.getAttribute('width') >= t.getComputedTextLength(), x: +r.getAttribute('x'), w: +r.getAttribute('width') };
-        })
-      };
-    });
-    log('lineup', JSON.stringify(lu));
-    assert.equal(lu.water, 'rgb(18, 63, 95)', 'water');
-    assert.equal(lu.shallows, 'rgb(38, 111, 143)', 'reef shallows');
-    assert.equal(lu.sand, 'rgb(205, 187, 138)', 'sand edge along the coast');
-    assert.equal(lu.land.length, 1 + lu.ponds, 'the land and the traced knob are both filled land');
-    for (const f of lu.land) assert.equal(f, 'rgb(94, 122, 74)', 'land fill');
-    assert.equal(lu.outlines, 0, 'no stray outlines');
-    assert.ok(lu.pills.some(p => /^SW Pt Block 115°$/.test(p.text)) && lu.pills.some(p => /^Montauk Pt 158°$/.test(p.text)), 'cone labels in pills');
-    for (const p of lu.pills) {
-      assert.ok(p.fits, p.text + ': the pill holds its text');
-      assert.ok(p.x >= 0 && p.x + p.w <= 358, p.text + ': the pill stays inside the picture');
-    }
-    await ctx.screenshot('lineup');
-
-    assert.deepEqual(await ctx.state(() => CLEAN.errors.map(e => e.where + ': ' + e.message)), [], 'CLEAN.errors');
+    log('wide', JSON.stringify(lay));
+    assert.equal(Math.round(lay.tabs), 0, 'the tab bar runs across the top');
+    assert.ok(lay.map.right <= lay.head.left, 'the map sits left of the readout');
+    assert.ok(lay.wk.top >= lay.map.bottom - 1 && lay.wk.width > 1000, 'the week runs underneath, full width');
+    await ctx.screenshot('forecast-wide');
+    const box = await page.locator('#cl-view-forecast .cl-f-cx').boundingBox();
+    await page.mouse.move(box.x + box.width * 0.6, box.y + 60);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.45, box.y + 60, { steps: 4 });
+    await page.mouse.up();
+    r = await read();
+    log('dragged', JSON.stringify(r.info));
+    assert.equal(r.info.mode, 'pick');
+    assert.ok(r.info.step > 20 && r.info.step < 30, `the drag lands mid-week (step ${r.info.step})`);
+    assert.deepEqual(r.errors, [], 'CLEAN.errors');
   }
 };
