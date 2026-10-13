@@ -30,8 +30,12 @@ jobs:
     env:
       HISTORY_CACHE: ${{ github.workspace }}/history-cache
     steps:
+      # the branch as it is now, not the commit that started the run: a run that waited in the queue then builds on
+      # the one before it, and its commit lands on top without a conflict
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -57,7 +61,8 @@ jobs:
           key: history-cdip-${{ steps.cdip.outputs.stamp }}
 
       # The files that don't change once published (NDBC's finished years and months, Montauk 44017, the tide
-      # tables, ERA5 for 2016), refreshed once a month; the rest is fetched every run.
+      # tables, ERA5 for 2016), refreshed once a month; the rest is fetched every run. (Folders listed one by one:
+      # an exclusion like !history-cache/cdip doesn't keep the archive out of this cache.)
       - name: This month (the published files' cache key)
         id: month
         run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
@@ -65,10 +70,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            history-cache
-            !history-cache/cdip
-          key: history-files-${{ steps.month.outputs.month }}
-          restore-keys: history-files-
+            history-cache/ndbc
+            history-cache/ndbc17
+            history-cache/tides
+            history-cache/wind
+          key: history-inputs-${{ steps.month.outputs.month }}
+          restore-keys: history-inputs-
 
       # Exits non-zero when a source fails with nothing cached, or the files can't be brought to one last day:
       # the commit below is skipped.
