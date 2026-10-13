@@ -10,7 +10,7 @@ A daily job now rebuilds the history. `scripts/history/` holds the scripts that 
 
 The page reads its range and counts from the history file: the date picker reaches the last day, "2016 – 2026" and "Check any day, May 2016 – Oct 2026" follow it, the swell-train and Wilderness counts are counted from it, and the ten-year tiles' caption names the months short of data. Run locally through 12 October, the update adds the 7 new days and the 19 days of August 2026 the first build missed: NDBC hadn't published August yet, and its provisional file wasn't read. It also refines late August and September (NDBC's monthly files over the last-45-days feed) and the late-September wind (ERA5's revisions). The Past days panels' Block Island lane (`research/ocean/day/<year>.json`) is rebuilt too. Its Choc heights were still on the ray table from before the 11 October rebuild, and the first run moves them onto the current one; the buoy's own trains are unchanged. The Copernicus model lane and the model's ocean maps are not part of this update yet.
 
-Verified: on the inputs the history was built from, `update.py --offline --end 2026-10-05` gives every file in `data/history/` and `research/hist.js` byte for byte. `scripts/test_history.py` (12 new tests) builds buoy spectra in CDIP's NetCDF layout and runs the real code on them:
+Verified: on the inputs the history was built from, `update.py --offline --end 2026-10-05` gives every file in `data/history/` and `research/hist.js` byte for byte. `scripts/test_history.py` (13 new tests) builds buoy spectra in CDIP's NetCDF layout and runs the real code on them:
 - heights follow the ray table, and swell from the land side never reaches Choc;
 - only each hour's first good record counts;
 - a groundswell under a wind sea splits into two trains;
@@ -18,8 +18,9 @@ Verified: on the inputs the history was built from, `update.py --offline --end 2
 - the recent file continues after the archive;
 - the Eastern-day rule matches America/New_York for every hour from 2016 to 2027;
 - NDBC files are read in the right order, Montauk fills only gaps, and missing values stay missing;
+- floats add up left to right, as the history was built, on any Python;
 - a whole run over a three-day cache stops every file on the last day with enough data, keeps the other lanes, and refuses to replace the long history with a short one.
-The new e2e scenario `w6-swell-map-history-follows.js` checks that with the pinned history the counts the page makes equal the ones in its markup. Then, with one more day served, the picker, years and counts follow; it fails on the old page. CI's Python job installs scipy; CI skips pushes that only touch the history files.
+The workflow ran on the PR branch before merge. Its first run, under Python 3.12, shifted about 60 days by a tenth: 3.12's `sum()` compensates for rounding, and the history was built adding left to right. The scripts now add left to right explicitly, and the second run matched a local rebuild file for file. The new e2e scenario `w6-swell-map-history-follows.js` checks that with the pinned history the counts the page makes equal the ones in its markup. Then, with one more day served, the picker, years and counts follow; it fails on the old page. CI's Python job installs scipy; CI skips pushes that only touch the history files.
 
 ## [Unreleased] — Storms on the Forecast map; the Map tab is one map; Past days open the ten years
 
