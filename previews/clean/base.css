@@ -96,6 +96,8 @@
 html.cl-on { --col: 640px; }
 html.cl-on[data-active-tab="map"],
 html.cl-on[data-active-tab="methods"] { --col: 1440px; }
+/* Forecast: one column on a phone, map beside the readout on a wide screen (forecast.css) */
+html.cl-on[data-active-tab="forecast"] { --col: 1200px; }
 .cl-sub.cl-wide-view { max-width: 1440px; }
 /* Keyboard, switch and VoiceOver focus scroll the control into view
    above the fixed tab bar (1 px rule + 6 px + --tab-h + max(10 px, safe
@@ -169,6 +171,33 @@ html.cl-on:not(.cl-tv) {
 }
 .cl-tabs .cl-tab[aria-current="page"] { color: var(--ink); }
 .cl-tabs .cl-tab[aria-current="page"] svg { color: var(--in); }
+
+/* A computer (or an iPad held sideways): the tabs run across the top, icon
+   beside label, the current one on a chip; the phone keeps them at the bottom. */
+@media (min-width: 900px) {
+  html.cl-on:not(.cl-tv) { scroll-padding-bottom: 0; scroll-padding-top: 72px; }
+  #cl-app { padding-top: 57px; padding-bottom: 32px; }
+  .cl-tabs {
+    top: 0;
+    bottom: auto;
+    justify-content: center;
+    gap: 4px;
+    border-top: 0;
+    border-bottom: 1px solid var(--hair);
+    padding: 6px max(8px, calc((100% - var(--col)) / 2 + 8px));
+  }
+  .cl-tabs .cl-tab {
+    flex: 0 0 auto;
+    flex-direction: row;
+    gap: 8px;
+    height: 44px;
+    padding: 0 16px;
+    font-size: 14px;
+  }
+  .cl-tabs .cl-tab svg { width: 20px; height: 20px; }
+  .cl-tabs .cl-tab[aria-current="page"] { background: var(--hair); }
+  html.cl-on .toast-container { bottom: 26px; }
+}
 
 /* Fallback when a part did not load: quiet, honest, with a way out. */
 .cl-empty {

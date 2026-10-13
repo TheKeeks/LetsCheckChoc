@@ -3,7 +3,7 @@
 // The public map/research pages stay available while journal/model access
 // follows real account changes, including a failed Google popup and logout.
 module.exports = {
-  name: 'navigation auth: four public tabs, Google login feedback, protected Model and shared light/dark settings',
+  name: 'navigation auth: four public tabs, Google login feedback, protected My ratings and shared light/dark settings',
   options: {
     gate: null,
     viewport: { width: 390, height: 844 },
@@ -44,7 +44,7 @@ module.exports = {
     });
     await page.locator('.cl-l-signin').click();
     await ctx.waitFor(() => CLEAN.auth().signedIn && !document.querySelector('.cl-l-form').hidden, { label: 'Google account restored' });
-    assert.deepEqual(await tabs(), ['Forecast', 'Map', 'Methods', 'Log', 'Model']);
+    assert.deepEqual(await tabs(), ['Forecast', 'Map', 'Methods', 'Log', 'My ratings']);
     assert.equal(await ctx.state(() => CLEAN.authStatus().error), '');
     await page.locator('.cl-tabs [data-tab="model"]').click();
     await ctx.waitFor(() => CLEAN.tab() === 'model', { label: 'signed-in Model' });

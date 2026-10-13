@@ -1,331 +1,139 @@
 /* ════════════════════════════════════════════════════════════════════
    CLEAN — forecast.css (owner: Forecast part)
-   ────────────────────────────────────────────────────────────────────
-   The Forecast tab (previews/clean/forecast.js): Now block, This week,
-   the chart, the lineup and Details. Sizes are the A2-Phone-* boards'
-   own; colours are theme.css tokens only, so day → night is a token
-   swap (400 ms fade, layout never moves). Classes are prefixed cl-f-.
+   The Sound Check Forecast tab: headline and swells, ray map, week
+   scrubber, wind and tide, buoy check. One column on a phone; on a wide
+   screen the map sits left of the readout and the week runs underneath.
+   The map is aerial imagery, so it stays dark in both themes.
    ════════════════════════════════════════════════════════════════════ */
-
-.cl-f { padding-bottom: 4px; }
-/* ── Map window above This week (map/index.html, compact) ─────────────
-   Collapsed: a short, untouchable picture of the water at the forecast hour;
-   the whole window is one button that opens it. Open: taller, and the map takes
-   the gestures (view buttons, 3D, zoom). */
-.cl-f-map { margin: 18px var(--gut) 6px; }
-.cl-f-map-win { position: relative; height: 150px; border: 1px solid var(--hair); border-radius: 14px; overflow: hidden; background: #9cc3d5; transition: height 220ms ease; }
-.cl-f-map.open .cl-f-map-win { height: min(62vh, 560px); height: min(62svh, 560px); }
-.cl-f-map-win iframe { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; }
-.cl-f-map.open .cl-f-map-win iframe { pointer-events: auto; }
-.cl-f-map-peek { position: absolute; inset: 0; width: 100%; display: flex; align-items: flex-end; justify-content: flex-end; padding: 10px; background: linear-gradient(180deg, transparent 55%, rgba(13, 18, 23, .28)); border-radius: 0; }
-.cl-f-map-peek span { background: rgba(13, 18, 23, .78); color: #fff; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 999px; }
-.cl-f-map.open .cl-f-map-peek { display: none; }
-.cl-f-map-bar { display: flex; align-items: center; gap: 12px; min-height: 40px; font-size: 13px; color: var(--muted); }
-.cl-f-map-tg { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; font-weight: 600; color: var(--ink); padding: 0 2px; }
-.cl-f-map-tg svg { transition: transform 200ms ease; }
-.cl-f-map.open .cl-f-map-tg svg { transform: rotate(180deg); }
-.cl-f-map-src { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cl-f-map-bar a { color: var(--in); font-weight: 600; white-space: nowrap; }
-@media (prefers-reduced-motion: reduce) { .cl-f-map-win, .cl-f-map-tg svg { transition: none; } }
-.cl-f-lead { margin: 0; line-height: 1.4; }
-
-/* ── Now block ──────────────────────────────────────────────────────── */
-.cl-f-now { padding: 12px var(--gut) 24px; }
-.cl-f-day {
-  font-size: 21px;
-  font-weight: 400;       /* a label, not a heading (A2-Phone-Late); .cl-serif is 500 */
-  line-height: 1.2;
-  color: var(--ink);
-  margin: 0 0 6px;
-}
-.cl-f-hero { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.cl-f-num {
-  font-size: 104px;
-  line-height: 1;
-  font-weight: 600;
-  letter-spacing: -.04em;
-  white-space: nowrap;
-}
-.cl-f-nodata { font-size: 26px; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; color: var(--muted); padding: 18px 0 4px; }
-.cl-f-unit { font-size: 30px; line-height: 1; font-weight: 500; color: var(--muted); }
-.cl-f-meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 22px;
-  font-weight: 500;
-  line-height: 1.3;
-  margin-top: 6px;
-}
-.cl-f-meta > span { white-space: nowrap; }
-.cl-f-sep { color: var(--muted); }
-.cl-f-st { margin-top: 14px; line-height: 1; }
-html[data-clean-theme="night"] .cl-f-st { margin-top: 12px; }
-.cl-f-st .cl-st-pill { display: inline-flex; }
-.cl-f-dim { font-size: 13px; line-height: 1.4; color: var(--muted); margin-top: 8px; }
-
-.cl-f-two {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  margin-top: 22px;
-  padding-top: 20px;
-  border-top: 1px solid var(--hair);
-}
-.cl-f-cell { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.cl-f-ico { width: 44px; height: 44px; flex: none; display: flex; align-items: center; justify-content: center; }
-.cl-f-ico svg { width: 44px; height: 44px; overflow: visible; }
-.cl-f-cv { min-width: 0; }
-.cl-f-big {
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -.02em;
-  line-height: 1.1;
-}
-.cl-f-big small { font-size: 15px; font-weight: 500; color: var(--muted); letter-spacing: 0; }
-.cl-f-sub { font-size: 13px; line-height: 1.4; color: var(--muted); margin-top: 4px; }
-.cl-f-sub:empty { display: none; }
-
-.cl-f-model {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--hair);
-  font-size: 15px;
-}
-.cl-f-model b { font-size: 20px; font-weight: 600; white-space: nowrap; }
-.cl-f-model small { font-size: 14px; font-weight: 500; color: var(--muted); }
-.cl-f-fines { margin-top: 18px; }
-.cl-f-model + .cl-f-fines { margin-top: 10px; }
-.cl-f-fines .cl-f-fine + .cl-f-fine { margin-top: 10px; }
-
-/* ── This week ──────────────────────────────────────────────────────── */
-.cl-f-wk { padding: 0 var(--gut); }
-.cl-f-row {
-  display: block;
-  width: 100%;
-  min-height: 62px;
-  padding: 8px 0;
-  border-top: 1px solid var(--hair);
-  text-align: left;
-  color: var(--ink);
-}
-.cl-f-ri {
+.cl-f {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-  min-height: 45px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "head" "map" "wk" "side";
+  row-gap: 14px;
+  padding-bottom: 12px;
 }
-.cl .cl-f-row.sel {
-  background: var(--shade);
-  margin: 0 calc(var(--gut) * -1);
-  padding-left: var(--gut);
-  padding-right: var(--gut);
-  width: calc(100% + 2 * var(--gut));
-}
-.cl-f-row.past { opacity: .5; }
-.cl-f-d { font-size: 15px; font-weight: 600; line-height: 1.2; }
-.cl-f-mid { min-width: 0; display: block; }
-.cl-f-s { display: block; font-size: 16px; font-weight: 500; line-height: 1.3; }
-.cl-f-s.cl-f-none { color: var(--muted); text-wrap: balance; }
-@media (max-width: 389px) { .cl-f-s.cl-f-none { font-size: 15px; } }
-.cl-f-w {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  column-gap: 11px;
-  row-gap: 2px;
-  margin-top: 4px;
-  font-size: 12.5px;
-  line-height: 1.4;
-  color: var(--muted);
-}
-.cl-f-g { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-.cl-f-wa { display: inline-flex; color: var(--ink); }
-.cl-f-r { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
-.cl-f-m { font-size: 13px; color: var(--muted); line-height: 1.3; }
-.cl-f-empty { padding: 14px 0; font-size: 14px; color: var(--muted); border-top: 1px solid var(--hair); }
-.cl-f-wkn { margin: 0 0 8px; }
+.cl-f-head { grid-area: head; padding: 4px var(--gut) 0; }
+.cl-f-map { grid-area: map; }
+.cl-f-wk { grid-area: wk; }
+.cl-f-side { grid-area: side; padding: 0 var(--gut); }
 
-/* ── Forecast chart ─────────────────────────────────────────────────── */
-.cl-f-ch { padding: 0 var(--gut); }
-.cl-f-rd { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 12px; }
-.cl-f-rdt { font-size: 13px; line-height: 1.3; color: var(--muted); white-space: nowrap; }
-/* Fixed columns: the numbers change, the layout never jumps. */
-.cl-f-rdv {
+/* ── Headline ─────────────────────────────────────────────────────── */
+.cl-f-when { display: flex; align-items: baseline; gap: 8px; margin: 0; }
+.cl-f-when .cl-serif { font-size: 21px; font-weight: 500; }
+.cl-f-now {
+  font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--in); border: 1px solid currentColor; border-radius: 9px; padding: 1px 7px;
+}
+.cl-f-big { display: flex; align-items: baseline; gap: 6px; margin: 2px 0 0; }
+.cl-f-num { font-size: 64px; font-weight: 300; line-height: 1; letter-spacing: -.02em; }
+.cl-f-unit { font-size: 19px; color: var(--muted); }
+.cl-f-models { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+.cl-f-msg { margin: 8px 0; font-size: 16px; color: var(--muted); line-height: 1.45; }
+
+.cl-f-tr { list-style: none; margin: 12px 0 0; padding: 0; }
+.cl-f-tr li {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.25fr) minmax(0, .9fr);
-  column-gap: 10px;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.3;
-  max-width: 440px;
-}
-.cl-f-rdv span { white-space: nowrap; }
-@media (max-width: 389px) { .cl-f-rdv { font-size: 15px; column-gap: 8px; } }
-.cl-f-rdv .cl-f-blk { color: var(--blk); }
-
-.cl-f-cxw {
-  position: relative;
-  display: block;
-  width: 100%;
-  min-height: 232px;
-  touch-action: pan-y;
-  -webkit-user-select: none;
-  user-select: none;
-  cursor: col-resize;
-  border-radius: 4px;
-}
-.cl-f-cxw:focus-visible { outline: 2px solid var(--in); outline-offset: 4px; }
-.cl-f-chempty { padding: 96px 0; text-align: center; font-size: 14px; color: var(--muted); }
-.cl-f-cx { display: block; width: 100%; height: 232px; overflow: visible; }
-.cl-f-cx .nt { fill: var(--shade); }
-.cl-f-cx .gl { stroke: var(--hair); stroke-width: 1; fill: none; }
-.cl-f-cx .ax { font-size: 10px; font-weight: 400; fill: var(--muted); font-family: var(--sans); }
-.cl-f-cx .gh { fill: var(--blk-fill); opacity: var(--ghost); }
-.cl-f-cx .sw { fill: var(--in); }
-.cl-f-cx .bi { fill: var(--in); }
-.cl-f-cx .be { fill: var(--edge-fill); }
-.cl-f-cx .bb { fill: var(--blk-fill); }
-.cl-f-cx .off { fill: var(--off); }
-.cl-f-cx .crs { fill: var(--crs); opacity: .7; }
-.cl-f-cx .on { fill: url(#cl-f-hatch); stroke: var(--on); stroke-width: 1; }
-.cl-f-cx .hp { stroke: var(--on); stroke-width: 2; fill: none; }
-.cl-f-cx .ar path { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.cl-f-cx .win { fill: var(--in); opacity: .14; }
-.cl-f-cx .win.dim { opacity: .06; }
-.cl-f-cx .tl { fill: none; stroke: var(--tide); stroke-width: 1.5; stroke-linejoin: round; }
-.cl-f-cx .lo { fill: var(--bg); stroke: var(--tide); stroke-width: 1.5; }
-.cl-f-cx .cur { stroke: var(--ink); stroke-width: 1.25; }
-.cl-f-cx .cd { fill: var(--ink); }
-
-.cl-f-dl { position: relative; height: 15px; margin-top: 6px; font-size: 11px; line-height: 15px; color: var(--muted); }
-.cl-f-dl span { position: absolute; top: 0; padding-left: 2px; white-space: nowrap; }
-
-.cl-f-ctl { display: flex; gap: 8px; margin-top: 12px; }
-.cl-f-jb {
-  flex: 1 1 0;
-  min-width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  border: 1px solid var(--hair);
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-  white-space: nowrap;
-}
-.cl-f-jb:active:not(:disabled) { background: var(--shade); }
-.cl .cl-f-jb:disabled { color: var(--muted); cursor: default; }   /* muted text stays 6:1 */
-
-/* ── Lineup: flat colour blocks ─────────────────────────────────────────
-   One flat colour each for water, reef shallows, sand and land, no
-   gradients (A-Green "Lineup picture, flat colour blocks"). Day is the
-   A2-Phone-Sat board's palette, night A-Green "Deep" (its brighter cone,
-   for the dark page and the TV at night). A picture, not text, so these
-   fixed colours sit outside the page tokens; the pills keep every label
-   at 4.5:1 or more over any of them. */
-.cl-f-scene {
-  --lu-water: #123F5F;
-  --lu-shallow: #266F8F;
-  --lu-sand: #CDBB8A;
-  --lu-land: #5E7A4A;
-  --lu-cone: #3FB07F;
-  --lu-cone-a: .38;
-  --lu-cone-line: #6FD3A5;
-  --lu-mark: #FFFFFF;     /* arrows and the reef mark */
-  --lu-pill: #06192A;
-  --lu-pill-a: .6;
-  --lu-text: #F1F4F7;
-}
-html[data-clean-theme="night"] .cl-f-scene {
-  --lu-cone: #5BD08A;
-  --lu-cone-a: .34;
-  --lu-cone-line: #5BD08A;
-}
-.cl-f-lu .cl-f-scene {
-  display: block;
-  width: 100%;
-  max-width: 560px;
-  height: auto;
-  margin: 0 auto;
-  border-radius: var(--r);
-  overflow: hidden;
-  background: var(--lu-water);
-}
-.cl-f-scene .wt { fill: var(--lu-water); }
-.cl-f-scene .shl { fill: var(--lu-shallow); }
-/* Twice the visible sand: the land fill covers the landward half. */
-.cl-f-scene .sand { fill: none; stroke: var(--lu-sand); stroke-width: 24px; stroke-linejoin: round; stroke-linecap: round; }
-.cl-f-scene .land { fill: var(--lu-land); }
-.cl-f-scene .cone { fill: var(--lu-cone); fill-opacity: var(--lu-cone-a); stroke: var(--lu-cone-line); stroke-width: 1.8px; stroke-linejoin: round; }
-.cl-f-scene .sa,
-.cl-f-scene .wa { fill: none; stroke: var(--lu-mark); stroke-linecap: round; stroke-linejoin: round; }
-.cl-f-scene .sa { stroke-width: 3.2px; }
-.cl-f-scene .sa-blk { stroke-opacity: .55; }    /* blocked: faded, and the pill says so */
-.cl-f-scene .wa { stroke-width: 2px; }
-.cl-f-scene .mk { fill: var(--lu-mark); }
-.cl-f-scene .pill rect { fill: var(--lu-pill); fill-opacity: var(--lu-pill-a); }
-.cl-f-scene .pill text {
-  font-family: var(--sans);
-  font-size: 11.5px;
-  font-weight: 600;
-  fill: var(--lu-text);
-}
-.cl-f-cap { margin-top: 8px; text-align: left; }
-
-/* ── Details ────────────────────────────────────────────────────────── */
-.cl-f-det { padding-bottom: 0; }
-.cl-f-dd { border-top: 1px solid var(--hair); }
-.cl-f-dd:last-child { border-bottom: 0; }
-.cl .cl-f-dr { border-top: 0; min-height: 52px; color: var(--ink); }
-.cl-f-dd.open .cl-f-dr { min-height: 44px; }
-.cl-f-chev { display: flex; color: var(--muted); }
-.cl-f-ddb { padding: 2px 0 14px; }
-.cl-f-kv { font-size: 15px; }
-.cl-f-kv .cl-stale { color: var(--amber); }
-.cl-f-kv .cl-dead { color: var(--red); }
-.cl-f-obs { margin: 0 0 10px; }
-
-.cl-f-tt { display: flex; flex-direction: column; }
-.cl-f-tth { font-size: 13px; font-weight: 600; color: var(--muted); margin: 10px 0 2px; }
-.cl-f-tth:first-child { margin-top: 0; }
-.cl-f-ttr {
-  display: grid;
-  grid-template-columns: 22px 52px 1fr auto;
+  grid-template-columns: 10px minmax(0, 1fr) 54px;
   align-items: center;
   column-gap: 8px;
-  min-height: 30px;
-  font-size: 15px;
+  padding: 5px 0;
+  font-size: 14px;
+  line-height: 1.35;
 }
-.cl-f-ttr > span:nth-child(2) { color: var(--muted); }
-.cl-f-ttr > span:nth-child(3), .cl-f-ttr > span:nth-child(4) { font-weight: 600; white-space: nowrap; }
-.cl-f-ttr.past { opacity: .5; }
+.cl-f-tr li + li { border-top: 1px solid var(--hair); }
+.cl-f-tr b { font-weight: 700; }
+.cl-f-tr small { font-size: 12px; color: var(--muted); }
+.cl-f-dot { width: 9px; height: 9px; border-radius: 50%; }
+.cl-f-bar { height: 6px; border-radius: 3px; background: var(--hair); overflow: hidden; }
+.cl-f-bar i { display: block; height: 100%; border-radius: 3px; }
+.cl-f-tr li.cl-f-none { display: block; color: var(--muted); }
 
-.cl-f-rose { margin: 10px 0 0; text-align: center; }
-.cl-f-rose svg { display: block; width: 100%; max-width: 240px; height: auto; margin: 0 auto; }
-.cl-f-rose .rg { fill: none; stroke: var(--hair); stroke-width: 1; }
-.cl-f-rose .rc { fill: var(--in); fill-opacity: .12; }
-.cl-f-rose .rco { fill: none; stroke: var(--in); stroke-width: 1.5; stroke-linejoin: round; }
-.cl-f-rose .wl { fill: var(--ink); fill-opacity: .7; }
-.cl-f-rose .ws { fill: var(--muted); fill-opacity: .35; }
-.cl-f-rose text { font-family: var(--sans); font-size: 11px; font-weight: 600; fill: var(--muted); }
-.cl-f-rose figcaption { margin-top: 6px; text-align: left; }
-
-@media (prefers-reduced-motion: reduce) {
-  .cl-f-jb { transition: none; }
+/* ── Ray map ──────────────────────────────────────────────────────── */
+.cl-f-map { position: relative; background: #0b1219; overflow: hidden; }
+.cl-f-map canvas { display: block; width: 100%; }
+.cl-f-seg {
+  position: absolute; left: 10px; top: 10px;
+  display: inline-flex; border-radius: 22px; overflow: hidden;
+  background: rgba(10, 15, 21, .86); border: 1px solid rgba(255, 255, 255, .16);
+}
+.cl-f-seg button { min-height: 44px; padding: 0 14px; font-size: 13px; font-weight: 600; color: #b9c6d2; }
+.cl-f-seg button[aria-pressed="true"] { color: #0a0f15; background: #e7edf2; border-radius: 22px; }
+.cl-f-mapnote {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+  margin: 0; padding: 5px 12px; border-radius: 14px; white-space: nowrap;
+  font-size: 13px; font-weight: 600; color: #e7edf2; background: rgba(10, 15, 21, .86);
 }
 
-/* Sound Check: the swell at the reef leads; Open-Meteo's offshore swell sits under it */
-.cl-f-scl { margin: 2px 0 0; font-size: 13px; color: var(--cl-fg-2, inherit); opacity: .85; }
-.cl-f-off { opacity: .8; }
-.cl-f-sc-d { font-weight: 600; margin-right: 6px; }
-.cl-f-scl + .cl-f-meta { font-size: 17px; }
+/* ── Week scrubber ────────────────────────────────────────────────── */
+.cl-f-cx { position: relative; padding: 0 4px; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: ew-resize; }
+.cl-f-cx svg { display: block; overflow: visible; }
+.cl-f-cx:focus-visible { outline-offset: -2px; }
+.cl-f-night { fill: var(--shade); }
+.cl-f-past { fill: var(--shade); }
+.cl-f-grid { stroke: var(--hair); stroke-width: 1; }
+.cl-f-day { stroke: var(--hair); stroke-width: 1; }
+.cl-f-ax { font-size: 10px; fill: var(--muted); }
+.cl-f-dl { font-size: 11px; font-weight: 600; fill: var(--muted); }
+.cl-f-band { fill: rgb(240, 138, 75); opacity: .16; }
+.cl-f-mean { fill: none; stroke: var(--ink); stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; }
+.cl-f-gfs { fill: none; stroke: rgb(240, 138, 75); stroke-width: 1.1; }
+.cl-f-ec { fill: none; stroke: rgb(64, 160, 198); stroke-width: 1.1; stroke-dasharray: 3 3; }
+.cl-f-nowl { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
+.cl-f-tide { fill: none; stroke: var(--tide); stroke-width: 1.4; }
+.cl-f-low { fill: var(--tide); }
+.cl-f-wa { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.cl-f-cur line { stroke: var(--ink); stroke-width: 1.2; }
+.cl-f-cur circle { fill: var(--bg); stroke: var(--ink); stroke-width: 2; }
+.cl-f-ctl { display: flex; justify-content: center; gap: 4px; padding: 4px var(--gut) 0; }
+.cl-f-jb {
+  min-width: 44px; min-height: 44px; padding: 0 10px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  font-size: 13px; font-weight: 600; color: var(--ink);
+  border: 1px solid var(--hair); border-radius: 22px;
+}
+.cl-f-jb[data-j="now"] { padding: 0 16px; }
+
+/* ── Wind, tide, buoy check, source ───────────────────────────────── */
+.cl-f-cond p { margin: 0 0 6px; font-size: 15px; }
+.cl-f-cond .cl-lab { display: inline-block; min-width: 44px; margin: 0; font-size: 13px; }
+.cl-f-bc {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px;
+  width: 100%; margin: 10px 0 0; padding: 10px 12px; min-height: 56px; text-align: left;
+  border: 1px solid var(--hair); border-radius: var(--r);
+}
+.cl-f-bc1 { grid-column: 1; font-size: 15px; display: flex; flex-wrap: wrap; align-items: center; column-gap: 6px; row-gap: 4px; }
+.cl-f-bc2 { grid-column: 1; margin-top: 3px; }
+.cl-f-bcc { grid-column: 2; grid-row: 1 / span 2; color: var(--muted); display: flex; }
+.cl-f-chip { font-size: 12px; font-weight: 600; border-radius: 10px; padding: 2px 8px; border: 1px solid currentColor; }
+.cl-f-chip-ok { color: var(--in); }
+.cl-f-chip-off { color: var(--muted); }
+.cl-f-src { margin: 12px 0 0; }
+
+/* ── Buoy check sub-page ──────────────────────────────────────────── */
+.cl-f-sheet .cl-f-sl { margin: 8px 0 12px; font-size: 15px; line-height: 1.45; }
+.cl-f-bcx { display: block; max-width: 100%; }
+.cl-f-obs { fill: var(--ink); }
+.cl-f-l1 { fill: none; stroke: rgb(240, 138, 75); stroke-width: 1.8; }
+.cl-f-l2 { fill: none; stroke: rgb(64, 160, 198); stroke-width: 1.5; stroke-dasharray: 5 3; }
+.cl-f-l3 { fill: none; stroke: rgb(170, 128, 236); stroke-width: 1.5; stroke-dasharray: 1.5 3; }
+.cl-f-lg { display: flex; flex-wrap: wrap; gap: 12px; margin: 6px 0 12px; font-size: 13px; color: var(--muted); }
+.cl-f-k-obs { color: var(--ink); }
+.cl-f-k1 { color: rgb(220, 118, 55); }
+.cl-f-k2 { color: rgb(44, 140, 178); }
+.cl-f-k3 { color: rgb(150, 108, 216); }
+.cl-f-sn { margin-top: 12px; }
+
+/* ── Wide screen: map left, readout right, the week underneath ────── */
+@media (min-width: 900px) {
+  .cl-f {
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    grid-template-areas: "map head" "map side" "wk wk";
+    column-gap: 24px;
+    align-items: start;
+    padding-top: 6px;
+  }
+  .cl-f-map { border-radius: var(--r); margin-left: var(--gut); grid-row: 1 / span 2; }
+  .cl-f-head, .cl-f-side { padding-left: 0; }
+  .cl-f-wk { padding: 0 var(--gut); }
+  .cl-f-num { font-size: 72px; }
+}

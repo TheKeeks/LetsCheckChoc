@@ -17,6 +17,12 @@ module.exports = {
     const kv = (sel) => page.$$eval(sel + ' dl.kv dt:not(.kv-h)', dts => dts.map(d => [d.textContent, d.nextElementSibling.textContent.replace(/\s+/g, ' ').trim()]));
     // the longest line of text in a block: a readout made of short lines has none longer than this
     const longest = (sel) => page.$eval(sel, n => Math.max(0, ...n.innerText.split('\n').map(l => l.trim().length)));
+    // innerText has its line breaks only once a block is laid out; on a slow machine (CI) a card read right after it
+    // was filled can come back as one run-on line. So wait (10 s) for every line to be short: a real paragraph never is.
+    const shortLines = (sel, max) => page.waitForFunction(([s, m]) => {
+      const n = document.querySelector(s);
+      return !!n && Math.max(0, ...n.innerText.split('\n').map(l => l.trim().length)) <= m;
+    }, [sel, max], { timeout: 10000 }).then(() => true, () => false);
 
     // Calendar day card: 1°, 2°, 3° swells at Choc's biggest hour, then Bent in, Wind, Buoy.
     await page.evaluate(() => window.CHOC.showPast('2025-08-22'));
@@ -25,7 +31,7 @@ module.exports = {
     log('calendar: ' + card.map(r => r.join(' ')).join(' | '));
     assert.deepEqual(card.map(r => r[0]), ['1°', '2°', '3°', 'Bent in', 'Wind', 'Buoy']);
     assert.ok(card.slice(0, 3).every(r => SWELL.test(r[1])), 'each swell in surf-report form');
-    assert.ok(await longest('#decDay') <= 100, `no paragraph in the day card (${await longest('#decDay')} characters)`);
+    assert.ok(await shortLines('#decDay', 100), `no paragraph in the day card (${await longest('#decDay')} characters)`);
 
     // The map's headline: one line per swell, then the wind.
     const hud = await page.$eval('#tripLine', n => n.innerText.split('\n'));
@@ -40,7 +46,7 @@ module.exports = {
     assert.deepEqual(tags.map(t => t.slice(0, 2)), ['1°', '2°', '3°']);
     assert.ok(tags.every(t => SWELL.test(t.slice(3))), tags.join(' | '));
     assert.deepEqual((await kv('#dcOut')).map(r => r[0]), ['Bent in', 'Buoy']);
-    assert.ok(await longest('#dcOut') <= 100, 'no paragraph in Check a date');
+    assert.ok(await shortLines('#dcOut', 100), `no paragraph in Check a date (${await longest('#dcOut')} characters)`);
     await page.locator('#dcOut').scrollIntoViewIfNeeded();
     await ctx.screenshot('readouts-check-a-date');
 

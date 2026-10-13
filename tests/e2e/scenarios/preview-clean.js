@@ -4,9 +4,10 @@
 // against the fixtures (2026-10-01 11:00 ET):
 //   • it skips the boat question by itself without remembering the answer
 //     (the classic look, ?classic=1, still asks), and none of its own code logs an error;
-//   • the three tabs switch; the Now block leads with the fixture's in-window
-//     swell (1.6 ft @ 8 s ESE at 11:00); the week has 7 rows; tapping a day
-//     slides the chart cursor to that day's low (the readout names it);
+//   • the three tabs switch; Forecast leads with the Sound Check height at
+//     Choc for 11:00 (0.5 ft from the fixture model run) and its three swells,
+//     and the day jump and Now move the hour (preview-clean-forecast.js has
+//     the rest);
 //   • Settings opens and its Display choice survives a reload;
 //   • the Log's Save stays off until size, wind and ride are all rated, then
 //     saves the session under the signed-in surfer;
@@ -25,7 +26,7 @@ const sideways = () => {
 };
 
 module.exports = {
-  name: 'clean preview: tabs, Now block, week → chart low, Settings, Log save gate, Choc TV panels, no sideways scroll',
+  name: 'clean preview: tabs, Forecast headline and day jump, Settings, Log save gate, Choc TV panels, no sideways scroll',
   options: {
     gate: null,                                   // the preview must skip the boat question itself
     viewport: PHONE,
@@ -41,6 +42,9 @@ module.exports = {
       await ctx.waitForChart();
       await ctx.waitForLoad();
     };
+
+    // The Sound Check model run moved to the fixture day (tests/fixtures/README.md)
+    ctx.serve('/research/fc/fc.json', { status: 200, headers: { 'content-type': 'application/json' }, body: ctx.fixture('soundcheck/fc.json') });
 
     // ── Phone: boot, boat question skipped ──
     await boot('/?preview=clean');
@@ -62,79 +66,23 @@ module.exports = {
     assert.equal(boot0.title, 'Today');
     for (const p of boot0.parts) assert.deepEqual(p, { mounted: true, failed: false });
 
-    // ── Now block: the fixture's 11:00 hour ──
-    await ctx.waitFor(() => document.querySelector('#cl-view-forecast .cl-f-now .cl-f-num'), { label: 'Now block hero' });
-    const now = await ctx.state(() => {
-      const q = s => { const e = document.querySelector('#cl-view-forecast ' + s); return e ? e.textContent.replace(/ /g, ' ').trim() : null; };
-      // The same hour read straight from the app's own forecast, for comparison.
-      const m = STATE.forecastData.marine.hourly, i = marineNowIndex(STATE.forecastData.marine);
-      return {
-        num: q('.cl-f-now .cl-f-num'), unit: q('.cl-f-now .cl-f-unit'), meta: q('.cl-f-now .cl-f-meta'),
-        status: q('.cl-f-now .cl-st'),
-        raw: { h: m.swell_wave_height[i], p: m.swell_wave_period[i], d: m.swell_wave_direction[i], t: m.time[i] }
-      };
+    // ── Forecast: the Sound Check height at Choc for 11 AM, its swells, the scrubber ──
+    await ctx.waitFor(() => CLEAN.forecastInfo && CLEAN.forecastInfo().fc === 'ok' && CLEAN.forecastInfo().step >= 0, { label: 'model forecast for now' });
+    const head = () => ctx.state(() => {
+      const q = s => { const e = document.querySelector('#cl-view-forecast ' + s); return e ? e.textContent.replace(/\u00a0/g, ' ').trim() : null; };
+      return { when: q('.cl-f-when'), num: q('.cl-f-num'), unit: q('.cl-f-unit'), rows: [...document.querySelectorAll('#cl-view-forecast .cl-f-tr li')].length };
     });
+    const now = await head();
     log('now', JSON.stringify(now));
-    assert.equal(now.num, '1.6', 'hero swell height');
-    assert.equal(now.unit, 'ft');
-    assert.equal(now.num, (Math.round(now.raw.h * 10) / 10).toFixed(1), 'hero = the app\'s forecast for this hour');
-    assert.match(now.meta, /^8 s\s*·\s*ESE 118°$/, 'period and direction');
-    assert.equal(now.status, 'IN WINDOW');
+    assert.equal(now.when, 'Thu 11 AMnow');
+    assert.equal(now.num, '0.5', 'GFS-Wave 0.5 and ECMWF 0.4 ft at Choc');
+    assert.equal(now.unit, 'ft at Choc');
+    assert.equal(now.rows, 3, 'three swells reach Choc');
     await ctx.screenshot('clean-forecast');
-
-    // ── This week: 7 rows ──
-    const week = await ctx.state(() => [...document.querySelectorAll('#cl-view-forecast .cl-f-wk .cl-f-row')].map(r => r.querySelector('.cl-f-d').textContent));
-    log('week', week.join(' '));
-    assert.equal(week.length, 7, 'seven day rows');
-    assert.equal(week[0], 'Today');
-
-    // ── Tap a week row: the chart cursor slides to that day's low ──
-    const K = 2;   // Sat: two days out, its low is a morning low in daylight
-    const want = await ctx.state(k => {
-      const d = CLEAN.data.week()[k];
-      return { label: d.label, low: d.low && d.low.t.getTime(), text: d.low ? CLEAN.fmt.day(d.low.t) + ' ' + CLEAN.fmt.time(d.low.t) + ' · low' : null, idx: d.low ? CLEAN.data.indexAt(d.low.t) : -1 };
-    }, K);
-    log('tap week row', K, JSON.stringify(want));
-    assert.ok(want.low, 'the tapped day has a low to jump to');
-    const x0 = await ctx.state(() => +document.querySelector('#cl-view-forecast .cl-f-cx .cur').getAttribute('x1'));
-    await page.locator(`#cl-view-forecast .cl-f-wk .cl-f-row[data-k="${K}"]`).click();
-    await ctx.waitFor(t => (document.querySelector('#cl-view-forecast .cl-f-rdt').textContent || '').replace(/ /g, ' ') === t.replace(/ /g, ' '),
-      { arg: want.text, label: 'readout names the low', timeout: 5000 });
-    // Where the cursor must land: the low's place inside its day column
-    // (day labels sit at each local midnight).
-    const where = await ctx.state(({ low, label }) => {
-      const svg = document.querySelector('#cl-view-forecast .cl-f-cx');
-      const W = +svg.getAttribute('width');
-      const spans = [...document.querySelectorAll('#cl-view-forecast .cl-f-dl span')];
-      const k = spans.findIndex(s => s.textContent === label);
-      const a = parseFloat(spans[k].style.left) / 100 * W;
-      const b = k + 1 < spans.length ? parseFloat(spans[k + 1].style.left) / 100 * W : W;
-      const day0 = new Date(low); day0.setHours(0, 0, 0, 0);
-      return { W, expect: a + (low - day0.getTime()) / 864e5 * (b - a), dayW: b - a };
-    }, want);
-    await ctx.waitFor(x => Math.abs(+document.querySelector('#cl-view-forecast .cl-f-cx .cur').getAttribute('x1') - x) < 2,
-      { arg: where.expect, label: 'cursor line at the low', timeout: 5000 });
-    const after = await ctx.state(k => ({
-      x: +document.querySelector('#cl-view-forecast .cl-f-cx .cur').getAttribute('x1'),
-      sel: document.querySelector(`#cl-view-forecast .cl-f-row[data-k="${k}"]`).getAttribute('aria-pressed'),
-      scrub: STATE.scrubberIdx,
-      chartTop: Math.round(document.querySelector('#cl-view-forecast .cl-f-fch').getBoundingClientRect().top)
-    }), K);
-    log('cursor', JSON.stringify(Object.assign({ from: x0 }, where, after)));
-    assert.notEqual(Math.round(after.x), Math.round(x0), 'the cursor moved');
-    assert.equal(after.sel, 'true', 'the tapped row stays selected');
-    await ctx.waitFor(i => STATE.scrubberIdx === i, { arg: want.idx, label: 'the app\'s scrubber follows to the low\'s hour', timeout: 3000 });
-    // A repaint of the app's chart (live data landing after the saved copy,
-    // which CI's slower runner hits) puts the app's scrubber back to now;
-    // it has to come back to the cursor on screen.
-    await ctx.state(() => { const d = STATE.forecastData; drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo, d.tidePred, d.buoyParsed); });
-    await ctx.waitFor(i => STATE.scrubberIdx === i, { arg: want.idx, label: 'the app\'s scrubber returns to the cursor after a repaint', timeout: 3000 });
-    await ctx.waitFor(() => Math.abs(document.querySelector('#cl-view-forecast .cl-f-fch').getBoundingClientRect().top) < 12,
-      { label: 'page scrolled to the chart', timeout: 3000 });
-    await ctx.screenshot('clean-week-tap');
-    // Back to now.
+    await page.locator('#cl-view-forecast .cl-f-jb[data-j="day"]').click();
+    await ctx.waitFor(() => /^Fri 11 AM$/.test(document.querySelector('#cl-view-forecast .cl-f-when').textContent.replace(/\u00a0/g, ' ')), { label: 'a day later', timeout: 3000 });
     await page.locator('#cl-view-forecast .cl-f-jb[data-j="now"]').click();
-    await ctx.waitFor(() => !document.querySelector('#cl-view-forecast .cl-f-row.sel'), { label: 'Now clears the day', timeout: 3000 });
+    await ctx.waitFor(() => CLEAN.forecastInfo().mode === 'now', { label: 'back to now', timeout: 3000 });
 
     // ── The three tabs ──
     const tabState = () => ctx.state(() => ({
@@ -145,7 +93,7 @@ module.exports = {
       title: document.getElementById('cl-title').textContent
     }));
     const LEGACY = { forecast: 'forecast', log: 'surflog', model: 'regression' };
-    const TITLE = { forecast: 'Today', log: 'Log', model: 'Your model' };
+    const TITLE = { forecast: 'Today', log: 'Log', model: 'My ratings' };
     for (const t of ['log', 'model', 'forecast']) {
       await page.locator(`#cl-app .cl-tabs .cl-tab[data-tab="${t}"]`).click();
       await ctx.waitFor(id => CLEAN.tab() === id, { arg: t, label: 'tab ' + t });

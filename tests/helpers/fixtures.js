@@ -42,6 +42,8 @@ function apiFixtureFor(rawUrl) {
   const q = u.searchParams;
 
   if (u.hostname === 'marine-api.open-meteo.com' && u.pathname === '/v1/marine') {
+    // The Forecast tab's buoy check asks for the forecasts made 1-3 days earlier at buoy 44097.
+    if (/previous_day/.test(q.get('hourly') || '')) return { status: 200, headers: JSON_CORS, file: 'open-meteo/marine-previous-runs.json' };
     return { status: 200, headers: JSON_CORS, file: 'open-meteo/marine.json' };
   }
   if (u.hostname === 'api.open-meteo.com' && u.pathname === '/v1/forecast') {

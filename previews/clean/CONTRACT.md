@@ -13,11 +13,11 @@ read it and do not edit it.
 | `base.css` | Core | Scoped reset, phone shell, sub-page, shared classes (below) |
 | `theme.js` | Core | Loader: `document.write`s `core.js`, `forecast.js`, `map.js`, `methods.js`, `log.js`, `model.js`, `tv.js` in that order |
 | `core.js` | Core | `window.CLEAN`: shell, theme, gate skip, data adapters, formatting, icons, events, Settings |
-| `forecast.js` + `forecast.css` | Forecast | Forecast tab (Now block, This week, chart, lineup, details) |
+| `forecast.js` + `forecast.css` | Forecast | Forecast tab, built on the Sound Check model: height at Choc or Wilderness, the swells' shares, the ray map, the week scrubber, wind and tide, the buoy check. Reads its own data (`research/fc/fc.json` or the fc-data pull, `research/fr/land.json`, Open-Meteo's earlier runs at the buoy, `data/verification.json`); `CLEAN.forecastInfo()` is its read-only state for tests |
 | `map.js` + `map.css` | Map | Map tab and its bathymetry/layer viewer |
 | `methods.js` + `methods.css` | Methods | Methods tab, the research explanation |
 | `log.js` + `log.css` | Log | Log tab |
-| `model.js` + `model.css` | Model | Model tab |
+| `model.js` + `model.css` | Model | My ratings tab (id `model`): the surf-log rating models |
 | `tv.js` + `tv.css` | TV | Choc TV (`?kiosk=1`) |
 
 Parts must not edit `core.js`, `theme.js`, `theme.css`, `base.css`, this file,
@@ -36,8 +36,9 @@ no modules, no bundler. Wrap each file in an IIFE and keep its globals inside.
 1. Picks the theme (below), sets `html[data-clean-theme]`.
 2. Removes `body[data-era]` (the Win95 styles hang off it) and builds the shell:
    - **phone**: `#cl-app.cl` = header (`h1` title + date, Settings button), five
-     views `#cl-view-forecast|map|methods|log|model` (`section.cl-view`), fixed tab bar;
-     Model is shown only for a signed-in, nonanonymous account;
+     views `#cl-view-forecast|map|methods|log|model` (`section.cl-view`), fixed tab bar
+     (at the bottom on a phone; across the top, icon beside label, from 900 px wide);
+     My ratings (`model`) is shown only for a signed-in, nonanonymous account;
    - **Choc TV** (`isKioskMode()`): one empty `#cl-tv.cl` (fixed, full screen).
 3. Sets `html.cl-on` (and `html.cl-tv` on the TV). Only then does `theme.css`
    hide the legacy chrome (`#gate-overlay`, `#app-window`, `#kiosk-status`,
@@ -103,7 +104,7 @@ The tab hash follows navigation. A signed-out `#model` opens the Log login page.
 |---|---|
 | `CLEAN.show(tab)` | Switch to `'forecast' \| 'map' \| 'methods' \| 'log' \| 'model'` (120 ms fade, scroll remembered per tab). Forecast/Log/Model also run the legacy `switchTab`; Map/Methods own their viewers. Signed-out Model requests open Log. Tapping the active tab scrolls to the top. |
 | `CLEAN.tab()` | Current tab (`'tv'` on the TV) |
-| `CLEAN.setTitle(tab, title, sub?)` | Override the header for a tab; `CLEAN.setTitle(tab, null)` restores the default. Defaults: Forecast "Today"/"Tonight" + "Thu 1 Oct", Log "Log", Model "Your model". |
+| `CLEAN.setTitle(tab, title, sub?)` | Override the header for a tab; `CLEAN.setTitle(tab, null)` restores the default. Defaults: Forecast "Today"/"Tonight" + "Thu 1 Oct", Log "Log", My ratings "My ratings". |
 | `CLEAN.openSettings(section?)` | Opens Settings; `section` scrolls to `'account' \| 'display' \| 'forecast' \| 'sources' \| 'spot'` (e.g. the Forecast part's Details › Data sources row). |
 | `CLEAN.sub.open({ id, title, mount(body, handle), onClose })` | A full-screen sub-page with a back chevron and a serif title (the Settings pattern). One history entry, so the iPhone back swipe, the browser Back and Escape close it. Returns `handle = { el, body, close(), setTitle(t) }`. Stackable. |
 | `CLEAN.sub.close()` / `.depth()` / `.top()` | Close the top page / how many are open / its handle |
@@ -222,9 +223,11 @@ Wind   = { mph, gust, dir, compass, quality }
 
 ### The shared cursor — `CLEAN.cursor`
 
-The app's scrubber hour, shared by every part: `get()` → idx (the scrubbed hour,
-else `nowIndex()`), `set(idx)` (moves the app's scrubber, repaints its hidden
-chart, raises `hour`), `reset()` (back to now), `atNow()`.
+The app's scrubber hour (the marine forecast's hourly index): `get()` → idx (the
+scrubbed hour, else `nowIndex()`), `set(idx)` (moves the app's scrubber, repaints
+its hidden chart, raises `hour`), `reset()` (back to now), `atNow()`. Choc TV's
+radar playback moves it. The Forecast tab keeps its own hour on the Sound Check
+run's steps and does not move it.
 
 ## Formatting — `CLEAN.fmt`
 
@@ -319,7 +322,8 @@ Part classes are prefixed `cl-f-` (forecast), `cl-l-` (log), `cl-m-` (model),
 `.cl-tabs` or `#cl-tv` itself.
 
 The current tab is also on `html[data-active-tab]`. Map and Methods use a
-1440 px maximum shell width; other tabs remain 640 px. Add `.cl-wide-view` to
+1440 px maximum shell width, Forecast 1200 px (map beside the readout from 900 px);
+other tabs remain 640 px. Add `.cl-wide-view` to
 a `.cl-sub` for a 1440 px comparison window.
 
 ## Rules every part keeps

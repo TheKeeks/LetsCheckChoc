@@ -1101,9 +1101,10 @@
     };
   }
 
-  // The shared forecast cursor (the app's scrubber hour). forecast.js
-  // moves it; Model and TV may read it. Setting it repaints the app's own
-  // (hidden) chart and raises 'hour'.
+  // The shared forecast cursor (the app's scrubber hour). Choc TV's radar
+  // moves it; Model and TV may read it (the Forecast tab keeps its own hour
+  // on the Sound Check run). Setting it repaints the app's own (hidden)
+  // chart and raises 'hour'.
   CLEAN.cursor = {
     get: function () {
       var i = typeof STATE !== 'undefined' ? STATE.scrubberIdx : -1;
@@ -1197,7 +1198,7 @@
     { id: 'map', label: 'Map', legacy: null },
     { id: 'methods', label: 'Methods', legacy: null },
     { id: 'log', label: 'Log', legacy: 'surflog' },
-    { id: 'model', label: 'Model', legacy: 'regression', requiresAuth: true }
+    { id: 'model', label: 'My ratings', legacy: 'regression', requiresAuth: true }
   ];
   var appEl = null, tvEl = null, titleEl = null, subtitleEl = null, tabBtns = {}, views = {};
   var curTab = 'forecast', scrollMem = {}, titleOverride = {};
@@ -1249,7 +1250,7 @@
     else if (curTab === 'log') { t = 'Log'; s = ''; }
     else if (curTab === 'map') { t = 'Map'; s = 'Explore the water'; }
     else if (curTab === 'methods') { t = 'Methods'; s = 'How the forecast works'; }
-    else { t = 'Your model'; s = ''; }
+    else { t = 'My ratings'; s = 'What your sessions say'; }
     if (titleEl.textContent !== t) titleEl.textContent = t;
     if (subtitleEl.textContent !== (s || '')) subtitleEl.textContent = s || '';
     subtitleEl.hidden = !s;
