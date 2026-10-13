@@ -1,0 +1,99 @@
+name: Update Sound Check history
+
+# The Sound Check's history since 2016 (scripts/history/update.py): every day it fetches buoy 44097's spectra
+# (CDIP) and readings (NDBC), the over-water wind (ERA5, ECMWF) and the tides, rebuilds the whole history through
+# yesterday, and commits what changed to main: data/history/, research/hist.js and the Block Island lane of
+# research/ocean/day/. Rebuilding everything (about 5 minutes) means late or corrected readings anywhere in the
+# ten years land too. A run that fails commits nothing, so the site keeps the last good history, and GitHub
+# emails the owner.
+on:
+  schedule:
+    - cron: '23 9 * * *'  # every day at 09:23 UTC (5:23 AM EDT, 4:23 AM EST): yesterday is complete by then
+  workflow_dispatch:      # Manual trigger
+  push:                   # first update as soon as this lands, and after any change to the update
+    branches: [main]
+    paths:
+      - 'scripts/history/**'
+      - '.github/workflows/update-history.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-history
+  cancel-in-progress: false
+
+jobs:
+  update-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HISTORY_CACHE: ${{ github.workspace }}/history-cache
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install numpy==2.4.6 scipy==1.17.1
+
+      # CDIP's spectra archive (about 750 MB) changes every month or two: keep it between runs, keyed by its
+      # date, so it is downloaded only when CDIP updates it.
+      - name: Date of the CDIP archive
+        id: cdip
+        run: |
+          stamp=$(curl -sSIL --retry 3 https://thredds.cdip.ucsd.edu/thredds/fileServer/cdip/archive/154p1/154p1_historic.nc \
+            | tr -d '\r' | awk 'tolower($1) == "last-modified:" { $1 = ""; print }' | tail -1 | tr -cs 'A-Za-z0-9' '-')
+          echo "stamp=$stamp" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the CDIP archive
+        uses: actions/cache@v4
+        with:
+          path: history-cache/cdip/154p1_historic.nc*
+          key: history-cdip-${{ steps.cdip.outputs.stamp }}
+
+      # The files that don't change once published (NDBC's finished years and months, Montauk 44017, the tide
+      # tables, ERA5 for 2016), refreshed once a month; the rest is fetched every run.
+      - name: Restore the published files
+        id: month
+        run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            history-cache
+            !history-cache/cdip
+          key: history-files-${{ steps.month.outputs.month }}
+          restore-keys: history-files-
+
+      # Exits non-zero when a source fails with nothing cached, or the files can't be brought to one last day:
+      # the commit below is skipped.
+      - name: Rebuild the history through yesterday
+        id: update
+        run: echo "end=$(python scripts/history/update.py)" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/history research/hist.js research/ocean/day
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update Sound Check history through ${{ steps.update.outputs.end }}"
+            # main may have moved since checkout (e.g. the owner merged a PR): replay the data commit on top of
+            # it, with a few retries.
+            for attempt in 1 2 3; do
+              if git pull --rebase origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME"; then
+                exit 0
+              fi
+              git rebase --abort 2>/dev/null || true
+              echo "::warning::Push attempt $attempt failed; retrying"
+              sleep $((attempt * 5))
+            done
+            echo "::error::Could not push the history commit after 3 attempts"
+            exit 1
+          fi

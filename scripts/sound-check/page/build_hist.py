@@ -16,7 +16,8 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 HIST = os.path.join(ROOT, 'data', 'history')
 
 def read(name, hdir=HIST):
-    return open(os.path.join(hdir, name)).read().strip()
+    with open(os.path.join(hdir, name)) as f:
+        return f.read().strip()
 
 def build(hdir=HIST):
     r = json.loads(read('results4.json', hdir))
