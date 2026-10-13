@@ -13,8 +13,8 @@ read it and do not edit it.
 | `base.css` | Core | Scoped reset, phone shell, sub-page, shared classes (below) |
 | `theme.js` | Core | Loader: `document.write`s `core.js`, `forecast.js`, `map.js`, `methods.js`, `log.js`, `model.js`, `tv.js` in that order |
 | `core.js` | Core | `window.CLEAN`: shell, theme, gate skip, data adapters, formatting, icons, events, Settings |
-| `forecast.js` + `forecast.css` | Forecast | Forecast tab, built on the Sound Check model: height at Choc or Wilderness, the swells' shares, the ray map, the week scrubber, wind and tide, the buoy check. Reads its own data (`research/fc/fc.json` or the fc-data pull, `research/fr/land.json`, Open-Meteo's earlier runs at the buoy, `data/verification.json`); `CLEAN.forecastInfo()` is its read-only state for tests |
-| `map.js` + `map.css` | Map | Map tab and its bathymetry/layer viewer |
+| `forecast.js` + `forecast.css` | Forecast | Forecast tab, built on the Sound Check model: height at Choc or Wilderness, the swells' shares, the ray map (or, with "Storms", the North Atlantic's wave height, sea-level pressure, lows and storm tracks at the same hour), the week scrubber with play, wind and tide, the buoy check. Reads its own data (`research/fc/fc.json` or the fc-data pull and, for Storms, that run's `field_gfs_ocean.png` and `field_gfs_mslp.png` over `research/ocean/`; `research/fr/land.json`, Open-Meteo's earlier runs at the buoy, `data/verification.json`); `CLEAN.forecastInfo()` is its read-only state for tests |
+| `map.js` + `map.css` | Map | Map tab: frames `map/index.html` (the Sound Check map, and the sea floor in 3D from its "3D" button) |
 | `methods.js` + `methods.css` | Methods | Methods tab, the research explanation |
 | `log.js` + `log.css` | Log | Log tab |
 | `model.js` + `model.css` | Model | My ratings tab (id `model`): the surf-log rating models |

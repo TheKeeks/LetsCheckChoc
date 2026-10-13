@@ -1,5 +1,38 @@
 # Changelog
 
+## [Unreleased] — Storms on the Forecast map; the Map tab is one map; Past days open the ten years
+
+Forecast's map showed only the swell already bending into Choc, so there was no way to see the storms making it, and the forecast bot didn't fetch pressure at all. The Map tab opened on the 3D sea floor with the Sound Check map behind a second tab (Monitor | Model): two maps that both showed this week's forecast. And from a past day on the Sound Check map there was no way to the ten-year month tiles, which sat further down the Methods page.
+
+The forecast bot now also pulls GFS's sea-level pressure for every step of the run (a small range read of the first record in the atmosphere's 1° file) and publishes it as `field_gfs_mslp.png` next to the wave pictures, in tenths of a hPa above 800. Pressure in pascals sits above GRIB's 9999 "missing" marker, so the decoder now treats a cell as missing only where the field carries a bitmap; both wave models do, pressure doesn't. A pull whose pressure download fails still publishes the swell. `python3 scripts/forecast/fcpull.py --pressure DIR` adds pressure to an existing pull; the copy that ships in `research/fc/` has it.
+
+Forecast's map has a **Swell at Choc | Storms** switch in a strip above it; the Choc | Wilderness switch moved there too, so neither covers the map. Storms is the North Atlantic at the hour on the scrubber, from the Gulf of Mexico to Africa and from the Caribbean to the tip of Greenland: GFS-Wave's wave height in the Sound Check map's colours, cut off at the coast; isobars every 4 hPa, bolder every 20; the lows and highs labelled with their pressure; and each storm's track over the run. A track follows a low from step to step (to the nearest low within what a storm can travel at 110 km/h), and only lows that last a day and get down to 1000 hPa are drawn. A track is faint behind the hour and bright ahead of it, with a dot every 6 hours. A ▶ button under the week plays the run through, a step every 0.7 s (1.4 s with reduced motion); any other move stops it. A run without the pressure map still shows the waves and says so.
+
+The Map tab is now one map. It opens on the Sound Check map (this week, past days, drop a wave), with no tabs. A **3D** button beside Layers, the key and full screen opens the sea floor around Fishers in 3D at the same spot and forecast hour (Wilderness opens the Fishers view); **← Map** goes back to the Sound Check map as it was. The 3D map and MapLibre (about 1 MB) load only the first time 3D is opened, so the tab opens faster. Without WebGL the 3D map says so and the way back still works. A day sent from the app still opens the Sound Check map on that day.
+
+On the Sound Check map's Past view, the month in the bottom bar ("Aug 2023" with a small grid, "Ten years" on a wide screen) opens the ten years, month by month, over the map, on that month. A month tile opens its calendar, a day its details (the map behind follows), and "Open this day on the map" closes the tiles on that day; Escape and "Back to the map" close them too. In the light theme, months with none of the counted days are now a pale shade instead of near-black, and on a phone the Past bar's buttons are a little narrower so the whole month fits.
+
+Verified by `scripts/test_fcpull.py`: pressure in pascals is no longer read as missing, the wave fields are still masked, and the pressure encoding and picture layout round-trip; the first test fails on the old decoder. Three new e2e scenarios:
+
+- `preview-clean-forecast-storms.js`, with expected values read from the pressure and wave pictures in numpy, not from the page:
+  - at 11 AM the deepest low in view is the Gulf of Mexico's 985 hPa;
+  - the Gulf low tracks from 27°N to 33°N in a day, 975 hPa at its deepest on the 1° grid;
+  - the low south of Greenland deepens to 952.5 hPa and is tracked for more than four days;
+  - Sat 8 PM has 954 hPa at 58°N 36°W with red-violet 20 ft seas under it, while the Gulf has gone a calm blue;
+  - it also covers play, a key stopping play, play stopping at the end, a run without pressure, pictures that don't load, and the wide layout.
+- `map-one-map.js`:
+  - the tab opens on the Sound Check map without even requesting MapLibre;
+  - 3D opens on the Sound Check map's hour (step 7) and spot, and Wilderness opens the Fishers view;
+  - ← Map returns with focus on the 3D button, and MapLibre loads only once;
+  - a past day from the app opens the Sound Check map, and the theme reaches both maps;
+  - it also covers the app's Map tab and a browser without WebGL.
+- `w6-swell-map-ten-years.js`:
+  - the month button and the tiles opening on the map's month;
+  - picking a month, then a day, with the map behind following;
+  - "Open this day on the map", Escape, and the light and dark themes.
+
+`map-terrain.js` now opens the 3D map directly (`?show=3d`).
+
 ## [Unreleased] — Forecast rebuilt on the Sound Check model: swells' shares, ray map, week scrubber, buoy check
 
 The Forecast tab was a stack of everything: Open-Meteo's offshore swell as the headline, in-window and blocked tags, a This-week list, a chart, a lineup picture, a "/ 10" score from the surf-log ratings, a 3D map window and a details list. The number checked against the surf log is the Sound Check model's, and the model already decides how much of each swell reaches Choc, including the energy that bends in from outside the 115–158° window. The tags second-guessed it, and the rest repeated it.
