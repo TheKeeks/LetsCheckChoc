@@ -29,7 +29,8 @@
   }
   applyTheme(initial || 'light');
 
-  // Only the embedding page can change the theme or selected historical day.
+  // Only the embedding page can change the theme or selected historical day, or say the surf log changed.
+  var logTimer = 0;
   window.addEventListener('message', function (event) {
     if (event.origin !== location.origin || event.source !== window.parent || window.parent === window) return;
     var data = event.data;
@@ -37,6 +38,12 @@
     if (data.type === 'lcc-theme') applyTheme(data.theme);
     if (data.type === 'lcc-map-date' && root.dataset.researchView === 'map' && /^\d{4}-\d{2}-\d{2}$/.test(data.date || '')) {
       if (window.CHOC && window.CHOC.showPast) window.CHOC.showPast(data.date);
+    }
+    // a session saved, edited or deleted on the site: the ten years' sessions and photos read the log again
+    // (once for a burst: a save says so as it starts and again once it is in the cloud)
+    if (data.type === 'lcc-log') {
+      clearTimeout(logTimer);
+      logTimer = setTimeout(function () { if (window.CHOC && window.CHOC.reloadLog) window.CHOC.reloadLog(); }, 400);
     }
   });
 

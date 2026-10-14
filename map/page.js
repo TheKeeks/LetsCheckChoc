@@ -101,6 +101,8 @@
   function receive(d) {
     if (!d || typeof d !== 'object') return;
     if (d.type === 'lcc-theme') { setTheme(d.theme); return; }
+    // the site's surf log changed: the past days' page (its ten years' sessions and photos) reads it again
+    if (d.type === 'lcc-log') { if (frame.getAttribute('src') && frame.contentWindow) frame.contentWindow.postMessage({ type: 'lcc-log' }, location.origin); return; }
     if (d.type !== 'lcc-map') return;
     if (d.theme) setTheme(d.theme);
     if ((d.spot === 'choc' || d.spot === 'race') && d.spot !== state.view) { if (sea) sea.go(d.spot); else state.view = d.spot; }

@@ -13,9 +13,11 @@
   const key = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
   let metric = 'good', sel = null;
   // ── photos from the site's surf log (Firestore surf_logs, read only). The page runs inside the site's
-  // Swell Map tab, so it borrows the site's Firebase connection and sign-in; opened on its own it connects
-  // itself (below). Months and days with photos get a camera; a month lists its photos, a day shows each
-  // logged session with its ratings (size, wind, ride) and notes next to the ratings model's score.
+  // Explore and Methods tabs (Explore one frame further down, inside map/), so it borrows the site's Firebase
+  // connection and sign-in; opened on its own it connects itself (below). Months and days with photos get a
+  // camera; a month lists its photos, a day shows each logged session with its ratings (size, wind, ride) and
+  // notes next to the ratings model's score. A session saved, edited or deleted on the site reads the log
+  // again (CHOC.reloadLog, message lcc-log through methods-theme.js).
   const PH = { month: {}, day: {}, log: {}, logMonth: {} };
   const CAM = '<svg class="dec-cam" viewBox="0 0 16 12" aria-hidden="true"><path d="M1 3.2h3.2l1.3-1.9h5l1.3 1.9H15v8H1z" fill="currentColor"/><circle cx="8" cy="7" r="2.6" fill="#0b1622"/><circle cx="8" cy="7" r="1.5" fill="currentColor"/></svg>';
   const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -65,19 +67,39 @@
     if (!user) await auth.signInAnonymously();
     return fb.firestore();
   }
+  // the site's window when the page is framed by it (Methods: the parent; Explore: the map page's parent), else null
+  function siteWindow() {
+    let w = window;
+    for (let i = 0; i < 3 && w.parent !== w; i++) {
+      w = w.parent;
+      try { if (w.fbFirestore) return w; } catch (e) { return null; }   // another origin: no access
+    }
+    return null;
+  }
+  async function readLog() {
+    const P = siteWindow();
+    let fs = null;
+    if (P) { if (P._fbAuthReady) await P._fbAuthReady; fs = P.fbFirestore; } else fs = await ownFirestore();
+    if (!fs) return null;
+    const snap = await fs.collection('surf_logs').orderBy('createdAt', 'desc').limit(500).get(), out = [];
+    snap.forEach((doc) => { const d = doc.data() || {}; out.push({ when: d.timestamp, ratings: d.ratings, notes: d.notes, who: d.displayName, photos: (d.photos || []).map((ph) => (typeof ph === 'string' ? ph : ph && ph.url)).filter(Boolean) }); });
+    return out;
+  }
+  const showLog = () => readLog().then((out) => { if (out) setLog(out); })
+    .catch(() => { /* offline, blocked or not signed in: the log as it was (none at first) */ });
   // the page's own read of the surf log; done (or given up) when this settles, so tests hand the calendar their own
   // photos after it rather than have it replace them
-  window.CHOC.logLoaded = (async () => {
-    let fs = null;
-    try {
-      let P = null; try { P = window.parent !== window && window.parent.fbFirestore ? window.parent : null; } catch (e) { P = null; }   // another origin: no access
-      if (P) { if (P._fbAuthReady) await P._fbAuthReady; fs = P.fbFirestore; } else fs = await ownFirestore();
-      if (!fs) return;
-      const snap = await fs.collection('surf_logs').orderBy('createdAt', 'desc').limit(500).get(), out = [];
-      snap.forEach((doc) => { const d = doc.data() || {}; out.push({ when: d.timestamp, ratings: d.ratings, notes: d.notes, who: d.displayName, photos: (d.photos || []).map((ph) => (typeof ph === 'string' ? ph : ph && ph.url)).filter(Boolean) }); });
-      setLog(out);
-    } catch (e) { /* offline, blocked or not signed in: no photos */ }
-  })();
+  window.CHOC.logLoaded = showLog();
+  // read it again, after the first read. A call while a read runs makes one more read after it, so the last change shows.
+  let rereading = null, again = false;
+  window.CHOC.reloadLog = () => {
+    if (rereading) { again = true; return rereading; }
+    rereading = window.CHOC.logLoaded.then(showLog).then(() => {
+      rereading = null;
+      if (again) { again = false; return window.CHOC.reloadLog(); }
+    });
+    return rereading;
+  };
   const CAP = {
     good: 'A good day is one whose best 3 hours score 7/10 or better on the ratings model built from your surf log at Choc. Your log has no sessions from November to May, so winter counts are extrapolation.',
     big: 'A big swell day has at least 3 hours at 4 ft or more at the buoy, coming from inside the swell window.',
@@ -149,7 +171,11 @@
     let cal = 'SMTWTFS'.split('').map((d) => `<div class="dec-dh">${d}</div>`).join('') + '<div class="dec-pad"></div>'.repeat(first);
     for (let d = 1; d <= n; d++) {
       const iso = `${key(y, m)}-${String(d).padStart(2, '0')}`, i = window.CHOC.dayIndex(iso), x = D[i];
-      if (!x) { cal += `<div class="dec-d none"><i>${d}</i></div>`; continue; }
+      if (!x) {                                            // no buoy history (yet: it runs through yesterday), maybe a session
+        const lg = PH.day[iso] ? CAM : PH.log[iso] ? '<s class="dec-dot" aria-hidden="true"></s>' : '';
+        cal += `<div class="dec-d none${PH.day[iso] ? ' ph' : PH.log[iso] ? ' lg' : ''}"${lg ? ` role="img" aria-label="${MONTHS[m - 1]} ${d}: no buoy history yet, ${PH.day[iso] ? 'logged with photos' : 'logged'}"` : ''}><i>${d}</i>${lg}</div>`;
+        continue;
+      }
       const ft = x.mh[dl], c = hCol(ft || 0), good = (x.s[dl] || 0) >= 7, light = c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11 > 140;
       const hasPh = !!PH.day[iso], hasLog = !hasPh && !!PH.log[iso];
       cal += `<button type="button" class="dec-d${good ? ' good' : ''}${st.idx === i ? ' on' : ''}${hasPh ? ' ph' : ''}${hasLog ? ' lg' : ''}" data-i="${i}" style="background:rgb(${c});color:${light ? '#10161c' : '#f2f5f8'}" aria-label="${MONTHS[m - 1]} ${d}: Choc ${ft.toFixed(1)} ft${good ? ', good day' : ''}${hasPh ? ', logged with photos' : hasLog ? ', logged' : ''}"><i>${d}</i><b>${ft.toFixed(1)}</b>${hasPh ? CAM : hasLog ? '<s class="dec-dot" aria-hidden="true"></s>' : ''}</button>`;

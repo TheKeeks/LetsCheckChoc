@@ -173,6 +173,13 @@
     C.on('tick', function () { render('tick'); });
     renderZoom();
     C.on('soundcheck', function () { render('fc'); });
+    // ↻ in the header (core's CLEAN.refresh fetches the run, the wind, tides and buoy): the map's own copy of the
+    // run, and the buoy check's earlier forecasts and readings, too
+    C.on('refresh', function () {
+      if (map.status !== 'idle') post({ type: 'lcc-fc-refresh' });
+      prev.at = 0; loadPrevRuns();
+      verif.at = 0; if (sheet) loadVerif();
+    });
     C.model.load();
     loadPrevRuns();
   }

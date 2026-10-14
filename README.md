@@ -41,6 +41,11 @@ along the bottom. Then the wind and tide for that hour, and the buoy check:
 before ("forecasts on track" when they were within half a foot or 15 %). Tap
 it for the last two days. If the model run doesn't reach the present (the
 forecast bot stalled), Forecast says so instead of showing an old number.
+**↻** (top right, beside Settings) asks for the newest model run now, without
+waiting for a reload (the forecast bot publishes one every 3 hours), and loads
+the wind, tides and buoy again. For a few seconds the top line says what it
+found: "New forecast: run 2:00 PM", "Up to date: run 11:00 AM", or that
+GitHub couldn't be reached.
 
 The map is one map with layers, at the hour on the scrubber; how far out you
 look picks what it shows. **Ocean**: the North Atlantic from the Gulf of
@@ -63,7 +68,11 @@ the newest day of the history, with the ten years month by month beside the
 map (under it on a phone): the grid of good days (or big swell days, or Choc
 at 3 ft+), the month on show as a calendar, the day's details, and what the
 ocean was doing that day. Tap a month for its days and a day to see it on the
-map; a day picked on the map moves the calendar to it. **Drop a wave** traces
+map; a day picked on the map moves the calendar to it. The calendar follows
+the surf log (on Methods too): a session you log, edit or delete shows at
+once, with a dot on its day (a camera when it has photos), the month's count,
+and who, when, the ratings, notes and photos in the day's details. A session
+from today gets its dot before the history reaches today. **Drop a wave** traces
 one wave over the sea floor. The **3D** button opens Fishers Island's sea
 floor in 3D (Wilderness opens the Fishers view); **← Map** goes back. The 3D map is built from the Fishers Island viewer's own
 elevation: NOAA's 2023 topobathy lidar and multibeam surveys at 0.8 m near the

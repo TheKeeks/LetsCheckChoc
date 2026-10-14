@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   if (!window.CLEAN) return;
-  var C = window.CLEAN, frame, pendingDate = null, pending3d = null;
+  var C = window.CLEAN, frame, pendingDate = null, pending3d = null, logSeen = null;
   function sync(extra) {
     if (!frame || !frame.contentWindow || !frame.getAttribute('src')) return;
     frame.contentWindow.postMessage(Object.assign({ type: 'lcc-map', theme: C.theme() === 'night' ? 'dark' : 'light', active: C.tab() === 'map' && C.sub.depth() === 0 }, extra || {}), location.origin);
@@ -12,6 +12,7 @@
   function load() {
     if (!frame || frame.getAttribute('src')) return;
     var p3 = pending3d;
+    logSeen = C.logRev();                 // the page reads the log as it loads
     frame.src = 'map/index.html?embed=1&theme=' + (C.theme() === 'night' ? 'dark' : 'light') + (pendingDate ? '&date=' + encodeURIComponent(pendingDate) : '') +
       (p3 ? '&show=3d&view=' + (p3.spot === 'wild' ? 'fishers' : 'choc') + (p3.time ? '&time=' + encodeURIComponent(new Date(p3.time).toISOString()) : '') : '');
     pending3d = null;
@@ -23,6 +24,14 @@
       frame.addEventListener('load', function () { sync(pendingDate ? { date: pendingDate } : {}); });
       C.on('tab', function () { sync(); });
       C.on('sub', function () { sync(); });
+      // a session saved, edited or deleted: the past days' calendar reads the log again (map/page.js passes it on).
+      // Not when the log is only drawn again (opening the Log tab does that).
+      C.on('log', function () {
+        var r = C.logRev();
+        if (r === logSeen || !frame.getAttribute('src') || !frame.contentWindow) return;
+        logSeen = r;
+        frame.contentWindow.postMessage({ type: 'lcc-log' }, location.origin);
+      });
       window.addEventListener('message', function (event) {
         if (event.origin !== location.origin || !event.data) return;
         if (event.source === frame.contentWindow && event.data.type === 'lcc-map-ready') sync(pendingDate ? { date: pendingDate } : {});

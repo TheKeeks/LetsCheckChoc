@@ -136,6 +136,11 @@ html.cl-on:not(.cl-tv) {
   justify-content: center;
   border-radius: 10px;
 }
+.cl-hd-x { display: flex; flex: 0 0 auto; }
+/* ↻ turns while it asks; with reduced motion it dims instead (the header says "Checking…" either way) */
+.cl-rf.cl-spin svg { animation: cl-spin 1s linear infinite; }
+@keyframes cl-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cl-rf.cl-spin svg { animation: none; opacity: .45; } }
 .cl-view { display: block; }
 .cl-view.cl-enter { animation: cl-fade-in 120ms ease-out; }
 @keyframes cl-fade-in { from { opacity: 0; } to { opacity: 1; } }
