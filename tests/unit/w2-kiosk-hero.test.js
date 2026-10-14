@@ -81,23 +81,9 @@ test('day hero = the train with more in-window energy (out-of-window primary swa
   assert.equal(days[5].secondary, null);
 });
 
-test('day card marks out-of-window trains OUT OF WINDOW and dims them; in-window hero is untagged', () => {
-  const app = kioskWith(true);
-  const html = i => app.run(`kioskDayCardHTML(kioskDaySummary(${i}))`);
-  const tomorrow = html(1);
-  assert.match(tomorrow, /<div class="np-swell np-primary">/, 'hero row: not dimmed');
-  assert.match(tomorrow, /<div class="np-swell np-secondary np-out"><span class="np-out-tag">OUT OF WINDOW<\/span>/);
-  assert.equal(tomorrow.split('OUT OF WINDOW').length - 1, 1);
-  // Edge-of-window trains are not tagged.
-  assert.doesNotMatch(html(2).split('np-secondary')[0], /OUT OF WINDOW/);
-  // Nothing in window: the hero carries the tag too.
-  assert.match(html(4), /<div class="np-swell np-primary np-out"><span class="np-out-tag">OUT OF WINDOW/);
-});
-
 test('away from Chocomount there is no window: Open-Meteo order kept, no tags', () => {
   const app = kioskWith(false);
   const tomorrow = app.clone('kioskDaySummary(1)');
   assert.equal(Math.round(tomorrow.primary.dir), 191);
   assert.equal(tomorrow.primary.cls, '');
-  assert.doesNotMatch(app.run('kioskDayCardHTML(kioskDaySummary(1))'), /OUT OF WINDOW/);
 });

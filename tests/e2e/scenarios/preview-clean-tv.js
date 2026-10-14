@@ -68,7 +68,7 @@ const shift = (fc, ms) => {
 
 module.exports = {
   name: 'clean preview Choc TV on the Sound Check model: day cards, radar = Forecast tab, week strip, new runs, tides down',
-  options: { gate: null, viewport: { width: 1180, height: 820 }, timeoutMs: 150000 },
+  options: { viewport: { width: 1180, height: 820 }, timeoutMs: 150000 },
   async run({ page, ctx, assert, log }) {
     const FIX = JSON.parse(ctx.fixture('soundcheck/fc.json'));
     const serveRun = d => ctx.serve('/research/fc/fc.json', { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify(d) });

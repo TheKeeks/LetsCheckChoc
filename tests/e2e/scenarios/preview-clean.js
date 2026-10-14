@@ -1,9 +1,8 @@
-// ?preview=clean — the "A refined" redesign (previews/clean/) layered over
-// the real app. preview-looks.js only checks that each look loads; this
-// drives the clean look the way the crew will, on a phone and on Choc TV,
+// The look (previews/clean/, the approved "A refined" design) over app.js's
+// data, opened by its old name ?preview=clean. This drives it the way the
+// crew will, on a phone and on Choc TV,
 // against the fixtures (2026-10-01 11:00 ET):
-//   • it skips the boat question by itself without remembering the answer
-//     (the classic look, ?classic=1, still asks), and none of its own code logs an error;
+//   • it starts with no boat question (the old look's is gone, DOM and all), and none of its own code logs an error;
 //   • the three tabs switch; Forecast leads with the Sound Check height at
 //     Choc for 11:00 (0.5 ft from the fixture model run) and its three swells,
 //     and the day jump and Now move the hour (preview-clean-forecast.js has
@@ -28,7 +27,6 @@ const sideways = () => {
 module.exports = {
   name: 'clean preview: tabs, Forecast headline and day jump, Settings, Log save gate, Choc TV panels, no sideways scroll',
   options: {
-    gate: null,                                   // the preview must skip the boat question itself
     viewport: PHONE,
     contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 },
     firebase: { mode: 'google', logs: [] }        // signed in as google-1 ("Test Surfer"), empty log
@@ -51,18 +49,18 @@ module.exports = {
     const boot0 = await ctx.state(() => ({
       on: document.documentElement.classList.contains('cl-on'),
       theme: document.documentElement.getAttribute('data-clean-theme'),
-      gateShown: (() => { const g = document.getElementById('gate-overlay'); return !!g && getComputedStyle(g).display !== 'none'; })(),
+      gate: !!document.getElementById('gate-overlay'),
       gateKey: sessionStorage.getItem('lcc-gate'),
-      passed: STATE.boatGatePassed,
+      started: STATE.appStarted,
       title: document.getElementById('cl-title').textContent,
       parts: ['forecast', 'log', 'model'].map(p => CLEAN.part(p))
     }));
     log('boot', JSON.stringify(boot0));
     assert.ok(boot0.on, 'html.cl-on: the clean shell mounted');
     assert.equal(boot0.theme, 'day', '11:00 is daytime at the spot');
-    assert.equal(boot0.gateShown, false, 'the boat question is not on screen');
-    assert.equal(boot0.passed, true);
-    assert.equal(boot0.gateKey, null, 'the new look does not remember a boat answer (?classic=1 still asks)');
+    assert.equal(boot0.gate, false, 'no boat question in the page');
+    assert.equal(boot0.started, true, 'the app started itself');
+    assert.equal(boot0.gateKey, null, 'nothing remembers a boat answer');
     assert.equal(boot0.title, 'Today');
     for (const p of boot0.parts) assert.deepEqual(p, { mounted: true, failed: false });
 
@@ -114,11 +112,17 @@ module.exports = {
       title: document.querySelector('#cl-sub-settings h1').textContent,
       account: document.querySelector('#cl-sub-settings .cl-set-acct').innerText.replace(/\s+/g, ' ').trim(),
       heads: [...document.querySelectorAll('#cl-sub-settings .cl-h2')].map(h => h.textContent),
+      logTools: [...document.querySelectorAll('#cl-sub-settings [data-act^="log-"]')].map(b => b.dataset.act),
+      entries: STATE.surfLog.length,
+      signedIn: CLEAN.auth().signedIn,
       checked: document.querySelector('#cl-sub-settings [role=radio][aria-checked="true"]').dataset.mode
     }));
     log('settings', JSON.stringify(set0));
     assert.equal(set0.title, 'Settings');
-    assert.deepEqual(set0.heads, ['Account', 'Display', 'Forecast', 'Data sources', 'Spot']);
+    // the old Log tab's tools: copies of the log when it has entries, import and fetch-again when signed in
+    const tools = (set0.entries ? ['log-csv', 'log-json'] : []).concat(set0.signedIn ? ['log-import', 'log-refetch'] : []);
+    assert.deepEqual(set0.heads, ['Account', 'Display', 'Forecast', 'Data sources', 'Spot'].concat(tools.length ? ['Surf log'] : []));
+    assert.deepEqual(set0.logTools, tools);
     assert.equal(set0.checked, 'light', 'Display defaults to Always light');
     assert.equal(set0.account, 'Signed in as Test Surfer Sign out');
     await page.locator('#cl-sub-settings [data-mode="dark"]').click();
@@ -220,14 +224,14 @@ module.exports = {
       panel: document.getElementById('cl-tv').getAttribute('data-panel'),
       days: [...document.querySelectorAll('#cl-tv [data-panel="cl-days1"] .cl-tv-card .cl-tv-day')].map(e => e.textContent),
       hero: [...document.querySelectorAll('#cl-tv [data-panel="cl-days1"] .cl-tv-card .cl-tv-num')].map(e => e.textContent),
-      legacyShown: ['kiosk-days-1', 'kiosk-status'].filter(id => { const e = document.getElementById(id); return e && e.getBoundingClientRect().height > 0 && getComputedStyle(e).visibility !== 'hidden'; }),
+      oldTv: ['kiosk-days-1', 'kiosk-status', 'kiosk-radar'].filter(id => document.getElementById(id)),
       scrollW: document.documentElement.scrollWidth, clientW: document.documentElement.clientWidth
     }));
     log('tv', JSON.stringify(tv0));
     assert.equal(tv0.panel, 'cl-days1');
     assert.equal(tv0.days.length, 3);
     assert.equal(tv0.days[0], 'Today');
-    assert.deepEqual(tv0.legacyShown, [], 'the classic Choc TV panels stay hidden under the clean one');
+    assert.deepEqual(tv0.oldTv, [], 'the old Choc TV panels are gone, not hidden underneath');
     assert.ok(tv0.scrollW <= tv0.clientW, 'Choc TV fits the screen');
     await ctx.screenshot('clean-tv-days1');
     // Sources (kiosk.js's own card, restyled) opens over the panel and pauses.

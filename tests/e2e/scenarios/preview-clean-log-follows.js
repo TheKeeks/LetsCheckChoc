@@ -26,7 +26,6 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 module.exports = {
   name: 'clean Explore and Methods follow the surf log: a session filed, edited or deleted shows on the ten years at once',
   options: {
-    gate: null,
     viewport: { width: 1180, height: 820 },
     timeoutMs: 150000,
     contextOptions: { reducedMotion: 'reduce' },

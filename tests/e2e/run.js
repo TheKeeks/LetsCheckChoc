@@ -22,23 +22,16 @@
 // raises an uncaught error (pageerror) not allowed via ctx.allowPageError().
 // Each scenario gets a fresh browser context (timezone America/New_York,
 // locale en-US, service workers blocked unless contextOptions says
-// otherwise); init scripts seed the gate/storage/Firebase knobs before any
+// otherwise); init scripts seed the storage/Firebase knobs before any
 // page script runs. Nothing navigates until run() calls ctx.open().
 //
 // ctx API:
 //   ctx.open(path = '/', gotoOpts)   navigate (waitUntil 'domcontentloaded');
 //                                    resets ctx.t0, the zero for every ms below.
-//                                    The new look (previews/clean) is the
-//                                    site's default, so a path that names no
-//                                    look (no preview= / classic=) opens with
-//                                    ?classic=1: those scenarios test the app
-//                                    underneath. To open the default look as
-//                                    a visitor does, name it (?preview=clean)
-//                                    or page.goto(ctx.url('/')).
 //   ctx.waitFor(fnOrExpr, { arg, timeout = 30000, interval = 50, label })
 //                                    poll in the page from Node until truthy →
 //                                    { ms, value }. Works with a paused clock.
-//   ctx.waitForChart({ timeout })    → ms until STATE.forecastChart has hours
+//   ctx.waitForChart({ timeout })    → ms until the forecast is in (STATE.forecastData.marine)
 //   ctx.waitForLoad({ timeout })     → ms until STATE.lastLoadCompletedAt is set
 //   ctx.state(fnOrExpr, arg)         page.evaluate (top-level consts like STATE
 //                                    are reachable by name)
@@ -96,7 +89,6 @@ function loadPlaywright() {
 
 // ── Defaults ───────────────────────────────────────────
 const DEFAULT_OPTIONS = {
-  gate: 'no',              // seed sessionStorage lcc-gate (null = show the boat gate)
   now: FIXTURE_NOW,        // clock start
   clock: 'install',        // 'install' (fake timers, time flows from `now`;
                            //  page.clock.runFor/fastForward/pauseAt work),
@@ -126,11 +118,9 @@ const DEFAULT_NET = {
   proxies: 'dead',         // corsproxy.io 403, allorigins 522 after alloriginsDelayMs, codetabs 503;
                            // 'ok' = proxies work and serve the NDBC fixtures
   alloriginsDelayMs: Number(process.env.E2E_ALLORIGINS_DELAY_MS || 2000),
-  leaflet: 'ok',           // unpkg / jsdelivr leaflet@1.9.4 → tests/fixtures/vendor
   firebase: 'stub',        // gstatic firebasejs → firebase-stub.js | 'abort' | 'hang'
   fonts: 'ok',             // Google Fonts → empty CSS
-  tiles: 'ok',             // map tiles → 1×1 PNG
-  windy: 'ok',             // Windy embeds → blank page
+  tiles: 'ok',             // map tiles (the 3D map's satellite layer) → 1×1 PNG
   fcLive: 'none'           // Sound Check forecast's latest pull (raw.githubusercontent.com …/fc-data/):
                            // 'none' = not published yet (404), so research/ uses the copy that ships
                            // with it | 'abort' | 'hang' | (url, request) => descriptor
@@ -301,13 +291,6 @@ function makeExternalRouter(ctx) {
         return await fulfill(route, { status: 503, delayMs: 200, headers: { 'content-type': 'text/plain', 'access-control-allow-origin': '*' }, body: 'error code: 1200' });
       }
 
-      if ((host === 'unpkg.com' || host === 'cdn.jsdelivr.net') && /leaflet@1\.9\.4\/dist\/leaflet\.(js|css)$/.test(u.pathname)) {
-        if (net.leaflet === 'abort') return await route.abort('connectionfailed');
-        if (net.leaflet === 'hang') { await hang(); return await route.abort('timedout'); }
-        const css = u.pathname.endsWith('.css');
-        return await fulfill(route, { status: 200, headers: { 'content-type': css ? 'text/css' : 'text/javascript', 'access-control-allow-origin': '*' }, file: css ? 'vendor/leaflet-1.9.4.css' : 'vendor/leaflet-1.9.4.js' });
-      }
-
       if (host === 'www.gstatic.com' && u.pathname.startsWith('/firebasejs/')) {
         if (net.firebase === 'abort') return await route.abort('connectionfailed');
         if (net.firebase === 'hang') { await hang(); return await route.abort('timedout'); }
@@ -320,7 +303,7 @@ function makeExternalRouter(ctx) {
         return await fulfill(route, { status: host === 'fonts.googleapis.com' ? 200 : 404, headers: { 'content-type': 'text/css', 'access-control-allow-origin': '*' }, body: '' });
       }
 
-      if (/(^|\.)basemaps\.cartocdn\.com$|(^|\.)tile\.openstreetmap\.org$|^(server|services)\.arcgisonline\.com$/.test(host)) {
+      if (/^(server|services)\.arcgisonline\.com$/.test(host)) {
         if (net.tiles === 'abort') return await route.abort('connectionfailed');
         return await fulfill(route, { status: 200, headers: { 'content-type': 'image/png', 'access-control-allow-origin': '*' }, body: PNG_1PX });
       }
@@ -332,10 +315,6 @@ function makeExternalRouter(ctx) {
         if (mode === 'hang') { await hang(); return await route.abort('timedout'); }
         if (mode !== 'none') throw new Error('net.fcLive: unknown mode ' + mode);
         return await fulfill(route, { status: 404, headers: { 'content-type': 'text/plain', 'access-control-allow-origin': '*' }, body: '404: Not Found' });
-      }
-
-      if (/(^|\.)windy\.com$/.test(host)) {
-        return await fulfill(route, { status: 200, headers: { 'content-type': 'text/html' }, body: '<!doctype html><title>windy stub</title>' });
       }
 
       ctx.unhandled.push(url);
@@ -368,7 +347,6 @@ function createCtx({ page, context, baseURL, slug, options }) {
     url: (p = '/') => new URL(p, baseURL).href,
     async open(p = '/', opts = {}) {
       ctx.t0 = Date.now();
-      if (!/[?&](preview|classic)=/.test(p)) p += (p.includes('?') ? '&' : '?') + 'classic=1';
       return page.goto(ctx.url(p), Object.assign({ waitUntil: 'domcontentloaded' }, opts));
     },
     // Poll fn/expression in the page (Node-side polling, so it works with a
@@ -395,7 +373,7 @@ function createCtx({ page, context, baseURL, slug, options }) {
     },
     // ms from ctx.open() until the forecast chart has been laid out.
     async waitForChart({ timeout = 60000 } = {}) {
-      const r = await ctx.waitFor('!!(STATE.forecastChart && STATE.forecastChart.times && STATE.forecastChart.times.length)', { timeout, label: 'forecast chart drawn' });
+      const r = await ctx.waitFor('!!(STATE.forecastData && STATE.forecastData.marine && STATE.forecastData.marine.hourly.time.length)', { timeout, label: 'forecast in' });
       return r.ms;
     },
     // ms from ctx.open() until _loadAllDataImpl finished (STATE.lastLoadCompletedAt).
@@ -450,8 +428,7 @@ async function runScenario(browser, devices, baseURL, file) {
 
   // Init scripts run before any page script on every navigation.
   const fb = options.firebase || {};
-  await context.addInitScript(({ gate, storage, fb }) => {
-    try { if (gate) sessionStorage.setItem('lcc-gate', gate); } catch (_) { /* opaque origin */ }
+  await context.addInitScript(({ storage, fb }) => {
     if (storage) {
       try { for (const [k, v] of Object.entries(storage.local || {})) localStorage.setItem(k, v); } catch (_) {}
       try { for (const [k, v] of Object.entries(storage.session || {})) sessionStorage.setItem(k, v); } catch (_) {}
@@ -463,7 +440,7 @@ async function runScenario(browser, devices, baseURL, file) {
     if (fb.anonMs != null) window.__FB_ANON_MS = fb.anonMs;
     if (fb.fsMs != null) window.__FB_FS_MS = fb.fsMs;
     if (fb.noStorage) window.__FB_NO_STORAGE = true;
-  }, { gate: options.gate, storage: options.storage, fb });
+  }, { storage: options.storage, fb });
 
   if (options.clock === 'install') await context.clock.install({ time: new Date(options.now) });
   else if (options.clock === 'fixed') await context.clock.setFixedTime(new Date(options.now));

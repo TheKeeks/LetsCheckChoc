@@ -33,29 +33,22 @@ test('fetchTidePredictions writes the key the loads read', async () => {
   assert.ok(app.localStorage.getItem(readKey), `${readKey} missing; have ${Object.keys(app.localStorage)}`);
 });
 
-for (const [label, start] of [
-  ['buoy (Choc)', (app, choc) => ['loadAllData', choc]],
-  ['pin', () => ['loadPinData', 41.2757, -71.9633]]
-]) {
-  test(`${label} load: every cache key the cache-first paint reads was written by the last load`, async () => {
-    let offline = false;
-    const app = loadApp({ fetch: fixtureFetch({ overrides: [[() => offline, hang]] }) });
-    const choc = prepareScene(app);
-    const [fn, ...args] = start(app, choc);
-    await runLoad(app, fn, ...args);
-    const written = new Set(Object.keys(app.localStorage));
+test('Choc load: every cache key the cache-first paint reads was written by the last load', async () => {
+  let offline = false;
+  const app = loadApp({ fetch: fixtureFetch({ overrides: [[() => offline, hang]] }) });
+  const choc = prepareScene(app);
+  await runLoad(app, 'loadAllData', choc);
+  const written = new Set(Object.keys(app.localStorage));
 
-    // Second load with the network hung: only the cache can paint.
-    offline = true;
-    const STATE = app.get('STATE');
-    STATE.forecastChart = null;
-    const reads = readsDuring(app, () => app.call(fn, ...args)).filter(k => k.startsWith('lcc-cache-'));
-    assert.ok(reads.length >= 4, `cache-first reads: ${reads}`);
-    assert.deepEqual(reads.filter(k => !written.has(k)), [], 'read keys nobody wrote');
-    assert.equal(STATE.forecastChart && STATE.forecastChart.times.length, 168, 'chart painted from cache before any reply');
-    assert.equal(app.dom.byId('forecast-cache-indicator').style.display, '', '"Cached · refreshing…" shown');
-  });
-}
+  // Second load with the network hung: only the cache can paint.
+  offline = true;
+  const STATE = app.get('STATE');
+  STATE.forecastData = null;
+  const reads = readsDuring(app, () => app.call('loadAllData', choc)).filter(k => k.startsWith('lcc-cache-'));
+  assert.ok(reads.length >= 4, `cache-first reads: ${reads}`);
+  assert.deepEqual(reads.filter(k => !written.has(k)), [], 'read keys nobody wrote');
+  assert.equal(STATE.forecastData && STATE.forecastData.marine.hourly.time.length, 168, 'forecast up from the cache before any reply');
+});
 
 test('legacy "-d3-h168" tide copies are dropped at startup', () => {
   const app = loadApp({

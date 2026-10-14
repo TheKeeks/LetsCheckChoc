@@ -9,7 +9,7 @@ const sp = s => (s || '').replace(/[  ]/g, ' ').replace(/\s+/g, ' ').trim();
 
 module.exports = {
   name: 'Sound Check: the Past bar\'s month opens the ten years over the map, a day opens back on the map',
-  options: { gate: null, viewport: { width: 390, height: 844 }, contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 } },
+  options: { viewport: { width: 390, height: 844 }, contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 } },
   async run({ page, ctx, assert, log }) {
     await ctx.open('/research/index.html?view=map&fill=1&theme=light');
     await ctx.waitFor(() => window.CHOC && CHOC.trip && CHOC.tenYears && CHOC.trip.fc.d, { label: 'map' });

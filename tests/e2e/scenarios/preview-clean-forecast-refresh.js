@@ -22,7 +22,7 @@ const serveLive = (run, delayMs) => (url) => {
 
 module.exports = {
   name: 'clean forecast ↻: the header refresh brings a newer run to the tab and its map, reloads the data, and says what it found',
-  options: { gate: null, viewport: { width: 390, height: 844 }, contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 } },
+  options: { viewport: { width: 390, height: 844 }, contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 } },
   async run({ page, ctx, assert, log }) {
     const ship = JSON.parse(ctx.fixture('soundcheck/fc.json'));          // made 10:30 AM, covers now
     ctx.serve('/research/fc/fc.json', { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify(ship) });

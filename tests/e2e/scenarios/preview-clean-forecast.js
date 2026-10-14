@@ -25,7 +25,7 @@ const sp = s => (s || '').replace(/[  ]/g, ' ').replace(/\s+/g, ' ').trim();
 
 module.exports = {
   name: 'clean forecast: Sound Check headline and swells with share bars, ray map, week scrubber, Wilderness, buoy check, wide layout',
-  options: { gate: null, viewport: { width: 390, height: 844 }, contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 } },
+  options: { viewport: { width: 390, height: 844 }, contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 } },
   async run({ page, ctx, assert, log }) {
     ctx.serve('/research/fc/fc.json', { status: 200, headers: { 'content-type': 'application/json' }, body: ctx.fixture('soundcheck/fc.json') });
     await ctx.state(() => { try { localStorage.removeItem('lcc-f-spot'); } catch (_) { /* fine */ } }).catch(() => {});

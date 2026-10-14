@@ -26,7 +26,7 @@ const sp = s => (s || '').replace(/[  ]/g, ' ').replace(/\s+/g, ' ').trim();
 
 module.exports = {
   name: 'clean forecast: the map\'s storms at Ocean zoom (waves, pressure, lows and tracks), play, layer off, no pressure map',
-  options: { gate: null, viewport: { width: 390, height: 844 }, contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 },
+  options: { viewport: { width: 390, height: 844 }, contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 },
     storage: { local: { 'lcc-f-zoom': 'ocean' } } },   // (seeded before every load: each boot opens on the Ocean view)
   async run({ page, ctx, assert, log }) {
     const FIX = ctx.fixture('soundcheck/fc.json');

@@ -16,7 +16,7 @@ const sp = s => (s || '').replace(/[  ]/g, ' ').replace(/\s+/g, ' ').trim();
 
 module.exports = {
   name: 'clean forecast fallbacks: run that misses now, no run, newer live pull, earlier forecasts down',
-  options: { gate: null, viewport: { width: 390, height: 844 }, contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 } },
+  options: { viewport: { width: 390, height: 844 }, contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 } },
   async run({ page, ctx, assert, log }) {
     const boot = async (until, frameNote) => {
       await ctx.open('/?preview=clean');

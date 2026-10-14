@@ -21,14 +21,18 @@ const RELOAD_KEY = 'lcc-kiosk-last-reload';
 // loads as ./?kiosk=1, so that, not 'index.html', is where its HTML lives.
 const DOC_URL = '/?kiosk=1';
 
-// A switchable network: the kiosk page probe, the four code files (the
+// A switchable network: the kiosk page probe, Choc TV's code files (the
 // page's HTML at DOC_URL only) and the two static catalogs. Everything
 // else is offline.
+const CLEAN_FILES = ['previews/clean/theme.js', 'previews/clean/core.js', 'previews/clean/tv.js',
+  'previews/clean/theme.css', 'previews/clean/base.css', 'previews/clean/tv.css'];
+const CODE_CALLS = [DOC_URL, 'app.js', 'kiosk.js', ...CLEAN_FILES].sort();
 function makeNet() {
   const net = {
     calls: [],
     probe: 'ok',                       // 'ok' | 'down' | 'wrong-page'
-    files: { 'index.html': '<script src="kiosk.js"></script>', 'app.js': 'A1', 'kiosk.js': 'K1', 'styles-kiosk.css': 'C1' },
+    files: Object.assign({ 'index.html': '<script src="kiosk.js"></script>', 'app.js': 'A1', 'kiosk.js': 'K1' },
+      Object.fromEntries(CLEAN_FILES.map((f, i) => [f, 'C' + i]))),
     failFiles: new Set(),
     buoys: 'ok',                       // 'ok' | 'down'
     tides: 'ok'
@@ -194,11 +198,11 @@ test('reload guards: a reload stamped before this boot blocks the next for 30 mi
   await b2.app.clock.fastForward(10 * MIN + 1000);
   await b2.app.clock.tick(1000);
   b2.app.run("KIOSK.state = 'rotating'");
-  b2.app.call('kioskToggleInfo', true);
+  b2.app.dom.byId('kiosk-info-overlay').style.display = '';   // tv.js opens the Sources card
   await b2.app.clock.tick(61000);
   assert.equal(probes(net2), 0);
   assert.deepEqual(b2.app.reloads, []);
-  b2.app.call('kioskToggleInfo', false);
+  b2.app.call('kioskCloseInfo');
   await b2.app.clock.tick(61000);
   assert.equal(b2.app.reloads.length, 1);
 });
@@ -237,13 +241,13 @@ test('code signature: force-cache baseline, no-cache polls, reload only on a rea
   const codeCalls = mode => net.calls.filter(c => c.cache === mode && (c.url === DOC_URL || /\.(html|js|css)$/.test(c.url))).map(c => c.url).sort();
   // The page's own URL, not 'index.html': nothing ever loads index.html by
   // name, so force-cache there returned whatever copy an old poll stored.
-  assert.deepEqual(codeCalls('force-cache'), [DOC_URL, 'app.js', 'kiosk.js', 'styles-kiosk.css'],
+  assert.deepEqual(codeCalls('force-cache'), CODE_CALLS,
     'the baseline reads the bytes this page ran, not a deploy that landed after it loaded');
 
   // Unchanged code (a data-only bot deploy): no reload.
   app.call('kioskRefreshTick');
   await app.clock.flush();
-  assert.deepEqual(codeCalls('no-cache'), [DOC_URL, 'app.js', 'kiosk.js', 'styles-kiosk.css']);
+  assert.deepEqual(codeCalls('no-cache'), CODE_CALLS, 'the TV screen\'s own files are signed too, even if tv.js never ran');
   assert.equal(probes(net), 0);
 
   // A failed poll never counts as a change.
@@ -278,18 +282,34 @@ test('code signature: force-cache baseline, no-cache polls, reload only on a rea
   assert.equal(app.reloads.length, 2);
 });
 
-test('code signature: shown in the SOURCES card; no baseline (offline boot) means no deploy reloads', async () => {
+test('code signature: no baseline (offline boot) means no deploy reloads', async () => {
   const net = makeNet();
   net.failFiles.add('kiosk.js');
   const { app } = boot(net);
   await app.clock.flush();
   assert.equal(app.run('KIOSK.codeSig'), null);
-  assert.match(app.call('kioskInfoStatusHTML'), /Choc TV build — · running since 11:00 AM/);
   net.failFiles.clear();
   app.call('kioskRefreshTick');          // takes the baseline now
   await app.clock.flush();
   const sig = app.run('KIOSK.codeSig');
   assert.ok(sig);
-  assert.match(app.call('kioskInfoStatusHTML'), new RegExp('Choc TV build ' + sig.slice(0, 7)));
   assert.deepEqual(app.reloads, []);
+});
+
+test('the TV screen didn\'t start (index.html lccDown): retry a minute later, then every 5 min, behind the guards', async () => {
+  const net = makeNet();
+  const { app } = boot(net);
+  await app.clock.flush();
+  await app.clock.tick(5000);
+  assert.deepEqual(app.reloads, [], 'a healthy TV never reloads for this');
+  app.document.documentElement.classList.add('lcc-down');
+  await app.clock.tick(59 * 1000);
+  assert.deepEqual(app.reloads, [], 'not before a minute');
+  await app.clock.tick(2000);
+  assert.equal(app.reloads.length, 1, 'the first retry, once the probe answers');
+  // The reload stamp holds the next try for 30 min, however often it asks.
+  await app.clock.tick(25 * MIN);
+  assert.equal(app.reloads.length, 1);
+  await app.clock.tick(6 * MIN);
+  assert.equal(app.reloads.length, 2);
 });

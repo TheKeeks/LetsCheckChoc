@@ -31,14 +31,6 @@ test('FORECAST_MODELS lists only models that return swell at Choc', () => {
   assert.ok(got.includes('ncep_gfswave025'), 'NOAA GFS-Wave is offered under its real id');
 });
 
-test('the Auto description names MFWAM, not GFS', () => {
-  const app = loadApp();
-  const auto = app.call('describeForecastModel', '');
-  assert.match(auto, /MFWAM/);
-  assert.doesNotMatch(auto, /GFS/);
-  assert.match(app.call('describeForecastModel', 'dwd_gwam'), /no secondary swell/);
-});
-
 test('a stale stored model id self-heals to Auto and is never requested', async () => {
   const app = loadApp({ storage: { local: { 'lcc-forecast-model': 'gfs_wave025' } }, fetch: fixtureFetch() });
   assert.equal(app.call('getForecastModel'), '');
@@ -55,9 +47,3 @@ test('a valid stored id is kept and sent as models=', async () => {
   assert.match(app.fetchLog.at(-1).url, /models=ncep_gfswave025/);
 });
 
-test('the dropdown is populated from FORECAST_MODELS behind Auto', () => {
-  const app = loadApp();
-  app.call('initForecastModelDropdown');
-  const opts = app.dom.byId('forecast-model-select').children.map(o => o.value);
-  assert.deepEqual([...opts], USABLE_AT_CHOC);
-});

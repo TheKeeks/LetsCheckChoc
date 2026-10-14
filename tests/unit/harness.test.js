@@ -16,12 +16,11 @@ test('app.js and kiosk.js load to completion in the vm sandbox', () => {
   assert.equal(app.document.body.classList.contains('kiosk'), false);
 });
 
-test('?kiosk=1 takes kiosk.js boot branch (gate seeded, body flagged)', () => {
+test('?kiosk=1 takes kiosk.js boot branch (kioskInit after app.js startApp)', () => {
   const app = loadApp({ kiosk: true, search: '?kiosk=1' });
-  assert.equal(app.document.body.classList.contains('kiosk'), true);
-  assert.equal(app.document.body.dataset.kioskPanel, 'days1');
-  assert.equal(app.sessionStorage.getItem('lcc-gate'), 'no');
-  assert.ok(app.document.listeners('DOMContentLoaded').some(f => f === app.get('kioskInit')));
+  const ls = app.document.listeners('DOMContentLoaded');
+  assert.ok(ls.some(f => f === app.get('kioskInit')));
+  assert.ok(ls.indexOf(app.get('startApp')) < ls.indexOf(app.get('kioskInit')), 'the app starts first');
 });
 
 test('fake clock: Date starts at FIXTURE_NOW, stands still, tick fires timers in order', async () => {
@@ -84,7 +83,6 @@ test('fixtureFetch overrides: canned NOAA error body, slow replies lose to the a
   const slow = app.call('fetchJSON', 'https://api.open-meteo.com/v1/forecast?x=1', 10000);
   await app.clock.tick(10000);
   assert.equal(await slow, null);
-  assert.equal(await app.call('fetchText', 'https://api.codetabs.com/v1/proxy?quest=x'), null);
   // Pinned pipeline snapshot, not the bot-updated data/buoy.json.
   const pipe = await app.call('fetchJSON', 'data/buoy.json');
   assert.equal(pipe.fetch_time, '2026-10-01T13:15:38.173974+00:00');
