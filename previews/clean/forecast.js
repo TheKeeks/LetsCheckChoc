@@ -27,8 +27,9 @@
 //     latest reading against the forecasts made 1, 2 and 3 days before
 //     for that hour (Open-Meteo's earlier runs at the buoy); tap for the
 //     last two days.
-// The model forecast is research/fc/fc.json or the bot's newer pull on
-// the fc-data branch, whichever is newer. When neither covers the hour
+// The model forecast is core's CLEAN.model (research/fc/fc.json or the
+// bot's newer pull on the fc-data branch, whichever is newer; Choc TV
+// shows the same one). When neither covers the hour
 // the tab says so instead of showing an old number as now. Missing data
 // stays null and shows "—". Times are the spot's (America/New_York).
 // ════════════════════════════════════════════════════════════════════
@@ -39,8 +40,6 @@
   var C = window.CLEAN, D = C.data, F = C.fmt, U = C.util, I = C.icon;
   var NB = F.NB, DASH = F.DASH, esc = U.esc, isNum = U.isNum;
   var HOUR = 3600e3, DAY = 864e5, M2FT = 3.28084;
-  var FC_SHIP = 'research/fc/fc.json';
-  var FC_LIVE = 'https://raw.githubusercontent.com/TheKeeks/LetsCheckChoc/fc-data/fc/fc.json';
   // the Sound Check map alone (no history), in the Forecast tab's profile
   var MAP_PAGE = 'research/map.html?view=map&fill=1&ui=forecast';
   var ZOOMS = { ocean: 'Ocean', reg: 'Region', fi: 'Fishers' };
@@ -48,19 +47,13 @@
   var PREV = 'https://marine-api.open-meteo.com/v1/marine';
   var BUOY_LL = [40.969, -71.127];        // NDBC 44097 (fc.json carries it as fc.buoy)
   var SPOTS = { choc: { k: 'choc', name: 'Choc' }, wild: { k: 'wild', name: 'Wilderness' } };
-  // Where a swell comes from: one colour everywhere on the tab (rows, bars, and the map's rays near Fishers,
-  // research/map.html's FAM).
-  var FAM = [
-    { name: 'E', rgb: [64, 190, 198] },      //  60-115°
-    { name: 'SE', rgb: [240, 138, 75] },     // 115-160°
-    { name: 'S', rgb: [170, 128, 236] },     // 160-205°
-    { name: 'other', rgb: [140, 154, 168] }
-  ];
-  function fam(d) { return d >= 60 && d < 115 ? 0 : d >= 115 && d < 160 ? 1 : d >= 160 && d < 205 ? 2 : 3; }
+  // Where a swell comes from: one colour everywhere (rows, bars, Choc TV, and the map's rays near Fishers,
+  // research/map.html's FAM): core's.
+  var FAM = C.model.FAM, fam = C.model.fam;
   function rgb(c, a) { return a == null ? 'rgb(' + c.join(',') + ')' : 'rgba(' + c.join(',') + ',' + a + ')'; }
 
   var root = null, E = {};
-  var fc = { steps: null, made: null, runs: null, buoy: BUOY_LL, status: 'loading' };
+  var fc = C.model.state;                 // { steps, made, runs, buoy, status }: core's, read only
   var spot = 'choc';
   var cur = { mode: 'now', i: -1 };       // 'now' follows the clock; 'pick' holds a picked step
   var geom = null, drag = null, rz = null;
@@ -78,7 +71,6 @@
   function err(where, e) { C.err('forecast.' + where, e); }
   function run(where, fn) { try { fn(); } catch (e) { err(where, e); } }
   function setHTML(el, html) { if (el && el.__html !== html) { el.innerHTML = html; el.__html = html; } }
-  function mean(a, b) { var v = [a, b].filter(isNum); return v.length ? v.reduce(function (x, y) { return x + y; }, 0) / v.length : null; }
   function getJSON(url) {
     return fetch(url, { cache: 'no-cache' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
   }
@@ -91,62 +83,15 @@
   // ════════════════════════════════════════════════════════════════════
   // THE MODEL FORECAST
   // ════════════════════════════════════════════════════════════════════
-  function useForecast(d) {
-    if (!d || !d.gfs || !d.gfs.length) return false;
-    if (fc.made && !(Date.parse(d.made) > Date.parse(fc.made))) return false;
-    var ec = {};
-    (d.ec || []).forEach(function (r) { ec[Math.round(Date.parse(r.t) / HOUR)] = r; });
-    var steps = d.gfs.map(function (g) {
-      var t = Date.parse(g.t), e = ec[Math.round(t / HOUR)] || null;
-      return {
-        t: t,
-        choc: { g: isNum(g.choc) ? g.choc : null, e: e && isNum(e.choc) ? e.choc : null },
-        wild: { g: isNum(g.wild) ? g.wild : null, e: e && isNum(e.wild) ? e.wild : null },
-        trains: (g.trains || []).filter(function (x) { return isNum(x.ft) && isNum(x.T) && isNum(x.D); })
-      };
-    }).filter(function (s) { return isNum(s.t); });
-    if (!steps.length) return false;
-    steps.forEach(function (s) { s.choc.m = mean(s.choc.g, s.choc.e); s.wild.m = mean(s.wild.g, s.wild.e); });
-    fc.steps = steps;
-    fc.made = d.made || null;
-    fc.runs = d.runs || null;
-    if (d.buoy && isNum(d.buoy[0]) && isNum(d.buoy[1])) fc.buoy = d.buoy;
-    fc.status = 'ok';
-    return true;
-  }
-  function loadForecast() {
-    var got = function (d) { if (useForecast(d)) render('fc'); };
-    getJSON(FC_SHIP).then(function (d) {
-      got(d);
-      return getJSON(FC_LIVE);
-    }).then(function (d) {
-      got(d);
-      if (fc.status === 'loading') { fc.status = 'failed'; render('fc'); }
-    });
-  }
   // The step nearest the clock, when the run covers it; -1 when it doesn't.
-  function nowStep() {
-    var s = fc.steps; if (!s) return -1;
-    var t = Date.now();
-    if (t < s[0].t - 3 * HOUR || t > s[s.length - 1].t + 90 * 60e3) return -1;
-    var b = 0;
-    for (var i = 1; i < s.length; i++) if (Math.abs(s[i].t - t) < Math.abs(s[b].t - t)) b = i;
-    return b;
-  }
+  function nowStep() { return C.model.nowStep(); }
   function curStep() {
     if (!fc.steps) return -1;
     if (cur.mode === 'pick') return Math.max(0, Math.min(fc.steps.length - 1, cur.i));
     return nowStep();
   }
   // The swells at a step, each with its share of the energy reaching the spot.
-  function parts(s, sp) {
-    var k = SPOTS[sp].k;
-    var tr = s.trains.filter(function (x) { return isNum(x[k]); });
-    var e2 = tr.reduce(function (a, x) { return a + x[k] * x[k]; }, 0);
-    return tr.map(function (x) { return { t: x, v: x[k], share: e2 > 0 ? x[k] * x[k] / e2 : 0 }; })
-      .filter(function (p) { return p.share >= 0.005; })
-      .sort(function (a, b) { return b.share - a.share; });
-  }
+  function parts(s, sp) { return C.model.parts(s, SPOTS[sp].k); }
   function madeAge() {
     var m = Date.parse(fc.made);
     return isNum(m) ? Date.now() - m : null;
@@ -227,7 +172,15 @@
     });
     C.on('tick', function () { render('tick'); });
     renderZoom();
-    loadForecast();
+    C.on('soundcheck', function () { render('fc'); });
+    // ↻ in the header (core's CLEAN.refresh fetches the run, the wind, tides and buoy): the map's own copy of the
+    // run, and the buoy check's earlier forecasts and readings, too
+    C.on('refresh', function () {
+      if (map.status !== 'idle') post({ type: 'lcc-fc-refresh' });
+      prev.at = 0; loadPrevRuns();
+      verif.at = 0; if (sheet) loadVerif();
+    });
+    C.model.load();
     loadPrevRuns();
   }
 
@@ -522,7 +475,8 @@
   function loadPrevRuns() {
     if (prev.status === 'loading') return;
     prev.status = 'loading'; prev.at = Date.now();
-    var url = PREV + '?latitude=' + fc.buoy[0] + '&longitude=' + fc.buoy[1] +
+    var b = fc.buoy || BUOY_LL;
+    var url = PREV + '?latitude=' + b[0] + '&longitude=' + b[1] +
       '&hourly=wave_height,wave_height_previous_day1,wave_height_previous_day2,wave_height_previous_day3&past_days=3&forecast_days=1&timezone=GMT';
     getJSON(url).then(function (d) {
       var hr = d && d.hourly;

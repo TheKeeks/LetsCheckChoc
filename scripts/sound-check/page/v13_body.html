@@ -7,7 +7,7 @@
     <a class="qa" href="#q1-h"><span class="eyebrow">Question 1</span><b>What makes the surf good at Choc?</b><span>The swell that actually reaches the reef, not the buoy's number. The model's height at Choc picks the bigger of two of your sessions <span class="mono" id="qa1M">88%</span> of the time, the raw buoy <span class="mono" id="qa1B">77%</span>. After size comes offshore wind; the tide barely matters.</span></a>
     <a class="qa" href="#q2-h"><span class="eyebrow">Question 2</span><b>How real is the swell window?</b><span>Real, but soft-edged. On only <span class="mono" id="qa2In">40%</span> of Choc's 3 ft+ days does the swell come straight through the gap between Block Island and Montauk; on <span class="mono" id="qa2S">45%</span> it bends in from south of Montauk.</span></a>
   </div>
-  <p class="qs-more">Explore <a href="#how-h">how the model works</a>, <a href="#dec-h">ten years, month by month</a>, <a href="#week-h">the 7-day forecast</a> and <a href="#wild-h">Wilderness</a>. The forecast map, with its storms, is on the Forecast tab; past days, the ten years month by month and the sea floor in 3D are on Explore.</p>
+  <p class="qs-more">Explore <a href="#how-h">how the model works</a>, <a href="#dec-h">ten years, month by month</a>, <a href="#fcs-h">how far ahead to trust the forecast</a> and <a href="#wild-h">Wilderness</a>. The forecast itself, with its map and the storms, is on the Forecast tab; past days, the ten years month by month and the sea floor in 3D are on Explore.</p>
   <a class="methods-map-link" href="../map/index.html" data-open-map>Explore past days <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8h10M8 3l5 5-5 5"/></svg></a>
 </header>
 <section aria-labelledby="trip-h">
@@ -328,22 +328,12 @@
   </figure>
 </section>
 
-<section aria-labelledby="week-h">
+<section aria-labelledby="fcs-h">
   <div class="eyebrow">Forecast</div>
-  <h2 id="week-h">7-day forecast</h2>
-  <figure class="chart">
-    <div class="scroll"><table id="fcDays"></table></div>
-    <figcaption>Best daylight hour each day (from half an hour after sunrise to half an hour before sunset), the average of the two models (each model underneath). "Clean" means the forecast wind suits that spot. Tap a cell to see that hour's swell as rays in How the model works.</figcaption>
-  </figure>
-  <figure class="chart">
-    <div id="fcChart"></div>
-    <div class="legend"><span class="key"><span class="sw" style="background:var(--swell)"></span> Choc</span><span class="key"><span class="sw" style="background:#9be3ee;height:2px"></span> Wilderness</span><span class="key"><span class="sw" style="background:var(--fg-3);height:2px"></span> offshore, at buoy 44097</span><span class="key">solid GFS-Wave · dashed ECMWF</span></div>
-    <figcaption>Hour by hour, Eastern time. Tap to see that hour in How the model works. The map at the top plays the same forecast over the ocean.</figcaption>
-    <p id="fcAsOf2" class="fc-asof mono"></p>
-  </figure>
+  <h2 id="fcs-h">How far ahead can you trust the forecast?</h2>
   <figure class="chart">
     <div class="scroll"><table id="fcScore" class="fcs"></table></div>
-    <figcaption><strong>How far ahead can you trust it?</strong> For each of your 28 logged sessions since 2021, the GFS-Wave forecasts made 1, 2 and 3 days before, read at buoy 44097 and run through the same model and checked against what the buoy then showed arrived. "Orders your sessions" is how well it ranks them against your size ratings (1 is perfect). On average it lands within a twentieth of a foot of what arrived at every lead, and typically misses by 0.3–0.4 ft one to three days out. ECMWF only keeps its last few days of forecasts open, so it can’t be scored back in time; its score builds up from now on.</figcaption>
+    <figcaption>For each of your 28 logged sessions since 2021, the GFS-Wave forecasts made 1, 2 and 3 days before, read at buoy 44097 and run through the same model and checked against what the buoy then showed arrived. "Orders your sessions" is how well it ranks them against your size ratings (1 is perfect). On average it lands within a twentieth of a foot of what arrived at every lead, and typically misses by 0.3–0.4 ft one to three days out. ECMWF only keeps its last few days of forecasts open, so it can’t be scored back in time; its score builds up from now on.</figcaption>
   </figure>
 </section>
 

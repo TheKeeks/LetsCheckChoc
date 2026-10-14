@@ -11,6 +11,18 @@ module.exports = {
     assert.equal(await frame.locator('.sc-title').textContent(), 'Methods');
     assert.equal(await frame.locator('#tripStage').isVisible(), false, 'Methods has no interactive explorer');
     assert.equal(await frame.locator('#how-h').isVisible(), true, 'the scientific explanation remains');
+    // the forecast itself is the Forecast tab's: no 7-day table or chart here, but how far ahead to trust it stays,
+    // and every link in the header lands on a section Methods shows
+    await frame.waitForFunction(() => document.querySelectorAll('#fcScore tbody tr').length === 4, null, { timeout: 15000 });
+    const fc = await frame.evaluate(() => ({
+      week: ['week-h', 'fcDays', 'fcChart', 'fcAsOf2'].filter(id => document.getElementById(id)),
+      score: { title: document.getElementById('fcs-h') && document.getElementById('fcs-h').textContent, shown: !!document.getElementById('fcScore').offsetParent,
+        rows: [...document.querySelectorAll('#fcScore tbody tr td:first-child')].map(td => td.textContent) },
+      hidden: [...document.querySelectorAll('header a[href^="#"]')].map(a => a.getAttribute('href')).filter(h => { const t = document.querySelector(h); return !t || !t.offsetParent; })
+    }));
+    assert.deepEqual(fc.week, [], 'no 7-day forecast of its own');
+    assert.deepEqual(fc.score, { title: 'How far ahead can you trust the forecast?', shown: true, rows: ['The buoy, that hour', '1 day ahead', '2 days ahead', '3 days ahead'] }, 'the scorecard stays');
+    assert.deepEqual(fc.hidden, [], 'the header links land on sections that show');
     assert.equal(await frame.evaluate(() => document.documentElement.dataset.researchTheme), 'light');
     assert.equal(await frame.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(247, 246, 242)');
     const lightInk = await frame.$eval('#q1Pair svg text', node => node.getAttribute('fill'));

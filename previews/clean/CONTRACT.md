@@ -13,12 +13,12 @@ read it and do not edit it.
 | `base.css` | Core | Scoped reset, phone shell, sub-page, shared classes (below) |
 | `theme.js` | Core | Loader: `document.write`s `core.js`, `forecast.js`, `map.js`, `methods.js`, `log.js`, `model.js`, `tv.js` in that order |
 | `core.js` | Core | `window.CLEAN`: shell, theme, gate skip, data adapters, formatting, icons, events, Settings |
-| `forecast.js` + `forecast.css` | Forecast | Forecast tab, built on the Sound Check model: height at Choc or Wilderness, the swells' shares, the map, the week scrubber with play, wind and tide, the buoy check. The map is `research/map.html` (the Sound Check map alone, no history) in a frame, in its forecast profile (`?view=map&fill=1&ui=forecast`): Ocean shows the North Atlantic's wave height with GFS's sea-level pressure, the lows and highs and the storms' tracks (its "Pressure & storms" layer), Region the swell headed for the spot, Fishers each swell's landing rays coloured like its row. The tab sends it the hour, spot and zoom (`postMessage {type: 'lcc-fc', time, spot, zoom}`; the map answers `lcc-fc-ready` or `lcc-fc-failed`), and the map's "3D" button opens the Explore tab in 3D at that hour (`x-open-3d`). Reads its own data (`research/fc/fc.json` or the fc-data pull, Open-Meteo's earlier runs at the buoy, `data/verification.json`); `CLEAN.forecastInfo()` is its read-only state for tests, the map's is `CHOC.trip` in the frame |
-| `map.js` + `map.css` | Map | Explore tab (id `map`, `#map`): frames `map/index.html`, the Sound Check map's past days (`ui=explore`: the ten years month by month beside them, Drop a wave) and the sea floor in 3D from its "3D" button; `x-open-3d` (from the Forecast map) opens it in 3D at a spot and hour |
-| `methods.js` + `methods.css` | Methods | Methods tab, the research explanation |
+| `forecast.js` + `forecast.css` | Forecast | Forecast tab, built on the Sound Check model: height at Choc or Wilderness, the swells' shares, the map, the week scrubber with play, wind and tide, the buoy check. The map is `research/map.html` (the Sound Check map alone, no history) in a frame, in its forecast profile (`?view=map&fill=1&ui=forecast`): Ocean shows the North Atlantic's wave height with GFS's sea-level pressure, the lows and highs and the storms' tracks (its "Pressure & storms" layer), Region the swell headed for the spot, Fishers each swell's landing rays coloured like its row. The tab sends it the hour, spot and zoom (`postMessage {type: 'lcc-fc', time, spot, zoom}`; the map answers `lcc-fc-ready` or `lcc-fc-failed`), and the map's "3D" button opens the Explore tab in 3D at that hour (`x-open-3d`). Reads the Sound Check model through core's `CLEAN.model` (below), and its own data for the buoy check (Open-Meteo's earlier runs at the buoy, `data/verification.json`); `CLEAN.forecastInfo()` is its read-only state for tests, the map's is `CHOC.trip` in the frame. On core's `refresh` event (the header's ↻) it tells the map to ask for the newest run too (`lcc-fc-refresh`) and fetches the buoy check's earlier forecasts and readings again |
+| `map.js` + `map.css` | Map | Explore tab (id `map`, `#map`): frames `map/index.html`, the Sound Check map's past days (`ui=explore`: the ten years month by month beside them, Drop a wave) and the sea floor in 3D from its "3D" button; `x-open-3d` (from the Forecast map) opens it in 3D at a spot and hour. When a session is saved, edited or deleted (`log` with a new `CLEAN.logRev()`) it posts `lcc-log` to the frame; `map/page.js` passes it to the research page, whose ten years read the log again |
+| `methods.js` + `methods.css` | Methods | Methods tab, the research explanation. Posts `lcc-log` to its frame as Explore does |
 | `log.js` + `log.css` | Log | Log tab |
 | `model.js` + `model.css` | Model | My ratings tab (id `model`): the surf-log rating models |
-| `tv.js` + `tv.css` | TV | Choc TV (`?kiosk=1`) |
+| `tv.js` + `tv.css` | TV | Choc TV (`?kiosk=1`) on the Sound Check model (`CLEAN.model`, the Forecast tab's number): day cards with Choc's biggest over the day's incoming tide in daylight and the main swell then; the radar playing the run's daylight steps with each swell's share of Choc (arrows in its colour, thicker for a bigger share) and the week strip (Choc's height). The low, wind, sun and moon come from `CLEAN.data.week()`. Asks `CLEAN.model.refresh()` every 30 min; `CLEAN_TV` is its test hook |
 
 Parts must not edit `core.js`, `theme.js`, `theme.css`, `base.css`, this file,
 `index.html`, `app.js`, `kiosk.js`, `firebase-config.js` or `style*.css`. If a
@@ -35,7 +35,7 @@ no modules, no bundler. Wrap each file in an IIFE and keep its globals inside.
 
 1. Picks the theme (below), sets `html[data-clean-theme]`.
 2. Removes `body[data-era]` (the Win95 styles hang off it) and builds the shell:
-   - **phone**: `#cl-app.cl` = header (`h1` title + date, Settings button), five
+   - **phone**: `#cl-app.cl` = header (`h1` title + date, ↻ on the Forecast tab, Settings button), five
      views `#cl-view-forecast|map|methods|log|model` (`section.cl-view`), fixed tab bar
      (at the bottom on a phone; across the top, icon beside label, from 900 px wide);
      My ratings (`model`) is shown only for a signed-in, nonanonymous account;
@@ -57,7 +57,9 @@ no modules, no bundler. Wrap each file in an IIFE and keep its globals inside.
    `mount` threw) shows "This screen didn't load. Open the classic view". On the
    TV, if no `tv` part has mounted 1.5 s after `load`, core unmounts itself and
    the classic Choc TV takes the screen back (a kiosk never sits blank).
-7. If core itself throws at boot it unmounts: the page is the classic app.
+7. If core itself throws at boot it unmounts: the page is the classic app. Unmounting
+   loads the old look's styles and fonts again (`index.html` `lccLoadClassic`), which
+   the page skips under the new look.
 
 Deep links: `#forecast`, `#map`, `#methods`, `#log`, `#model`, `#settings`.
 The tab hash follows navigation. A signed-out `#model` opens the Log login page.
@@ -105,6 +107,7 @@ The tab hash follows navigation. A signed-out `#model` opens the Log login page.
 | `CLEAN.show(tab)` | Switch to `'forecast' \| 'map' \| 'methods' \| 'log' \| 'model'` (`'map'` is the Explore tab; 120 ms fade, scroll remembered per tab). Forecast/Log/Model also run the legacy `switchTab`; Explore/Methods own their viewers. Signed-out Model requests open Log. Tapping the active tab scrolls to the top. |
 | `CLEAN.tab()` | Current tab (`'tv'` on the TV) |
 | `CLEAN.setTitle(tab, title, sub?)` | Override the header for a tab; `CLEAN.setTitle(tab, null)` restores the default. Defaults: Forecast "Today"/"Tonight" + "Thu 1 Oct", Log "Log", My ratings "My ratings". |
+| `CLEAN.refresh()` | The header's ↻ (Forecast tab only): everything the tab shows, now. The wind, tides and buoy (`loadAllData`, unless a load is running), the Sound Check run (`CLEAN.model.refresh()`), and event `refresh` for the parts' own copies. For 8 s the header says what came of it in place of the date ("New forecast: run 2:00 PM", "Up to date: run 11:00 AM", "No forecast published on GitHub yet", "Couldn’t reach GitHub"). One at a time. → `Promise<'new' \| 'same' \| 'none' \| 'unreachable'>` |
 | `CLEAN.openSettings(section?)` | Opens Settings; `section` scrolls to `'account' \| 'display' \| 'forecast' \| 'sources' \| 'spot'` (e.g. the Forecast part's Details › Data sources row). |
 | `CLEAN.sub.open({ id, title, mount(body, handle), onClose })` | A full-screen sub-page with a back chevron and a serif title (the Settings pattern). One history entry, so the iPhone back swipe, the browser Back and Escape close it. Returns `handle = { el, body, close(), setTitle(t) }`. Stackable. |
 | `CLEAN.sub.close()` / `.depth()` / `.top()` | Close the top page / how many are open / its handle |
@@ -112,9 +115,10 @@ The tab hash follows navigation. A signed-out `#model` opens the Log login page.
 The tab bar and header are hidden while a sub-page is open (as on the Settings
 board). Settings is core's: Account (Sign in with Google / Sign out), Display
 (the four theme modes), Forecast model (picker sub-page, reloads), Data sources
-(per-source time; amber stale, red dead), Spot and buoy (sub-page: forecast
-point, buoy-coords switch, station ids, swell window), and a link back to the
-classic view.
+(per-source time; amber stale, red dead), and Spot and buoy (sub-page: forecast
+point, buoy-coords switch, station ids, swell window). The old look is retired:
+Settings no longer links to it (`?classic=1` still opens it, as an emergency
+fallback).
 
 ## Theme
 
@@ -138,10 +142,12 @@ classic view.
 |---|---|---|
 | `data` | `{ reason: 'forecast' \| 'health' }` | After `renderForecastSet` (cache pre-paint and post-fetch) and `recordDataHealth` (end of every load); coalesced. Parts' `render('data')` runs first. |
 | `model` | — | After `slRetrain` (model scores changed) |
-| `log` | — | After `renderSurfLogTable` (surf log changed / loaded), coalesced |
+| `log` | — | After `renderSurfLogTable` (surf log changed / loaded, or only drawn again: opening the Log tab draws it), coalesced. `CLEAN.logRev()` is a short key that changes only when a session is added, edited or deleted, or finishes saving to the cloud: compare it before costly work |
 | `auth` | `CLEAN.auth()` | After `updateAuthUI` (sign in / out / anonymous) |
 | `authStatus` | `{ available, pending, error }` | Google popup starts, finishes, or fails |
-| `hour` | `idx` | After `applyScrubberToHour` (the shared cursor moved; Choc TV's radar playback fires this every step) |
+| `hour` | `idx` | After `applyScrubberToHour` (the shared cursor moved) |
+| `soundcheck` | `CLEAN.model.state` | A Sound Check run is in, a newer one replaced it, or none could load |
+| `refresh` | — | The header's ↻ was tapped (`CLEAN.refresh()`): fetch your own copies again |
 | `tab` | `tab` | Tab switched |
 | `sub` | `{ id, open }` | Sub-page opened / closed |
 | `theme` | `'day' \| 'night'` | Theme flipped |
@@ -225,9 +231,27 @@ Wind   = { mph, gust, dir, compass, quality }
 
 The app's scrubber hour (the marine forecast's hourly index): `get()` → idx (the
 scrubbed hour, else `nowIndex()`), `set(idx)` (moves the app's scrubber, repaints
-its hidden chart, raises `hour`), `reset()` (back to now), `atNow()`. Choc TV's
-radar playback moves it. The Forecast tab keeps its own hour on the Sound Check
-run's steps and does not move it.
+its hidden chart, raises `hour`), `reset()` (back to now), `atNow()`. The
+Forecast tab and Choc TV keep their own step on the Sound Check run and do not
+move it.
+
+### The Sound Check model — `CLEAN.model`
+
+The wave forecast the Forecast tab and Choc TV show: GFS-Wave and ECMWF read at
+buoy 44097 and carried over the sea floor to Choc and Wilderness
+(`scripts/forecast/fcpull.py`), from `research/fc/fc.json` or the forecast bot's
+newer pull on the fc-data branch, whichever is newer. One copy per page, so the
+two screens can't disagree.
+
+| Member | What |
+|---|---|
+| `state` | `{ steps, made, runs, buoy, status: 'loading' \| 'ok' \| 'failed', checkedAt }`, read only. A step: `{ t, hs, trains, choc: { g, e, m }, wild: { g, e, m } }`: `g` GFS-Wave, `e` ECMWF (null without a row there), `m` their mean (one model when the other has no number); `hs` offshore at the buoy (GFS-Wave); `trains` GFS-Wave's swells at the buoy, each with its height at both spots. Every 3 h, 6 h after day 6 |
+| `load()` | Fetch once (shipped copy, then the pull); later calls do nothing. Raises `soundcheck` |
+| `refresh()` | Ask again (the pull past GitHub's cache; the shipped copy too while nothing has loaded), after the first load, one ask at a time. → `Promise<'new' \| 'same' \| 'none' \| 'unreachable'>`: a newer run went up, the newest is on show already, GitHub has none published, GitHub didn't answer |
+| `stepAt(t)` / `nowStep()` | The step nearest a time / now, or -1 when the run doesn't cover it (3 h before its first step to 90 min after its last) |
+| `at(t, spot)` | The spot's height (`'choc'` \| `'wild'`) at any time inside the run: the mean, straight between the steps either side; null outside it |
+| `parts(step, spot)` | The step's swells with their share of the energy reaching the spot (`{ t: train, v, share }`), biggest first, shares under half a percent left off |
+| `FAM`, `fam(deg)` | Where a swell comes from (E, SE, S, other) and its colour, the same on every screen and on the map's rays |
 
 ## Formatting — `CLEAN.fmt`
 
@@ -341,8 +365,9 @@ a `.cl-sub` for a 1440 px comparison window.
   relies on without calling through.
 - Choc TV: `tv.js` owns `#cl-tv`. The legacy kiosk keeps running underneath
   (rotation timers, 15-min refresh, self-heal reloads, `kioskPause` on every
-  pointerdown); tv.js decides what to reuse (e.g. `kioskDaySummary`,
-  `KIOSK_COAST`, `kioskFreshness`) and what to stop.
+  pointerdown); tv.js decides what to reuse (e.g. `KIOSK_COAST`, `kioskWindAt`,
+  the rotation and Sources card) and what to stop. Its swell is `CLEAN.model`'s,
+  not the legacy kiosk's `kioskDaySummary`.
 
 ## Utilities
 

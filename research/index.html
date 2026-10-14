@@ -111,8 +111,6 @@ details.more > summary { cursor: pointer; font-family: var(--display); font-size
 details.more > summary::before { content: '+ '; color: var(--swell); font-family: var(--mono); }
 details.more[open] > summary::before { content: '− '; }
 details.more > section, details.more > figure { margin-top: 14px; }
-.fcpick { background: transparent; border: 1px solid #2c3b49; padding: 4px 8px; font-size: .82rem; white-space: nowrap; }
-#fcDays { min-width: 0; } #fcDays td { white-space: nowrap; }
 
 /* charts */
 .chart svg { width: 100%; height: auto; display: block; overflow: visible; }
@@ -251,8 +249,6 @@ html.hub-lock, html.hub-lock body { overflow: hidden; }
 .fc-tl svg { display: block; }
 .fc-tl .tl-t { fill: var(--fg-3); font: 10px var(--mono); }
 .fc-tl .tl-k { fill: var(--fg-2); font: 10px var(--mono); }
-.fc-asof { font-size: .72rem; color: var(--fg-3); margin: 0; }
-.fc-m { display: block; font-size: .72rem; color: var(--fg-3); font-family: var(--mono); }
 .fcs td, .fcs th { padding: 5px 10px; } .fcs td.num, .fcs th.num { text-align: right; }
 .hub-panel { width: 226px; }
 .hub-mrow { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -380,7 +376,7 @@ body { margin: 0; }
     <a class="qa" href="#q1-h"><span class="eyebrow">Question 1</span><b>What makes the surf good at Choc?</b><span>The swell that actually reaches the reef, not the buoy's number. The model's height at Choc picks the bigger of two of your sessions <span class="mono" id="qa1M">88%</span> of the time, the raw buoy <span class="mono" id="qa1B">77%</span>. After size comes offshore wind; the tide barely matters.</span></a>
     <a class="qa" href="#q2-h"><span class="eyebrow">Question 2</span><b>How real is the swell window?</b><span>Real, but soft-edged. On only <span class="mono" id="qa2In">40%</span> of Choc's 3 ft+ days does the swell come straight through the gap between Block Island and Montauk; on <span class="mono" id="qa2S">45%</span> it bends in from south of Montauk.</span></a>
   </div>
-  <p class="qs-more">Explore <a href="#how-h">how the model works</a>, <a href="#dec-h">ten years, month by month</a>, <a href="#week-h">the 7-day forecast</a> and <a href="#wild-h">Wilderness</a>. The forecast map, with its storms, is on the Forecast tab; past days, the ten years month by month and the sea floor in 3D are on Explore.</p>
+  <p class="qs-more">Explore <a href="#how-h">how the model works</a>, <a href="#dec-h">ten years, month by month</a>, <a href="#fcs-h">how far ahead to trust the forecast</a> and <a href="#wild-h">Wilderness</a>. The forecast itself, with its map and the storms, is on the Forecast tab; past days, the ten years month by month and the sea floor in 3D are on Explore.</p>
   <a class="methods-map-link" href="../map/index.html" data-open-map>Explore past days <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8h10M8 3l5 5-5 5"/></svg></a>
 </header>
 <section aria-labelledby="trip-h">
@@ -701,22 +697,12 @@ body { margin: 0; }
   </figure>
 </section>
 
-<section aria-labelledby="week-h">
+<section aria-labelledby="fcs-h">
   <div class="eyebrow">Forecast</div>
-  <h2 id="week-h">7-day forecast</h2>
-  <figure class="chart">
-    <div class="scroll"><table id="fcDays"></table></div>
-    <figcaption>Best daylight hour each day (from half an hour after sunrise to half an hour before sunset), the average of the two models (each model underneath). "Clean" means the forecast wind suits that spot. Tap a cell to see that hour's swell as rays in How the model works.</figcaption>
-  </figure>
-  <figure class="chart">
-    <div id="fcChart"></div>
-    <div class="legend"><span class="key"><span class="sw" style="background:var(--swell)"></span> Choc</span><span class="key"><span class="sw" style="background:#9be3ee;height:2px"></span> Wilderness</span><span class="key"><span class="sw" style="background:var(--fg-3);height:2px"></span> offshore, at buoy 44097</span><span class="key">solid GFS-Wave · dashed ECMWF</span></div>
-    <figcaption>Hour by hour, Eastern time. Tap to see that hour in How the model works. The map at the top plays the same forecast over the ocean.</figcaption>
-    <p id="fcAsOf2" class="fc-asof mono"></p>
-  </figure>
+  <h2 id="fcs-h">How far ahead can you trust the forecast?</h2>
   <figure class="chart">
     <div class="scroll"><table id="fcScore" class="fcs"></table></div>
-    <figcaption><strong>How far ahead can you trust it?</strong> For each of your 28 logged sessions since 2021, the GFS-Wave forecasts made 1, 2 and 3 days before, read at buoy 44097 and run through the same model and checked against what the buoy then showed arrived. "Orders your sessions" is how well it ranks them against your size ratings (1 is perfect). On average it lands within a twentieth of a foot of what arrived at every lead, and typically misses by 0.3–0.4 ft one to three days out. ECMWF only keeps its last few days of forecasts open, so it can’t be scored back in time; its score builds up from now on.</figcaption>
+    <figcaption>For each of your 28 logged sessions since 2021, the GFS-Wave forecasts made 1, 2 and 3 days before, read at buoy 44097 and run through the same model and checked against what the buoy then showed arrived. "Orders your sessions" is how well it ranks them against your size ratings (1 is perfect). On average it lands within a twentieth of a foot of what arrived at every lead, and typically misses by 0.3–0.4 ft one to three days out. ECMWF only keeps its last few days of forecasts open, so it can’t be scored back in time; its score builds up from now on.</figcaption>
   </figure>
 </section>
 
@@ -1554,10 +1540,9 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   };
   // a list of short "label value" lines; a row with no value is a small heading over the lines below it
   window.CHOC.kv = (rows, cls) => `<dl class="kv${cls ? ' ' + cls : ''}">${rows.filter(Boolean).map(([k, v]) => (v == null ? `<dt class="kv-h">${k}</dt>` : `<dt>${k}</dt><dd>${v}</dd>`)).join('')}</dl>`;
-  // a swell picked elsewhere on the page (a forecast hour, a remembered day) is shown in Part 1's
+  // a swell picked elsewhere on the page (a day in Check a date) is shown in Part 1's
   // forward-ray figure: its strongest train
   const state = { trains: null, label: '' };
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   function compute() {
     const tr = state.trains; if (!tr || !tr.length || !window.CHOC.frSet) return;
     const m = tr.reduce((x, y) => (y.h > x.h ? y : x));
@@ -1579,7 +1564,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   };
   window.CHOC.fcData = Promise.all([fcGet(FC_LIVE, 6000), fcGet('fc/')]).then(([live, here]) => (live && (!here || live.made > here.made) ? live : here || null));
   // ↻ under the map's timeline: ask GitHub again for the latest pull and, when it is newer than the forecast on show,
-  // put it up everywhere the page shows the forecast (the map and the 7-day table). 'new' | 'same' | 'none' | 'unreachable'
+  // put it up on the map. 'new' | 'same' | 'none' | 'unreachable'
   const fcSubs = [];
   window.CHOC.onForecast = (fn) => { fcSubs.push(fn); };
   window.CHOC.fcRefresh = async () => {
@@ -1590,56 +1575,6 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     window.CHOC.fcData = Promise.resolve(live); fcSubs.forEach((f) => f(live));
     return 'new';
   };
-  const ETF = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hourCycle: 'h23' });
-  const etp = ms => { const o = {}; for (const p of ETF.formatToParts(new Date(ms))) o[p.type] = p.value; o.h = +o.hour % 24; return o; };
-  const hr12 = h => `${h % 12 || 12}${h < 12 ? 'am' : 'pm'}`;
-  const fcLabel = ms => { const p = etp(ms); return `${p.weekday} ${p.month} ${p.day}, ${hr12(p.h)}`; };
-  const KIND = { w1: 'swell', w2: 'secondary', w3: 'secondary', ww: 'wind' };
-  function showHour(r) {
-    state.trains = r.trains.filter(t => t.T >= 3).map(t => ({ kind: KIND[t.k], h: t.ft / FT, T: t.T, dir: t.D })); state.label = fcLabel(Date.parse(r.t)) + ' (GFS-Wave)';
-    compute(); document.getElementById('how-h').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' });
-  }
-  const gapD = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
-  const windOk = (wd, spot) => wd[0] < 6 || gapD(wd[1], spot === 'choc' ? 335 : 40) <= (spot === 'choc' ? 60 : 70);
-  async function thisWeek() {
-    const f = await window.CHOC.fcData, host = document.getElementById('fcChart'); if (!host) return;
-    if (!f) { host.textContent = 'The forecast file didn’t load.'; return; }
-    const g = f.gfs, n = g.length, ts = g.map(r => Date.parse(r.t));
-    const ec = ts.map(t => { let b = null, bd = 3 * 36e5 + 1; f.ec.forEach(q => { const d = Math.abs(Date.parse(q.t) - t); if (d < bd) { bd = d; b = q; } }); return b; });
-    const S = { cg: g.map(r => r.choc), ce: ec.map(q => (q ? q.choc : null)), wg: g.map(r => r.wild), we: ec.map(q => (q ? q.wild : null)), off: g.map(r => r.hs) };
-    const mean = (a, b) => (b == null ? a : (a + b) / 2), cm = S.cg.map((v, i) => mean(v, S.ce[i])), wm = S.wg.map((v, i) => mean(v, S.we[i]));
-    host.innerHTML = '';
-    const NS = 'http://www.w3.org/2000/svg', el = (nm, a, p) => { const e = document.createElementNS(NS, nm); for (const k in a) e.setAttribute(k, a[k]); p && p.appendChild(e); return e; };
-    const w = 700, h = 220, L = 34, B = 30, T = 12, Rr = 10, all = [...S.off, ...S.cg, ...S.ce, ...S.wg, ...S.we].filter(v => v != null), top = Math.max(3, Math.ceil(Math.max(...all) + 0.5));
-    const svg = el('svg', { viewBox: `0 0 ${w} ${h}`, role: 'img', 'aria-label': 'Forecast for Choc and Wilderness from GFS-Wave and ECMWF, next 7 days' }, host);
-    const x = t => L + (t - ts[0]) / (ts[n - 1] - ts[0]) * (w - L - Rr), y = v => h - B - v / top * (h - B - T);
-    for (let v = 0; v <= top; v += top > 8 ? 2 : 1) { el('line', { x1: L, x2: w - Rr, y1: y(v), y2: y(v), stroke: C.rule }, svg); const t = el('text', { x: L - 6, y: y(v) + 4, 'text-anchor': 'end', fill: C.fg3, 'font-size': 11, 'font-family': css('--mono') }, svg); t.textContent = v + (v === top ? ' ft' : ''); }
-    let lastDay = etp(ts[0]).day;
-    for (let t = ts[0]; t <= ts[n - 1]; t += 36e5) { const p = etp(t); if (p.day !== lastDay && p.h === 0) { lastDay = p.day; el('line', { x1: x(t), x2: x(t), y1: T, y2: h - B, stroke: C.rule, 'stroke-dasharray': '2 4' }, svg); const tx = el('text', { x: x(t) + 4, y: h - 10, fill: C.fg2, 'font-size': 11, 'font-family': css('--mono') }, svg); tx.textContent = `${p.weekday} ${p.day}`; } }
-    const line = (arr, col, wd, dash) => { const d = arr.map((v, i) => (v == null ? '' : `${i && arr[i - 1] != null ? 'L' : 'M'}${x(ts[i]).toFixed(1)},${y(v).toFixed(1)}`)).join(''); el('path', Object.assign({ d, fill: 'none', stroke: col, 'stroke-width': wd, 'stroke-linejoin': 'round' }, dash ? { 'stroke-dasharray': dash } : {}), svg); };
-    line(S.off, C.fg3, 1.3); line(S.we, '#9be3ee', 1.6, '5 3'); line(S.wg, '#9be3ee', 1.8); line(S.ce, C.swell, 2, '5 3'); line(S.cg, C.swell, 2.5);
-    const hl = el('line', { y1: T, y2: h - B, stroke: C.fg, opacity: 0 }, svg), hit = el('rect', { x: L, y: T, width: w - L - Rr, height: h - B - T, fill: 'transparent', style: 'cursor:pointer' }, svg);
-    const idxAt = e => { const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * w; let bi = 0; ts.forEach((t, i) => { if (Math.abs(x(t) - px) < Math.abs(x(ts[bi]) - px)) bi = i; }); return bi; };
-    const f1 = v => (v == null ? '–' : v.toFixed(1));
-    hit.addEventListener('mousemove', e => { const i = idxAt(e); hl.setAttribute('x1', x(ts[i])); hl.setAttribute('x2', x(ts[i])); hl.setAttribute('opacity', 0.6);
-      window.CHOC.showTip(e, `<b>${fcLabel(ts[i])}</b><br>Choc <b>${f1(S.cg[i])}</b> GFS · <b>${f1(S.ce[i])}</b> ECMWF<br>Wilderness ${f1(S.wg[i])} · ${f1(S.we[i])} ft<br>offshore ${f1(S.off[i])} ft · wind ${window.CHOC.windArrow(g[i].wind[1])}${g[i].wind[0]} kn from ${g[i].wind[1]}°<br><i>tap to see the swell rays</i>`); });
-    hit.addEventListener('mouseleave', () => { hl.setAttribute('opacity', 0); window.CHOC.hideTip(); });
-    hit.addEventListener('click', e => showHour(g[idxAt(e)]));
-    // best daylight hour per Eastern day per spot (sunrise + 30 min to sunset - 30 min at Choc), by the two models' average
-    const days = {};
-    ts.forEach((t, i) => { if (!window.CHOC.daylight(t)) return; const p = etp(t); const k = `${p.weekday} ${p.month} ${p.day}`; (days[k] = days[k] || []).push(i); });
-    const cell = (idxs, spot, vals, a, b) => {
-      let bi = idxs[0]; for (const i of idxs) if (vals[i] > vals[bi]) bi = i;
-      const ok = windOk(g[bi].wind, spot);
-      return `<button type="button" class="fcpick" data-i="${bi}"><b>${vals[bi].toFixed(1)} ft</b> ${hr12(etp(ts[bi]).h)} · <span style="color:${ok ? 'var(--offshore)' : 'var(--fg-3)'}">${ok ? 'clean' : 'wind'}</span><span class="fc-m">GFS ${f1(a[bi])} · EC ${f1(b[bi])}</span></button>`;
-    };
-    const tb = document.getElementById('fcDays');
-    tb.innerHTML = '<thead><tr><th>Day</th><th>Choc, best daylight hour</th><th>Wilderness, best daylight hour</th></tr></thead><tbody>' +
-      Object.entries(days).map(([d, idxs]) => `<tr><td class="mono">${d}</td><td>${cell(idxs, 'choc', cm, S.cg, S.ce)}</td><td>${cell(idxs, 'wild', wm, S.wg, S.we)}</td></tr>`).join('') + '</tbody>';
-    tb.querySelectorAll('.fcpick').forEach(b => b.addEventListener('click', () => showHour(g[+b.dataset.i])));
-    const p = etp(Date.parse(f.made)), ao = document.getElementById('fcAsOf2');
-    if (ao) ao.textContent = `Forecast as of ${p.weekday} ${p.month} ${p.day}, ${hr12(p.h)} ET · GFS-Wave and ECMWF ${hr12(etp(Date.parse(f.runs.gfs.replace(/Z$/, ':00Z'))).h)} runs`;
-  }
   // how far ahead to trust it: archived GFS-Wave forecasts for each logged session (fcscore.py)
   if (document.getElementById('fcScore')) fetch('fc/score.json').then(r => (r.ok ? r.json() : null)).catch(() => null).then(s => {
     const tb = document.getElementById('fcScore'); if (!tb || !s) return; const m = s.summary;
@@ -1727,8 +1662,8 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     if (tb) tb.innerHTML = '<thead><tr><th>Day</th><th class="num">Wilderness</th><th class="num">Choc</th><th class="num">Buoy</th><th>Wind at Wilderness</th></tr></thead><tbody>' + s.top.map(t => `<tr><td class="mono">${t.date}</td><td class="num">${t.wild} ft</td><td class="num">${t.choc} ft</td><td class="num">${t.buoy} ft</td><td>${t.wind_ok ? '<span style="color:var(--offshore)">clean</span>' : 'not clean'}${t.wdir != null ? ' · ' + window.CHOC.windArrow(t.wdir) + 'from ' + t.wdir + '°' : ''}</td></tr>`).join('') + '</tbody>';
   }
 
-  kresp('choc'); thisWeek(); window.CHOC.onForecast(thisWeek); wildSection(); dayCheck();
-  addEventListener('lcc-theme-change', () => { kresp('choc'); thisWeek(); wildSection(); });
+  kresp('choc'); wildSection(); dayCheck();
+  addEventListener('lcc-theme-change', () => { kresp('choc'); wildSection(); });
 })();
 
 (function () {
@@ -2774,7 +2709,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     const p = etParts(ms), wall = Date.UTC(+p.year, ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(p.month), +p.day, p.h, +p.minute);
     return ms - (wall - Date.UTC(+p.year, ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(p.month), +p.day));
   }
-  const { sunWin, daylight } = window.CHOC;                 // sunrise and sunset at Choc (shared with the forecast table)
+  const { sunWin, daylight } = window.CHOC;                 // sunrise and sunset at Choc (v13_map.js)
   const COMP = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
   const compass = (d) => COMP[Math.round(((d % 360) + 360) % 360 / 22.5) % 16];
   // clean in light wind or wind near straight offshore: Choc 335 +-60, Wilderness 40 +-70 (as in Part 3)
@@ -3396,7 +3331,9 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   // A time shows the forecast step nearest it; a zoom (sent when the tab's Ocean, Region or Fishers is picked) moves the view.
   if (FCUI) addEventListener('message', (e) => {
     if (e.origin !== location.origin || e.source !== window.parent || window.parent === window) return;
-    const m = e.data; if (!m || m.type !== 'lcc-fc') return;
+    const m = e.data; if (!m) return;
+    if (m.type === 'lcc-fc-refresh') { fcRefreshNow(); return; }   // the tab's ↻ (its bar's own is hidden there)
+    if (m.type !== 'lcc-fc') return;
     if ((m.spot === 'choc' || m.spot === 'wild') && m.spot !== FC.spot) setSpot(m.spot);
     if (m.zoom && ZOOMS[m.zoom]) fcZoom(m.zoom);
     const t = typeof m.time === 'number' ? m.time : Date.parse(m.time || '');
@@ -3412,9 +3349,10 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   function outOfRun(t) { const g = FC.d.gfs; return t < Date.parse(g[0].t) - 3 * 36e5 || t > Date.parse(g[g.length - 1].t) + 90 * 6e4; }
   fcData.then(fcLoad);
   if (window.CHOC.onForecast) window.CHOC.onForecast(fcLoad);
-  // ↻: the latest pull now, without waiting for a reload (a new one is published every 3 hours)
+  // ↻: the latest pull now, without waiting for a reload (a new one is published every 3 hours). On the Forecast tab
+  // the site's header has the ↻ and sends lcc-fc-refresh (above).
   let noteT = 0;
-  $('fcRefresh').addEventListener('click', async () => {
+  async function fcRefreshNow() {
     const b = $('fcRefresh'); if (b.disabled || !window.CHOC.fcRefresh) return;
     clearTimeout(noteT); b.disabled = true; b.classList.add('spin'); $('fcAsOf').textContent = 'Checking for a newer forecast…';
     const r = await window.CHOC.fcRefresh().catch(() => 'unreachable');
@@ -3422,7 +3360,8 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     if (!FC.d) { $('fcAsOf').textContent = 'The forecast file didn’t load.'; return; }
     fcAsOf({ new: 'just updated', same: 'up to date', none: 'nothing published on GitHub yet' }[r] || 'couldn’t reach GitHub');
     noteT = setTimeout(() => fcAsOf(), 8000);               // then the date alone again: a phone's line is too short for both
-  });
+  }
+  $('fcRefresh').addEventListener('click', fcRefreshNow);
   { const st = []; for (let f = 0; f <= 20; f += 1) st.push(`rgb(${hCol(f)}) ${(Math.sqrt(f / 20) * 100).toFixed(1)}%`);   // keys use a square-root scale, like the colors
     for (const kb of document.querySelectorAll('.hub-key i')) kb.style.background = `linear-gradient(90deg, ${st.join(', ')})`; }
 
@@ -4677,9 +4616,11 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   const key = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
   let metric = 'good', sel = null;
   // ── photos from the site's surf log (Firestore surf_logs, read only). The page runs inside the site's
-  // Swell Map tab, so it borrows the site's Firebase connection and sign-in; opened on its own it connects
-  // itself (below). Months and days with photos get a camera; a month lists its photos, a day shows each
-  // logged session with its ratings (size, wind, ride) and notes next to the ratings model's score.
+  // Explore and Methods tabs (Explore one frame further down, inside map/), so it borrows the site's Firebase
+  // connection and sign-in; opened on its own it connects itself (below). Months and days with photos get a
+  // camera; a month lists its photos, a day shows each logged session with its ratings (size, wind, ride) and
+  // notes next to the ratings model's score. A session saved, edited or deleted on the site reads the log
+  // again (CHOC.reloadLog, message lcc-log through methods-theme.js).
   const PH = { month: {}, day: {}, log: {}, logMonth: {} };
   const CAM = '<svg class="dec-cam" viewBox="0 0 16 12" aria-hidden="true"><path d="M1 3.2h3.2l1.3-1.9h5l1.3 1.9H15v8H1z" fill="currentColor"/><circle cx="8" cy="7" r="2.6" fill="#0b1622"/><circle cx="8" cy="7" r="1.5" fill="currentColor"/></svg>';
   const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -4729,19 +4670,39 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     if (!user) await auth.signInAnonymously();
     return fb.firestore();
   }
+  // the site's window when the page is framed by it (Methods: the parent; Explore: the map page's parent), else null
+  function siteWindow() {
+    let w = window;
+    for (let i = 0; i < 3 && w.parent !== w; i++) {
+      w = w.parent;
+      try { if (w.fbFirestore) return w; } catch (e) { return null; }   // another origin: no access
+    }
+    return null;
+  }
+  async function readLog() {
+    const P = siteWindow();
+    let fs = null;
+    if (P) { if (P._fbAuthReady) await P._fbAuthReady; fs = P.fbFirestore; } else fs = await ownFirestore();
+    if (!fs) return null;
+    const snap = await fs.collection('surf_logs').orderBy('createdAt', 'desc').limit(500).get(), out = [];
+    snap.forEach((doc) => { const d = doc.data() || {}; out.push({ when: d.timestamp, ratings: d.ratings, notes: d.notes, who: d.displayName, photos: (d.photos || []).map((ph) => (typeof ph === 'string' ? ph : ph && ph.url)).filter(Boolean) }); });
+    return out;
+  }
+  const showLog = () => readLog().then((out) => { if (out) setLog(out); })
+    .catch(() => { /* offline, blocked or not signed in: the log as it was (none at first) */ });
   // the page's own read of the surf log; done (or given up) when this settles, so tests hand the calendar their own
   // photos after it rather than have it replace them
-  window.CHOC.logLoaded = (async () => {
-    let fs = null;
-    try {
-      let P = null; try { P = window.parent !== window && window.parent.fbFirestore ? window.parent : null; } catch (e) { P = null; }   // another origin: no access
-      if (P) { if (P._fbAuthReady) await P._fbAuthReady; fs = P.fbFirestore; } else fs = await ownFirestore();
-      if (!fs) return;
-      const snap = await fs.collection('surf_logs').orderBy('createdAt', 'desc').limit(500).get(), out = [];
-      snap.forEach((doc) => { const d = doc.data() || {}; out.push({ when: d.timestamp, ratings: d.ratings, notes: d.notes, who: d.displayName, photos: (d.photos || []).map((ph) => (typeof ph === 'string' ? ph : ph && ph.url)).filter(Boolean) }); });
-      setLog(out);
-    } catch (e) { /* offline, blocked or not signed in: no photos */ }
-  })();
+  window.CHOC.logLoaded = showLog();
+  // read it again, after the first read. A call while a read runs makes one more read after it, so the last change shows.
+  let rereading = null, again = false;
+  window.CHOC.reloadLog = () => {
+    if (rereading) { again = true; return rereading; }
+    rereading = window.CHOC.logLoaded.then(showLog).then(() => {
+      rereading = null;
+      if (again) { again = false; return window.CHOC.reloadLog(); }
+    });
+    return rereading;
+  };
   const CAP = {
     good: 'A good day is one whose best 3 hours score 7/10 or better on the ratings model built from your surf log at Choc. Your log has no sessions from November to May, so winter counts are extrapolation.',
     big: 'A big swell day has at least 3 hours at 4 ft or more at the buoy, coming from inside the swell window.',
@@ -4813,7 +4774,11 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     let cal = 'SMTWTFS'.split('').map((d) => `<div class="dec-dh">${d}</div>`).join('') + '<div class="dec-pad"></div>'.repeat(first);
     for (let d = 1; d <= n; d++) {
       const iso = `${key(y, m)}-${String(d).padStart(2, '0')}`, i = window.CHOC.dayIndex(iso), x = D[i];
-      if (!x) { cal += `<div class="dec-d none"><i>${d}</i></div>`; continue; }
+      if (!x) {                                            // no buoy history (yet: it runs through yesterday), maybe a session
+        const lg = PH.day[iso] ? CAM : PH.log[iso] ? '<s class="dec-dot" aria-hidden="true"></s>' : '';
+        cal += `<div class="dec-d none${PH.day[iso] ? ' ph' : PH.log[iso] ? ' lg' : ''}"${lg ? ` role="img" aria-label="${MONTHS[m - 1]} ${d}: no buoy history yet, ${PH.day[iso] ? 'logged with photos' : 'logged'}"` : ''}><i>${d}</i>${lg}</div>`;
+        continue;
+      }
       const ft = x.mh[dl], c = hCol(ft || 0), good = (x.s[dl] || 0) >= 7, light = c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11 > 140;
       const hasPh = !!PH.day[iso], hasLog = !hasPh && !!PH.log[iso];
       cal += `<button type="button" class="dec-d${good ? ' good' : ''}${st.idx === i ? ' on' : ''}${hasPh ? ' ph' : ''}${hasLog ? ' lg' : ''}" data-i="${i}" style="background:rgb(${c});color:${light ? '#10161c' : '#f2f5f8'}" aria-label="${MONTHS[m - 1]} ${d}: Choc ${ft.toFixed(1)} ft${good ? ', good day' : ''}${hasPh ? ', logged with photos' : hasLog ? ', logged' : ''}"><i>${d}</i><b>${ft.toFixed(1)}</b>${hasPh ? CAM : hasLog ? '<s class="dec-dot" aria-hidden="true"></s>' : ''}</button>`;

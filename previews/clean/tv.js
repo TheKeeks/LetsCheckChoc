@@ -9,10 +9,16 @@
 //   • cl-days2  days four to six (A2-TV-Days46)
 //   • cl-radar  always-dark scope: the radar's coastline vectors
 //               (kiosk.js KIOSK_COAST), range rings, the 115–158° cone,
-//               swell and wind arrows converging on the reef, a sweep
-//               once per 6 s, the hour playing forward 1 s per hour,
-//               its readout and the 7-day swell strip (A2-TV-Radar)
-// Day cards come from kiosk.js kioskDaySummary through CLEAN.data.week().
+//               each swell and the wind as arrows converging on the
+//               reef, a sweep once per 6 s, the forecast playing forward
+//               one step a second through daylight, its readout and the
+//               week strip (A2-TV-Radar)
+// The swell is the Sound Check model, the Forecast tab's: GFS-Wave and
+// ECMWF carried over the sea floor to Choc, the two models' mean (core's
+// CLEAN.model). Each day card shows its biggest over the day's incoming
+// tide in daylight; the radar plays the run's steps with each swell's
+// share of Choc. Tides, the low, wind, sun and moon come through
+// CLEAN.data.week() as before.
 //
 // The legacy kiosk keeps running underneath: its rotation timers, touch
 // pause, 15-min refresh, code-signature check, nightly reload and boot
@@ -46,7 +52,7 @@
   var S = {
     mounted: false, restored: false,
     root: null, wrap: null, panels: {}, strip: {}, cur: null, prev: null, outTimer: null,
-    u: 1, fitTimer: null, secTimer: null,
+    u: 1, fitTimer: null, secTimer: null, modelTimer: null,
     play: { idx: -1, timer: null, stepMs: 1000 },
     radarKey: '', chart: null,
     orig: {}, legacyPanels: null
@@ -66,6 +72,19 @@
   }
   function nightTheme() { return C.theme() === 'night'; }
   function loading() { return D.freshness() === 'loading'; }
+
+  // The Sound Check model (core's CLEAN.model, shared with the Forecast tab).
+  var M = C.model, MS = M.state;
+  var REFRESH_MS = 30 * MIN;              // the forecast bot pulls every 3 h; the TV runs for days
+  function modelOk() { return MS.status === 'ok' && !!MS.steps && MS.steps.length > 0; }
+  function steps() { return MS.steps || []; }
+  function famRGB(d) { return 'rgb(' + M.FAM[M.fam(d)].rgb.join(',') + ')'; }
+  function inDaylight(t) {
+    var s = D.sun(new Date(t));
+    return !!(s && s.sunrise && s.sunset && t >= s.sunrise.getTime() && t < s.sunset.getTime());
+  }
+  // Why a card or the radar has no number.
+  function modelGap() { return MS.status === 'loading' ? 'Waiting for the forecast' : MS.status === 'failed' ? 'The forecast didn’t load' : 'No model forecast for this day'; }
 
   // ════════════════════════════════════════════════════════════════════
   // SHELL — panels + status strip
@@ -193,12 +212,6 @@
   function timeB(t) {
     return '<b' + (darkAt(t) ? ' class="cl-tv-dim"' : '') + '>' + esc(F.time(t)) + '</b>';
   }
-  function statusHTML(s) {
-    if (!s) return '';
-    var c = s === 'in' ? 'in' : s === 'edge' ? 'edge' : 'blk';
-    return '<div class="cl-tv-strow"><span class="cl-tv-st cl-tv-st-' + c + '"><i class="cl-tv-dt" aria-hidden="true"></i>' +
-      esc(F.status(s)) + '</span></div>';
-  }
   function qualityHTML(q) {
     if (!q) return '';
     return '<span class="cl-tv-q ' + U.qualityClass(q) + '">' + esc(F.quality(q)) + '</span>';
@@ -210,11 +223,6 @@
   function swLineHTML(period, compass, dir) {
     var t = '@ ' + F.period(period) + (compass ? ' ' + compass : '');
     return '<div class="cl-tv-sw"><span>' + esc(t) + '</span>' + I.swell(dir, 40) + '</div>';
-  }
-  // "Nothing reaches the reef" + "2 ft @ 6 s ESE · 105° · blocked"
-  function blockedHTML(hgt, period, compass, dir) {
-    return '<div class="cl-tv-blk">Nothing reaches the reef</div>' +
-      '<div class="cl-tv-bl"><span class="cl-nowrap">' + esc(F.swell(hgt, period, compass)) + ' ·</span> <span class="cl-nowrap">' + esc(F.deg(dir) + ' · blocked') + '</span></div>';
   }
   function windHTML(w, prefix) {
     if (!w) return '<div class="cl-tv-wd cl-tv-mute"><span>' + (loading() ? DASH : 'No wind forecast') + '</span></div>';
@@ -234,24 +242,50 @@
     } catch (e) { err('noonWind', e); return null; }
   }
 
+  // The day's Choc number: the model's biggest over the incoming tide in
+  // daylight (the low to the next high, as the tide line says), straight
+  // between the run's steps, so the peak is at a step or an end of the
+  // window. Over all daylight when NOAA's tide times are missing, or when
+  // that incoming tide is all in the dark. The swell line is the main
+  // swell then (the biggest share of Choc at the nearest step).
+  // → { h, at, main, allDay } | null (the run doesn't reach that day)
+  function dayModel(d) {
+    if (!modelOk() || !d || !d.sun || !d.sun.sunrise || !d.sun.sunset) return null;
+    var a0 = d.sun.sunrise.getTime(), b0 = d.sun.sunset.getTime(), a = a0, b = b0, lo = d.low, allDay = true;
+    if (lo && lo.t && lo.until && !d.tidesDown) {
+      var a1 = Math.max(a0, lo.t.getTime()), b1 = Math.min(b0, lo.until.getTime());
+      if (b1 > a1) { a = a1; b = b1; allDay = false; }
+    }
+    var ts = [a, b];
+    steps().forEach(function (s) { if (s.t > a && s.t < b) ts.push(s.t); });
+    var best = null;
+    ts.forEach(function (t) {
+      var v = M.at(t, 'choc');
+      if (isNum(v) && (!best || v > best.h)) best = { h: v, at: t };
+    });
+    if (!best) return null;
+    var k = M.stepAt(best.at), ps = k >= 0 ? M.parts(steps()[k], 'choc') : [];
+    best.main = ps.length ? ps[0].t : null;
+    best.allDay = allDay;
+    return best;
+  }
+
   function cardHTML(d, label) {
     var h = '<div class="cl-tv-day cl-serif">' + esc(label) + '</div>';
     if (!d) return '<article class="cl-tv-card">' + h + heroHTML(DASH) + '</article>';
-    var sw = d.swell, st = d.status, blocked = st === 'blocked';
-    if (!sw) {
-      h += heroHTML(DASH) + '<div class="cl-tv-sw cl-tv-mute"><span>' + (loading() ? 'Waiting for the forecast' : 'No swell forecast') + '</span></div>';
-    } else if (blocked) {
-      h += blockedHTML([sw.min, sw.max], sw.period, sw.compass, sw.dir);
+    var m = dayModel(d);
+    if (!m) {
+      h += heroHTML(DASH) + '<div class="cl-tv-sw cl-tv-mute"><span>' + esc(modelGap()) + '</span></div>';
     } else {
-      h += heroHTML(F.range(sw.min, sw.max), 'ft') + swLineHTML(sw.period, sw.compass, sw.dir);
+      h += heroHTML(F.num(m.h), 'ft');
+      if (m.main) h += swLineHTML(m.main.T, F.compass(m.main.D), m.main.D);
     }
-    h += statusHTML(st);
-    // NOAA's tide predictions down (CO-OPS answers "No Predictions"):
-    // kioskDaySummary reads the day's swell over all daylight instead of
-    // the incoming tide (tidesDown). The card says so, as the classic
-    // Choc TV's "NO TIDE DATA — ALL-DAY SWELL", so a call that changed
-    // with the reading doesn't change silently.
-    var allDay = !!(d.tidesDown && sw);
+    // NOAA's tide predictions down (CO-OPS answers "No Predictions"), or
+    // the day's incoming tide all in the dark: the card reads the day's
+    // swell over all daylight instead, and says so, as the classic Choc
+    // TV's "NO TIDE DATA — ALL-DAY SWELL", so a call that changed with the
+    // reading doesn't change silently.
+    var allDay = !!(m && m.allDay);
     // Two no-break groups: as one, "swell over all daylight" is wider
     // than a card and the fit pass would shrink the tide and wind lines
     // by a fifth; a third line at full size reads better across the room.
@@ -259,7 +293,7 @@
     // Tide leads with the time of the low.
     var lo = d.low;
     if (lo && lo.t) {
-      var txt = !blocked && !allDay && lo.until
+      var txt = !allDay && lo.until
         ? '<span class="cl-nowrap">Incoming ' + timeB(lo.t) + '</span> <span class="cl-nowrap">until ' + timeB(lo.until) + '</span>'
         : '<span class="cl-nowrap">Low ' + timeB(lo.t) + (allDay ? ' ·' : '') + '</span>' + (allDay ? ' ' + ALL_DAY : '');
       h += '<div class="cl-tv-win">' + I.tide(38) + '<span>' + txt + '</span></div>';
@@ -276,7 +310,7 @@
         (moon && isNum(moon.pct) ? (sun ? '<br>' : '') + 'Moon ' + moon.pct + '%' : '') +
         '</div>';
     }
-    return '<article class="cl-tv-card' + (blocked ? ' is-blk' : '') + '">' + h + '</article>';
+    return '<article class="cl-tv-card">' + h + '</article>';
   }
 
   function bannerHTML() {
@@ -403,15 +437,19 @@
     return { d: 'M' + pt(tail) + 'L' + pt(tip) + 'M' + pt(arm(34)) + 'L' + pt(tip) + 'L' + pt(arm(-34)), tail: tail };
   }
   function nearBearing(dir, lo, hi) { return isNum(dir) && dir >= lo && dir <= hi; }
-  function scopeTopSVG(sw, w) {
+  // Each swell at buoy 44097 points at the reef from where it comes,
+  // in its colour (where it comes from: E, SE, S, the Forecast tab's),
+  // longer and thicker for a bigger share of Choc's energy; the biggest
+  // share on top. The wind arrow is the forecast at the beach.
+  function scopeTopSVG(ps, w) {
     var o = [];
     var e1 = at(WIN_MIN, SC.cone), e2 = at(WIN_MAX, SC.cone);
     o.push('<path class="cone" d="M220 220L' + pt(e1) + 'A' + SC.cone + ' ' + SC.cone + ' 0 0 1 ' + pt(e2) + 'Z"/>');
-    if (sw && isNum(sw.dir)) {
-      var len = U.clamp(60 + Math.sqrt(sw.h * sw.h * (sw.period || 1)) * 30, 80, 178);
-      var cls = sw.status === 'in' ? 'in' : sw.status === 'edge' ? 'edge' : 'blk';
-      o.push('<path class="arr sa-' + cls + '" d="' + arrowPath(sw.dir, len).d + '"/>');
-    }
+    var shown = (ps || []).slice(0, 3);
+    shown.slice().reverse().forEach(function (p) {
+      var len = U.clamp(80 + p.share * 98, 80, 178);
+      o.push('<path class="arr sa" style="stroke:' + famRGB(p.t.D) + ';stroke-width:' + r1(3 + 6 * p.share) + '" d="' + arrowPath(p.t.D, len).d + '"/>');
+    });
     if (w && isNum(w.dir) && isNum(w.mph)) {
       o.push('<path class="arr wa" d="' + arrowPath(w.dir, U.clamp(50 + w.mph * 9, 70, 175)).d + '"/>');
     }
@@ -419,7 +457,7 @@
     o.push('<text class="n" x="220" y="30" text-anchor="middle">N</text>');
     // The cone's real-world ends. An arrow coming in near 115° would run
     // through the SW Pt label, so the label drops below the edge then.
-    var low = nearBearing(sw && sw.dir, 92, 128) || nearBearing(w && w.dir, 92, 128);
+    var low = shown.some(function (p) { return nearBearing(p.t.D, 92, 128); }) || nearBearing(w && w.dir, 92, 128);
     var ly = low ? 330 : 268;
     o.push('<text class="lab" x="436" y="' + ly + '" text-anchor="end">SW Pt Block</text>');
     o.push('<text class="lab" x="436" y="' + (ly + 19) + '" text-anchor="end">' + WIN_MIN + '°</text>');
@@ -428,186 +466,133 @@
     return '<svg viewBox="0 0 440 440" aria-hidden="true" focusable="false">' + o.join('') + '</svg>';
   }
 
-  // The biggest train that reaches the reef (in window or at the edge),
-  // the biggest blocked one and every train once, as the phone's chart
-  // splits them. `any`: the hour has a swell reading at all (0 ft is a
-  // reading; a missing one is not).
-  function splitTrains(hr) {
-    var all = [], reach = null, blocked = null, any = false;
-    if (hr) [hr.swell].concat(hr.others || []).forEach(function (t) {
-      if (t && isNum(t.h)) any = true;
-      if (!t || !isNum(t.h) || t.h <= 0 || all.indexOf(t) >= 0) return;
-      all.push(t);
-      if (t.status === 'in' || t.status === 'edge') { if (!reach || t.h > reach.h) reach = t; }
-      else if (t.status === 'blocked') { if (!blocked || t.h > blocked.h) blocked = t; }
-    });
-    return { reach: reach, blocked: blocked, all: all, any: any };
-  }
-
-  // ── 7-day swell strip (viewBox 1100 × 205) ─────────────────────────
-  var CW = 1100, PLOT_TOP = 14, BASE = 154, BAND_Y = 174, BAND_H = 12, CUR_H = 190;
+  // ── The week strip (viewBox 1100 × 205) ────────────────────────────
+  // Choc's height through the run, as the Forecast tab's week chart:
+  // green is the two models' mean, the lighter band over it runs between
+  // GFS-Wave and ECMWF. Straight lines between the run's steps (every
+  // 3 h, 6 h after day 6); a step with no number breaks the shape, and
+  // its ends slope to the baseline over half a step. Night is shaded.
+  var CW = 1100, PLOT_TOP = 14, BASE = 174, CUR_H = 190, GAP_MS = 6.5 * HOUR;
   function buildChart() {
     var t0 = U.startOfDay(new Date()).getTime(), span = 7 * DAY;
-    var hrs = D.hours() || [];
     var X = function (t) { return (t - t0) / span * CW; };
-    // Swell per hour as the phone's chart reads the reef (app.js
-    // _effectiveInWindowSwell): solid = the part that reaches the reef,
-    // each train (primary + secondary) weighted by its alignment with
-    // the window (1 inside 115–158°, fading to 0 over 30° outside);
-    // ghost = all the swell out there, both trains, behind it. A train
-    // sitting on the window's edge then fades in and out instead of
-    // flicking the fill on and off hour to hour. The band is the hero's
-    // in / edge / blocked call in blocks of 3 hours or more (below).
     var rows = [], maxH = 2;
-    hrs.forEach(function (hr) {
-      if (!hr || !hr.at) return;
-      var t = hr.at.getTime();
-      if (t < t0 - HOUR || t > t0 + span + HOUR) return;
-      var tr = splitTrains(hr), inW = null, tot = null;
-      if (tr.any) {                         // no swell reading: a gap, not 0 ft
-        inW = 0; tot = 0;
-        tr.all.forEach(function (x) { inW += U.alignment(x.dir) * x.h; tot += x.h; });
-        maxH = Math.max(maxH, tot);
-      }
-      rows.push({ t: t, x: X(t), sw: inW, gh: tot, st: tr.reach ? tr.reach.status : tr.blocked ? 'blocked' : null });
+    steps().forEach(function (s) {
+      if (s.t < t0 - 6 * HOUR || s.t > t0 + span + 6 * HOUR) return;
+      var c = s.choc, lo = [c.g, c.e].filter(isNum), hi = lo.length ? Math.max.apply(null, lo) : null;
+      if (isNum(hi)) maxH = Math.max(maxH, hi);
+      rows.push({ t: s.t, x: X(s.t), m: isNum(c.m) ? c.m : null, lo: lo.length ? Math.min.apply(null, lo) : null, hi: hi });
     });
     var Y = function (h) { return BASE - h / (maxH * 1.08) * (BASE - PLOT_TOP); };
     var o = [];
     // Night: sunset → sunrise.
     var nt = '';
     for (var k = -1; k <= 7; k++) {
-      var s = D.sun(new Date(t0 + k * DAY + 12 * HOUR)), s2 = D.sun(new Date(t0 + (k + 1) * DAY + 12 * HOUR));
-      if (!s || !s.sunset || !s2 || !s2.sunrise) continue;
-      var a = Math.max(0, X(s.sunset.getTime())), b2 = Math.min(CW, X(s2.sunrise.getTime()));
+      var s1 = D.sun(new Date(t0 + k * DAY + 12 * HOUR)), s2 = D.sun(new Date(t0 + (k + 1) * DAY + 12 * HOUR));
+      if (!s1 || !s1.sunset || !s2 || !s2.sunrise) continue;
+      var a = Math.max(0, X(s1.sunset.getTime())), b2 = Math.min(CW, X(s2.sunrise.getTime()));
       if (b2 > a) nt += 'M' + r1(a) + ' 0h' + r1(b2 - a) + 'v' + CUR_H + 'h' + r1(a - b2) + 'z';
     }
     if (nt) o.push('<path class="nt" d="' + nt + '"/>');
-    if (rows.length) {
-      // Areas: one continuous shape, hour to hour in straight lines (the
-      // board's polygons, the phone chart's rule). 0 ft lies on the
-      // baseline, so the shape thins out and comes back without vertical
-      // edges or slivers. Only a missing reading (or a missing hour)
-      // breaks it, and then it slopes to the baseline over half an hour.
-      // The strip's own ends cut it square (clip).
-      var hs = HOUR / span * CW;
-      var area = function (key) {
-        var d = '', run = null, prevT = null;
-        var flush = function () {
-          if (!run) return;
-          var first = run[0], last = run[run.length - 1];
-          d += 'M' + r1(first[0] - hs / 2) + ' ' + BASE + 'L' +
-            run.map(function (q) { return r1(q[0]) + ' ' + r1(q[1]); }).join('L') +
-            'L' + r1(last[0] + hs / 2) + ' ' + BASE + 'Z';
-          run = null;
-        };
-        rows.forEach(function (r) {
-          if (run && r.t - prevT > 1.5 * HOUR) flush();
-          prevT = r.t;
-          if (isNum(r[key])) (run = run || []).push([r.x, Y(Math.max(0, r[key]))]);
-          else flush();
-        });
-        flush();
-        return d;
-      };
-      var dg = area('gh'), dsw = area('sw');
-      o.push('<clipPath id="cl-tv-cht-clip"><rect x="0" y="0" width="' + CW + '" height="' + CUR_H + '"/></clipPath>');
-      if (dg || dsw) {
-        o.push('<g clip-path="url(#cl-tv-cht-clip)">' +
-          (dg ? '<path class="gh" d="' + dg + '"/>' : '') +
-          (dsw ? '<path class="sw" d="' + dsw + '"/>' : '') + '</g>');
-      }
-      // Window band: in / edge / blocked per hour, merged into runs. A
-      // call that lasts under 3 hours joins its neighbour (U.steadyRuns,
-      // the phone chart's rule): blocks, not slivers. A missing hour
-      // stays a gap. The playing hour's own call is in the readout.
-      var run = null, step = hs, calls = [], at = [];
-      rows.forEach(function (r, j) {
-        if (j && r.t - rows[j - 1].t > 1.5 * HOUR) calls.push(null);
-        at[j] = calls.length;
-        calls.push(r.st);
+    // runs of steps with a number, split where one is missing or steps are far apart
+    var runs = function (ok) {
+      var out = [], run = null, prevT = null;
+      rows.forEach(function (r) {
+        if (run && r.t - prevT > GAP_MS) run = null;
+        prevT = r.t;
+        if (ok(r)) { if (!run) out.push(run = []); run.push(r); } else run = null;
       });
-      var steady = U.steadyRuns(calls, 3);
-      var flush = function () { if (run && run.st) o.push('<rect class="b-' + run.st + '" x="' + r1(run.x1) + '" y="' + BAND_Y + '" width="' + r1(Math.max(0.5, run.x2 - run.x1)) + '" height="' + BAND_H + '"/>'); };
-      rows.forEach(function (r, j) {
-        var sc = steady[at[j]];
-        var st = sc === 'in' ? 'in' : sc === 'edge' ? 'edge' : sc === 'blocked' ? 'blk' : null;
-        var x1 = Math.max(0, r.x - step / 2), x2 = Math.min(CW, r.x + step / 2);
-        if (run && run.st === st && Math.abs(run.x2 - x1) < 0.01) { run.x2 = x2; return; }
-        flush();
-        run = { st: st, x1: x1, x2: x2 };
-      });
-      flush();
+      return out;
+    };
+    var half = function (run, k) {           // half a step out from a run's end
+      var n = run.length;
+      if (n < 2) return 1.5 * HOUR / span * CW;
+      return k ? (run[n - 1].x - run[n - 2].x) / 2 : (run[1].x - run[0].x) / 2;
+    };
+    var dm = runs(function (r) { return isNum(r.m); }).map(function (run) {
+      return 'M' + r1(run[0].x - half(run, 0)) + ' ' + BASE + 'L' +
+        run.map(function (r) { return r1(r.x) + ' ' + r1(Y(Math.max(0, r.m))); }).join('L') +
+        'L' + r1(run[run.length - 1].x + half(run, 1)) + ' ' + BASE + 'Z';
+    }).join('');
+    var db = runs(function (r) { return isNum(r.hi); }).map(function (run) {
+      return 'M' + run.map(function (r) { return r1(r.x) + ' ' + r1(Y(Math.max(0, r.hi))); }).join('L') + 'L' +
+        run.slice().reverse().map(function (r) { return r1(r.x) + ' ' + r1(Y(Math.max(0, r.lo))); }).join('L') + 'Z';
+    }).join('');
+    o.push('<clipPath id="cl-tv-cht-clip"><rect x="0" y="0" width="' + CW + '" height="' + CUR_H + '"/></clipPath>');
+    if (db || dm) {
+      o.push('<g clip-path="url(#cl-tv-cht-clip)">' +
+        (dm ? '<path class="sw" d="' + dm + '"/>' : '') +
+        (db ? '<path class="gh" d="' + db + '"/>' : '') + '</g>');
     }
     for (var d = 0; d < 7; d++) {
       o.push('<text x="' + r1(X(t0 + d * DAY) + 6) + '" y="203">' + esc(F.day(new Date(t0 + d * DAY + 12 * HOUR))) + '</text>');
     }
     o.push('<line class="cur" x1="-10" y1="0" x2="-10" y2="' + CUR_H + '"/>');
     return {
-      t0: t0, X: X, rows: rows,
-      svg: '<svg viewBox="0 0 ' + CW + ' 205" role="img" aria-label="Seven-day swell: green is the swell that reaches the reef, grey behind it is all the swell, the line is the playing hour" focusable="false">' + o.join('') + '</svg>'
+      t0: t0, X: X, Y: Y, rows: rows,
+      svg: '<svg viewBox="0 0 ' + CW + ' 205" role="img" aria-label="The week at Choc: green is the height at Choc (the two models’ mean), the lighter band over it runs between the two models, the line is the playing hour" focusable="false">' + o.join('') + '</svg>'
     };
   }
 
   function renderRadarStatic() {
-    var key = D.generation() + '|' + U.dayKey(new Date()) + '|' + (D.loaded() ? 1 : 0);
+    var key = (MS.made || MS.status) + '|' + U.dayKey(new Date()) + '|' + D.generation();
     if (key === S.radarKey) return;
     S.radarKey = key;
     S.radar.base.innerHTML = scopeBaseSVG();
     S.chart = buildChart();
     S.radar.cht.innerHTML = S.chart.svg;
     S.chart.cur = S.radar.cht.querySelector('.cur');
-    // The data changed under the playback: stay on the same clock hour.
-    if (S.play.t != null) {
-      var i = D.indexAt(new Date(S.play.t));
-      S.play.idx = i >= 0 ? i : -1;
-    }
+    // A new run under the playback: stay on the same time.
+    if (S.play.t != null) S.play.idx = M.stepAt(S.play.t);
   }
 
-  // ── Playback: one forecast hour per step, daylight hours only ───────
+  // ── Playback: one step of the run a second, daylight only ───────────
   // A dark hour is nothing anyone can surf, so the scope plays the
-  // daylight hours from now through the 7-day strip and loops. Each
-  // radar visit carries on where the last one stopped, so the loop
-  // walks through the week (12 s ≈ one day of light).
-  function hrAt(i) { var a = D.hours() || []; return a[i] || null; }
-  function playable(i, nowIdx) {
-    var hr = hrAt(i);
-    if (!hr || !hr.at) return false;
-    if (i < nowIdx) return false;
-    if (S.chart && hr.at.getTime() >= S.chart.t0 + 7 * DAY) return false;
-    return !hr.dark;
+  // run's daylight steps from now through the week strip and loops.
+  // Each radar visit carries on where the last one stopped, so the loop
+  // walks through the week (12 s ≈ three days of light).
+  function stepI(i) { var a = steps(); return a[i] || null; }
+  function nowI() { var n = M.nowStep(); return n >= 0 ? n : 0; }
+  function playable(i, from) {
+    var s = stepI(i);
+    if (!s || i < from) return false;
+    if (S.chart && s.t >= S.chart.t0 + 7 * DAY) return false;
+    return inDaylight(s.t);
   }
   function firstPlayable(from) {
-    var n = (D.hours() || []).length, nowIdx = Math.max(0, D.nowIndex());
-    for (var i = Math.max(from, nowIdx); i < n; i++) if (playable(i, nowIdx)) return i;
-    return nowIdx < n ? nowIdx : -1;
+    var n = steps().length;
+    for (var i = from; i < n; i++) if (playable(i, from)) return i;
+    return from < n ? from : -1;
   }
   function nextPlayable(i) {
-    var n = (D.hours() || []).length, nowIdx = Math.max(0, D.nowIndex());
+    var n = steps().length, from = nowI();
     for (var k = 0; k < n; k++) {
       i++;
-      var hi = i < n ? hrAt(i) : null;
-      if (i >= n || (S.chart && hi && hi.at && hi.at.getTime() >= S.chart.t0 + 7 * DAY)) i = nowIdx;
-      if (playable(i, nowIdx)) return i;
+      var si = i < n ? stepI(i) : null;
+      if (i >= n || (S.chart && si && si.t >= S.chart.t0 + 7 * DAY)) i = from;
+      if (playable(i, from)) return i;
     }
-    return nowIdx;
+    return from;
   }
+  // The run is in but ends before now: nothing to play as the week ahead.
+  function runEnded() { var a = steps(); return !!a.length && Date.now() > a[a.length - 1].t + 90 * MIN; }
   function setPlay(i) {
     S.play.idx = i;
-    var t = D.timeAt(i);
-    S.play.t = t ? t.getTime() : null;
+    var s = stepI(i);
+    S.play.t = s ? s.t : null;
     renderRadarHour();
   }
   function startPlay() {
     stopPlay();
-    if (!D.loaded()) { renderRadarHour(); return; }
-    var nowIdx = Math.max(0, D.nowIndex());
+    if (!modelOk() || runEnded()) { S.play.idx = -1; renderRadarHour(); return; }
+    var from = nowI();
     var i = S.play.idx;
-    if (i < 0 || !playable(i, nowIdx)) i = firstPlayable(nowIdx);
+    if (i < 0 || !playable(i, from)) i = firstPlayable(from);
     setPlay(i);
     var K = kiosk();
     S.play.stepMs = Math.max(250, (K && K.radarStepMs) || 1000);
     S.play.timer = setInterval(guard('play', function () {
-      if (paused() || !D.loaded()) return;
+      if (paused() || !modelOk()) return;
       setPlay(nextPlayable(S.play.idx));
     }), S.play.stepMs);
   }
@@ -615,35 +600,44 @@
     if (S.play.timer) { clearInterval(S.play.timer); S.play.timer = null; }
   }
 
-  // Readout for the playing hour, the swell and wind arrows, the cursor.
+  // Readout for the playing step: Choc's height (the two models' mean,
+  // each model under it), each swell with its share of Choc as on the
+  // Forecast tab, the wind then; the arrows; the cursor.
+  function swellRowsHTML(ps) {
+    return ps.slice(0, 3).map(function (p, n) {
+      var x = p.t;
+      return '<div class="cl-tv-swr"><i class="cl-tv-swd" style="background:' + famRGB(x.D) + '" aria-hidden="true"></i><span>' +
+        '<b>' + (n + 1) + '°</b> ' + esc(F.swell(x.ft, x.T, F.compass(x.D))) + (x.k === 'ww' ? ' <small>wind sea</small>' : '') + ' → ' + Math.round(p.share * 100) + '%</span></div>';
+    }).join('');
+  }
   function renderRadarHour() {
     var R = S.radar;
-    var hr = S.play.idx >= 0 ? hrAt(S.play.idx) : null;
-    var tr = splitTrains(hr), sw = tr.reach || (hr && hr.swell) || null;
-    var w = hr && hr.wind;
-    var html;
-    if (!hr) {
-      var waiting = D.freshness() === 'loading';
+    var s = S.play.idx >= 0 ? stepI(S.play.idx) : null;
+    var html, ps = [], w = null;
+    if (!s) {
+      var why = modelOk() && runEnded() ? 'The forecast run ends before now' : modelGap();
       html = '<div class="cl-tv-day cl-serif">' + esc(F.dayLabel(new Date(), { tomorrow: true }) + ' ' + F.time(new Date())) + '</div>' +
         heroHTML(DASH) +
-        '<div class="cl-tv-hint">' + (waiting ? 'Waiting for the forecast' : 'No forecast to play') + '</div>';
+        '<div class="cl-tv-hint">' + esc(why) + '</div>';
     } else {
-      html = '<div class="cl-tv-day cl-serif">' + esc(F.dayLabel(hr.at, { tomorrow: true }) + ' ' + F.time(hr.at)) + '</div>';
-      if (!sw) html += heroHTML(DASH);
-      else if (tr.reach) html += heroHTML(F.num(sw.h), 'ft') + swLineHTML(sw.period, sw.compass, sw.dir);
-      else html += blockedHTML(sw.h, sw.period, sw.compass, sw.dir);
-      html += statusHTML(sw ? sw.status : null);
+      var at = new Date(s.t), v = s.choc;
+      ps = M.parts(s, 'choc');
+      w = D.windAt(at);
+      html = '<div class="cl-tv-day cl-serif">' + esc(F.dayLabel(at, { tomorrow: true }) + ' ' + F.time(at)) + '</div>';
+      html += heroHTML(isNum(v.m) ? F.num(v.m) : DASH, 'ft');
+      html += '<div class="cl-tv-mods">GFS-Wave ' + esc(F.num(v.g)) + ' · ECMWF ' + esc(F.num(v.e)) + NB + 'ft</div>';
+      html += swellRowsHTML(ps) || '<div class="cl-tv-swr cl-tv-mute"><span>No swell reaches Choc</span></div>';
       html += windHTML(w, '');
-      html += '<div class="cl-tv-hint">' + (paused() ? 'Paused. Tap to play' : 'Playing forward, 1 hour per second') + '</div>';
+      html += '<div class="cl-tv-hint">' + (paused() ? 'Paused. Tap to play' : 'Playing the week forward, 3 hours a second') + '</div>';
     }
     setHTML(R.rt, html);
-    setHTML(R.top, scopeTopSVG(sw, w));
+    setHTML(R.top, scopeTopSVG(ps, w));
     var label = 'Radar scope: the ' + WIN_MIN + '–' + WIN_MAX + '° swell window' +
-      (sw ? ', swell ' + F.swell(sw.h, sw.period, sw.compass) + ' ' + F.status(sw.status).toLowerCase() : '') +
+      (ps.length ? ', ' + ps.slice(0, 3).map(function (p) { return F.swell(p.t.ft, p.t.T, F.compass(p.t.D)) + ' ' + Math.round(p.share * 100) + '% of Choc'; }).join(', ') : '') +
       (w ? ', wind ' + F.wind(w.mph, w.dir) : '');
     if (R.scope.getAttribute('aria-label') !== label) R.scope.setAttribute('aria-label', label);
     if (S.chart && S.chart.cur) {
-      var x = hr && hr.at ? r1(S.chart.X(hr.at.getTime())) : -10;
+      var x = s ? r1(S.chart.X(s.t)) : -10;
       S.chart.cur.setAttribute('x1', x);
       S.chart.cur.setAttribute('x2', x);
     }
@@ -652,14 +646,16 @@
   // ════════════════════════════════════════════════════════════════════
   // STATUS STRIP — forecast age, buoy age, clock, Sources, Next
   // ════════════════════════════════════════════════════════════════════
+  // The Sound Check run on show and its age, as the Forecast tab's
+  // source line: amber after 12 h (the bot pulls every 3 h), red after
+  // 2 days, or when the run no longer reaches now.
   function forecastLine() {
-    var st = typeof STATE !== 'undefined' ? STATE : {};
-    var lvl = D.freshness();
-    if (lvl === 'loading') return { text: 'Forecast loading', lvl: '' };
-    var asOf = null;
-    try { asOf = typeof kioskDataAsOf === 'function' ? kioskDataAsOf() : st.dataAsOf; } catch (e) { err('asOf', e); asOf = st.dataAsOf; }
-    if (!isNum(asOf)) return { text: 'No forecast data', lvl: 'dead' };
-    return { text: 'Forecast updated ' + F.ago(new Date(asOf)), lvl: lvl === 'fresh' ? '' : lvl };
+    if (MS.status === 'loading') return { text: 'Forecast loading', lvl: '' };
+    var made = Date.parse(MS.made);
+    if (!modelOk() || !isNum(made)) return { text: 'No forecast data', lvl: 'dead' };
+    var age = Date.now() - made;
+    if (runEnded()) return { text: 'Forecast run ' + F.ago(new Date(made)) + ', ended', lvl: 'dead' };
+    return { text: 'Forecast run ' + F.ago(new Date(made)), lvl: age > 2 * DAY ? 'dead' : age > 12 * HOUR ? 'stale' : '' };
   }
   function buoyLine() {
     var b = D.buoy();
@@ -710,26 +706,36 @@
   }
 
   // ── Sources: the legacy card, restyled, with this TV's own content ──
-  var TXT_WINDOW = 'In window means it arrives from ' + WIN_MIN + '–' + WIN_MAX + '°, between Block Island’s Southwest Point and Montauk Point; blocked means land stops it before the reef.';
-  var TXT_DAYS = 'Each day shows the swell over the incoming tide in daylight (from a low to the next high), sampled one swell-travel hour earlier at the offshore forecast point. ' + TXT_WINDOW + ' The wind is the forecast at the low. Times in the dark are dimmed.';
-  // NOAA's tide times missing (kioskDaySummary tidesDown): every day, or
-  // only some (a saved copy running out at the end of the week).
-  var TXT_DAYS_NO_TIDES = 'NOAA’s tide times didn’t load, so each day shows the swell over all of its daylight (sunrise to sunset) instead of over the incoming tide, sampled one swell-travel hour earlier at the offshore forecast point. ' + TXT_WINDOW + ' The wind is the forecast at noon.';
-  var TXT_DAYS_SOME_NO_TIDES = ' A day that says “No tide times” shows the swell over all of its daylight instead, and the wind at noon.';
+  var TXT_MODEL = 'Choc’s height is the Sound Check model, as on the Forecast tab: GFS-Wave and ECMWF read at buoy 44097 and carried over the sea floor to the reef, the two models’ mean.';
+  var TXT_DAYS = 'Each day shows Choc’s biggest height over the incoming tide in daylight (from a low to the next high), and the main swell then. ' + TXT_MODEL + ' The wind is the forecast at the low. Times in the dark are dimmed.';
+  // NOAA's tide times missing: every day, or only some (a saved copy
+  // running out at the end of the week).
+  var TXT_DAYS_NO_TIDES = 'NOAA’s tide times didn’t load, so each day shows Choc’s biggest height over all of its daylight (sunrise to sunset) instead of over the incoming tide. ' + TXT_MODEL + ' The wind is the forecast at noon.';
+  var TXT_DAYS_SOME_NO_TIDES = ' A day that says “No tide times” shows its biggest over all of its daylight instead, and the wind at noon.';
   function daysText() {
     var wk = D.week() || [], lead = leadOffset(), shown = 0, down = 0;
     for (var k = lead; k < lead + 6; k++) {
       var d = wk[k];
-      if (!d || !d.swell) continue;
+      if (!d || !dayModel(d)) continue;
       shown++;
       if (d.tidesDown) down++;
     }
     if (!down) return TXT_DAYS;
     return down === shown ? TXT_DAYS_NO_TIDES : TXT_DAYS + TXT_DAYS_SOME_NO_TIDES;
   }
-  var TXT_RADAR = 'The scope plays the forecast forward one daylight hour per second. The green cone is the ' + WIN_MIN + '–' + WIN_MAX + '° swell window; the swell and wind arrows point the way they travel, onto the reef. Below it, the week: green is the swell that reaches the reef (a train just outside the window counts in part), grey behind it is all the swell out there, the band is the window, shaded columns are night. Tap to pause, tap again to play.';
+  var TXT_RADAR = 'The scope plays the forecast forward through daylight, one step of the model (3 hours) a second. Each arrow is a swell at buoy 44097, pointing at the reef from where it comes, longer and thicker for a bigger share of Choc’s energy; its colour is where it comes from (teal E, orange SE, purple S). The green cone is the ' + WIN_MIN + '–' + WIN_MAX + '° window between Block Island’s Southwest Point and Montauk Point; swell from outside it still reaches Choc by bending in. Below it, the week at Choc: green is the two models’ mean, the lighter band over it runs between them, shaded columns are night. Tap to pause, tap again to play.';
+  // Core's rows, with the Sound Check run in place of Open-Meteo's wave
+  // forecast (the TV doesn't show that one).
+  function sourceRows() {
+    var made = Date.parse(MS.made), rows = (D.sources() || []).filter(function (r) { return r.key !== 'marine'; });
+    var m = MS.status === 'loading' ? { level: 'none', text: 'Loading' }
+      : !modelOk() || !isNum(made) ? { level: 'none', text: 'Not loaded' }
+      : { level: runEnded() || Date.now() - made > 2 * DAY ? 'dead' : Date.now() - made > 12 * HOUR ? 'stale' : 'fresh',
+        text: 'run ' + F.when(new Date(made)) + ' · ' + F.age(new Date(made)) };
+    return [{ key: 'model', label: 'Wave forecast', level: m.level, text: m.text }].concat(rows);
+  }
   function sourcesHTML() {
-    var rows = (D.sources() || []).map(function (s) {
+    var rows = sourceRows().map(function (s) {
       var c = s.level === 'stale' ? ' is-stale' : s.level === 'dead' ? ' is-dead' : s.level === 'none' ? ' is-none' : '';
       return '<div class="cl-tv-src-r"><span>' + esc(s.label) + '</span><span class="cl-tv-src-v' + c + '">' + esc(s.text) + '</span></div>';
     }).join('');
@@ -739,7 +745,7 @@
     return '<h3 class="cl-serif">Sources</h3>' +
       '<div class="cl-tv-src-rows">' + rows + '</div>' +
       '<p>' + esc(S.cur === 'cl-radar' ? TXT_RADAR : daysText()) + '</p>' +
-      '<p>Swell and wind: Open-Meteo forecast. Tides: NOAA CO-OPS predictions, station 8510719. Buoy: NDBC 44097, Block Island, through the site’s two-hourly pipeline. Sunrise and sunset: computed solar position.</p>' +
+      '<p>Swell: the Sound Check model (GFS-Wave and ECMWF, pulled every 3 hours by the site’s forecast bot). Wind: Open-Meteo forecast. Tides: NOAA CO-OPS predictions, station 8510719. Buoy: NDBC 44097, Block Island, through the site’s two-hourly pipeline. Sunrise and sunset: computed solar position.</p>' +
       '<p class="cl-tv-src-fine">Build ' + esc(build) + esc(since) + ' · tap anywhere to close</p>';
   }
   function openSources() {
@@ -793,7 +799,7 @@
       p.style.setProperty('--gk', DENSITY[lvl][0]);
       p.style.setProperty('--tk', DENSITY[lvl][1]);
       // A no-break group ("Incoming 10:44 AM") wider than its card shrinks too.
-      ['.cl-tv-hero', '.cl-tv-sw', '.cl-tv-strow', '.cl-tv-win, .cl-tv-wd', '.cl-tv-bl'].forEach(function (sel) { fitRows(cards, sel); });
+      ['.cl-tv-hero', '.cl-tv-sw', '.cl-tv-win, .cl-tv-wd'].forEach(function (sel) { fitRows(cards, sel); });
       if (!overflowsY(cards)) break;
     }
     p.setAttribute('data-density', String(Math.min(lvl, DENSITY.length - 1)));
@@ -912,6 +918,7 @@
     err('restore', why || 'restored');
     stopPlay();
     clearInterval(S.secTimer);
+    clearInterval(S.modelTimer);
     Object.keys(S.orig).forEach(function (k) { if (window[k] && window[k]._cleanTvOrig === S.orig[k]) window[k] = S.orig[k]; });
     var K = kiosk();
     if (K && S.legacyPanels) {
@@ -930,7 +937,7 @@
     try { renderRadarStatic(); } catch (e) { err('radarStatic', e); }
     try {
       // Data arrived while the radar is up: start (or carry on) playing.
-      if (S.cur === 'cl-radar' && D.loaded() && (S.play.idx < 0 || !S.play.timer)) startPlay();
+      if (S.cur === 'cl-radar' && modelOk() && (S.play.idx < 0 || !S.play.timer)) startPlay();
       else renderRadarHour();
     } catch (e) { err('radarHour', e); }
     try { renderStrip(); } catch (e) { err('strip', e); }
@@ -957,6 +964,9 @@
       window.addEventListener('resize', guard('resize', function () { measureUnit(); scheduleFit(); }));
       S.secTimer = setInterval(guard('sec', secTick), 1000);
       C.on('tick', function () { renderAll(); });
+      C.on('soundcheck', function () { renderAll(); });
+      M.load();
+      S.modelTimer = setInterval(guard('model', function () { if (live()) M.refresh(); }), REFRESH_MS);
       // A reduced-motion change takes effect at once (the sweep and fades are CSS).
       try {
         var mq = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)');
@@ -970,11 +980,13 @@
   // Screenshots and tests only: jump to a panel / an hour.
   window.CLEAN_TV = {
     show: function (name) { if (typeof kioskShowPanel === 'function') kioskShowPanel(name); },
+    // a step of the run (its index), or the step nearest a time
     playAt: function (t) {
-      var i = typeof t === 'number' && t < 1e6 ? t : D.indexAt(new Date(t));
+      var i = typeof t === 'number' && t < 1e6 ? t : M.stepAt(new Date(t).getTime());
       if (i >= 0) setPlay(i);
     },
-    state: function () { return { cur: S.cur, playIdx: S.play.idx, u: S.u, playing: !!S.play.timer }; },
+    state: function () { return { cur: S.cur, playIdx: S.play.idx, playT: S.play.t, u: S.u, playing: !!S.play.timer, made: MS.made, model: MS.status }; },
+    refresh: function () { return M.refresh(); },
     fit: fitAll
   };
 })();

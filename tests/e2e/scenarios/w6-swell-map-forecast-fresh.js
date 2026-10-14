@@ -1,9 +1,9 @@
-// Sound Check (research/): the 7-day forecast was a snapshot pulled by hand and committed with the page, so on
+// Sound Check (research/): the forecast was a snapshot pulled by hand and committed with the page, so on
 // Friday it still read "As of Wed Oct 7". .github/workflows/update-forecast.yml now pulls every model run and
 // publishes it to the fc-data branch; the page reads that pull from raw.githubusercontent.com and shows the newer
 // of it and the copy that ships with the page (research/fc/), taking the field images from the same place.
 // ↻ Refresh (beside the as-of line) asks GitHub again without a reload: a newer pull replaces the one on show
-// everywhere (map, timeline, 7-day table) and keeps the hour being looked at.
+// on the map and its timeline, and keeps the hour being looked at.
 'use strict';
 
 const LIVE = 'https://raw.githubusercontent.com/TheKeeks/LetsCheckChoc/fc-data/fc/';
@@ -56,7 +56,7 @@ module.exports = {
     assert.deepEqual(await page.evaluate(() => ({ made: window.CHOC.trip.fc.d.made, base: window.CHOC.trip.fc.d._base })), { made: shipped.made, base: 'fc/' }, 'falls back to the copy that ships with the page');
 
     // 4. ↻ Refresh, with a pull published since the page loaded (the 18Z runs a day and a half on, so its week starts
-    //    30 h later): it goes up on the map, the timeline and the 7-day table, and the map stays on the hour on show.
+    //    30 h later): it goes up on the map and the timeline, and the map stays on the hour on show.
     const next = Object.assign({}, shipped, { made: later(shipped.made, 30), runs: { gfs: '2026-10-10T18Z', ec: '2026-10-10T18Z' },
       gfs: shipped.gfs.slice(10), ec: shipped.ec.slice(10), steps: shipped.steps.slice(10) });
     const fcState = () => page.evaluate(() => { const F = window.CHOC.trip.fc; return { made: F.d.made, base: F.d._base, i: F.i, t: F.d.gfs[F.i].t }; });
@@ -70,8 +70,6 @@ module.exports = {
     await loaded();
     await page.evaluate(() => window.CHOC.trip._week(20));   // scrub to Sunday 8 pm
     const before = await fcState();
-    const tableDay = () => page.$eval('#fcDays tbody td', n => n.textContent);
-    const day0 = await tableDay();
     ctx.net.fcLive = serveLive(next); asked.length = 0; pngs.length = 0;
     await refresh(/^Just updated · As of /);
     const after = await fcState();
@@ -83,9 +81,6 @@ module.exports = {
     assert.ok(asked.some(u => /^fc\.json\?t=\d+$/.test(u)), `asks past GitHub's cache (${asked.join(', ')})`);
     await page.waitForFunction(() => { const px = window.CHOC.trip.fc.px; return !!(px.gfs_reg && px.gfs_reg.w); }, null, { timeout: 15000 });
     assert.ok(asked.includes('field_gfs_reg.png?m=' + encodeURIComponent(next.made)), 'field images are fetched again, keyed to the new pull');
-    await page.waitForFunction((lab) => (document.getElementById('fcAsOf2') || {}).textContent.startsWith('Forecast as of ' + lab), dayLabel(next.made), { timeout: 15000 });
-    assert.notEqual(await tableDay(), day0, `the 7-day table starts on the new pull's first day (${day0} → ${await tableDay()})`);
-    assert.equal(await page.$$eval('#fcChart svg', s => s.length), 1, 'the 7-day chart is redrawn, not stacked');
     await ctx.screenshot('forecast-refresh');
 
     // 5. ↻ again with nothing newer, with nothing published (before the bot's first run) and with GitHub out of

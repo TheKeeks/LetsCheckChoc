@@ -1,5 +1,52 @@
 # Changelog
 
+## [Unreleased] — The Forecast tab's ↻ is back; Explore and Methods follow the surf log
+
+The Forecast tab had no refresh button. The one-map change hid the map's own bar (its timeline and ↻), because the tab has its own week scrubber, and nothing took the ↻'s place. The page refreshed the wind, tides and buoy in the background every 15 minutes, but a new model run only showed after a reload. And a session logged on the site didn't show on the ten years month by month (Explore, and Methods) until the page was reloaded: their page read the surf log once, when it opened. Explore's copy sits two frames down, inside the map page, where it couldn't see the site's Firebase connection, so it loaded a second copy of Firebase to read the log.
+
+↻ is back, in the header beside Settings, on the Forecast tab:
+- It asks GitHub for the newest model run past its 5-minute cache, and the map asks too, so the tab and its map show the same run. It also loads the wind, tides and buoy again, and the buoy check's earlier forecasts.
+- For 8 seconds the header says what it found, in place of the date: "New forecast: run 2:00 PM", "Up to date: run 11:00 AM", "No forecast published on GitHub yet" or "Couldn't reach GitHub". The button turns while it asks; a second tap meanwhile asks nothing more.
+- `CLEAN.model.refresh()` now answers with what it found ('new', 'same', 'none' or 'unreachable') instead of yes or no. Choc TV's 30-minute ask is unchanged.
+
+Explore and Methods now follow the surf log:
+- When a session is saved, edited or deleted, or finishes uploading its photos, the tab tells its page, and the ten years read the log again. The day gets its dot (a camera with photos), the month counts it, and the day's details show who, when, the ratings, the notes and the photos. A delete takes it off.
+- They read only when the sessions changed. Opening the Log tab draws the log again, which used to look like a change; now it reads nothing.
+- The page reads the log through the site's own Firebase connection, so Explore no longer loads a second copy of Firebase.
+- A session on a day the history hasn't reached yet (today: the history runs through yesterday) gets its dot too.
+- Not in this change: the study's own numbers from the log (the ratings model, its good days, the session comparisons and the scorecard) are still fixed in the research files. Refitting them on every history run needs the history bot to read the log, with a read-only key the owner adds as a GitHub secret. That comes as its own change.
+
+Verified:
+- `preview-clean-forecast-refresh.js` (new): ↻ shows on the Forecast tab only, beside Settings on the phone and the iPad. A newer run on GitHub goes up on the tab (0.5 ft → 2.5 ft at Choc) and on its map, with one ask each, past the cache, however many taps. The wind, tides and buoy load again, and so do the buoy check's earlier forecasts. Then it says "Up to date", "Couldn't reach GitHub" and "No forecast published on GitHub yet", and the date comes back after 8 seconds. It fails on the old page (no ↻).
+- `preview-clean-log-follows.js` (new): with Explore on Monday 28 Sep and Methods on September, the owner files a session for that Monday, with a photo. Both show the camera, "2 sessions logged" and the photo; Explore's day details show "Logged by Test at 7:30 am: rated 7.0/10 (size 7, wind 8, ride 6)" and the notes. That took one read per page. An edit shows its new notes, and a delete takes the session off again. Opening the Log tab reads nothing, and a session on a day past the end of the history gets its dot. It fails on the old page: after the save, Explore still said "1 session logged". The last step also fails without the new dot.
+- The Forecast, Explore, Methods, Log, Choc TV, look and Sound Check map scenarios pass (35 of 35), including the map's own ↻ on the research page opened on its own (`w6-swell-map-forecast-fresh.js`).
+
+No Firebase rules change: the pages only read `surf_logs`, which the rules already allow any signed-in visitor.
+
+## [Unreleased] — Choc TV on the model, Methods without its own forecast, the old look retired
+
+Choc TV showed a different forecast from the rest of the site. Its day cards and radar read Open-Meteo's swell at its offshore point, a whole-foot range over the incoming tide with "in window" or "blocked" tags, while the Forecast tab shows the Sound Check model: GFS-Wave and ECMWF carried over the sea floor to Choc. Methods still carried its own 7-day forecast (a best-hour table and an hour-by-hour chart) under the research. And every visit still downloaded the old Windows-style look: its three Win95 stylesheets, the classic Choc TV's stylesheet, the Leaflet maps and two Google Fonts (about 280 KB, 67 KB compressed). Five unused candidate looks (1.6 MB) were still in the repo, and Settings still linked to the old look.
+
+Choc TV now shows the model, the same number as the Forecast tab:
+- Each day card shows Choc's biggest height over the day's incoming tide in daylight (the two models' mean, in a straight line between the run's 3-hourly steps) and the main swell then (the one with the biggest share of Choc's energy). There is no in-window or blocked tag: the model already counts the swell that bends in around Montauk and Block Island. With NOAA's tides down it reads all daylight and says so, as before.
+- The radar plays the model's steps through daylight, one a second. It shows Choc's height, each model's, and each swell with its share of Choc ("1° 2.3 ft @ 4 s SE wind sea → 99%"). On the scope each swell is an arrow into the reef in its colour (teal E, orange SE, purple S), thicker for a bigger share. The week strip under it is Choc's height: the two models' mean, with the band between them.
+- The status strip shows the run's age ("Forecast run 30 min ago"). It turns amber after 12 h, and red after 2 days or when the run no longer reaches now. Sources names the run. The TV asks for a newer run every 30 minutes, so a new one shows without a reload.
+- The Forecast tab and Choc TV share one loader (`CLEAN.model` in `previews/clean/core.js`): the newer of the shipped copy and the bot's pull, one mean, one set of swell colours.
+
+Methods no longer has a 7-day forecast: the forecast is the Forecast tab's. Its scorecard stays as its own section, "How far ahead can you trust the forecast?" (the 28 logged sessions against the forecasts made 1, 2 and 3 days before).
+
+The old look is retired:
+- The default page and Choc TV no longer download its Win95 stylesheets, Leaflet or its Google Fonts, and the phone skips the classic Choc TV's stylesheet. `style.css` stays: the toasts and the charts My ratings borrows still use it.
+- Settings no longer links to it. `?classic=1` still opens it, with all its files, as an emergency fallback and for the older tests of the app underneath. If the new look ever hands the page back to it, its styles come back too.
+- The five unused candidate looks (`previews/chart-room`, `draft-navy`, `draft-paper`, `one-instrument`, `shader-pack`) are deleted; their names open the default look.
+- The old screens' code stays for now. The shared load path still writes into them, the Log and My ratings tabs borrow parts of them, and 20 test scenarios check the app underneath through them. Removing that is its own job.
+
+Verified:
+- `preview-clean-tv.js`, rewritten: each day card's number is worked out from the run itself; the radar at Sat 11 AM shows the same Choc number, models and swells with shares as the Forecast tab at that step; the week strip's green follows the mean at every step; a newer pull goes up 30 minutes later without a reload; a run that ends before now says so; tides down still reads all daylight. It fails on the old TV.
+- `methods-navigation.js`: Methods has no 7-day table or chart, keeps the scorecard, and every header link lands on a section it shows. `w6-swell-map-questions.js`: the scorecard sits where the 7-day forecast was, and there is no second forecast. Both fail on the old page.
+- `look-default.js`: the plain address and Choc TV download none of the old look's files, Settings has no link to it, `?classic=1` still brings everything, retired look names open the default look, and when Choc TV's part fails the old TV takes over with its styles. It fails on the old page. `preview-looks.js`, which loaded each candidate look, went with them.
+- The Forecast tab's scenarios pass on the shared loader.
+
 ## [Unreleased] — One map: the storms on the Forecast tab, past days on Explore
 
 The site had three maps that each did part of the job. The Forecast tab had two small ones: the rays into Choc, and a Storms view of the North Atlantic. The Map tab had the Sound Check map, with this week's forecast, past days and Drop a wave, behind its own controls. The ten years month by month opened from a small button on the Past bar.

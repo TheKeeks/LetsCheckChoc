@@ -867,7 +867,7 @@
     const p = etParts(ms), wall = Date.UTC(+p.year, ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(p.month), +p.day, p.h, +p.minute);
     return ms - (wall - Date.UTC(+p.year, ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(p.month), +p.day));
   }
-  const { sunWin, daylight } = window.CHOC;                 // sunrise and sunset at Choc (shared with the forecast table)
+  const { sunWin, daylight } = window.CHOC;                 // sunrise and sunset at Choc (v13_map.js)
   const COMP = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
   const compass = (d) => COMP[Math.round(((d % 360) + 360) % 360 / 22.5) % 16];
   // clean in light wind or wind near straight offshore: Choc 335 +-60, Wilderness 40 +-70 (as in Part 3)
@@ -1489,7 +1489,9 @@
   // A time shows the forecast step nearest it; a zoom (sent when the tab's Ocean, Region or Fishers is picked) moves the view.
   if (FCUI) addEventListener('message', (e) => {
     if (e.origin !== location.origin || e.source !== window.parent || window.parent === window) return;
-    const m = e.data; if (!m || m.type !== 'lcc-fc') return;
+    const m = e.data; if (!m) return;
+    if (m.type === 'lcc-fc-refresh') { fcRefreshNow(); return; }   // the tab's ↻ (its bar's own is hidden there)
+    if (m.type !== 'lcc-fc') return;
     if ((m.spot === 'choc' || m.spot === 'wild') && m.spot !== FC.spot) setSpot(m.spot);
     if (m.zoom && ZOOMS[m.zoom]) fcZoom(m.zoom);
     const t = typeof m.time === 'number' ? m.time : Date.parse(m.time || '');
@@ -1505,9 +1507,10 @@
   function outOfRun(t) { const g = FC.d.gfs; return t < Date.parse(g[0].t) - 3 * 36e5 || t > Date.parse(g[g.length - 1].t) + 90 * 6e4; }
   fcData.then(fcLoad);
   if (window.CHOC.onForecast) window.CHOC.onForecast(fcLoad);
-  // ↻: the latest pull now, without waiting for a reload (a new one is published every 3 hours)
+  // ↻: the latest pull now, without waiting for a reload (a new one is published every 3 hours). On the Forecast tab
+  // the site's header has the ↻ and sends lcc-fc-refresh (above).
   let noteT = 0;
-  $('fcRefresh').addEventListener('click', async () => {
+  async function fcRefreshNow() {
     const b = $('fcRefresh'); if (b.disabled || !window.CHOC.fcRefresh) return;
     clearTimeout(noteT); b.disabled = true; b.classList.add('spin'); $('fcAsOf').textContent = 'Checking for a newer forecast…';
     const r = await window.CHOC.fcRefresh().catch(() => 'unreachable');
@@ -1515,7 +1518,8 @@
     if (!FC.d) { $('fcAsOf').textContent = 'The forecast file didn’t load.'; return; }
     fcAsOf({ new: 'just updated', same: 'up to date', none: 'nothing published on GitHub yet' }[r] || 'couldn’t reach GitHub');
     noteT = setTimeout(() => fcAsOf(), 8000);               // then the date alone again: a phone's line is too short for both
-  });
+  }
+  $('fcRefresh').addEventListener('click', fcRefreshNow);
   { const st = []; for (let f = 0; f <= 20; f += 1) st.push(`rgb(${hCol(f)}) ${(Math.sqrt(f / 20) * 100).toFixed(1)}%`);   // keys use a square-root scale, like the colors
     for (const kb of document.querySelectorAll('.hub-key i')) kb.style.background = `linear-gradient(90deg, ${st.join(', ')})`; }
 

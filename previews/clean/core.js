@@ -394,6 +394,7 @@
     log: 'M4 20l1-4.5L16 4.5 19.5 8 8.5 19zM14 6.5l3.5 3.5',
     model: '<path d="M4 18l5-6 4 3 7-9"/><path d="M15 6h5v5"/>',
     settings: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+    refresh: '<path d="M20 4.5v5h-5"/><path d="M19.2 14.2A7.5 7.5 0 1 1 17.3 6.7L20 9.5"/>',
     back: 'M15 5l-7 7 7 7',
     chevronRight: 'M9 6l6 6-6 6',
     chevronLeft: 'M15 6l-6 6 6 6',
@@ -454,6 +455,7 @@
     log: function (s) { return svgIcon(P.log, s || 24); },
     model: function (s) { return svgIcon(P.model, s || 24); },
     settings: function (s) { return svgIcon(P.settings, s || 22); },
+    refresh: function (s) { return svgIcon(P.refresh, s || 22); },
     back: function (s) { return svgIcon(P.back, s || 22); },
     chevronRight: function (s) { return svgIcon(P.chevronRight, s || 18); },
     chevronLeft: function (s) { return svgIcon(P.chevronLeft, s || 18); },
@@ -1122,6 +1124,146 @@
     atNow: function () { return CLEAN.cursor.get() === nowIndex(); }
   };
 
+  // ═══════════════════════════════════════════════════════════════════
+  // THE SOUND CHECK MODEL — the wave forecast Forecast and Choc TV show
+  // ═══════════════════════════════════════════════════════════════════
+  // GFS-Wave and ECMWF read at buoy 44097 and carried over the sea floor
+  // to Choc and Wilderness (scripts/forecast/fcpull.py): research/fc/
+  // fc.json, the copy that ships with the site, or the forecast bot's
+  // newer pull on the fc-data branch, whichever is newer. One copy for
+  // the whole page, so the Forecast tab and Choc TV can't disagree.
+  // Steps every 3 h (6 h after day 6): { t, hs (offshore at the buoy,
+  // GFS-Wave), trains (GFS-Wave's swells at the buoy, each with its
+  // height at Choc and Wilderness), choc: { g, e, m }, wild: { g, e, m } }
+  // with g GFS-Wave, e ECMWF and m their mean (one model when the other
+  // has no number). A run that doesn't reach an hour never stands in for
+  // it, and a missing number stays null. Raises 'soundcheck' when a run is in
+  // (or none could load).
+  var SC_SHIP = 'research/fc/fc.json';
+  var SC_LIVE = 'https://raw.githubusercontent.com/TheKeeks/LetsCheckChoc/fc-data/fc/fc.json';
+  var sc = { steps: null, made: null, runs: null, buoy: null, status: 'loading', checkedAt: 0 };
+  var scStarted = false;
+  // Where a swell comes from: one colour on every screen (the Forecast
+  // tab's rows and bars, Choc TV, and the map's rays: research's FAM).
+  var SC_FAM = [
+    { name: 'E', rgb: [64, 190, 198] },      //  60-115°
+    { name: 'SE', rgb: [240, 138, 75] },     // 115-160°
+    { name: 'S', rgb: [170, 128, 236] },     // 160-205°
+    { name: 'other', rgb: [140, 154, 168] }
+  ];
+  function scFam(d) { return d >= 60 && d < 115 ? 0 : d >= 115 && d < 160 ? 1 : d >= 160 && d < 205 ? 2 : 3; }
+  function scMean(a, b) { var v = [a, b].filter(isNum); return v.length ? v.reduce(function (x, y) { return x + y; }, 0) / v.length : null; }
+  function scUse(d) {
+    if (!d || !d.gfs || !d.gfs.length) return false;
+    if (sc.made && !(Date.parse(d.made) > Date.parse(sc.made))) return false;
+    var ec = {};
+    (d.ec || []).forEach(function (r) { ec[Math.round(Date.parse(r.t) / HOUR)] = r; });
+    var steps = d.gfs.map(function (g) {
+      var t = Date.parse(g.t), e = ec[Math.round(t / HOUR)] || null;
+      return {
+        t: t,
+        hs: isNum(g.hs) ? g.hs : null,
+        choc: { g: isNum(g.choc) ? g.choc : null, e: e && isNum(e.choc) ? e.choc : null },
+        wild: { g: isNum(g.wild) ? g.wild : null, e: e && isNum(e.wild) ? e.wild : null },
+        trains: (g.trains || []).filter(function (x) { return isNum(x.ft) && isNum(x.T) && isNum(x.D); })
+      };
+    }).filter(function (s) { return isNum(s.t); });
+    if (!steps.length) return false;
+    steps.forEach(function (s) { s.choc.m = scMean(s.choc.g, s.choc.e); s.wild.m = scMean(s.wild.g, s.wild.e); });
+    sc.steps = steps;
+    sc.made = d.made || null;
+    sc.runs = d.runs || null;
+    if (d.buoy && isNum(d.buoy[0]) && isNum(d.buoy[1])) sc.buoy = d.buoy;
+    sc.status = 'ok';
+    return true;
+  }
+  // The file, false when the server answers without one (nothing
+  // published), null when it doesn't answer. fresh: past GitHub's 5-minute
+  // cache too.
+  function scGet(url, fresh) {
+    return fetch(url + (fresh ? '?t=' + Date.now() : ''), { cache: fresh ? 'no-store' : 'no-cache' })
+      .then(function (r) { return r.ok ? r.json().catch(function () { return false; }) : false; }, function () { return null; });
+  }
+  var scLoading = null, scAsking = null;
+  function scLoad() {
+    if (scStarted) return;
+    scStarted = true;
+    var got = function (d) { if (scUse(d)) emit('soundcheck', sc); };
+    scLoading = scGet(SC_SHIP).then(function (d) {
+      got(d);
+      return scGet(SC_LIVE);
+    }).then(function (d) {
+      got(d);
+      sc.checkedAt = Date.now();
+      if (sc.status === 'loading') { sc.status = 'failed'; emit('soundcheck', sc); }
+    });
+  }
+  // Ask again (Choc TV every 30 min, the Forecast tab's ↻): the bot's
+  // latest pull, and the shipped copy too while nothing has loaded. A newer
+  // run replaces the one on show. One ask at a time (a second tap gets the
+  // same answer), after the first load. → Promise<'new' | 'same' | 'none' |
+  // 'unreachable'>: a newer run went up, the newest is on show already,
+  // GitHub has none published, GitHub didn't answer.
+  function scRefresh() {
+    if (!scStarted) scLoad();
+    if (scAsking) return scAsking;
+    scAsking = scLoading.then(function () {
+      return Promise.all([sc.steps ? null : scGet(SC_SHIP), scGet(SC_LIVE, true)]);
+    }).then(function (got) {
+      sc.checkedAt = Date.now();
+      var used = scUse(got[0]);
+      used = scUse(got[1]) || used;
+      if (used) emit('soundcheck', sc);
+      var live = got[1];
+      return used ? 'new' : live === null ? 'unreachable' : !live || !live.gfs || !live.gfs.length ? 'none' : 'same';
+    }).then(function (r) { scAsking = null; return r; }, function () { scAsking = null; return 'unreachable'; });
+    return scAsking;
+  }
+  // The step nearest a time (default now) when the run covers it, else -1.
+  function scStepAt(at) {
+    var s = sc.steps; if (!s) return -1;
+    var t = at == null ? Date.now() : +at;
+    if (!isNum(t) || t < s[0].t - 3 * HOUR || t > s[s.length - 1].t + 90 * MIN) return -1;
+    var b = 0;
+    for (var i = 1; i < s.length; i++) if (Math.abs(s[i].t - t) < Math.abs(s[b].t - t)) b = i;
+    return b;
+  }
+  // The spot's height at any time inside the run: the two models' mean,
+  // in a straight line between the steps either side (null outside the
+  // run, or across a step with no number).
+  function scAt(t, spot) {
+    var s = sc.steps, k = spot === 'wild' ? 'wild' : 'choc';
+    t = +t;
+    if (!s || !isNum(t) || t < s[0].t || t > s[s.length - 1].t) return null;
+    var i = 1;
+    while (i < s.length - 1 && s[i].t < t) i++;
+    var a = s.length > 1 ? s[i - 1] : s[0], b = s.length > 1 ? s[i] : s[0], va = a[k].m, vb = b[k].m;
+    if (!isNum(va) || !isNum(vb)) return null;
+    return b.t === a.t ? va : va + (vb - va) * (t - a.t) / (b.t - a.t);
+  }
+  // A step's swells, each with its share of the energy reaching the spot,
+  // biggest share first (shares under half a percent left off).
+  function scParts(s, spot) {
+    var k = spot === 'wild' ? 'wild' : 'choc';
+    if (!s) return [];
+    var tr = s.trains.filter(function (x) { return isNum(x[k]); });
+    var e2 = tr.reduce(function (a, x) { return a + x[k] * x[k]; }, 0);
+    return tr.map(function (x) { return { t: x, v: x[k], share: e2 > 0 ? x[k] * x[k] / e2 : 0 }; })
+      .filter(function (p) { return p.share >= 0.005; })
+      .sort(function (a, b) { return b.share - a.share; });
+  }
+  CLEAN.model = {
+    state: sc,                            // read-only for the parts
+    load: scLoad,
+    refresh: scRefresh,
+    stepAt: scStepAt,
+    nowStep: function () { return scStepAt(); },
+    at: scAt,
+    parts: scParts,
+    FAM: SC_FAM,
+    fam: scFam
+  };
+
   // ════════════════════════════════════════════════════════════════════
   // THEME — day / night
   // ════════════════════════════════════════════════════════════════════
@@ -1200,7 +1342,7 @@
     { id: 'log', label: 'Log', legacy: 'surflog' },
     { id: 'model', label: 'My ratings', legacy: 'regression', requiresAuth: true }
   ];
-  var appEl = null, tvEl = null, titleEl = null, subtitleEl = null, tabBtns = {}, views = {};
+  var appEl = null, tvEl = null, titleEl = null, subtitleEl = null, rfBtn = null, tabBtns = {}, views = {};
   var curTab = 'forecast', scrollMem = {}, titleOverride = {};
   var shellReady = false, savedEra = null;
 
@@ -1209,11 +1351,16 @@
     var hd = h('header', { class: 'cl-hd', id: 'cl-hd' });
     var t = h('h1', { class: 'cl-hd-t' });
     titleEl = h('b', { class: 'cl-serif', id: 'cl-title' }, 'Today');
-    subtitleEl = h('span', { id: 'cl-subtitle' });
+    subtitleEl = h('span', { id: 'cl-subtitle', 'aria-live': 'polite' });
     t.appendChild(titleEl);
     t.appendChild(subtitleEl);
     hd.appendChild(t);
-    hd.appendChild(h('button', { type: 'button', class: 'cl-ib', id: 'cl-settings-btn', 'aria-label': 'Settings', onclick: function () { CLEAN.openSettings(); } }, icon.settings()));
+    // ↻ on the Forecast tab only (the other tabs have nothing to fetch again), then Settings
+    var tools = h('div', { class: 'cl-hd-x' });
+    rfBtn = h('button', { type: 'button', class: 'cl-ib cl-rf', id: 'cl-refresh-btn', 'aria-label': 'Refresh the forecast', title: 'Refresh the forecast', onclick: function () { refreshNow(); } }, icon.refresh());
+    tools.appendChild(rfBtn);
+    tools.appendChild(h('button', { type: 'button', class: 'cl-ib', id: 'cl-settings-btn', 'aria-label': 'Settings', onclick: function () { CLEAN.openSettings(); } }, icon.settings()));
+    hd.appendChild(tools);
     appEl.appendChild(hd);
     var main = h('main', { id: 'cl-main' });
     TABS.forEach(function (tb) {
@@ -1251,10 +1398,64 @@
     else if (curTab === 'map') { t = 'Explore'; s = 'Past days and the sea floor'; }
     else if (curTab === 'methods') { t = 'Methods'; s = 'How the forecast works'; }
     else { t = 'My ratings'; s = 'What your sessions say'; }
+    if (curTab === 'forecast' && rf.note) s = rf.note;           // what ↻ found, for 8 s
     if (titleEl.textContent !== t) titleEl.textContent = t;
     if (subtitleEl.textContent !== (s || '')) subtitleEl.textContent = s || '';
     subtitleEl.hidden = !s;
+    if (rfBtn) rfBtn.hidden = curTab !== 'forecast';
   }
+  // ── ↻ Refresh (the Forecast tab's header) ──────────────────────────
+  // Everything the tab shows, now: the wind, tides and buoy (loadAllData,
+  // unless a load is already running), the Sound Check run past GitHub's
+  // cache, and the parts' own copies (event 'refresh': the Forecast map's
+  // frame asks for the newest pull too, the buoy check for the earlier
+  // forecasts). For 8 s the header says what came of it, in place of the
+  // date. → Promise<'new' | 'same' | 'none' | 'unreachable'>: the run's
+  // answer (CLEAN.model.refresh).
+  var rf = { busy: null, note: '', timer: 0 };
+  function refreshNow() {
+    if (rf.busy) return rf.busy;
+    clearTimeout(rf.timer);
+    rf.note = 'Checking for a newer forecast…';
+    paintRefresh(true);
+    if (!inFlight()) reload();
+    emit('refresh');
+    rf.busy = CLEAN.model.refresh().then(function (r) {
+      var made = Date.parse(sc.made), run = isNum(made) ? 'run ' + fmt.when(new Date(made)) : '';
+      rf.note = r === 'new' ? 'New forecast' + (run ? ': ' + run : '')
+        : r === 'same' ? 'Up to date' + (run ? ': ' + run : '')
+        : r === 'none' ? 'No forecast published on GitHub yet'
+        : 'Couldn’t reach GitHub';
+      rf.busy = null;
+      paintRefresh(false);
+      rf.timer = setTimeout(function () { rf.note = ''; updateHeader(); }, 8000);
+      return r;
+    });
+    return rf.busy;
+  }
+  function paintRefresh(busy) {
+    if (rfBtn) { rfBtn.setAttribute('aria-busy', String(busy)); rfBtn.classList.toggle('cl-spin', busy); }
+    updateHeader();
+  }
+  CLEAN.refresh = refreshNow;
+  // ── The surf log's revision ────────────────────────────────────────
+  // A short key that changes when a session is added, edited or deleted,
+  // or finishes saving to the cloud (its photos uploaded), and not when
+  // the log is only drawn again (opening the Log tab redraws it). Explore
+  // and Methods read the log from Firestore themselves: they read it again
+  // when this changes.
+  function logRev() {
+    if (typeof STATE === 'undefined' || !Array.isArray(STATE.surfLog)) return '';
+    var unsynced = typeof _slUnsyncedIds !== 'undefined' && _slUnsyncedIds && typeof _slUnsyncedIds.has === 'function' ? _slUnsyncedIds : null;
+    var photo = function (p) { return typeof p === 'string' ? (p.slice(0, 5) === 'data:' ? 'data' + p.length : p) : p ? p.url || (p._uploadFailed ? 'failed' : '') : ''; };
+    var txt = STATE.surfLog.map(function (e) {
+      return e ? [e.id, e.timestamp, JSON.stringify(e.ratings || null), e.notes || '', (e.photos || []).map(photo).join(','), unsynced && unsynced.has(e.id) ? 1 : 0].join('|') : '';
+    }).join('\n');
+    var hsh = 2166136261;                // FNV-1a: the key stays short
+    for (var i = 0; i < txt.length; i++) { hsh ^= txt.charCodeAt(i); hsh = Math.imul(hsh, 16777619); }
+    return STATE.surfLog.length + ':' + (hsh >>> 0).toString(36);
+  }
+  CLEAN.logRev = logRev;
   CLEAN.setTitle = function (tab, title, sub) {
     if (!title) delete titleOverride[tab];
     else titleOverride[tab] = { title: String(title), sub: sub ? String(sub) : '' };
@@ -1425,7 +1626,6 @@
       var cls = s.level === 'stale' ? ' cl-stale' : s.level === 'dead' ? ' cl-dead' : '';
       return '<div class="cl-sr" data-src="' + s.key + '"><span>' + esc(s.label) + '</span><span class="cl-v' + cls + '">' + esc(s.text) + '</span></div>';
     }).join('');
-    var classic = location.pathname + (IS_TV ? '?kiosk=1&classic=1' : '?classic=1');
     return '' +
       '<h2 class="cl-h2" id="cl-set-account">Account</h2>' +
       '<div class="cl-set-acct">' +
@@ -1456,8 +1656,7 @@
       '<h2 class="cl-h2" id="cl-set-spot">Spot</h2>' +
       '<div class="cl-list">' +
         '<button type="button" class="cl-sr" data-act="spot"><span>Spot and buoy</span><span class="cl-v">' + icon.chevronRight() + '</span></button>' +
-      '</div>' +
-      '<p class="cl-fine cl-set-note">The old look is still here: <a href="' + esc(classic) + '">Open the classic view</a></p>';
+      '</div>';
   }
   function renderSettings(body) {
     var focusKey = null, ae = document.activeElement;
@@ -1686,8 +1885,11 @@
   }
 
   // ── Unmount: give the page back to the classic app ─────────────────
+  // (with the old look's styles and fonts, which the page skips under the
+  // new look: index.html lccLoadClassic)
   function unmount(why) {
     err('unmount', why || 'core failed');
+    try { if (typeof lccLoadClassic === 'function') lccLoadClassic(); } catch (e) { err('unmount.styles', e); }
     var root = document.documentElement;
     root.classList.remove('cl-on', 'cl-tv', 'cl-fade');
     root.removeAttribute('data-clean-theme');
