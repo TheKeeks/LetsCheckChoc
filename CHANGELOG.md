@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased] — The research pages send visitors to the site
+
+The Sound Check pages (`research/index.html`, `research/map.html`) could be opened on their own at `/research/`, outside the site. They now send anyone who opens them that way to the site's front page. Inside the site (the Forecast tab's map, Explore and Methods frame them) nothing changes. The check sits at the top of `research/methods-theme.js`, the first script both pages load, so no page rebuild was needed.
+
+Verified with a new browser test, `tests/e2e/scenarios/w6-swell-map-redirect.js`. It opens both pages on their own and lands on the site, then checks that Methods and the Forecast map still show them in their frames. It fails without the change. The research, Explore, Methods and Forecast scenarios still pass. Browser tests drive the research pages on their own, so the redirect skips automated browsers (`navigator.webdriver`).
+
 ## [Unreleased] — The study refits itself to the surf log
 
 Everything the Sound Check said about your sessions was fixed at the 28 sessions in a hand export of the log from October 2025. That covered the ratings model (what makes a good session, and so every good day in the ten years), how modeled Choc and the buoy rank the sessions by size, which buoy measure ranks them best, and the forecast scorecard. The history bot rebuilt the buoy's history every day but carried those over unchanged: it couldn't read the log, which lives in the crew's Firestore. The page also quoted them as fixed text ("trained on your 28 logged sessions", "all 28 are June–October", "none from November to May", "0.85 … the raw buoy scores 0.66", "misses by 0.3–0.4 ft"), so a new session changed nothing.

@@ -1,6 +1,9 @@
-// Shared by the standalone research page and its Methods / Map embeds.
+// Shared by the research pages (index.html, map.html) in the site's frames: the Forecast tab's map, Explore, Methods.
 (function () {
   'use strict';
+  // They live inside the site. Opened on their own (a shared link, a bookmark, a search result), send the visitor to
+  // the site instead. Browser tests drive these pages on their own (navigator.webdriver), so those stay.
+  if (window.top === window.self && !navigator.webdriver) location.replace(new URL('../', location.href).href);
   var root = document.documentElement;
   var query = new URLSearchParams(location.search);
   var view = query.get('view');
