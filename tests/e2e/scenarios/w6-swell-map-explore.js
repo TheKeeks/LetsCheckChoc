@@ -43,7 +43,8 @@ module.exports = {
       return { x: b.left + b.width * 0.42, y: b.top + b.height * 0.55, W: s.W };
     });
     await page.mouse.click(pt.x, pt.y);
-    await page.waitForTimeout(600);
+    // the first trace loads the depth grids first (they don't come with the page)
+    await page.waitForFunction(() => { const f = window.CHOC.trip.fc; return f.fan && f.fan.rays.length > 1; }, null, { timeout: 15000 }).catch(() => {});
     const fan = await T(() => { const f = window.CHOC.trip.fc; return { pick: !!f.pick, fan: !!f.fan, rays: f.fan ? f.fan.rays.length : 0 }; });
     log(`tap: ${JSON.stringify(fan)}`);
     assert.ok(fan.pick && fan.fan && fan.rays > 1, 'tapping water traces that swell in');

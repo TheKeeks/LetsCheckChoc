@@ -208,3 +208,32 @@ test('a restored Google session runs the log query once, though the auth handler
   await settle(app, app.call('loadLogsFromFirebase'), 10);
   assert.equal(app.run('__gets'), 2);
 });
+
+// ── The start-up anonymous sign-in never undoes the crew's own sign-in ──────
+// firebase-config.js signs in anonymously 2 s after load when nobody is signed in (a first visit). A sign-out in those
+// first seconds signs back in anonymously by itself, and the start-up check, finding nobody signed in yet, started a
+// second anonymous sign-in. That one could land after a Google sign-in made in the meantime and switch the account
+// back to anonymous (seen in the Log tab's e2e test once the page took a little longer to start).
+test('a sign-out and Google sign-in in the first seconds are not undone by the start-up anonymous sign-in', async () => {
+  const app = loadApp({ firebase: { mode: 'google', anonMs: 1500 } });
+  await app.clock.tick(1000);
+  assert.equal(app.run('window._fbUserId'), 'google-1');
+  app.call('signOutUser');                        // 1.0 s: signed out; its anonymous sign-in lands at 2.5 s
+  await app.clock.tick(1600);                     // 2.0 s: the start-up check runs while nobody is signed in
+  assert.equal(app.run('window._fbUserId'), 'anon-1');
+  app.run("window.__FB_LINK_ERROR = 'auth/credential-already-in-use'; window.__FB_POPUP_USER = { uid: 'google-2', displayName: 'Kai Two' };");
+  app.call('signInWithGoogle');                   // 2.6 s
+  await app.clock.tick(500);
+  assert.equal(app.run('window._fbUserId'), 'google-2');
+  await app.clock.tick(2000);                     // past 3.5 s, when a second anonymous sign-in would land
+  assert.equal(app.run('window._fbUserId'), 'google-2', 'still the Google account');
+  assert.equal(app.run('window._fbUserIsAnon'), false);
+});
+
+test('a first visit with nobody signed in still gets the start-up anonymous sign-in', async () => {
+  const app = loadApp({ firebase: { mode: 'new_anon' } });
+  await app.clock.tick(1900);
+  assert.equal(app.run('window._fbUserId'), null);
+  await app.clock.tick(500);
+  assert.equal(app.run('window._fbUserId'), 'anon-1');
+});

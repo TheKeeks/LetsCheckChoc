@@ -1,10 +1,11 @@
 # The Sound Check history, rebuilt every day
 
-Everything the Sound Check says about the past (every day since May 2016, the month-by-month tiles, % of days
-with swell through the window, good-day shares, the storms, the swell trains, the share that bent in from
-outside the window, Wilderness vs Choc, the daily wind) comes from these scripts. Every morning
+Everything the Sound Check says about the past (every day since May 2016, the month-by-month tiles, % of days with
+swell through the window, good-day shares, the storms, the swell trains, the share that bent in from outside the
+window, Wilderness vs Choc, the daily wind) comes from these scripts. Four times a day (from 5:23 AM Eastern)
 `.github/workflows/update-history.yml` fetches what's new, rebuilds the whole history from 2016 through yesterday
-(Eastern), and commits what changed to `main`.
+(Eastern), and commits what changed to `main`. GitHub drops many scheduled runs, so the later runs catch up when an
+earlier one doesn't start; one that finds nothing new commits nothing.
 
 ```sh
 python3 scripts/history/update.py                        # fetch, rebuild, write into the repo

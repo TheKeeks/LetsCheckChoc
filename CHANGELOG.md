@@ -1,5 +1,46 @@
 # Changelog
 
+## [Unreleased] — One map: the storms on the Forecast tab, past days on Explore
+
+The site had three maps that each did part of the job. The Forecast tab had two small ones: the rays into Choc, and a Storms view of the North Atlantic. The Map tab had the Sound Check map, with this week's forecast, past days and Drop a wave, behind its own controls. The ten years month by month opened from a small button on the Past bar.
+
+Forecast now has one map: the Sound Check map at the hour on the week scrubber (`research/map.html`, the map alone, in a frame). Ocean, Region and Fishers set how far out you look:
+- Ocean: the North Atlantic with the storms. The pressure lines every 4 hPa, the lows and highs, and each storm's track over the run are now a "Pressure & storms" layer of the map, moved over from the tab's Storms view.
+- Region: the swell headed our way.
+- Fishers: each swell's rays into Choc or Wilderness, coloured like its row and labelled with its share. The spots carry the headline's number (the two models' mean).
+
+The map's layers (model, wave height, swell motion, the dots, the rays, pressure and storms) are one tap away, and its 3D button opens the sea floor in 3D on Explore at the same hour. On a phone, one finger scrolls the tab and two move the map. When the run doesn't cover the hour, or doesn't load, the map says so instead of showing another hour.
+
+The Map tab is now Explore: past days and the sea floor. It opens on the newest day of the history. The ten years month by month sit out beside the map (under it on a phone): the grid, the month as a calendar, the day's details, and what the ocean was doing that day. A day picked there shows on the map at once, and a day picked on the map moves the calendar to it. The Past bar's month button brings the month into view. Drop a wave and the 3D sea floor stay; the forecast moved to the Forecast tab.
+
+The map also loads less. The wave tracer's depth grids (about 4 MB) load the first time a wave is traced, and Part 1's ray files (0.4–0.7 MB each) only when you zoom in near Fishers. The Forecast tab's map page leaves out the history (1.4 MB) and the charts. Its first view downloads about 3.7 MB, where the Sound Check map took 10.5 MB.
+
+Three fixes came with it:
+- A wave traced from a dot needs the depth grids, so the first trace now says "Tracing it into Choc…" while they load.
+- The page's "this page stopped and was reloaded" note kept one heartbeat for every map page. With the Forecast map and Explore's map open in one tab, each took the other's heartbeat for a crash. Each kind of page now keeps its own.
+- Signing in could be undone at start-up. `firebase-config.js` signs in anonymously 2 s after load when nobody is signed in. A sign-out in those first seconds started a second anonymous sign-in, and that one could land after a Google sign-in made in the meantime and switch the account back to anonymous. The Log tab's e2e test hit this once the page took a little longer to start. The start-up sign-in now stays out of it once the crew have signed in or out (new unit tests in `review-signin.test.js`, the first fails before the change).
+
+Verified: new e2e `preview-clean-explore.js` checks the Explore tab on an iPad and a phone:
+- the ten years beside or under the map;
+- days in step both ways;
+- the month button;
+- Drop a wave;
+- no crash note with the Forecast map up.
+
+It fails on the old page. `w6-swell-map-light.js` checks that the depth grids and ray files load only when used, and that the map alone loads no history; it fails on the old page. Rewritten for the new map:
+- `preview-clean-forecast.js`: the map's hour, its spot, the Fishers labels matching the rows, Choc pinned, the remembered zoom;
+- `preview-clean-forecast-storms.js`: the same lows, highs, tracks and colours as before, now at Ocean zoom, plus the layer switch and the no-pressure-map note;
+- `preview-clean-forecast-fallback.js`: the map's notes;
+- `map-one-map.js`: Explore opens on past days, and the Forecast map's 3D opens at its hour.
+
+## [Unreleased] — The history bot gets four chances a day
+
+The history bot's one daily run (09:23 UTC) never started on its first morning, 14 October, so the history stayed on 12 October. GitHub drops many scheduled runs: the buoy bot's every-2-hours schedule ran three times that day.
+
+The workflow now runs at 09:23, 13:23, 17:23 and 21:23 UTC. Every run rebuilds the whole history, so a later run catches up when an earlier one doesn't start. A run that finds nothing new commits nothing. The 14 October update was started by hand.
+
+Verified: the workflow file parses with the four times, and the job itself is unchanged.
+
 ## [Unreleased] — The Sound Check history updates itself every day
 
 The Sound Check's history (every day since May 2016: the month tiles, % of days with swell through the window, good-day shares, the storms, the swell trains, how much bent in from outside the window, Wilderness vs Choc) was built once, by hand, in a web session, from data through 5 October 2026. It went stale a day at a time. The scripts lived only in that session's scratch folder, and the history was embedded in `research/index.html`, so a page rebuild could roll it back. The page also carried the date in its text: the date picker stopped at 4 October, and its counts ("20 days", "300 Wilderness days") and its note on gaps ("August 2026") were typed in.

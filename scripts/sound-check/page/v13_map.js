@@ -16,7 +16,8 @@
   const wSoft = d => d >= 115 && d <= 158 ? 1 : d >= 100 && d < 115 ? (d - 100) / 15 : d > 158 && d <= 175 ? (175 - d) / 17 : 0;
 
   // ── daily rows: [yymmdd, hs, dir, per, e_all, e_day, ea_all, s_all, s_day, wdir, wspd, clean%, mh_all, mh_day]
-  const D = DATA.daily.map(r => ({
+  // (the map alone, research/map.html, loads no history: no days)
+  const D = (typeof DATA === 'undefined' ? [] : DATA.daily).map(r => ({
     y: 2000 + +r[0].slice(0, 2), m: +r[0].slice(2, 4), d: +r[0].slice(4, 6), hs: r[1], dir: r[2], per: r[3],
     e: [r[4], r[5]], ea: r[6], s: [r[7], r[8]], wdir: r[9], wspd: r[10], clean: r[11], mh: [r[12], r[13]] }));
   D.forEach(x => {
@@ -203,9 +204,9 @@
   }
 
   // ── wind: 17 over-water ECMWF points (ERA5 for 2016), one vector per day
-  const WG = WIND, W0 = Date.UTC(2016, 0, 1);
+  const WG = typeof WIND === 'undefined' ? null : WIND, W0 = Date.UTC(2016, 0, 1);
   function windPts(i) {                                      // [{lon, lat, kn, from}] for day i
-    const x = D[i]; if (!x) return [];
+    const x = D[i]; if (!x || !WG) return [];
     const k = Math.round((x.key - W0) / 864e5);
     return WG.pts.map(p => {
       const a = p.uv[k] || WG.base[k] || [0, 0], u = -(a[0] / 2), v = a[1] / 2;     // toward-vector, knots (x east, y south)

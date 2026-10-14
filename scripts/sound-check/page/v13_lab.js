@@ -176,7 +176,7 @@
     if (ao) ao.textContent = `Forecast as of ${p.weekday} ${p.month} ${p.day}, ${hr12(p.h)} ET · GFS-Wave and ECMWF ${hr12(etp(Date.parse(f.runs.gfs.replace(/Z$/, ':00Z'))).h)} runs`;
   }
   // how far ahead to trust it: archived GFS-Wave forecasts for each logged session (fcscore.py)
-  fetch('fc/score.json').then(r => (r.ok ? r.json() : null)).catch(() => null).then(s => {
+  if (document.getElementById('fcScore')) fetch('fc/score.json').then(r => (r.ok ? r.json() : null)).catch(() => null).then(s => {
     const tb = document.getElementById('fcScore'); if (!tb || !s) return; const m = s.summary;
     const sg = v => (v == null ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)} ft`);
     tb.innerHTML = '<thead><tr><th>Looking</th><th class="num">Orders your sessions by size</th><th class="num">Off from what arrived</th><th class="num">Typical miss</th></tr></thead><tbody>' +
@@ -246,7 +246,8 @@
   window.CHOC.krespRedraw = kresp;
 
   function wildSection() {
-    const s = WILDSTATS, host = document.getElementById('wildMonths'); if (!host) return;
+    const host = document.getElementById('wildMonths'); if (!host) return;
+    const s = WILDSTATS;
     const NS = 'http://www.w3.org/2000/svg', el = (nm, a, p) => { const e = document.createElementNS(NS, nm); for (const k in a) e.setAttribute(k, a[k]); p && p.appendChild(e); return e; };
     const w = 700, h = 230, L = 34, B = 24, T = 10, top = 40, y = v => h - B - v / top * (h - B - T), bw = (w - L) / 12;
     const svg = el('svg', { viewBox: `0 0 ${w} ${h}`, role: 'img', 'aria-label': 'Share of days each month for Choc and Wilderness' }, host);

@@ -4,16 +4,18 @@ Until now the Sound Check page (`research/index.html`) and the tools that built 
 Claude Code web session's scratch folder, which is deleted when the session ends. They are kept here so the page
 can be rebuilt and the history refreshed from the repo.
 
-## `page/`: rebuild `research/index.html`
+## `page/`: rebuild `research/index.html` and `research/map.html`
 
 ```sh
 cd scripts/sound-check/page
-python3 build13.py                                   # assembles site/choc-big.html from the parts below
-python3 mk_research.py ../../../research/index.html  # wraps it as the repo page
+python3 build13.py                                   # assembles site/choc-big.html and site/choc-map.html from the parts below
+python3 mk_research.py ../../../research/index.html ../../../research/map.html   # wraps them as the repo pages
 rm -rf site
 ```
 
-This reproduces the committed `research/index.html` byte for byte. Edit the parts, not the built page:
+This reproduces the committed `research/index.html` and `research/map.html` byte for byte. `map.html` is the map
+alone: the same head and map section, and only the map's code (`v13_map.js`, `v13_lab.js`, `ocean.js`), without the
+history or the charts; the Forecast tab frames it (`?view=map&fill=1&ui=forecast`). Edit the parts, not the built page:
 `v13_head.html`, `v13_body.html` (markup), `v13_map.js` (map and forecast), `v7_charts.js` (charts),
 `v13_lab.js` (Check a date, Drop a wave), `fray.js` (forward rays), `ocean.js` / `oceanday.js` (ocean views),
 `decade.js` (the ten-year month tiles), `errnote.js`. The page embeds its fixed tables: `fwdk.json`,

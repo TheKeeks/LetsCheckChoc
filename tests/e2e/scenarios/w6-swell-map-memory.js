@@ -14,8 +14,9 @@ module.exports = {
   async run({ page, ctx, assert, log }) {
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
-    // seed a "page was killed" heartbeat for the first load only, as if the browser had killed the last one
-    await page.addInitScript(() => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); sessionStorage.setItem('sc-alive', JSON.stringify({ t: Date.now(), W: 4.2 })); } } catch (e) {} });
+    // seed a "page was killed" heartbeat for the first load only, as if the browser had killed the last one (the
+    // heartbeat is kept per kind of page: research/index.html with no view or profile here)
+    await page.addInitScript(() => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); sessionStorage.setItem('sc-alive:index.html::', JSON.stringify({ t: Date.now(), W: 4.2 })); } } catch (e) {} });
     await ctx.open('/research/index.html');
     await page.waitForFunction(() => window.CHOC && window.CHOC.trip && window.CHOC.trip.fc && window.CHOC.trip.fc.d, null, { timeout: 30000 });
     const reqs = (re) => ctx.requests.filter(r => re.test(r.url)).length;

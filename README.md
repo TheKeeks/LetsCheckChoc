@@ -32,9 +32,8 @@ the height at Choc (or Wilderness, one tap on the map) for that hour: the
 average of GFS-Wave and ECMWF, read at buoy 44097 and carried over the sea
 floor, with each model under it. Under it, every swell at the buoy and its
 share of the energy that reaches Choc, e.g. "1° 2.9 ft @ 8 s S 178° → 66% of
-Choc" with a bar. The map draws those swells' rays bending into Choc, thicker
-for a bigger share, coloured by where they come from (teal E, orange SE,
-violet S, grey anything else). The week chart underneath is the scrubber:
+Choc" with a bar. The map follows the same hour (below). The week chart
+underneath is the scrubber:
 drag it, use the arrow keys, « day / ‹ / Now / › / day »; nights are shaded,
 the tide and the wind (blue offshore, grey cross-shore, orange onshore) run
 along the bottom. Then the wind and tide for that hour, and the buoy check:
@@ -43,21 +42,30 @@ before ("forecasts on track" when they were within half a foot or 15 %). Tap
 it for the last two days. If the model run doesn't reach the present (the
 forecast bot stalled), Forecast says so instead of showing an old number.
 
-The map has two views: **Swell at Choc** (the rays above) and **Storms**, the
-North Atlantic at the same hour from the Gulf of Mexico to Africa: GFS-Wave's
-wave height in colour, GFS's sea-level pressure as lines every 4 hPa, the
-lows (L) and highs (H) with their pressure, and each storm's track over the
-run (lows that last a day and get down to 1000 hPa), brighter for the hours
-still to come. ▶ plays the week, so you can watch a storm cross the ocean
-and the swell it makes head for the coast.
+The map is one map with layers, at the hour on the scrubber; how far out you
+look picks what it shows. **Ocean**: the North Atlantic from the Gulf of
+Mexico to Africa, GFS-Wave's wave height in colour, GFS's sea-level pressure
+as lines every 4 hPa, the lows (L) and highs (H) with their pressure, and
+each storm's track over the run (lows that last a day and get down to
+1000 hPa), brighter for the hours still to come. **Region**: the swell
+headed our way, the dots far offshore aimed at the spot from an angle its
+reef can see (tap one for when it gets here). **Fishers**: each swell's rays
+bending into Choc, thicker for a bigger share and coloured like its row
+(teal E, orange SE, violet S, grey anything else), labelled with its share.
+Layers (the stacked-squares button) switches the model (GFS-Wave or ECMWF)
+and each layer on or off; **3D** opens the sea floor in 3D on Explore at the
+same hour. On a phone one finger scrolls past the map and two move it. ▶
+plays the week, so you can watch a storm cross the ocean and the swell it
+makes head for the coast.
 
-**Map** is one map: the Sound Check map, this week's swell from the open
-Atlantic to the reef (GFS-Wave or ECMWF), any day since 2016 (Past), and Drop
-a wave. On a past day the month in the bottom bar (with the small grid) opens
-the ten years, month by month; tap a month, then a day, then "Open this day
-on the map" to come back on it. The **3D** button opens Fishers Island's sea
-floor in 3D at the same spot and hour (Wilderness opens the Fishers view);
-**← Map** goes back. The 3D map is built from the Fishers Island viewer's own
+**Explore** (the Map tab before) is past days and the sea floor. It opens on
+the newest day of the history, with the ten years month by month beside the
+map (under it on a phone): the grid of good days (or big swell days, or Choc
+at 3 ft+), the month on show as a calendar, the day's details, and what the
+ocean was doing that day. Tap a month for its days and a day to see it on the
+map; a day picked on the map moves the calendar to it. **Drop a wave** traces
+one wave over the sea floor. The **3D** button opens Fishers Island's sea
+floor in 3D (Wilderness opens the Fishers view); **← Map** goes back. The 3D map is built from the Fishers Island viewer's own
 elevation: NOAA's 2023 topobathy lidar and multibeam surveys at 0.8 m near the
 island and 4 m around it, then the Sound Check 16 m and 144 m grids across Block
 Island Sound. **3D bathymetry** raises it (depth stretch 1–10×, land always
@@ -82,9 +90,9 @@ height. The 3D map (about 1 MB of MapLibre) loads only the first time it is
 opened.
 
 **Methods** is the research page, now in the shared light/dark design. Its
-historical-day links open the Map explorer at that date. Its history (every day
+historical-day links open Explore at that date. Its history (every day
 since May 2016, the ten years month by month, and the counts in its text) is
-rebuilt every morning from buoy 44097's own data, through yesterday.
+rebuilt every day from buoy 44097's own data, through yesterday.
 
 The old Windows-style look remains at `?classic=1` (`?kiosk=1&classic=1`
 for Choc TV), and Settings links to it. The clean look skips the boat question.
@@ -108,8 +116,8 @@ rules or production deployment settings are changed by this branch.
 
 ```
 LetsCheckChoc/
-├── index.html                  Page shell (Forecast / Map / Methods / Log / Model)
-├── map/                        Map page: sea floor (~117 MB of gzip grids in the TheKeeks/LetsCheckChoc-data repo), workers, forecast layers
+├── index.html                  Page shell (Forecast / Explore / Methods / Log / Model)
+├── map/                        Explore page: past days on the Sound Check map, the sea floor in 3D (~117 MB of gzip grids in the TheKeeks/LetsCheckChoc-data repo), workers, forecast layers
 ├── app.js                      All JavaScript
 ├── kiosk.js                    Choc TV kiosk mode (?kiosk=1) — see below
 ├── style.css                   All styles

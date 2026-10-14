@@ -13,8 +13,8 @@ read it and do not edit it.
 | `base.css` | Core | Scoped reset, phone shell, sub-page, shared classes (below) |
 | `theme.js` | Core | Loader: `document.write`s `core.js`, `forecast.js`, `map.js`, `methods.js`, `log.js`, `model.js`, `tv.js` in that order |
 | `core.js` | Core | `window.CLEAN`: shell, theme, gate skip, data adapters, formatting, icons, events, Settings |
-| `forecast.js` + `forecast.css` | Forecast | Forecast tab, built on the Sound Check model: height at Choc or Wilderness, the swells' shares, the ray map (or, with "Storms", the North Atlantic's wave height, sea-level pressure, lows and storm tracks at the same hour), the week scrubber with play, wind and tide, the buoy check. Reads its own data (`research/fc/fc.json` or the fc-data pull and, for Storms, that run's `field_gfs_ocean.png` and `field_gfs_mslp.png` over `research/ocean/`; `research/fr/land.json`, Open-Meteo's earlier runs at the buoy, `data/verification.json`); `CLEAN.forecastInfo()` is its read-only state for tests |
-| `map.js` + `map.css` | Map | Map tab: frames `map/index.html` (the Sound Check map, and the sea floor in 3D from its "3D" button) |
+| `forecast.js` + `forecast.css` | Forecast | Forecast tab, built on the Sound Check model: height at Choc or Wilderness, the swells' shares, the map, the week scrubber with play, wind and tide, the buoy check. The map is `research/map.html` (the Sound Check map alone, no history) in a frame, in its forecast profile (`?view=map&fill=1&ui=forecast`): Ocean shows the North Atlantic's wave height with GFS's sea-level pressure, the lows and highs and the storms' tracks (its "Pressure & storms" layer), Region the swell headed for the spot, Fishers each swell's landing rays coloured like its row. The tab sends it the hour, spot and zoom (`postMessage {type: 'lcc-fc', time, spot, zoom}`; the map answers `lcc-fc-ready` or `lcc-fc-failed`), and the map's "3D" button opens the Explore tab in 3D at that hour (`x-open-3d`). Reads its own data (`research/fc/fc.json` or the fc-data pull, Open-Meteo's earlier runs at the buoy, `data/verification.json`); `CLEAN.forecastInfo()` is its read-only state for tests, the map's is `CHOC.trip` in the frame |
+| `map.js` + `map.css` | Map | Explore tab (id `map`, `#map`): frames `map/index.html`, the Sound Check map's past days (`ui=explore`: the ten years month by month beside them, Drop a wave) and the sea floor in 3D from its "3D" button; `x-open-3d` (from the Forecast map) opens it in 3D at a spot and hour |
 | `methods.js` + `methods.css` | Methods | Methods tab, the research explanation |
 | `log.js` + `log.css` | Log | Log tab |
 | `model.js` + `model.css` | Model | My ratings tab (id `model`): the surf-log rating models |
@@ -102,7 +102,7 @@ The tab hash follows navigation. A signed-out `#model` opens the Log login page.
 
 | Call | Does |
 |---|---|
-| `CLEAN.show(tab)` | Switch to `'forecast' \| 'map' \| 'methods' \| 'log' \| 'model'` (120 ms fade, scroll remembered per tab). Forecast/Log/Model also run the legacy `switchTab`; Map/Methods own their viewers. Signed-out Model requests open Log. Tapping the active tab scrolls to the top. |
+| `CLEAN.show(tab)` | Switch to `'forecast' \| 'map' \| 'methods' \| 'log' \| 'model'` (`'map'` is the Explore tab; 120 ms fade, scroll remembered per tab). Forecast/Log/Model also run the legacy `switchTab`; Explore/Methods own their viewers. Signed-out Model requests open Log. Tapping the active tab scrolls to the top. |
 | `CLEAN.tab()` | Current tab (`'tv'` on the TV) |
 | `CLEAN.setTitle(tab, title, sub?)` | Override the header for a tab; `CLEAN.setTitle(tab, null)` restores the default. Defaults: Forecast "Today"/"Tonight" + "Thu 1 Oct", Log "Log", My ratings "My ratings". |
 | `CLEAN.openSettings(section?)` | Opens Settings; `section` scrolls to `'account' \| 'display' \| 'forecast' \| 'sources' \| 'spot'` (e.g. the Forecast part's Details › Data sources row). |
@@ -321,7 +321,7 @@ Part classes are prefixed `cl-f-` (forecast), `cl-l-` (log), `cl-m-` (model),
 `cl-tv-` (TV). Style only inside your own root; never restyle `.cl-hd`,
 `.cl-tabs` or `#cl-tv` itself.
 
-The current tab is also on `html[data-active-tab]`. Map and Methods use a
+The current tab is also on `html[data-active-tab]`. Explore and Methods use a
 1440 px maximum shell width, Forecast 1200 px (map beside the readout from 900 px);
 other tabs remain 640 px. Add `.cl-wide-view` to
 a `.cl-sub` for a 1440 px comparison window.

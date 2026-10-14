@@ -2,8 +2,10 @@
 // happening now (fixture day, Thu 1 Oct 2026 11:00 ET):
 //   • the run that ships with research/ doesn't reach now (its steps are from
 //     the 9th): the tab says so and names the run instead of showing an old
-//     number as now; the week still draws, the wind and tide still show;
-//   • the model doesn't load at all: the tab says so, no week, no rays;
+//     number as now; the week still draws, the wind and tide still show; the
+//     map says it has no model forecast for this hour (no colours, no rays);
+//   • the model doesn't load at all: the tab says so, no week; the map says
+//     the forecast didn't load;
 //   • the bot's live pull on the fc-data branch is newer than the shipped
 //     copy: the tab uses it;
 //   • Open-Meteo's earlier runs don't load: the buoy check still shows the
@@ -16,11 +18,12 @@ module.exports = {
   name: 'clean forecast fallbacks: run that misses now, no run, newer live pull, earlier forecasts down',
   options: { gate: null, viewport: { width: 390, height: 844 }, contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 } },
   async run({ page, ctx, assert, log }) {
-    const boot = async (until) => {
+    const boot = async (until, frameNote) => {
       await ctx.open('/?preview=clean');
       await ctx.waitFor(until, { label: 'forecast state' });
       await ctx.waitForLoad();
       await page.waitForTimeout(300);
+      if (frameNote) await page.frames().find(f => /research\/map\.html/.test(f.url())).waitForFunction(n => window.CHOC && CHOC.trip && CHOC.trip.fc.note === n, frameNote, { timeout: 20000 });
       return ctx.state(() => ({
         info: CLEAN.forecastInfo(),
         head: document.querySelector('#cl-view-forecast .cl-f-head').innerText,
@@ -33,14 +36,14 @@ module.exports = {
     };
 
     // ── The shipped run (9 Oct) doesn't reach the fixture's now ──
-    let r = await boot(() => window.CLEAN && CLEAN.forecastInfo && CLEAN.forecastInfo().fc === 'ok');
+    let r = await boot(() => window.CLEAN && CLEAN.forecastInfo && CLEAN.forecastInfo().fc === 'ok' && CLEAN.forecastInfo().map.status === 'ready', 'No model forecast for this hour');
     log('misses now', JSON.stringify(r));
     assert.equal(r.info.step, -1, 'no step for now');
     assert.equal(sp(r.head), 'The Sound Check forecast doesn’t reach now: its newest run is from Fri 3:55 PM.');
     assert.equal(r.num, null, 'no height shown as now');
     assert.equal(r.wkHidden, false, 'the run\'s week still draws');
-    assert.equal(r.info.rays, 0);
-    assert.equal(r.info.note, 'No model forecast for this hour');
+    const out = await page.frames().find(f => /research\/map\.html/.test(f.url())).evaluate(() => ({ out: CHOC.trip.fc.out, rays: CHOC.trip.fc.rayCount, tags: CHOC.trip.fc.rayTags }));
+    assert.deepEqual(out, { out: true, rays: 0, tags: [] }, 'the map says so and draws no forecast');
     assert.match(sp(r.cond), /^Wind 7 mph SW/, 'the wind still shows');
     assert.match(sp(r.cond), /Tide 2\.3 ft ▲/, 'the tide still shows');
     assert.deepEqual(r.errors, []);
@@ -48,11 +51,10 @@ module.exports = {
 
     // ── No run at all ──
     ctx.serve('/research/fc/fc.json', null);
-    r = await boot(() => window.CLEAN && CLEAN.forecastInfo && CLEAN.forecastInfo().fc === 'failed');
+    r = await boot(() => window.CLEAN && CLEAN.forecastInfo && CLEAN.forecastInfo().fc === 'failed' && CLEAN.forecastInfo().map.status === 'failed', 'The forecast didn’t load');
     log('no run', JSON.stringify(r));
     assert.equal(sp(r.head), 'The Sound Check forecast didn’t load.');
     assert.equal(r.wkHidden, true, 'no week without a run');
-    assert.equal(r.info.rays, 0);
     assert.match(sp(r.cond), /^Wind 7 mph SW/);
     assert.deepEqual(r.errors, []);
 
