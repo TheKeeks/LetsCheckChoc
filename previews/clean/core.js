@@ -1122,6 +1122,135 @@
     atNow: function () { return CLEAN.cursor.get() === nowIndex(); }
   };
 
+  // ═══════════════════════════════════════════════════════════════════
+  // THE SOUND CHECK MODEL — the wave forecast Forecast and Choc TV show
+  // ═══════════════════════════════════════════════════════════════════
+  // GFS-Wave and ECMWF read at buoy 44097 and carried over the sea floor
+  // to Choc and Wilderness (scripts/forecast/fcpull.py): research/fc/
+  // fc.json, the copy that ships with the site, or the forecast bot's
+  // newer pull on the fc-data branch, whichever is newer. One copy for
+  // the whole page, so the Forecast tab and Choc TV can't disagree.
+  // Steps every 3 h (6 h after day 6): { t, hs (offshore at the buoy,
+  // GFS-Wave), trains (GFS-Wave's swells at the buoy, each with its
+  // height at Choc and Wilderness), choc: { g, e, m }, wild: { g, e, m } }
+  // with g GFS-Wave, e ECMWF and m their mean (one model when the other
+  // has no number). A run that doesn't reach an hour never stands in for
+  // it, and a missing number stays null. Raises 'soundcheck' when a run is in
+  // (or none could load).
+  var SC_SHIP = 'research/fc/fc.json';
+  var SC_LIVE = 'https://raw.githubusercontent.com/TheKeeks/LetsCheckChoc/fc-data/fc/fc.json';
+  var sc = { steps: null, made: null, runs: null, buoy: null, status: 'loading', checkedAt: 0 };
+  var scStarted = false;
+  // Where a swell comes from: one colour on every screen (the Forecast
+  // tab's rows and bars, Choc TV, and the map's rays: research's FAM).
+  var SC_FAM = [
+    { name: 'E', rgb: [64, 190, 198] },      //  60-115°
+    { name: 'SE', rgb: [240, 138, 75] },     // 115-160°
+    { name: 'S', rgb: [170, 128, 236] },     // 160-205°
+    { name: 'other', rgb: [140, 154, 168] }
+  ];
+  function scFam(d) { return d >= 60 && d < 115 ? 0 : d >= 115 && d < 160 ? 1 : d >= 160 && d < 205 ? 2 : 3; }
+  function scMean(a, b) { var v = [a, b].filter(isNum); return v.length ? v.reduce(function (x, y) { return x + y; }, 0) / v.length : null; }
+  function scUse(d) {
+    if (!d || !d.gfs || !d.gfs.length) return false;
+    if (sc.made && !(Date.parse(d.made) > Date.parse(sc.made))) return false;
+    var ec = {};
+    (d.ec || []).forEach(function (r) { ec[Math.round(Date.parse(r.t) / HOUR)] = r; });
+    var steps = d.gfs.map(function (g) {
+      var t = Date.parse(g.t), e = ec[Math.round(t / HOUR)] || null;
+      return {
+        t: t,
+        hs: isNum(g.hs) ? g.hs : null,
+        choc: { g: isNum(g.choc) ? g.choc : null, e: e && isNum(e.choc) ? e.choc : null },
+        wild: { g: isNum(g.wild) ? g.wild : null, e: e && isNum(e.wild) ? e.wild : null },
+        trains: (g.trains || []).filter(function (x) { return isNum(x.ft) && isNum(x.T) && isNum(x.D); })
+      };
+    }).filter(function (s) { return isNum(s.t); });
+    if (!steps.length) return false;
+    steps.forEach(function (s) { s.choc.m = scMean(s.choc.g, s.choc.e); s.wild.m = scMean(s.wild.g, s.wild.e); });
+    sc.steps = steps;
+    sc.made = d.made || null;
+    sc.runs = d.runs || null;
+    if (d.buoy && isNum(d.buoy[0]) && isNum(d.buoy[1])) sc.buoy = d.buoy;
+    sc.status = 'ok';
+    return true;
+  }
+  // fresh: past GitHub's 5-minute cache too
+  function scGet(url, fresh) {
+    return fetch(url + (fresh ? '?t=' + Date.now() : ''), { cache: fresh ? 'no-store' : 'no-cache' })
+      .then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+  }
+  function scLoad() {
+    if (scStarted) return;
+    scStarted = true;
+    var got = function (d) { if (scUse(d)) emit('soundcheck', sc); };
+    scGet(SC_SHIP).then(function (d) {
+      got(d);
+      return scGet(SC_LIVE);
+    }).then(function (d) {
+      got(d);
+      sc.checkedAt = Date.now();
+      if (sc.status === 'loading') { sc.status = 'failed'; emit('soundcheck', sc); }
+    });
+  }
+  // Ask again (Choc TV, which runs for days): the bot's latest pull, and
+  // the shipped copy too while nothing has loaded. A newer run replaces
+  // the one on show. → Promise<boolean>: whether it did.
+  function scRefresh() {
+    if (!scStarted || sc.status === 'loading') return Promise.resolve(false);
+    return Promise.all([sc.steps ? null : scGet(SC_SHIP), scGet(SC_LIVE, true)]).then(function (got) {
+      sc.checkedAt = Date.now();
+      var used = scUse(got[0]);
+      used = scUse(got[1]) || used;
+      if (used) emit('soundcheck', sc);
+      return used;
+    });
+  }
+  // The step nearest a time (default now) when the run covers it, else -1.
+  function scStepAt(at) {
+    var s = sc.steps; if (!s) return -1;
+    var t = at == null ? Date.now() : +at;
+    if (!isNum(t) || t < s[0].t - 3 * HOUR || t > s[s.length - 1].t + 90 * MIN) return -1;
+    var b = 0;
+    for (var i = 1; i < s.length; i++) if (Math.abs(s[i].t - t) < Math.abs(s[b].t - t)) b = i;
+    return b;
+  }
+  // The spot's height at any time inside the run: the two models' mean,
+  // in a straight line between the steps either side (null outside the
+  // run, or across a step with no number).
+  function scAt(t, spot) {
+    var s = sc.steps, k = spot === 'wild' ? 'wild' : 'choc';
+    t = +t;
+    if (!s || !isNum(t) || t < s[0].t || t > s[s.length - 1].t) return null;
+    var i = 1;
+    while (i < s.length - 1 && s[i].t < t) i++;
+    var a = s.length > 1 ? s[i - 1] : s[0], b = s.length > 1 ? s[i] : s[0], va = a[k].m, vb = b[k].m;
+    if (!isNum(va) || !isNum(vb)) return null;
+    return b.t === a.t ? va : va + (vb - va) * (t - a.t) / (b.t - a.t);
+  }
+  // A step's swells, each with its share of the energy reaching the spot,
+  // biggest share first (shares under half a percent left off).
+  function scParts(s, spot) {
+    var k = spot === 'wild' ? 'wild' : 'choc';
+    if (!s) return [];
+    var tr = s.trains.filter(function (x) { return isNum(x[k]); });
+    var e2 = tr.reduce(function (a, x) { return a + x[k] * x[k]; }, 0);
+    return tr.map(function (x) { return { t: x, v: x[k], share: e2 > 0 ? x[k] * x[k] / e2 : 0 }; })
+      .filter(function (p) { return p.share >= 0.005; })
+      .sort(function (a, b) { return b.share - a.share; });
+  }
+  CLEAN.model = {
+    state: sc,                            // read-only for the parts
+    load: scLoad,
+    refresh: scRefresh,
+    stepAt: scStepAt,
+    nowStep: function () { return scStepAt(); },
+    at: scAt,
+    parts: scParts,
+    FAM: SC_FAM,
+    fam: scFam
+  };
+
   // ════════════════════════════════════════════════════════════════════
   // THEME — day / night
   // ════════════════════════════════════════════════════════════════════
@@ -1425,7 +1554,6 @@
       var cls = s.level === 'stale' ? ' cl-stale' : s.level === 'dead' ? ' cl-dead' : '';
       return '<div class="cl-sr" data-src="' + s.key + '"><span>' + esc(s.label) + '</span><span class="cl-v' + cls + '">' + esc(s.text) + '</span></div>';
     }).join('');
-    var classic = location.pathname + (IS_TV ? '?kiosk=1&classic=1' : '?classic=1');
     return '' +
       '<h2 class="cl-h2" id="cl-set-account">Account</h2>' +
       '<div class="cl-set-acct">' +
@@ -1456,8 +1584,7 @@
       '<h2 class="cl-h2" id="cl-set-spot">Spot</h2>' +
       '<div class="cl-list">' +
         '<button type="button" class="cl-sr" data-act="spot"><span>Spot and buoy</span><span class="cl-v">' + icon.chevronRight() + '</span></button>' +
-      '</div>' +
-      '<p class="cl-fine cl-set-note">The old look is still here: <a href="' + esc(classic) + '">Open the classic view</a></p>';
+      '</div>';
   }
   function renderSettings(body) {
     var focusKey = null, ae = document.activeElement;
@@ -1686,8 +1813,11 @@
   }
 
   // ── Unmount: give the page back to the classic app ─────────────────
+  // (with the old look's styles and fonts, which the page skips under the
+  // new look: index.html lccLoadClassic)
   function unmount(why) {
     err('unmount', why || 'core failed');
+    try { if (typeof lccLoadClassic === 'function') lccLoadClassic(); } catch (e) { err('unmount.styles', e); }
     var root = document.documentElement;
     root.classList.remove('cl-on', 'cl-tv', 'cl-fade');
     root.removeAttribute('data-clean-theme');

@@ -4,30 +4,48 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LetsCheckChoc</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preload" href="fonts/ms_sans_serif.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="fonts/ms_sans_serif_bold.woff2" as="font" type="font/woff2" crossorigin>
-  <!-- Google Fonts must not block first paint: a stalled fonts.googleapis.com
-       held the whole page (boat gate included) blank. Loads as print-only,
-       then switches to all media once it arrives; the fallback fonts show
-       meanwhile (and for good if it never does). -->
-  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-  <noscript><link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"></noscript>
-  <!-- Leaflet 1.9.4, vendored (see vendor/leaflet/README.md) so a CDN outage
-       can't take the maps, or the app, down. -->
-  <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
-  <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="styles-web1.css">
-  <link rel="stylesheet" href="styles-web1-extensions.css">
-  <link rel="stylesheet" href="styles-retro.css">
-  <link rel="stylesheet" href="styles-kiosk.css">
-  <!-- Looks: the approved "A refined" design (previews/clean/) is the default
-       on the phone and on Choc TV. ?classic=1 opens the old look; ?preview=
-       draft-paper | draft-navy | shader-pack | one-instrument | chart-room
-       still layers a candidate look over the app instead. -->
+  <!-- One look: the approved "A refined" design (previews/clean/), on the
+       phone and on Choc TV. ?classic=1 still opens the old look, kept only
+       as an emergency fallback and for the tests of the app underneath, and
+       only then does the page load its Win95 styles, fonts and Leaflet maps.
+       Choc TV (?kiosk=1) also loads the classic TV's styles, its own
+       fallback. ?preview=clean names the default look (and wins over
+       ?classic=1); the retired candidate looks' names open it too. -->
   <script>
-    var LCC_CLASSIC = /[?&]classic=1(?:&|$)/.test(location.search);
-    var LCC_PREVIEW = (/[?&]preview=(shader-pack|one-instrument|chart-room|draft-paper|draft-navy|clean)(?:&|$)/.exec(location.search) || [])[1] || (LCC_CLASSIC ? null : 'clean');
+    var LCC_CLASSIC = /[?&]classic=1(?:&|$)/.test(location.search) && !/[?&]preview=clean(?:&|$)/.test(location.search);
+    var LCC_PREVIEW = LCC_CLASSIC ? null : 'clean';
+    var LCC_KIOSK = /[?&]kiosk=1(?:&|$)/.test(location.search);
+    // Google Fonts must not block first paint: a stalled fonts.googleapis.com
+    // held the whole page (boat gate included) blank. It loads as print-only,
+    // then switches to all media once it arrives; the fallback fonts show
+    // meanwhile (and for good if it never does).
+    var LCC_OLD_FONTS = 'https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap';
+    var LCC_OLD_SHEETS = ['styles-web1.css', 'styles-web1-extensions.css', 'styles-retro.css'];
+    if (LCC_CLASSIC) document.write(
+      '<link rel="preconnect" href="https://fonts.googleapis.com">' +
+      '<link rel="preload" href="fonts/ms_sans_serif.woff2" as="font" type="font/woff2" crossorigin>' +
+      '<link rel="preload" href="fonts/ms_sans_serif_bold.woff2" as="font" type="font/woff2" crossorigin>' +
+      '<link href="' + LCC_OLD_FONTS + '" rel="stylesheet" media="print" onload="this.media=\'all\'">' +
+      // Leaflet 1.9.4, vendored (see vendor/leaflet/README.md) so a CDN
+      // outage can't take the maps, or the app, down.
+      '<link rel="stylesheet" href="vendor/leaflet/leaflet.css">');
+    // When the new look gives the page back to the old one (core.js unmount),
+    // the old look's styles and fonts come back with it.
+    function lccLoadClassic() {
+      if (LCC_CLASSIC || window.lccClassicLoaded) return;
+      window.lccClassicLoaded = true;
+      [LCC_OLD_FONTS].concat(LCC_OLD_SHEETS, LCC_KIOSK ? [] : ['styles-kiosk.css']).forEach(function (href) {
+        var l = document.createElement('link');
+        l.rel = 'stylesheet';
+        l.href = href;
+        document.head.appendChild(l);
+      });
+    }
+  </script>
+  <link rel="stylesheet" href="style.css">
+  <script>
+    if (LCC_CLASSIC) document.write(LCC_OLD_SHEETS.map(function (h) { return '<link rel="stylesheet" href="' + h + '">'; }).join(''));
+    if (LCC_CLASSIC || LCC_KIOSK) document.write('<link rel="stylesheet" href="styles-kiosk.css">');
     if (LCC_PREVIEW) document.write('<link rel="stylesheet" href="previews/' + LCC_PREVIEW + '/theme.css">');
   </script>
   <!-- Choc TV kiosk mode PWA (?kiosk=1): installable via Add to Home Screen -->
@@ -635,7 +653,9 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
-  <script src="vendor/leaflet/leaflet.js"></script>
+  <script>
+    if (LCC_CLASSIC) document.write('<script src="vendor/leaflet/leaflet.js"><\/script>');
+  </script>
   <script src="firebase-config.js"></script>
   <script src="app.js"></script>
   <script src="kiosk.js"></script>

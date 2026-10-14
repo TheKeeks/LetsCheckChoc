@@ -140,60 +140,26 @@
 }
 #cl-tv .cl-tv-sw .cl-ic { width: calc(40 * var(--u) * var(--tk) * var(--fk, 1)); height: calc(40 * var(--u) * var(--tk) * var(--fk, 1)); }
 
-/* Blocked day: the hero's box says nothing reaches the reef. */
-#cl-tv .cl-tv-blk {
-  height: calc(152 * var(--u) * var(--tk));
-  margin-top: calc(20 * var(--u) * var(--gk));
-  display: flex;
-  align-items: center;
-  font-size: calc(46 * var(--u) * var(--tk));
-  line-height: 1.08;
-  font-weight: 500;
+/* The radar's readout under the hero: each model's number, then each
+   swell with its share of Choc (dot = where it comes from: E, SE, S). */
+#cl-tv .cl-tv-mods {
+  font-size: calc(24 * var(--u));
   color: var(--muted);
-  letter-spacing: -.02em;
-  overflow: hidden;
-}
-#cl-tv .cl-tv-bl {
-  font-size: calc(28 * var(--u) * var(--tk) * var(--fk, 1));
-  line-height: 1.3;
-  color: var(--muted);
-  margin-top: calc(6 * var(--u) * var(--gk));
-}
-
-/* Window status: IN WINDOW (dot), EDGE and BLOCKED (ring). */
-#cl-tv .cl-tv-strow { margin-top: calc(26 * var(--u) * var(--gk)); white-space: nowrap; }
-#cl-tv .cl-tv-st {
-  display: inline-flex;
-  align-items: center;
-  gap: calc(12 * var(--u));
-  font-size: calc(32 * var(--u) * var(--tk) * var(--fk, 1));
-  font-weight: 700;
-  letter-spacing: .07em;
-  line-height: 1.2;
+  margin-top: calc(4 * var(--u));
   white-space: nowrap;
 }
-#cl-tv .cl-tv-dt {
-  width: calc(18 * var(--u) * var(--tk) * var(--fk, 1));
-  height: calc(18 * var(--u) * var(--tk) * var(--fk, 1));
-  border-radius: 50%;
-  flex: none;
+#cl-tv .cl-tv-swr {
+  display: flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+  font-size: calc(28 * var(--u));
+  line-height: 1.25;
+  margin-top: calc(8 * var(--u));
+  white-space: nowrap;
 }
-#cl-tv .cl-tv-st-in { color: var(--in); }
-#cl-tv .cl-tv-st-in .cl-tv-dt { background: var(--in); }
-#cl-tv .cl-tv-st-edge { color: var(--edge); }
-#cl-tv .cl-tv-st-edge .cl-tv-dt { border: calc(3 * var(--u)) solid var(--edge); }
-#cl-tv .cl-tv-st-blk { color: var(--blk); }
-#cl-tv .cl-tv-st-blk .cl-tv-dt { border: calc(3 * var(--u)) solid var(--blk); }
-/* Night, and the radar always: IN WINDOW white on the green chip (6.8:1). */
-html[data-clean-theme="night"] #cl-tv .cl-tv-st-in,
-#cl-tv .cl-tv-dark .cl-tv-st-in {
-  color: #fff;
-  background: var(--chip);
-  padding: calc(8 * var(--u) * var(--fk, 1)) calc(20 * var(--u) * var(--fk, 1));
-  border-radius: calc(12 * var(--u));
-}
-html[data-clean-theme="night"] #cl-tv .cl-tv-st-in .cl-tv-dt,
-#cl-tv .cl-tv-dark .cl-tv-st-in .cl-tv-dt { background: #fff; }
+#cl-tv .cl-tv-swr b { font-weight: 700; }
+#cl-tv .cl-tv-swr small { font-size: .75em; color: var(--muted); }
+#cl-tv .cl-tv-swd { width: calc(16 * var(--u)); height: calc(16 * var(--u)); border-radius: 50%; flex: none; }
 
 /* Tide and wind lines: icon + text, break only at the chosen spots. */
 #cl-tv .cl-tv-win,
@@ -250,9 +216,6 @@ html[data-clean-theme="night"] #cl-tv .cl-tv-st-in .cl-tv-dt,
 #cl-tv .cl-tv-scope-base svg { overflow: hidden; }
 #cl-tv .cl-tv-scope .cone { fill: var(--in); fill-opacity: .22; stroke: var(--in); stroke-width: 2; stroke-linejoin: round; }
 #cl-tv .cl-tv-scope .arr { fill: none; stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; }
-#cl-tv .cl-tv-scope .sa-in { stroke: var(--in); }
-#cl-tv .cl-tv-scope .sa-edge { stroke: var(--edge); }
-#cl-tv .cl-tv-scope .sa-blk { stroke: var(--blk); }
 #cl-tv .cl-tv-scope .wa { stroke: var(--ink); }
 #cl-tv .cl-tv-scope .mk { fill: var(--bg); stroke: var(--ink); stroke-width: 3; }
 #cl-tv .cl-tv-scope text { font-family: inherit; font-size: 16px; font-weight: 600; }
@@ -279,7 +242,6 @@ html[data-clean-theme="night"] #cl-tv .cl-tv-st-in .cl-tv-dt,
 
 /* Right: the playing hour, big. */
 #cl-tv .cl-tv-rt { flex: 1; min-width: 0; padding-top: calc(12 * var(--u)); }
-#cl-tv .cl-tv-rt .cl-tv-blk { height: calc(152 * var(--u)); }
 #cl-tv .cl-tv-rt .cl-tv-wd { margin-top: calc(18 * var(--u)); }
 #cl-tv .cl-tv-hint {
   font-size: calc(20 * var(--u));
@@ -288,15 +250,13 @@ html[data-clean-theme="night"] #cl-tv .cl-tv-st-in .cl-tv-dt,
   white-space: nowrap;
 }
 
-/* Bottom: the 7-day swell strip. */
+/* Bottom: the week at Choc (green: the two models' mean; the lighter
+   band over it: between the two models). */
 #cl-tv .cl-tv-cht { flex: none; padding: 0 calc(40 * var(--u)); margin-top: calc(6 * var(--u)); }
 #cl-tv .cl-tv-cht svg { display: block; width: 100%; height: auto; overflow: visible; }
 #cl-tv .cl-tv-cht .nt { fill: var(--shade); }
-#cl-tv .cl-tv-cht .gh { fill: var(--blk-fill); opacity: var(--ghost); }
+#cl-tv .cl-tv-cht .gh { fill: var(--ink); opacity: .2; }
 #cl-tv .cl-tv-cht .sw { fill: var(--in); }
-#cl-tv .cl-tv-cht .b-in { fill: var(--in); }
-#cl-tv .cl-tv-cht .b-edge { fill: var(--edge-fill); }
-#cl-tv .cl-tv-cht .b-blk { fill: var(--blk-fill); }
 #cl-tv .cl-tv-cht .cur { stroke: var(--ink); stroke-width: 2; }
 #cl-tv .cl-tv-cht text { font-family: inherit; font-size: 19px; fill: var(--muted); }
 

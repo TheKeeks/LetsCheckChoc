@@ -20,7 +20,7 @@ Your site will be live at `https://[username].github.io/LetsCheckChoc/`
 ## The look
 
 The site opens on Forecast in the clean, light design. The navigation shows
-**Forecast, Map, Methods, Log**: along the bottom on a phone, across the top on
+**Forecast, Explore, Methods, Log**: along the bottom on a phone, across the top on
 a computer or a sideways iPad. Log asks you to sign in with Google; after
 signing in, **My ratings** (what your logged sessions say about size, ride and
 wind) joins the navigation and your surf journal opens. Settings (top right)
@@ -89,13 +89,19 @@ contours. Hover (or tap on a phone) for depth, its survey and the modeled wave
 height. The 3D map (about 1 MB of MapLibre) loads only the first time it is
 opened.
 
-**Methods** is the research page, now in the shared light/dark design. Its
-historical-day links open Explore at that date. Its history (every day
-since May 2016, the ten years month by month, and the counts in its text) is
-rebuilt every day from buoy 44097's own data, through yesterday.
+**Methods** is the research page, now in the shared light/dark design: how
+the model works, what makes a good day, the swell window, Check a date, the
+ten years month by month, how far ahead to trust the forecast, and
+Wilderness. It no longer carries a 7-day forecast of its own: the forecast
+is the Forecast tab's. Its historical-day links open Explore at that date.
+Its history (every day since May 2016, the ten years month by month, and
+the counts in its text) is rebuilt every day from buoy 44097's own data,
+through yesterday.
 
-The old Windows-style look remains at `?classic=1` (`?kiosk=1&classic=1`
-for Choc TV), and Settings links to it. The clean look skips the boat question.
+The old Windows-style look is retired: Settings no longer offers it, and the
+site no longer downloads its styles, fonts or maps. It still opens at
+`?classic=1` (`?kiosk=1&classic=1` for Choc TV) as an emergency fallback.
+The clean look skips the boat question.
 
 ### Testing this branch locally
 
@@ -158,7 +164,15 @@ LetsCheckChoc/
 
 This section describes the classic Choc TV (`?kiosk=1&classic=1`). The
 default Choc TV uses the clean design: next 3 days, days 4–6 and the radar,
-with the forecast and buoy ages and the clock along the bottom.
+with the forecast run's and the buoy's ages and the clock along the bottom.
+Its swell is the Sound Check model, the same number as the Forecast tab
+(the two models' mean at Choc). Each day card shows Choc's biggest height
+over the day's incoming tide in daylight, and the main swell then. The
+radar plays the model forward through daylight: Choc's height, each
+model's, and each swell with its share of Choc, drawn as arrows into the
+reef in the swell's colour and thicker for a bigger share; the week strip
+under it is Choc's height. The TV asks for a newer model run every 30
+minutes, so a new run shows without a reload.
 
 An ambient always-on display mode for an iPad on a stand: true-black
 faceplate with phosphor-green readouts (14-segment digits, big filled

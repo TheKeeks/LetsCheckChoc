@@ -74,10 +74,14 @@ const html = fs.readFileSync(path.join(REPO_ROOT, 'index.html'), 'utf8');
 const head = html.slice(0, html.indexOf('</head>'));
 const md5 = p => crypto.createHash('md5').update(fs.readFileSync(p)).digest('hex');
 
-test('Leaflet is served from vendor/leaflet, never unpkg', () => {
+// The old look's files load only for ?classic=1 (the new look, the site's default, uses none of them).
+const classicWrite = (head.match(/if \(LCC_CLASSIC\) document\.write\(\n([\s\S]*?)\);\n/) || [])[1] || '';
+
+test('Leaflet is served from vendor/leaflet, never unpkg, and only for the old look', () => {
   assert.doesNotMatch(html, /unpkg\.com/);
-  assert.match(head, /<link rel="stylesheet" href="vendor\/leaflet\/leaflet\.css"/);
-  assert.match(html, /<script src="vendor\/leaflet\/leaflet\.js"><\/script>\s*<script src="firebase-config\.js">/);
+  assert.match(classicWrite, /'<link rel="stylesheet" href="vendor\/leaflet\/leaflet\.css">'/);
+  assert.match(html, /if \(LCC_CLASSIC\) document\.write\('<script src="vendor\/leaflet\/leaflet\.js"><\\\/script>'\);\s*<\/script>\s*<script src="firebase-config\.js">/);
+  assert.doesNotMatch(html.replace(/<script>[\s\S]*?<\/script>/g, ''), /leaflet\.(js|css)/, 'no unconditional Leaflet tag');
 });
 
 test('the vendored Leaflet is the genuine 1.9.4 build', () => {
@@ -90,13 +94,12 @@ test('the vendored Leaflet is the genuine 1.9.4 build', () => {
   assert.match(fs.readFileSync(path.join(dir, 'LICENSE'), 'utf8'), /BSD 2-Clause/);
 });
 
-test('Google Fonts cannot block first paint', () => {
-  const links = head.match(/<link[^>]*fonts\.googleapis\.com\/css2[^>]*>/g) || [];
-  assert.equal(links.length, 2, 'one async link + one <noscript> fallback');
-  assert.match(links[0], /media="print" onload="this\.media='all'"/);
-  assert.match(head, /<noscript><link[^>]*fonts\.googleapis\.com\/css2[^>]*><\/noscript>/);
-  // Every other stylesheet in <head> is same-origin.
-  const sheets = (head.replace(/<noscript>[\s\S]*?<\/noscript>/g, '').match(/<link[^>]*rel="stylesheet"[^>]*>/g) || [])
-    .filter(l => !/media="print"/.test(l));
-  assert.deepEqual(sheets.filter(l => /href="https?:/.test(l)), []);
+test('Google Fonts cannot block first paint (and only the old look loads them)', () => {
+  const links = classicWrite.match(/<link href="' \+ LCC_OLD_FONTS \+ '"[^>]*>/g) || [];
+  assert.equal(links.length, 1, 'one async link, written for ?classic=1');
+  assert.match(links[0], /rel="stylesheet" media="print" onload="this\.media=\\'all\\'"/);
+  assert.match(head, /var LCC_OLD_FONTS = 'https:\/\/fonts\.googleapis\.com\/css2\?/);
+  // No other tag in <head> loads anything from another origin.
+  const tags = head.replace(/<script>[\s\S]*?<\/script>/g, '').match(/<link[^>]*>/g) || [];
+  assert.deepEqual(tags.filter(l => /href="https?:/.test(l)), []);
 });
