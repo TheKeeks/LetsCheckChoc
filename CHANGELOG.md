@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — The history bot gets four chances a day
+
+The history bot's one daily run (09:23 UTC) never started on its first morning, 14 October, so the history stayed on 12 October. GitHub drops many scheduled runs: the buoy bot's every-2-hours schedule ran three times that day.
+
+The workflow now runs at 09:23, 13:23, 17:23 and 21:23 UTC. Every run rebuilds the whole history, so a later run catches up when an earlier one doesn't start. A run that finds nothing new commits nothing. The 14 October update was started by hand.
+
+Verified: the workflow file parses with the four times, and the job itself is unchanged.
+
 ## [Unreleased] — The Sound Check history updates itself every day
 
 The Sound Check's history (every day since May 2016: the month tiles, % of days with swell through the window, good-day shares, the storms, the swell trains, how much bent in from outside the window, Wilderness vs Choc) was built once, by hand, in a web session, from data through 5 October 2026. It went stale a day at a time. The scripts lived only in that session's scratch folder, and the history was embedded in `research/index.html`, so a page rebuild could roll it back. The page also carried the date in its text: the date picker stopped at 4 October, and its counts ("20 days", "300 Wilderness days") and its note on gaps ("August 2026") were typed in.

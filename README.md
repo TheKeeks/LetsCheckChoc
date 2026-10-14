@@ -84,7 +84,7 @@ opened.
 **Methods** is the research page, now in the shared light/dark design. Its
 historical-day links open the Map explorer at that date. Its history (every day
 since May 2016, the ten years month by month, and the counts in its text) is
-rebuilt every morning from buoy 44097's own data, through yesterday.
+rebuilt every day from buoy 44097's own data, through yesterday.
 
 The old Windows-style look remains at `?classic=1` (`?kiosk=1&classic=1`
 for Choc TV), and Settings links to it. The clean look skips the boat question.

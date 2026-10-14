@@ -8,7 +8,10 @@ name: Update Sound Check history
 # emails the owner.
 on:
   schedule:
-    - cron: '23 9 * * *'  # every day at 09:23 UTC (5:23 AM EDT, 4:23 AM EST): yesterday is complete by then
+    # four times a day: GitHub drops many scheduled runs (the buoy bot's every-2-h schedule ran 3 times on 14 Oct and
+    # the first 09:23 run never started), and every run rebuilds the whole history, so a later one catches up; a run
+    # that finds nothing new commits nothing. 09:23 UTC is 5:23 AM EDT / 4:23 AM EST: yesterday is complete by then
+    - cron: '23 9,13,17,21 * * *'
   workflow_dispatch:      # Manual trigger
   push:                   # first update as soon as this lands, and after any change to the update
     branches: [main]
