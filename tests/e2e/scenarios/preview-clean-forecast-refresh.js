@@ -61,7 +61,7 @@ module.exports = {
     live.made = '2026-10-01T14:50Z';
     live.gfs.forEach(g => { g.choc = Math.round((g.choc + 2) * 10) / 10; });
     live.ec.forEach(e => { e.choc = Math.round((e.choc + 2) * 10) / 10; });
-    ctx.net.fcLive = serveLive(live, 600);
+    ctx.net.fcLive = serveLive(live, 1500);                 // slow enough to see it ask, and to tap again meanwhile
     const n0 = {
       live: ctx.requestsTo(/fc-data\/fc\/fc\.json/).length,
       tides: ctx.requestsTo('api.tidesandcurrents.noaa.gov').length,
