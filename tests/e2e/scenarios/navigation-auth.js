@@ -17,7 +17,7 @@ module.exports = {
     assert.equal(await ctx.state(() => CLEAN.tab()), 'forecast');
     assert.equal(await ctx.state(() => CLEAN.themeMode()), 'light');
     assert.equal(await ctx.state(() => CLEAN.theme()), 'day');
-    assert.deepEqual(await tabs(), ['Forecast', 'Map', 'Methods', 'Log']);
+    assert.deepEqual(await tabs(), ['Forecast', 'Explore', 'Methods', 'Log']);
 
     await page.locator('.cl-tabs [data-tab="log"]').click();
     await ctx.waitFor(() => !document.querySelector('.cl-l-gate').hidden, { label: 'Log login page' });
@@ -36,7 +36,7 @@ module.exports = {
     await page.locator('.cl-l-signin').click();
     await ctx.waitFor(() => /not enabled for this preview/.test(document.querySelector('.cl-l-auth-status').textContent), { label: 'actionable auth error' });
     assert.equal(await page.locator('.cl-l-signin').isEnabled(), true);
-    assert.deepEqual(await tabs(), ['Forecast', 'Map', 'Methods', 'Log']);
+    assert.deepEqual(await tabs(), ['Forecast', 'Explore', 'Methods', 'Log']);
 
     await ctx.state(() => {
       window.__FB_LINK_ERROR = 'auth/credential-already-in-use';
@@ -44,7 +44,7 @@ module.exports = {
     });
     await page.locator('.cl-l-signin').click();
     await ctx.waitFor(() => CLEAN.auth().signedIn && !document.querySelector('.cl-l-form').hidden, { label: 'Google account restored' });
-    assert.deepEqual(await tabs(), ['Forecast', 'Map', 'Methods', 'Log', 'My ratings']);
+    assert.deepEqual(await tabs(), ['Forecast', 'Explore', 'Methods', 'Log', 'My ratings']);
     assert.equal(await ctx.state(() => CLEAN.authStatus().error), '');
     await page.locator('.cl-tabs [data-tab="model"]').click();
     await ctx.waitFor(() => CLEAN.tab() === 'model', { label: 'signed-in Model' });
@@ -54,7 +54,7 @@ module.exports = {
     assert.equal(await ctx.state(() => CLEAN.theme()), 'night');
     await page.locator('#cl-sub-settings [data-act="signout"]').click();
     await ctx.waitFor(() => !CLEAN.auth().signedIn && CLEAN.tab() === 'log', { label: 'logout protects Model' });
-    assert.deepEqual(await tabs(), ['Forecast', 'Map', 'Methods', 'Log']);
+    assert.deepEqual(await tabs(), ['Forecast', 'Explore', 'Methods', 'Log']);
     assert.equal(await page.locator('.cl-l-form').isVisible(), false);
     assert.equal(await page.locator('#cl-view-model').isVisible(), false);
     assert.equal(await ctx.state(() => CLEAN.theme()), 'night');

@@ -1,10 +1,10 @@
 /* ════════════════════════════════════════════════════════════════════
    CLEAN — forecast.css (owner: Forecast part)
-   The Sound Check Forecast tab: headline and swells, ray map (or the
-   North Atlantic's storms), week scrubber, wind and tide, buoy check.
-   One column on a phone; on a wide screen the map sits left of the
-   readout and the week runs underneath. The map is aerial imagery, so
-   it stays dark in both themes.
+   The Sound Check Forecast tab: headline and swells, the Sound Check map
+   (research/map.html in a frame: ocean, region or Fishers), week scrubber,
+   wind and tide, buoy check. One column on a phone; on a wide screen the
+   map sits left of the readout and the week runs underneath. The map is
+   a dark ocean in both themes.
    ════════════════════════════════════════════════════════════════════ */
 .cl-f {
   display: grid;
@@ -49,11 +49,12 @@
 .cl-f-bar i { display: block; height: 100%; border-radius: 3px; }
 .cl-f-tr li.cl-f-none { display: block; color: var(--muted); }
 
-/* ── Ray map ──────────────────────────────────────────────────────── */
+/* ── Map ──────────────────────────────────────────────────────────── */
 .cl-f-map { background: #0b1219; overflow: hidden; }
 .cl-f-stage { position: relative; }
-.cl-f-map canvas { display: block; width: 100%; }
-/* the map's header: what it shows (the swell reaching the spot, or the storms) and which spot */
+/* the map takes two fingers to move on a phone, so the tab still scrolls past it with one */
+.cl-f-frame { display: block; width: 100%; height: clamp(300px, 86vw, 560px); border: 0; background: #0b1622; }
+/* the map's header: how much of the ocean it shows, and which spot */
 .cl-f-mbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 8px 10px; }
 .cl-f-seg {
   display: inline-flex; border-radius: 22px; overflow: hidden;
@@ -61,25 +62,11 @@
 }
 .cl-f-seg button { min-height: 44px; padding: 0 12px; font-size: 13px; font-weight: 600; color: #b9c6d2; white-space: nowrap; }
 .cl-f-seg button[aria-pressed="true"] { color: #0a0f15; background: #e7edf2; border-radius: 22px; }
-.cl-f-mapnote {
-  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
-  margin: 0; padding: 5px 12px; border-radius: 14px; white-space: nowrap;
-  font-size: 13px; font-weight: 600; color: #e7edf2; background: rgba(10, 15, 21, .86);
+/* both switches on one line on a phone */
+@media (max-width: 420px) {
+  .cl-f-mbar { gap: 6px; }
+  .cl-f-seg button { padding: 0 8px; }
 }
-/* Storms: the key under the map */
-.cl-f-key {
-  display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; row-gap: 4px;
-  padding: 8px 12px 10px; font-size: 12px; line-height: 1.4; color: #b9c6d2;
-}
-.cl-f-kh { font-weight: 600; color: #e7edf2; }
-.cl-f-kb { position: relative; width: 150px; height: 24px; margin-right: 14px; }
-.cl-f-kb i { position: absolute; left: 0; right: 0; top: 2px; height: 8px; border-radius: 4px; }
-.cl-f-kb b { position: absolute; top: 12px; transform: translateX(-50%); font-weight: 600; font-size: 11px; white-space: nowrap; }
-.cl-f-kb b:first-of-type { transform: none; }
-.cl-f-kb b:last-of-type { transform: translateX(-60%); }
-.cl-f-kl { flex: 1 1 220px; }
-.cl-f-kL { color: #ff8a8a; }
-.cl-f-kH { color: #8ac4ff; }
 
 /* ── Week scrubber ────────────────────────────────────────────────── */
 .cl-f-cx { position: relative; padding: 0 4px; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: ew-resize; }
@@ -152,6 +139,7 @@
     padding-top: 6px;
   }
   .cl-f-map { border-radius: var(--r); margin-left: var(--gut); grid-row: 1 / span 2; }
+  .cl-f-frame { height: clamp(420px, 64vh, 680px); }
   .cl-f-head, .cl-f-side { padding-left: 0; }
   .cl-f-wk { padding: 0 var(--gut); }
   .cl-f-num { font-size: 72px; }

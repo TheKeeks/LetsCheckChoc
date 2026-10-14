@@ -380,8 +380,8 @@ body { margin: 0; }
     <a class="qa" href="#q1-h"><span class="eyebrow">Question 1</span><b>What makes the surf good at Choc?</b><span>The swell that actually reaches the reef, not the buoy's number. The model's height at Choc picks the bigger of two of your sessions <span class="mono" id="qa1M">88%</span> of the time, the raw buoy <span class="mono" id="qa1B">77%</span>. After size comes offshore wind; the tide barely matters.</span></a>
     <a class="qa" href="#q2-h"><span class="eyebrow">Question 2</span><b>How real is the swell window?</b><span>Real, but soft-edged. On only <span class="mono" id="qa2In">40%</span> of Choc's 3 ft+ days does the swell come straight through the gap between Block Island and Montauk; on <span class="mono" id="qa2S">45%</span> it bends in from south of Montauk.</span></a>
   </div>
-  <p class="qs-more">Explore <a href="#how-h">how the model works</a>, <a href="#dec-h">ten years, month by month</a>, <a href="#week-h">the 7-day forecast</a> and <a href="#wild-h">Wilderness</a>. Forecast layers, past days and sea-floor exploration now live on the Map page.</p>
-  <a class="methods-map-link" href="../map/index.html" data-open-map>Explore the map <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8h10M8 3l5 5-5 5"/></svg></a>
+  <p class="qs-more">Explore <a href="#how-h">how the model works</a>, <a href="#dec-h">ten years, month by month</a>, <a href="#week-h">the 7-day forecast</a> and <a href="#wild-h">Wilderness</a>. The forecast map, with its storms, is on the Forecast tab; past days, the ten years month by month and the sea floor in 3D are on Explore.</p>
+  <a class="methods-map-link" href="../map/index.html" data-open-map>Explore past days <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8h10M8 3l5 5-5 5"/></svg></a>
 </header>
 <section aria-labelledby="trip-h">
   <div class="eyebrow">The map</div>
@@ -398,9 +398,9 @@ body { margin: 0; }
         <button type="button" class="hub-ib" id="hubFull" aria-pressed="false" aria-label="Full screen" title="Full screen"><svg class="i-max" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><svg class="i-min" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg></button>
       </div>
       <div class="hub-panel" id="hubPanel" hidden>
-        <div class="hub-g"><div class="hub-h">View</div>
+        <div class="hub-g hub-view"><div class="hub-h">View</div>
           <div class="seg hub-seg" role="group" aria-label="View" id="tripModeSeg"><button type="button" data-v="week" aria-pressed="true">Forecast</button><button type="button" data-v="past" aria-pressed="false">Past</button><button type="button" data-v="drop" aria-pressed="false">Drop a wave</button></div></div>
-        <div class="hub-g" data-mode="week past"><div class="hub-h">Spot</div>
+        <div class="hub-g hub-spot" data-mode="week past"><div class="hub-h">Spot</div>
           <div class="seg hub-seg" role="group" aria-label="Spot" id="fcSpot"><button type="button" data-v="choc" aria-pressed="true">Choc</button><button type="button" data-v="wild" aria-pressed="false">Wilderness</button></div></div>
         <div class="hub-g" data-mode="week"><div class="hub-h">Model</div>
           <div class="seg hub-seg" role="group" aria-label="Forecast model" id="fcModel"><button type="button" data-v="gfs" aria-pressed="true">GFS-Wave</button><button type="button" data-v="ec" aria-pressed="false">ECMWF</button></div></div>
@@ -411,8 +411,9 @@ body { margin: 0; }
             <button type="button" class="hub-tg" data-l="aim" data-mode="week" aria-pressed="true"><i class="ck"></i>Swell headed our way</button>
             <button type="button" class="hub-tg" data-l="wnd" data-mode="past" aria-pressed="false" hidden><i class="ck"></i>Wind arrows</button>
             <button type="button" class="hub-tg" data-l="rays" aria-pressed="true"><i class="ck"></i>Rays near Fishers</button>
+            <button type="button" class="hub-tg" data-l="storm" data-mode="week" aria-pressed="true"><i class="ck"></i>Pressure &amp; storms</button>
           </div></div>
-        <div class="hub-g" data-mode="week past"><div class="hub-h">Go to</div>
+        <div class="hub-g hub-goto" data-mode="week past"><div class="hub-h">Go to</div>
           <div class="seg hub-seg" role="group" aria-label="Go to" id="fcZoom"><button type="button" data-v="ocean" aria-pressed="false">Ocean</button><button type="button" data-v="reg" aria-pressed="true">Region</button><button type="button" data-v="fi" aria-pressed="false">Fishers</button></div></div>
         <div class="hub-g" data-mode="drop" hidden><div class="hub-h">Swell</div>
           <div class="hub-row"><label class="hub-f" for="tripSize">Size <input id="tripSize" type="number" min="0" max="40" step="0.5" value="6" inputmode="decimal"> ft</label><label class="hub-f" for="tripPer">Period <select id="tripPer"><option>6</option><option>8</option><option>10</option><option selected>12</option><option>14</option><option>16</option><option>18</option></select> s</label></div></div>
@@ -429,10 +430,12 @@ body { margin: 0; }
             <li><b>Color:</b> wave height from the model you pick, swell and wind sea together.</li>
             <li><b>Streaks:</b> which way the swell travels. Longer period moves faster.</li>
             <li><b>Pale dots:</b> open-ocean swell aimed at the spot from an angle its reef can see. Tap one: orange is the ray that reaches the spot, with when; gray is the rest of its spread.</li>
-            <li><b>Near Fishers:</b> the model's rays over the sea floor into the spot, colored by period.</li>
-            <li><b>Timeline:</b> GFS-Wave solid, ECMWF dashed, night shaded. Dots: wind at the spot (green clean, yellow cross-shore, red onshore). Gray bars: far-off swell arriving.</li>
+            <li class="hub-nofc"><b>Near Fishers:</b> the model's rays over the sea floor into the spot, colored by period.</li>
+            <li class="hub-fconly"><b>Near Fishers:</b> each swell's rays into the spot, colored like its row on the tab, thicker for a bigger share. Spot heights: the two models' mean.</li>
+            <li><b>Pressure &amp; storms</b> (zoomed out): GFS sea-level pressure every 4 hPa, <b>L</b> lows and <b>H</b> highs. White: each storm's track, brighter ahead, a dot every 6 h.</li>
+            <li class="hub-nofc"><b>Timeline:</b> GFS-Wave solid, ECMWF dashed, night shaded. Dots: wind at the spot (green clean, yellow cross-shore, red onshore). Gray bars: far-off swell arriving.</li>
             <li><b>Spot height:</b> each model's swell at buoy 44097 (white diamond), run through the reef's response. On 177 past hours it beat reading the models at the survey map's edge.</li>
-            <li><b>↻ Refresh:</b> loads the newest forecast pull without reloading the page. A new pull comes every 3 hours; to make one now, run “Update Sound Check forecast” under Actions on GitHub.</li>
+            <li class="hub-nofc"><b>↻ Refresh:</b> loads the newest forecast pull without reloading the page. A new pull comes every 3 hours; to make one now, run “Update Sound Check forecast” under Actions on GitHub.</li>
           </ul>
           <ul class="hub-fine">
             <li>GFS-Wave (NOAA): 0.16° near the coast, 0.25° offshore, separate swells.</li>
@@ -872,7 +875,10 @@ body { margin: 0; }
   //  - a script error: its message and where it happened;
   //  - the browser killed the page and reloaded it (iPad Safari does this when a tab uses too much memory): noticed on
   //    the next load from a heartbeat that closing, reloading or switching away would have cleared.
-  const KEY = 'sc-alive';
+  // One heartbeat per kind of page (file, view, profile): the site runs several at once in one tab (the Forecast tab's
+  // map, Explore's, Methods), and one finding another's heartbeat took it for a crash.
+  const Q = new URLSearchParams(location.search);
+  const KEY = ['sc-alive', location.pathname.split('/').pop() || 'index.html', Q.get('view') || '', Q.get('ui') || ''].join(':');
   let box = null, shown = 0;
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   function show(html) {
@@ -932,7 +938,8 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   const wSoft = d => d >= 115 && d <= 158 ? 1 : d >= 100 && d < 115 ? (d - 100) / 15 : d > 158 && d <= 175 ? (175 - d) / 17 : 0;
 
   // ── daily rows: [yymmdd, hs, dir, per, e_all, e_day, ea_all, s_all, s_day, wdir, wspd, clean%, mh_all, mh_day]
-  const D = DATA.daily.map(r => ({
+  // (the map alone, research/map.html, loads no history: no days)
+  const D = (typeof DATA === 'undefined' ? [] : DATA.daily).map(r => ({
     y: 2000 + +r[0].slice(0, 2), m: +r[0].slice(2, 4), d: +r[0].slice(4, 6), hs: r[1], dir: r[2], per: r[3],
     e: [r[4], r[5]], ea: r[6], s: [r[7], r[8]], wdir: r[9], wspd: r[10], clean: r[11], mh: [r[12], r[13]] }));
   D.forEach(x => {
@@ -1119,9 +1126,9 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   }
 
   // ── wind: 17 over-water ECMWF points (ERA5 for 2016), one vector per day
-  const WG = WIND, W0 = Date.UTC(2016, 0, 1);
+  const WG = typeof WIND === 'undefined' ? null : WIND, W0 = Date.UTC(2016, 0, 1);
   function windPts(i) {                                      // [{lon, lat, kn, from}] for day i
-    const x = D[i]; if (!x) return [];
+    const x = D[i]; if (!x || !WG) return [];
     const k = Math.round((x.key - W0) / 864e5);
     return WG.pts.map(p => {
       const a = p.uv[k] || WG.base[k] || [0, 0], u = -(a[0] / 2), v = a[1] / 2;     // toward-vector, knots (x east, y south)
@@ -1634,7 +1641,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     if (ao) ao.textContent = `Forecast as of ${p.weekday} ${p.month} ${p.day}, ${hr12(p.h)} ET · GFS-Wave and ECMWF ${hr12(etp(Date.parse(f.runs.gfs.replace(/Z$/, ':00Z'))).h)} runs`;
   }
   // how far ahead to trust it: archived GFS-Wave forecasts for each logged session (fcscore.py)
-  fetch('fc/score.json').then(r => (r.ok ? r.json() : null)).catch(() => null).then(s => {
+  if (document.getElementById('fcScore')) fetch('fc/score.json').then(r => (r.ok ? r.json() : null)).catch(() => null).then(s => {
     const tb = document.getElementById('fcScore'); if (!tb || !s) return; const m = s.summary;
     const sg = v => (v == null ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)} ft`);
     tb.innerHTML = '<thead><tr><th>Looking</th><th class="num">Orders your sessions by size</th><th class="num">Off from what arrived</th><th class="num">Typical miss</th></tr></thead><tbody>' +
@@ -1704,7 +1711,8 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   window.CHOC.krespRedraw = kresp;
 
   function wildSection() {
-    const s = WILDSTATS, host = document.getElementById('wildMonths'); if (!host) return;
+    const host = document.getElementById('wildMonths'); if (!host) return;
+    const s = WILDSTATS;
     const NS = 'http://www.w3.org/2000/svg', el = (nm, a, p) => { const e = document.createElementNS(NS, nm); for (const k in a) e.setAttribute(k, a[k]); p && p.appendChild(e); return e; };
     const w = 700, h = 230, L = 34, B = 24, T = 10, top = 40, y = v => h - B - v / top * (h - B - T), bw = (w - L) / 12;
     const svg = el('svg', { viewBox: `0 0 ${w} ${h}`, role: 'img', 'aria-label': 'Share of days each month for Choc and Wilderness' }, host);
@@ -1906,6 +1914,11 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
 (function () {
   const $ = (id) => document.getElementById(id);
   const cv = $('tripCv'); if (!cv) return;
+  // The Forecast tab's map (research/map.html?ui=forecast): the forecast alone, with no headline, timeline or view,
+  // spot and zoom rows of its own; the tab sets the hour, the spot and the zoom (message lcc-fc, below).
+  const FCUI = document.documentElement.dataset.researchUi === 'forecast';
+  // The Explore tab's map (?ui=explore): past days and Drop a wave; the forecast is the Forecast tab's.
+  const EXUI = document.documentElement.dataset.researchUi === 'explore';
   const stage = cv.parentElement;
   let ctx = cv.getContext('2d');
   const inCv = $('tripInset'), inCtx = inCv ? inCv.getContext('2d') : null; let inW = 0, inH = 0, INSET = false;
@@ -1975,14 +1988,19 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     return { wet: u16, hb: blur(raw, rows, cols, r, passes), raw };
   }
   img('ocean/atlantic15.webp').then((im) => { L.shelf = im; }); json('ocean/atl15_meta.json').then((m) => { L.shelfB = m && m.bounds; });
-  const ready = Promise.all([img('ocean/atlantic.jpg'), img('ocean/world_feather.webp'), img('fr_close.jpg'), json('ocean/atl_meta.json'), json('ocean/depth_meta.json')])
-    .then(async ([a, w, c, m, dm]) => {
-      L.atl = a; L.world = w; L.close = c; L.meta = m;
-      const [ab, wb] = await Promise.all([png16('ocean/atl_depth.png'), png16('ocean/world_depth.png')]);
-      GR.a = Object.assign({}, dm.atl, decode(ab, dm.atl.scale, dm.atl.rows, dm.atl.cols, 1, 3));
-      GR.w = Object.assign({}, dm.world, decode(wb, dm.world.scale, dm.world.rows, dm.world.cols, 2, 3));
-      GR.ok = true;
-    }).catch(() => { GR.ok = false; });
+  Promise.all([img('ocean/atlantic.jpg'), img('ocean/world_feather.webp'), img('fr_close.jpg'), json('ocean/atl_meta.json')])
+    .then(([a, w, c, m]) => { L.atl = a; L.world = w; L.close = c; L.meta = m; requestAnimationFrame(() => draw()); });
+  // The depth grids for the wave tracer (about 4 MB): loaded the first time a wave is traced (Drop a wave, or a tap
+  // on the forecast's water), not with the page, which only shows them as the pictures above.
+  let depthJob = null;
+  function depthReady() {
+    return depthJob || (depthJob = Promise.all([json('ocean/depth_meta.json'), png16('ocean/atl_depth.png'), png16('ocean/world_depth.png')])
+      .then(([dm, ab, wb]) => {
+        GR.a = Object.assign({}, dm.atl, decode(ab, dm.atl.scale, dm.atl.rows, dm.atl.cols, 1, 3));
+        GR.w = Object.assign({}, dm.world, decode(wb, dm.world.scale, dm.world.rows, dm.world.cols, 2, 3));
+        GR.ok = true;
+      }).catch(() => { GR.ok = false; }));
+  }
 
   // ── sharp sea floor when zoomed in: the page's 8 m relief tiles (same pyramid as the main map)
   const TW = TILEMAN.world, TSZ = TILEMAN.tile, TLV = TILEMAN.levels.map((l) => Object.assign({}, l, { ws: new Set(l.water), ls: new Set(l.land) }));
@@ -2381,7 +2399,9 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     if (L.shelf && L.shelfB) { const b = L.shelfB, hx = 1 / 480; drawImg(L.shelf, [b[0] - hx, b[1] + hx, b[2] - hx, b[3] + hx], x0, y0, sc, da); }
     drawTiles(x0, y0, sc, da, WEEK && FC.show.field && da > 0 ? soundField() : null);   // da > 0 first: the model loads only once you zoom in
     if (INSET || v.W < 6) for (const p of Object.values(reefPhotos())) drawImg(p.im, p.b, x0, y0, sc, INSET ? 1 : ramp(v.W, 6, 3));
-    if (WEEK) fcField(x0, y0, sc, v);
+    const NOFC = FCUI && S.phase === 'week' && (FC.out || FC.failed);   // the Forecast tab's map with no forecast for its hour
+    if (WEEK && !NOFC) fcField(x0, y0, sc, v);
+    if (WEEK && S.phase === 'week' && !NOFC) drawStorms(X, Y, v);
     const ca = 0.55 * (1 - ramp(v.W, 120, 40)) * (WEEK ? 1 - Math.min(1, fieldAlpha(v.W) * 2) : 1);
     if (L.meta && ca > 0.01) {
       ctx.lineWidth = 1;
@@ -2614,7 +2634,15 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     el.addEventListener('touchend', (e) => { if (!onMap(e)) return; const t = e.timeStamp; if (t - lastEnd < 350 && e.changedTouches.length === 1) e.preventDefault(); lastEnd = t; }, { passive: false });
     for (const g of ['gesturestart', 'gesturechange', 'gestureend']) el.addEventListener(g, (e) => e.preventDefault(), { passive: false });
   }
-  noPageZoom(stage, panMode);
+  // On the Forecast tab the map sits in a page that scrolls: there one finger scrolls the page and two move the map
+  // (and a mouse wheel scrolls; ctrl + wheel or a trackpad pinch zooms), as embedded maps do.
+  noPageZoom(stage, () => panMode() && !FCUI);
+  let hintT = 0;
+  function twoFingers() {
+    let h = $('fcHint');
+    if (!h) { h = document.createElement('div'); h.id = 'fcHint'; h.className = 'fc-hint'; h.setAttribute('aria-hidden', 'true'); h.textContent = 'Use two fingers to move the map'; stage.appendChild(h); }
+    h.hidden = false; clearTimeout(hintT); hintT = setTimeout(() => { h.hidden = true; }, 1600);
+  }
   // Safari on a Mac sends a trackpad pinch as gesture events (not as ctrl+wheel like Chrome), and noPageZoom
   // blocks them so the page itself doesn't zoom: zoom the map with them instead. A touch screen (iPad) pinches
   // through the pointer handlers below, so this is for trackpads only.
@@ -2646,6 +2674,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     const v = cam(), { sc, x0, y0 } = proj(v); const X = (lon) => (lon * KX - x0) * sc, Y = (lon, lat) => (-lat * KY - y0) * sc;
     if (drag.kind === 'aim') { S.th = (Math.atan2(px - X(S.start[0]), -(py - Y(...S.start))) / D2R + 360) % 360; S.note = ''; retrace(); }
     else if (drag.kind === 'move') { const ll = unproject(px, py); if ((depthAt(...ll) || 0) > 1) { S.start = ll; S.note = ''; retrace(); } }
+    else if (FCUI && e.pointerType === 'touch') { if (Math.hypot(px - drag.sx, py - drag.sy) > 12) twoFingers(); }
     else { const cx = drag.cx - (px - drag.sx) / sc, cy = drag.cy - (py - drag.sy) / sc; if (finite(cx, cy)) { S.cam.cx = cx; S.cam.cy = cy; S.moved = true; draw(); } }
   });
   const up = (e) => {
@@ -2674,7 +2703,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   };
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
   // (a Safari trackpad pinch already zooming the map through the gesture events is not zoomed twice)
-  cv.addEventListener('wheel', (e) => { if (!panMode()) return; e.preventDefault(); if (gz && e.ctrlKey) return; const [px, py] = localXY(e); zoomAt(px, py, Math.exp(e.deltaY * 0.0015)); }, { passive: false });
+  cv.addEventListener('wheel', (e) => { if (!panMode() || (FCUI && !e.ctrlKey)) return; e.preventDefault(); if (gz && e.ctrlKey) return; const [px, py] = localXY(e); zoomAt(px, py, Math.exp(e.deltaY * 0.0015)); }, { passive: false });
   cv.addEventListener('click', () => { if (S.phase !== 'play') return; S.playing = !S.playing; S.last = 0; if (S.playing) requestAnimationFrame(frame); });
 
   // ── animation
@@ -2719,7 +2748,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   // here), and at Fishers zoom draws Part 1's rays for each train. Heights at the spots are fcpull's
   // read of each model at buoy 44097 (where the history reads the swell), run through Part 1's rays.
   const FC = { d: null, model: 'gfs', spot: 'choc', i: 0, px: {}, cv: {}, timer: 0, files: {}, cur: [], pick: null, zoom: 'reg', aim: {}, tf: new Map(), ecIx: [], arr: {}, cam: null,
-    show: { field: true, flow: true, aim: true, rays: true, wnd: false } };
+    show: { field: true, flow: true, aim: true, rays: true, wnd: false, storm: true } };
   try { Object.assign(FC.show, JSON.parse(localStorage.getItem('choc.fcLayers') || '{}')); } catch (e) { /* defaults */ }
   // the two spots: where swell is aimed, and the wind that grooms each (offshore direction, tolerance)
   const SPOT = { choc: { name: 'Choc', pt: PEAK, off: 335, tol: 60 }, wild: { name: 'Wilderness', pt: [(W1[0] + W2[0]) / 2, (W1[1] + W2[1]) / 2], off: 40, tol: 70 } };
@@ -2864,17 +2893,23 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   const fRow = () => (FC.model === 'gfs' ? FC.i : FC.ecIx[FC.i]);
   const ecRow = (i) => (FC.ecIx[i] == null ? null : FC.d.ec[FC.ecIx[i]]);
   const spotFt = (model, i, spot) => (model === 'gfs' ? FC.d.gfs[i][spot || FC.spot] : (ecRow(i) || {})[spot || FC.spot]);
-  async function setWeek(i) {
+  function setWeek(i) {
     if (FC.i !== i) { FC.fan = null; FC.dot = null; }        // a new hour: the dot picked belongs to the old one
-    FC.i = i; const my = i, d = FC.d, g = d.gfs[i], e = ecRow(i);
-    if (S.phase === 'week') weekHud();                       // the headline needs only the forecast numbers, not the rays still loading
-    const tr = FC.model === 'gfs' ? g.trains.filter((t) => t.T >= 5).map((t) => ({ ft: t.ft, T: t.T, D: t.D })) : e ? [{ ft: e.hs, T: e.T, D: e.D }] : [];
-    const cur = await Promise.all(tr.map(async (t) => {
-      const Te = Math.max(6, Math.min(16, Math.round(t.T / 2) * 2)), De = Math.round(t.D / 5) * 5, f = await frFile(Te);
-      return Object.assign({ rays: f && f[De] ? f[De].rays : null }, t);
-    }));
-    if (FC.i !== my || FC.d !== d || S.phase !== 'week') return;
-    FC.cur = cur; weekHud(); draw(); fcCursor();
+    FC.i = i; const g = FC.d.gfs[i], e = ecRow(i);
+    if (S.phase !== 'week') return;
+    // the hour's swell trains (with what each brings to the spots); their rays are fetched once they show (raysFor)
+    FC.cur = FC.model === 'gfs' ? g.trains.filter((t) => t.T >= 5).map((t) => ({ ft: t.ft, T: t.T, D: t.D, k: t.k, choc: t.choc, wild: t.wild }))
+      : e ? [{ ft: e.hs, T: e.T, D: e.D }] : [];
+    weekHud(); draw(); fcCursor();
+  }
+  // Part 1's rays for the trains on show (fr/<period>.json, 0.4-0.7 MB each): fetched the first time they are drawn,
+  // zoomed in near Fishers, not for every hour scrubbed past at ocean or region zoom
+  function raysFor(cur) {
+    if (!cur.job) cur.job = Promise.all(cur.map(async (q) => {
+      const f = await frFile(Math.max(6, Math.min(16, Math.round(q.T / 2) * 2))), De = Math.round(q.D / 5) * 5;
+      q.rays = f && f[De] ? f[De].rays : null;
+    })).then(() => { if (FC.cur === cur && MAPV()) draw(); });
+    return cur.job;
   }
   function weekHud() {
     const i = FC.i, g = FC.d.gfs[i], e = ecRow(i), t = Date.parse(g.t), sp = FC.spot, c = spotFt(FC.model, i), wk = windKind(g.wind);
@@ -2886,6 +2921,76 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     const wl = `Wind ${window.CHOC.windArrow(g.wind[1])}${g.wind[0]} kn ${compass(g.wind[1])}, ${windWord(wk)}`;
     $('tripLine').innerHTML = sw.concat([wl + (nar ? '' : ` · GFS ${g[sp].toFixed(1)} · ECMWF ${e && e[sp] != null ? e[sp].toFixed(1) : '–'} ft`)]).join('<br>');
     $('tripPow').hidden = true;
+  }
+
+  // The Forecast tab's swell colours (previews/clean/forecast.js): by where a swell comes from, the same on its rows,
+  // bars and these rays
+  const FAM = [{ name: 'E', rgb: [64, 190, 198] }, { name: 'SE', rgb: [240, 138, 75] }, { name: 'S', rgb: [170, 128, 236] }, { name: 'other', rgb: [140, 154, 168] }];
+  const famOf = (d) => (d >= 60 && d < 115 ? 0 : d >= 115 && d < 160 ? 1 : d >= 160 && d < 205 ? 2 : 3);
+  // heights as the Forecast tab writes them (previews/clean/core.js heightNum): to 0.1 ft without a trailing .0, whole
+  // feet from 10
+  const ftTab = (v) => { if (v == null || !Number.isFinite(v)) return '–'; if (Math.abs(v) >= 9.95) return String(Math.round(v)); const r = Math.round(v * 10) / 10; return r === 0 ? '0' : r.toFixed(1).replace(/\.0$/, ''); };
+  // the Forecast tab's headline number for a spot: the mean of GFS-Wave and ECMWF there (whichever it has)
+  function fcMean(i, sp) { const v = [FC.d.gfs[i] && FC.d.gfs[i][sp], ecRow(i) && ecRow(i)[sp]].filter(Number.isFinite); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; }
+  // The hour's GFS-Wave swells as the Forecast tab's rows list them: every train with a height at the spot, its share
+  // of the spot's energy (height there squared over the sum), biggest first, under 0.5% left out. ECMWF: its total sea.
+  function fcRanked() {
+    const g = FC.d && FC.d.gfs[FC.i], e = ecRow(FC.i), sp = FC.spot; if (!g) return [];
+    if (FC.model !== 'gfs') return e && Number.isFinite(e.hs) ? [{ t: { ft: e.hs, T: e.T, D: e.D }, share: 1 }] : [];
+    const all = g.trains.filter((t) => Number.isFinite(t[sp]) && Number.isFinite(t.T) && Number.isFinite(t.D) && Number.isFinite(t.ft));
+    const e2 = all.reduce((x, t) => x + t[sp] * t[sp], 0);
+    return all.map((t) => ({ t, share: e2 > 0 ? t[sp] * t[sp] / e2 : 0 })).filter((x) => x.share >= 0.005).sort((x, y) => y.share - x.share);
+  }
+  // The Forecast tab's rays near Fishers, as its own map drew them: fr/land.json holds only the rays that land at Choc
+  // or Wilderness, per period (6-16 s) and 5° of direction. Each swell is drawn over its spread (about ±10°, the
+  // research page's cos^2s with s = 15), in its row's colour, as thick as its share of the spot's energy, and labelled
+  // like its row where its rays come in.
+  const LAND = { d: null, job: null };
+  const landPer = (T) => [6, 8, 10, 12, 14, 16].reduce((b, x) => (Math.abs(x - T) < Math.abs(b - T) ? x : b), 6);
+  function landSpread(d0) {
+    const out = [], c = Math.round(d0 / 5) * 5; let tot = 0;
+    for (let d = c - 10; d <= c + 10; d += 5) { const w = Math.pow(Math.cos((d - d0) * Math.PI / 360), 30); out.push([d, w]); tot += w; }
+    return out.map(([d, w]) => [d, w / tot]);
+  }
+  function landRays(X, Y, alpha) {
+    if (!LAND.job) LAND.job = json('fr/land.json').then((d) => { LAND.d = d && d.T && d.frame ? d : null; if (S.phase === 'week') draw(); });
+    const Ld = LAND.d; if (!Ld) return;
+    const fr = Ld.frame, u = Ld.unit_km, sp = FC.spot === 'wild' ? 'w' : 'c', ranked = fcRanked(), tags = []; let nr = 0;
+    const XL = (xu) => X(fr.world[0] + xu * u / fr.kmlon), YL = (yu) => Y(0, fr.world[3] - yu * u / fr.kmlat);
+    ctx.save(); ctx.globalAlpha = alpha; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (let n = ranked.length - 1; n >= 0; n--) {                // the biggest share drawn last, on top
+      const { t, share } = ranked[n], per = Ld.T[String(landPer(t.T))] || {}, col = FAM[famOf(t.D)].rgb; let best = null;
+      for (const [d, w] of landSpread(t.D)) {
+        const rays = per[String(d)] && per[String(d)][sp]; if (!rays) continue;
+        ctx.strokeStyle = `rgba(${col.join(',')},${Math.min(0.95, (0.22 + 0.7 * share) * (0.45 + 0.55 * w / 0.3)).toFixed(2)})`;
+        ctx.lineWidth = 0.7 + 2.6 * share;
+        for (const r of rays) { nr++; ctx.beginPath(); for (let k = 0; k < r.length; k += 2) k ? ctx.lineTo(XL(r[k]), YL(r[k + 1])) : ctx.moveTo(XL(r[k]), YL(r[k + 1])); ctx.stroke(); }
+        if (!best || w > best.w) best = { w, r: rays[Math.floor(rays.length / 2)] };
+      }
+      if (best) tags.push({ x: XL(best.r[0]), y: YL(best.r[1]), col: `rgb(${col.join(',')})`, txt: `${n + 1}° ${ftTab(t.ft)} ft @ ${Math.round(t.T)} s ${compass(t.D)} · ${Math.round(share * 100)}%` });
+    }
+    ctx.restore();
+    FC.rayTags = tags.map((q) => q.txt); FC.rayCount = nr;
+    rayTags(tags, alpha);
+  }
+  function mapNote(t) {                                      // one short line over the map, low in the middle
+    ctx.save(); ctx.font = '600 13px "Instrument Sans", system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const w = ctx.measureText(t).width + 24, x = cw / 2, y = Math.max(INS.top + 20, chh - INS.bottom - 26);
+    ctx.fillStyle = 'rgba(10,15,21,.86)'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - w / 2, y - 14, w, 28, 14) : ctx.rect(x - w / 2, y - 14, w, 28); ctx.fill();
+    ctx.fillStyle = '#e7edf2'; ctx.fillText(t, x, y); ctx.restore();
+    FC.note = t;
+  }
+  function rayTags(tags, alpha) {                            // each swell's label where its rays come in, kept apart
+    ctx.save(); ctx.globalAlpha = alpha; ctx.font = '600 12px "Instrument Sans", system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    const placed = [];
+    for (const t of tags) {
+      const w = ctx.measureText(t.txt).width + 14; let x = Math.max(6, Math.min(cw - w - 6 - INS.right, t.x + 6)), y = Math.max(INS.top + 10, Math.min(chh - INS.bottom - 12, t.y - 14));
+      for (let n = 0; n < 8 && placed.some((b) => x < b[0] + b[2] && x + w > b[0] && Math.abs(y - b[1]) < 22); n++) y += y > chh / 2 ? -23 : 23;
+      placed.push([x, y, w]);
+      ctx.fillStyle = 'rgba(10,15,21,0.86)'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y - 10, w, 20, 10) : ctx.rect(x, y - 10, w, 20); ctx.fill();
+      ctx.fillStyle = t.col; ctx.fillText(t.txt, x + 7, y);
+    }
+    ctx.restore();
   }
 
   // ── drawing (called from render)
@@ -2937,6 +3042,8 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   }
   function drawWeek(X, Y, v) {
     const PAST = S.phase === 'past';
+    FC.note = '';
+    if (!PAST && FCUI && (FC.failed || (FC.d && FC.out))) { mapNote(FC.failed ? 'The forecast didn’t load' : 'No model forecast for this hour'); return; }
     if (!PAST && !FC.d) return;
     const fa = fieldAlpha(v.W), row = PAST ? null : fRow(), t0 = row == null ? 0 : Date.parse(FC.d[FC.model][row].t);
     if (PAST) drawWind(X, Y, v);
@@ -2952,7 +3059,10 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     }
     // Part 1's rays for each train, near Fishers
     const ra = FC.show.rays ? ramp(v.W, 320, 130) : 0;
-    if (ra > 0) {
+    FC.rayTags = []; FC.rayCount = 0;
+    if (ra > 0 && FCUI && !PAST) landRays(X, Y, ra);
+    else if (ra > 0) {
+      raysFor(FC.cur);
       const XW = (xk) => X(WB[0] + xk / KX), YW = (xk, yk) => Y(0, WB[3] - yk / KY);
       ctx.save(); ctx.globalAlpha = ra; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
       const tag = FC.spot === 'wild' ? 'w' : 'c';               // only the rays that reach the spot picked
@@ -2984,7 +3094,10 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
       ctx.fillText('buoy 44097', bx + 9, by + 4); ctx.restore();
     }
     // the spots: the one picked is labeled at every zoom, both near Fishers
-    const c = PAST ? pastFt('choc') : spotFt(FC.model, FC.i, 'choc'), w = PAST ? pastFt('wild') : spotFt(FC.model, FC.i, 'wild'), near = v.W < 160, f1 = (q) => (q == null ? '–' : q.toFixed(1));
+    // (on the Forecast tab the spots carry its headline's number: the two models' mean, written as it writes heights)
+    const spotNow = (sp) => (PAST ? pastFt(sp) : FCUI ? fcMean(FC.i, sp) : spotFt(FC.model, FC.i, sp));
+    const c = spotNow('choc'), w = spotNow('wild'), near = v.W < 160, f1 = (q) => (q == null ? '–' : FCUI ? ftTab(q) : q.toFixed(1));
+    FC.spotLabel = FC.spot === 'wild' ? `Wilderness ${f1(w)} ft` : `Choc ${f1(c)} ft`;   // (what the spot picked says, for tests)
     ctx.font = '600 13px "Instrument Sans", system-ui, sans-serif'; ctx.shadowColor = 'rgba(0,0,0,.85)'; ctx.shadowBlur = 4;
     if (near || FC.spot === 'choc') {
       ctx.fillStyle = '#f08a4b'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(X(PEAK[0]), Y(...PEAK), 5, 0, 7); ctx.fill(); ctx.stroke();
@@ -3038,6 +3151,134 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
         pill(x, y, lines);
       }
     }
+    // zoomed out with Pressure & storms on, a run that has no pressure map (or whose map didn't load) says so
+    if (!PAST && FC.d && stormAlpha(v.W) > 0.5 && (ST.status === 'none' || ST.status === 'failed')) mapNote(ST.status === 'none' ? 'This forecast run has no pressure map yet' : 'The pressure map didn’t load');
+  }
+
+  // ── PRESSURE AND STORMS (zoomed out): GFS's sea-level pressure at the hour every 4 hPa (bold every 20), the lows (L)
+  // and highs (H), and each storm's track over the run, brighter for the hours still to come. From fcpull.py's
+  // field_gfs_mslp.png: one row per GFS step, one pixel per cell of the ocean grid, tenths of a hPa above 800 in red
+  // (high byte) and green (low byte), 65535 where there is none. Fades in from region zoom and is gone near Fishers.
+  const ST = { key: null, status: 'idle', hpa: null, lows: null, tracks: null, drawn: null };
+  const stormAlpha = (W) => (FC.show.storm ? ramp(W, 400, 1200) : 0);
+  function stormLoad() {
+    const d = FC.d, G = d && d.grids && d.grids.ocean;
+    if (!d || !G || !d.mslp || !d.mslp.file) { ST.status = d ? 'none' : 'idle'; return; }
+    const base = d._base || 'fc/', key = base + '|' + d.made;
+    if (ST.key === key) return;
+    ST.key = key; ST.status = 'loading'; ST.hpa = ST.lows = ST.tracks = null;
+    img(`${base}${d.mslp.file}${/^https?:/.test(base) ? '?m=' + encodeURIComponent(d.made) : ''}`).then((im) => {
+      if (ST.key !== key) return;                            // a newer pull arrived meanwhile
+      const n = G.lat[3] * G.lon[3];
+      if (!im || im.width !== n) { ST.status = 'failed'; draw(); return; }
+      const a = window.CHOC.pixels(im), hpa = [];
+      for (let k = 0; k < im.height; k++) {
+        const row = new Float32Array(n);
+        for (let q = 0; q < n; q++) { const o = 4 * (k * n + q), v = a[o] << 8 | a[o + 1]; row[q] = v === 65535 ? NaN : v / 10 + 800; }
+        hpa.push(row);
+      }
+      ST.hpa = hpa; trackLows(d, G); ST.status = 'ok';
+      if (S.phase === 'week') draw();
+    });
+  }
+  // Lows and highs at each step: a 1° cell lower (higher) than everything within 3° and at least 2 hPa below (above)
+  // the ring 4° out, under 1008 hPa (over 1022), its centre refined between cells. Then each low is followed from step
+  // to step (nearest low within what a storm can travel, 110 km/h) into tracks; a storm is a track that lasts a day or
+  // more and gets to 1000 hPa or lower (shorter ones are mostly lows that form and fill again, and clutter the map).
+  function trackLows(d, G) {
+    const nla = G.lat[3], nlo = G.lon[3], dg = G.lat[2], ts = d.gfs.map((r) => Date.parse(r.t));
+    const lows = ST.hpa.map((P) => {
+      const out = [];
+      for (let i = 4; i < nla - 4; i++) {
+        const lat = G.lat[0] - i * dg; if (lat < 8 || lat > 68) continue;
+        for (let j = 4; j < nlo - 4; j++) {
+          const lon = G.lon[0] + j * dg; if (lon < -100 || lon > 5) continue;
+          const p = P[i * nlo + j]; if (!(p <= 1008 || p >= 1022)) continue;
+          const low = p <= 1008; let ok = true;
+          for (let a = -3; a <= 3 && ok; a++) for (let b = -3; b <= 3; b++) {
+            if (!a && !b) continue;
+            const v = P[(i + a) * nlo + j + b];
+            if (v !== v || (low ? v < p || (v === p && (a < 0 || (a === 0 && b < 0))) : v > p || (v === p && (a < 0 || (a === 0 && b < 0))))) { ok = false; break; }
+          }
+          if (!ok) continue;
+          let ring = 0, nr = 0;
+          for (let t = 0; t < 16; t++) { const w = P[(i + Math.round(4 * Math.sin(t * Math.PI / 8))) * nlo + j + Math.round(4 * Math.cos(t * Math.PI / 8))]; if (w === w) { ring += w; nr++; } }
+          if (!nr || (low ? ring / nr - p : p - ring / nr) < 2) continue;
+          const pu = P[(i - 1) * nlo + j], pd = P[(i + 1) * nlo + j], pl = P[i * nlo + j - 1], pr = P[i * nlo + j + 1];
+          const di = Math.max(-0.5, Math.min(0.5, (pu - pd) / (2 * (pu - 2 * p + pd)) || 0)), dj = Math.max(-0.5, Math.min(0.5, (pl - pr) / (2 * (pl - 2 * p + pr)) || 0));
+          out.push({ lat: lat - di * dg, lon: lon + dj * dg, p, low });
+        }
+      }
+      return out;
+    });
+    const tracks = []; let open = [];
+    lows.forEach((Lk, k) => {
+      const dt = k ? (ts[k] - ts[k - 1]) / 36e5 : 3, reach = Math.max(300, 110 * dt), next = [], taken = {}, used = {}, pairs = [];
+      open.forEach((tr, ti) => { const last = tr.pts[tr.pts.length - 1]; Lk.forEach((x, xi) => { if (x.low) { const km = gcKm([last.lon, last.lat], [x.lon, x.lat]); if (km <= reach) pairs.push([km, ti, xi]); } }); });
+      pairs.sort((a, b) => a[0] - b[0]);
+      pairs.forEach(([, ti, xi]) => { if (used[ti] || taken[xi]) return; used[ti] = taken[xi] = 1; open[ti].pts.push(Object.assign({ k }, Lk[xi])); next.push(open[ti]); });
+      Lk.forEach((x, xi) => { if (x.low && !taken[xi]) { const tr = { pts: [Object.assign({ k }, x)] }; tracks.push(tr); next.push(tr); } });
+      open = next;
+    });
+    ST.lows = lows;
+    ST.tracks = tracks.filter((tr) => ts[tr.pts[tr.pts.length - 1].k] - ts[tr.pts[0].k] >= 864e5 && tr.pts.some((x) => x.p <= 1000));
+  }
+  function drawStorms(X, Y, v) {
+    const al = stormAlpha(v.W); ST.drawn = null;
+    if (al <= 0.02 || !FC.d) return;
+    stormLoad();
+    const G = FC.d.grids && FC.d.grids.ocean, k = FC.i, P = ST.hpa && ST.hpa[k];
+    if (!G || !P) return;
+    const nla = G.lat[3], nlo = G.lon[3], dg = G.lat[2], ts = FC.d.gfs.map((r) => Date.parse(r.t));
+    const a = unproject(0, 0), b = unproject(cw, chh), Lw = Math.min(a[0], b[0]), Rw = Math.max(a[0], b[0]), Bw = Math.min(a[1], b[1]), Tw = Math.max(a[1], b[1]);
+    const info = { lows: [], highs: 0, tracks: 0, isobars: 0 };
+    ctx.save(); ctx.globalAlpha = al; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    // isobars: marching squares over the 1° cells on screen, a segment per cell per 4 hPa level
+    const i0 = Math.max(0, Math.floor((G.lat[0] - Tw) / dg) - 1), i1 = Math.min(nla - 2, Math.ceil((G.lat[0] - Bw) / dg) + 1);
+    const j0 = Math.max(0, Math.floor((Lw - G.lon[0]) / dg) - 1), j1 = Math.min(nlo - 2, Math.ceil((Rw - G.lon[0]) / dg) + 1);
+    const at = (i, j, fi, fj) => { const lon = G.lon[0] + (j + fj) * dg; return [X(lon), Y(lon, G.lat[0] - (i + fi) * dg)]; };
+    const thin = new Path2D(), bold = new Path2D();
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const p1 = P[i * nlo + j], p2 = P[i * nlo + j + 1], p3 = P[(i + 1) * nlo + j + 1], p4 = P[(i + 1) * nlo + j];
+      if (p1 !== p1 || p2 !== p2 || p3 !== p3 || p4 !== p4) continue;
+      const lo = Math.min(p1, p2, p3, p4), hi = Math.max(p1, p2, p3, p4);
+      for (let lv = Math.ceil(lo / 4) * 4; lv <= hi; lv += 4) {
+        const pts = [], f = (u, w) => (lv - u) / (w - u), path = lv % 20 ? thin : bold;
+        if ((p1 < lv) !== (p2 < lv)) pts.push(at(i, j, 0, f(p1, p2)));
+        if ((p2 < lv) !== (p3 < lv)) pts.push(at(i, j + 1, f(p2, p3), 0));
+        if ((p4 < lv) !== (p3 < lv)) pts.push(at(i + 1, j, 0, f(p4, p3)));
+        if ((p1 < lv) !== (p4 < lv)) pts.push(at(i, j, f(p1, p4), 0));
+        for (let q = 0; q + 1 < pts.length; q += 2) { path.moveTo(pts[q][0], pts[q][1]); path.lineTo(pts[q + 1][0], pts[q + 1][1]); info.isobars++; }
+      }
+    }
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.42)'; ctx.stroke(thin);
+    ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(255,255,255,0.72)'; ctx.stroke(bold);
+    // tracks: the whole run faint, the hours still to come brighter, a dot every 6 h
+    const inView = (x) => x.lon >= Lw && x.lon <= Rw && x.lat >= Bw && x.lat <= Tw;
+    for (const tr of ST.tracks || []) {
+      const pts = tr.pts; if (!pts.some(inView)) continue;
+      info.tracks++; ctx.lineWidth = 1.6;
+      for (let q = 1; q < pts.length; q++) {
+        ctx.strokeStyle = pts[q].k > k ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)';
+        ctx.beginPath(); ctx.moveTo(X(pts[q - 1].lon), Y(pts[q - 1].lon, pts[q - 1].lat)); ctx.lineTo(X(pts[q].lon), Y(pts[q].lon, pts[q].lat)); ctx.stroke();
+      }
+      for (const x of pts) {
+        if (Math.round(ts[x.k] / 36e5) % 6) continue;
+        ctx.fillStyle = x.k > k ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.arc(X(x.lon), Y(x.lon, x.lat), 1.8, 0, 7); ctx.fill();
+      }
+    }
+    // the lows and highs at the hour, labelled with their pressure
+    ctx.font = '700 12px "Instrument Sans", system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+    for (const x of (ST.lows && ST.lows[k]) || []) {
+      if (!inView(x)) continue;
+      const t = (x.low ? 'L ' : 'H ') + Math.round(x.p), tw = ctx.measureText(t).width + 12;
+      const px = Math.max(tw / 2 + 2, Math.min(cw - tw / 2 - 2, X(x.lon))), py = Math.max(12, Math.min(chh - 12, Y(x.lon, x.lat)));
+      if (x.low) info.lows.push({ p: Math.round(x.p), lat: Math.round(x.lat * 10) / 10, lon: Math.round(x.lon * 10) / 10 }); else info.highs++;
+      ctx.fillStyle = 'rgba(10,15,21,0.82)'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(px - tw / 2, py - 10, tw, 20, 10) : ctx.rect(px - tw / 2, py - 10, tw, 20); ctx.fill();
+      ctx.fillStyle = x.low ? '#ff8a8a' : '#8ac4ff'; ctx.fillText(t, px, py);
+    }
+    ctx.restore();
+    ST.drawn = info;
   }
 
   // ── moving streaks over the field (Windy-style): drift along the travel direction, faster for longer period
@@ -3135,14 +3376,40 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     $('fcAsOf').textContent = (note ? note[0].toUpperCase() + note.slice(1) + ' · ' : '') + txt; $('fcAsOf').title = txt;
   }
   function fcLoad(d) {                                       // the forecast's numbers, on load and when ↻ brings a newer pull
-    if (!d) { $('fcAsOf').textContent = 'The forecast file didn’t load.'; return; }
+    if (!d) {
+      $('fcAsOf').textContent = 'The forecast file didn’t load.';
+      if (FCUI) { FC.failed = true; draw(); if (window.parent !== window) window.parent.postMessage({ type: 'lcc-fc-failed' }, location.origin); }
+      return;
+    }
+    FC.failed = false;
     const at = FC.d ? Date.parse(FC.d.gfs[FC.i].t) : Date.now();   // first load: now; a newer pull keeps the hour on show
     FC.d = d; FC.px = {}; FC.cv = {}; FC.aim = {}; FC.arr = {};   // field images, colors and dots belong to the pull they came with
     FC.ecIx = d.gfs.map((r) => { const t = Date.parse(r.t); let b = null, bd = 3 * 36e5 + 1; d.ec.forEach((q, k) => { const x = Math.abs(Date.parse(q.t) - t); if (x < bd) { bd = x; b = k; } }); return b; });
     FC.i = 0; d.gfs.forEach((r, i) => { if (Date.parse(r.t) <= at) FC.i = i; });
+    if (FCUI && FC.want != null) { FC.i = nearestStep(FC.want); FC.out = outOfRun(FC.want); }
     fcAsOf(); fcBest();
     if (S.phase === 'week') setMode('week');
+    if (FCUI && window.parent !== window) window.parent.postMessage({ type: 'lcc-fc-ready', made: d.made }, location.origin);
   }
+  function nearestStep(ms) { let b = 0, bd = Infinity; FC.d.gfs.forEach((r, i) => { const x = Math.abs(Date.parse(r.t) - ms); if (x < bd) { bd = x; b = i; } }); return b; }
+  // The Forecast tab drives its map: {type: 'lcc-fc', time (ms or ISO), spot: 'choc' | 'wild', zoom: 'ocean' | 'reg' | 'fi'}.
+  // A time shows the forecast step nearest it; a zoom (sent when the tab's Ocean, Region or Fishers is picked) moves the view.
+  if (FCUI) addEventListener('message', (e) => {
+    if (e.origin !== location.origin || e.source !== window.parent || window.parent === window) return;
+    const m = e.data; if (!m || m.type !== 'lcc-fc') return;
+    if ((m.spot === 'choc' || m.spot === 'wild') && m.spot !== FC.spot) setSpot(m.spot);
+    if (m.zoom && ZOOMS[m.zoom]) fcZoom(m.zoom);
+    const t = typeof m.time === 'number' ? m.time : Date.parse(m.time || '');
+    if (Number.isFinite(t)) {
+      FC.want = t; if (!FC.d) return;
+      const out = outOfRun(t), i = nearestStep(t);
+      if (out !== FC.out) { FC.out = out; FC.pick = null; FC.fan = null; }
+      if (S.phase === 'week') { if (i !== FC.i) setWeek(i); else draw(); }
+    }
+  });
+  // an hour the run doesn't cover (as the tab decides: more than 3 h before its first step or 90 min after its last):
+  // the map says so instead of showing the nearest step as that hour
+  function outOfRun(t) { const g = FC.d.gfs; return t < Date.parse(g[0].t) - 3 * 36e5 || t > Date.parse(g[g.length - 1].t) + 90 * 6e4; }
   fcData.then(fcLoad);
   if (window.CHOC.onForecast) window.CHOC.onForecast(fcLoad);
   // ↻: the latest pull now, without waiting for a reload (a new one is published every 3 hours)
@@ -3188,7 +3455,12 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   // spreads), straight on great circles over the deep ocean, then over the sea floor with the same tracer as
   // Drop a wave. Each ray carries its travel time at group speed.
   function dotRays(c) {
-    if (!GR.ok) return null;
+    if (!GR.ok) {                                            // the depth grids load on the first trace: say so, then trace
+      if (GR.ok === false) return null;
+      const wait = { c, rays: [], searching: true };
+      depthReady().then(() => { if (FC.fan === wait) { FC.fan = GR.ok ? dotRays(c) : null; draw(); } });
+      return wait;
+    }
     const ga = GR.a, inside = (lon, lat) => { const fi = (ga.north - lat) / ga.dlat, fj = (lon - ga.west) / ga.dlon; return fi > 2 && fj > 2 && fi < ga.rows - 3 && fj < ga.cols - 3; };
     const cgD = G * c.T / (4 * Math.PI), out = []; let entry = null;
     for (let off = -10; off <= 10; off++) {
@@ -3229,7 +3501,9 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   function fcStop() { clearInterval(FC.timer); FC.timer = 0; $('fcPlay').textContent = '▶'; $('fcPlay').setAttribute('aria-label', 'Play the week'); }
   let dropReady = false;
   function setMode(m) {
-    try { localStorage.setItem('choc.hubView', m); } catch (e) { /* fine */ }
+    if (EXUI && m === 'week') m = 'past';
+    document.documentElement.dataset.hubMode = m;               // (Explore shows the ten years beside Past only)
+    if (!FCUI) try { localStorage.setItem('choc.hubView', m); } catch (e) { /* fine */ }
     const was = S.phase, wasMap = was === 'week' || was === 'past';
     for (const b of document.querySelectorAll('#tripModeSeg button')) b.setAttribute('aria-pressed', String(b.dataset.v === m));
     for (const el of stage.querySelectorAll('[data-mode]')) el.hidden = !el.dataset.mode.split(' ').includes(m);
@@ -3256,7 +3530,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   }
   function initDrop() {                                      // the wave tracer starts on first use: a 12 s wave from far out, aimed at Choc, played once
     dropReady = true; $('tripPhase').textContent = 'Loading the sea floor…';
-    ready.then(() => {
+    depthReady().then(() => {
       if (!GR.ok) { $('tripPhase').textContent = 'This browser can’t load the depth data for the wave tracer.'; return; }
       S.start = [-71.85, 38.91]; const b = aim('c', S.T, S.start); S.th = (b.th + 360) % 360; S.note = 'aimed at Choc';
       S.ray = makeRay(S.T, S.start, S.th);
@@ -3271,11 +3545,12 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     FC.model = b.dataset.v; FC.pick = null; FC.fan = null; for (const q of document.querySelectorAll('#fcModel button')) q.setAttribute('aria-pressed', String(q === b));
     if (FC.d && S.phase === 'week') { fcTimeline(); setWeek(FC.i); }
   }));
-  document.querySelectorAll('#fcSpot button').forEach((b) => b.addEventListener('click', () => {
-    FC.spot = b.dataset.v; for (const q of document.querySelectorAll('#fcSpot button')) q.setAttribute('aria-pressed', String(q === b));
+  function setSpot(v) {
+    FC.spot = v; for (const q of document.querySelectorAll('#fcSpot button')) q.setAttribute('aria-pressed', String(q.dataset.v === v));
     FC.pick = null; FC.fan = null; if (FC.d) fcBest();
     if (S.phase === 'past') setPast(CST.idx); else if (FC.d) { fcTimeline(); setWeek(FC.i); }
-  }));
+  }
+  document.querySelectorAll('#fcSpot button').forEach((b) => b.addEventListener('click', () => setSpot(b.dataset.v)));
   document.querySelectorAll('#fcLayers .hub-tg').forEach((b) => {
     b.setAttribute('aria-pressed', String(FC.show[b.dataset.l]));
     b.addEventListener('click', () => {
@@ -3330,7 +3605,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   // survey map it is the page's ray model run on the buoy's swell trains (the same model the forecast
   // uses there); the rays near Fishers are those trains; arrows are the day's wind at 17 points.
   const DAYS = window.CHOC.D, CST = window.CHOC.st, MODEL = window.CHOC.model, MON = window.CHOC.MON;
-  const PS = { trains: [], f: null, fm: null, years: {}, o: null, om: null, oyears: {}, oimg: null, oimgKey: '', iso: '', bestH: null, timer: 0, tok: 0, img: null, imgKey: '', asked: false };
+  const PS = { trains: [], f: null, fm: null, years: {}, o: null, om: null, oyears: {}, oimg: null, oimgKey: '', iso: '', bestH: null, timer: 0, img: null, imgKey: '', asked: false };
   MODEL.onUpdate(() => { if (MAPV() && !redrawSoon) { redrawSoon = true; requestAnimationFrame(() => { redrawSoon = false; draw(); }); } });
   function soundTrains() {
     if (S.phase === 'past') return PS.trains;
@@ -3350,10 +3625,12 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   }
   function flowFn() {
     if (S.phase === 'past') return PS.f || PS.o ? pastFlow : null;
+    if (FCUI && (FC.out || FC.failed)) return null;
     const row = fRow(); return row == null || !FC.d ? null : (lon, lat) => fcFlow(lon, lat, FC.model, row);
   }
   function atFn() {
     if (S.phase === 'past') return (lon, lat) => pastAt(lon, lat) || ((MODEL.heightAt(lon, lat) || { h: -1 }).h >= 0);
+    if (FCUI && (FC.out || FC.failed)) return null;
     const row = fRow(); return row == null || !FC.d ? null : (lon, lat) => fcAt(lon, lat, FC.model, row);
   }
   // the Copernicus field for one year: one row per 3-hour step, 3 pixels per cell (primary swell,
@@ -3498,12 +3775,8 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     // the buoy's swell trains at Choc's biggest hour that day; a day without them uses the day's peak
     const tr = TRAINS[x.iso];
     PS.trains = tr && tr[1].length ? tr[1].map((q) => ({ ft: q[0], T: q[1], D: q[2] })) : x.hs ? [{ ft: x.hs, T: x.per, D: x.dir }] : [];
-    const my = ++PS.tok;
-    Promise.all(PS.trains.filter((q) => q.T >= 5 && q.ft >= 0.3).map(async (q) => {
-      const Te = Math.max(6, Math.min(16, Math.round(q.T / 2) * 2)), De = Math.round(q.D / 5) * 5, f = await frFile(Te);
-      return Object.assign({ rays: f && f[De] ? f[De].rays : null }, q);
-    })).then((cur) => { if (my !== PS.tok || S.phase !== 'past') return; FC.cur = cur; draw(); });
     if (S.phase !== 'past') return;
+    FC.cur = PS.trains.filter((q) => q.T >= 5 && q.ft >= 0.3).map((q) => Object.assign({}, q));   // their rays: raysFor, once they show
     $('pastDate').value = x.iso;
     pastHud(); pastStrip(); pastBest(); draw();
   }
@@ -3611,7 +3884,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   };
   $('pastPrev').addEventListener('click', () => shiftMonth(-1));
   $('pastNext').addEventListener('click', () => shiftMonth(1));
-  { const inp = $('pastDate'); inp.min = DAYS[0].iso; inp.max = DAYS[DAYS.length - 1].iso;
+  if (DAYS.length) { const inp = $('pastDate'); inp.min = DAYS[0].iso; inp.max = DAYS[DAYS.length - 1].iso;   // (the map alone has no history)
     inp.addEventListener('change', () => { const i = window.CHOC.dayIndex(inp.value); if (i >= 0) { pastStop(); window.CHOC.jump(i); } });
     window.CHOC.onDay((i) => { inp.value = DAYS[i].iso; }); inp.value = DAYS[CST.idx].iso; }
   {
@@ -3623,8 +3896,9 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     const end = () => { down = false; }; host.addEventListener('pointerup', end); host.addEventListener('pointercancel', end);
     new ResizeObserver(() => { if (S.phase === 'past') pastStrip(); }).observe(host);
   }
-  // first day shown in the past view: your October 2025 Wilderness day
-  { const i0 = window.CHOC.dayIndex('2025-10-12'); if (i0 >= 0) CST.idx = i0; }
+  // first day shown in the past view: your October 2025 Wilderness day; on the Explore tab, the newest day there is
+  if (EXUI && DAYS.length) CST.idx = DAYS.length - 1;
+  else { const i0 = window.CHOC.dayIndex('2025-10-12'); if (i0 >= 0) CST.idx = i0; }
 
   // ── map chrome. Wide maps keep the layers panel open (remembered); narrow ones open it on demand,
   // and a tap on the map closes it. The info card replaces long captions.
@@ -3633,7 +3907,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   function setPanel(open, remember) {
     $('hubPanel').hidden = !open; $('hubLayers').setAttribute('aria-expanded', String(open)); stage.classList.toggle('hub-pn', open);
     if (open && !$('hubInfoCard').hidden) setInfo(false, true);
-    if (remember && wide) { pnPref = open ? '1' : '0'; try { localStorage.setItem('choc.hubPanel', pnPref); } catch (e) { /* fine */ } }
+    if (remember && wide && !FCUI) { pnPref = open ? '1' : '0'; try { localStorage.setItem('choc.hubPanel', pnPref); } catch (e) { /* fine */ } }
     requestAnimationFrame(() => { if (MAPV() && !S.moved) fcZoom(FC.zoom); else draw(); });
   }
   function setInfo(open, keepPanel) {
@@ -3662,7 +3936,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   for (const b of stage.querySelectorAll('.hub-bot')) new ResizeObserver(botSize).observe(b);
   new ResizeObserver(() => {
     const w = stage.clientWidth >= 640; botSize();
-    if (w !== wide) { wide = w; stage.classList.toggle('hub-wide', w); setPanel(w ? pnPref !== '0' : false); }
+    if (w !== wide) { wide = w; stage.classList.toggle('hub-wide', w); setPanel(w && !FCUI ? pnPref !== '0' : false); }   // the Forecast tab's map starts with the layers shut
     if (MAPV() && !S.moved) fcZoom(FC.zoom);
   }).observe(stage);
 
@@ -4173,10 +4447,15 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     _week: (i) => setWeek(i), _tapAt: (lon, lat) => { const { sc, x0, y0 } = proj(cam()); fcTap((lon * KX - x0) * sc, (-lat * KY - y0) * sc); }, _raw: (T, lon, lat, th) => trace(T, lon, lat, th, false), state: S, aim: doAim, play, _miss: (T, lon, lat, th, spot) => miss(trace(T, lon, lat, th, false, aimTg(spot)), spot), _aim: (spot, T, s) => aim(spot, T, s), trace: (T, lon, lat, th) => makeRay(T, [lon, lat], th),
     _tiles: () => tileCache.size, _reefAsked: () => REEF.asked, _speeds: (T, h) => [cp(T, h), cg(T, h), rEff(T, 250)],
     skip: () => { if (S.ray) { S.dist = S.ray.len; S.phase = 'done'; S.playing = false; draw(); finish(); } }, setMode, fc: FC,
+    // the storm layer: what it last drew (lows in view, highs, tracks, isobar segments) and each storm's track over the run
+    _storm: () => ({ status: ST.status, drawn: ST.drawn ? JSON.parse(JSON.stringify(ST.drawn)) : null, tracks: ST.tracks ? ST.tracks.map((tr) => {
+      const a = tr.pts[0], b = tr.pts[tr.pts.length - 1], r1 = (x) => Math.round(x * 10) / 10, ts = (k) => Date.parse(FC.d.gfs[k].t);
+      return { min: Math.round(Math.min(...tr.pts.map((x) => x.p))), hours: Math.round((ts(b.k) - ts(a.k)) / 36e5), from: [r1(a.lat), r1(a.lon)], to: [r1(b.lat), r1(b.lon)], k: [a.k, b.k] };
+    }) : null }),
     _screen: (lon, lat) => { const { sc, x0, y0 } = proj(cam()); return [(lon * KX - x0) * sc, (-lat * KY - y0) * sc]; } };
 
   // first view: the forecast, unless this device last used Drop a wave
-  let view = 'week'; try { const v = localStorage.getItem('choc.hubView'); if (v === 'drop' || v === 'past') view = v; } catch (e) { /* default */ }
+  let view = EXUI ? 'past' : 'week'; if (!FCUI) try { const v = localStorage.getItem('choc.hubView'); if (v === 'drop' || v === 'past') view = v; } catch (e) { /* default */ }
   setMode(view);
 })();
 
@@ -4506,7 +4785,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
         if (v) { const t = el('text', { x: x + cell / 2, y: y + cell / 2 + 4, 'text-anchor': 'middle', 'font-size': 12, 'font-family': css('--mono'), fill: v / max > 0.55 ? '#1a0e06' : C.fg, 'pointer-events': 'none' }, g); t.textContent = v; }
         if (!PH.month[key(yr, m)] && PH.logMonth[key(yr, m)]) el('circle', { class: 'dec-lg', cx: x + cell - 8, cy: y + 8, r: 2.6, fill: v / max > 0.55 ? '#1a0e06' : '#e7edf2', 'pointer-events': 'none' }, g);
         if (PH.month[key(yr, m)]) { const fo = el('foreignObject', { x: x + cell - 15, y: y + 3, width: 12, height: 10, 'pointer-events': 'none' }, g); fo.innerHTML = `<div xmlns="http://www.w3.org/1999/xhtml" style="color:${v / max > 0.55 ? '#1a0e06' : '#e7edf2'};line-height:0">${CAM}</div>`; }
-        const pick = () => { sel = key(yr, m); draw(); month(); if (isOpen()) document.getElementById('decMonth').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); };
+        const pick = () => { sel = key(yr, m); draw(); month(); if (isOpen() || dock) document.getElementById('decMonth').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); };
         g.addEventListener('click', pick); g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
       }
     });
@@ -4611,7 +4890,26 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     const b = document.getElementById('pastDec'); if (b && b.offsetParent) b.focus();
   }
   window.CHOC.tenYears = { open: openTen, close: closeTen, isOpen };
-  if (ov) {
+  // The Explore tab (?ui=explore): the ten years stay out beside the map (under it on a phone), with the ocean that
+  // day under them, instead of opening over it. A day picked there shows on the map straight away, and the Past bar's
+  // month button brings them into view.
+  const EXPLORE = document.documentElement.dataset.researchUi === 'explore';
+  let dock = null;
+  if (EXPLORE && hub) {
+    dock = document.createElement('aside'); dock.id = 'exDock'; dock.className = 'ex-dock'; dock.setAttribute('aria-labelledby', 'exDockH');
+    dock.innerHTML = '<h2 id="exDockH" class="ex-h">Ten years, month by month</h2><p class="ex-lede">Every month since the buoy went in. Tap a month for its days, a day to see it on the map.</p>';
+    dock.appendChild(fig);
+    const od = document.getElementById('odWrap'); if (od) dock.appendChild(od);
+    hub.after(dock);
+  }
+  function toTen() {                                       // Explore: the month on show, in the column (or under the map)
+    const x = D[st.idx]; if (x) { sel = key(x.y, x.m); draw(); month(); }
+    const m = document.getElementById('decMonth'), wideDock = dock && getComputedStyle(dock).overflowY === 'auto';
+    if (wideDock) dock.scrollTo({ top: Math.max(0, m.offsetTop - dock.offsetTop - 8), behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    else dock.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
+  if (dock) document.getElementById('pastDec').addEventListener('click', toTen);
+  else if (ov) {
     document.getElementById('pastDec').addEventListener('click', openTen);
     document.getElementById('decOvX').addEventListener('click', closeTen);
     ov.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeTen(); } });

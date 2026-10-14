@@ -1,11 +1,12 @@
-/* Map page: one map. It opens on the Sound Check map (research/index.html?view=map&fill=1:
- * this week's swell from the open Atlantic to the reef, any day since 2016, Drop a wave), and
- * its "3D" button opens the sea floor around Fishers in 3D for a closer look (map.js, with
- * MapLibre, loaded the first time it is asked for); "← Map" goes back.
+/* Map page, the Explore tab: one map. It opens on the Sound Check map's Past view
+ * (research/index.html?view=map&fill=1&ui=explore: any day since 2016, with the ten years month by
+ * month beside it, and Drop a wave; this week's forecast is the Forecast tab's), and its "3D"
+ * button opens the sea floor around Fishers in 3D for a closer look (map.js, with MapLibre, loaded
+ * the first time it is asked for); "← Map" goes back.
  *
  * Embedded (?embed=1) the parent page drives theme, spot, hour and day with postMessage
- * {type: 'lcc-map', theme, spot, time, active, date, ui}; a date opens that day on the Sound
- * Check map. ?show=3d (and ?compact=1, a 3D picture with no Sound Check map) start in 3D.
+ * {type: 'lcc-map', theme, spot, time, active, date, ui, open3d}; a date opens that day on the Sound
+ * Check map, and open3d the sea floor in 3D at that spot ('choc' | 'wild') and time. ?show=3d (and ?compact=1, a 3D picture with no Sound Check map) start in 3D.
  * The 3D map answers {type: 'lcc-map-ready'} once and {type: 'lcc-map-spot', spot} when its
  * spot buttons are used. window.ChocMap is the same API for tests.
  */
@@ -46,7 +47,7 @@
   }
   function loadExplorer() {
     if (frame.getAttribute('src')) return;
-    frame.src = '../research/index.html?view=map&fill=1&theme=' + state.theme + (state.pastDate ? '&date=' + state.pastDate : '');
+    frame.src = '../research/index.html?view=map&fill=1&ui=explore&theme=' + state.theme + (state.pastDate ? '&date=' + state.pastDate : '');
   }
   function hasWebGL() { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } }
   function loadScript(src) {
@@ -107,6 +108,7 @@
     if (Number.isFinite(t)) { state.wantTime = t; if (sea) sea.toTime(t); }
     if ((d.ui === 'peek' || d.ui === 'full') && d.ui !== state.ui) { if (sea) sea.setUI(d.ui); else state.ui = d.ui; }
     if (typeof d.active === 'boolean' && d.active !== state.active) { state.active = d.active; if (sea) sea.onActive(); }
+    if (d.open3d) { open3D({ spot: d.spot, time: d.time }); return; }   // the Forecast tab's map: its "3D" button
     if (/^\d{4}-\d{2}-\d{2}$/.test(d.date || '')) {
       state.pastDate = d.date;
       if (frame.getAttribute('src') && frame.contentWindow) frame.contentWindow.postMessage({ type: 'lcc-map-date', date: d.date }, location.origin);

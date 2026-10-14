@@ -7,8 +7,8 @@
     <a class="qa" href="#q1-h"><span class="eyebrow">Question 1</span><b>What makes the surf good at Choc?</b><span>The swell that actually reaches the reef, not the buoy's number. The model's height at Choc picks the bigger of two of your sessions <span class="mono" id="qa1M">88%</span> of the time, the raw buoy <span class="mono" id="qa1B">77%</span>. After size comes offshore wind; the tide barely matters.</span></a>
     <a class="qa" href="#q2-h"><span class="eyebrow">Question 2</span><b>How real is the swell window?</b><span>Real, but soft-edged. On only <span class="mono" id="qa2In">40%</span> of Choc's 3 ft+ days does the swell come straight through the gap between Block Island and Montauk; on <span class="mono" id="qa2S">45%</span> it bends in from south of Montauk.</span></a>
   </div>
-  <p class="qs-more">Explore <a href="#how-h">how the model works</a>, <a href="#dec-h">ten years, month by month</a>, <a href="#week-h">the 7-day forecast</a> and <a href="#wild-h">Wilderness</a>. Forecast layers, past days and sea-floor exploration now live on the Map page.</p>
-  <a class="methods-map-link" href="../map/index.html" data-open-map>Explore the map <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8h10M8 3l5 5-5 5"/></svg></a>
+  <p class="qs-more">Explore <a href="#how-h">how the model works</a>, <a href="#dec-h">ten years, month by month</a>, <a href="#week-h">the 7-day forecast</a> and <a href="#wild-h">Wilderness</a>. The forecast map, with its storms, is on the Forecast tab; past days, the ten years month by month and the sea floor in 3D are on Explore.</p>
+  <a class="methods-map-link" href="../map/index.html" data-open-map>Explore past days <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8h10M8 3l5 5-5 5"/></svg></a>
 </header>
 <section aria-labelledby="trip-h">
   <div class="eyebrow">The map</div>
@@ -25,9 +25,9 @@
         <button type="button" class="hub-ib" id="hubFull" aria-pressed="false" aria-label="Full screen" title="Full screen"><svg class="i-max" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><svg class="i-min" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg></button>
       </div>
       <div class="hub-panel" id="hubPanel" hidden>
-        <div class="hub-g"><div class="hub-h">View</div>
+        <div class="hub-g hub-view"><div class="hub-h">View</div>
           <div class="seg hub-seg" role="group" aria-label="View" id="tripModeSeg"><button type="button" data-v="week" aria-pressed="true">Forecast</button><button type="button" data-v="past" aria-pressed="false">Past</button><button type="button" data-v="drop" aria-pressed="false">Drop a wave</button></div></div>
-        <div class="hub-g" data-mode="week past"><div class="hub-h">Spot</div>
+        <div class="hub-g hub-spot" data-mode="week past"><div class="hub-h">Spot</div>
           <div class="seg hub-seg" role="group" aria-label="Spot" id="fcSpot"><button type="button" data-v="choc" aria-pressed="true">Choc</button><button type="button" data-v="wild" aria-pressed="false">Wilderness</button></div></div>
         <div class="hub-g" data-mode="week"><div class="hub-h">Model</div>
           <div class="seg hub-seg" role="group" aria-label="Forecast model" id="fcModel"><button type="button" data-v="gfs" aria-pressed="true">GFS-Wave</button><button type="button" data-v="ec" aria-pressed="false">ECMWF</button></div></div>
@@ -38,8 +38,9 @@
             <button type="button" class="hub-tg" data-l="aim" data-mode="week" aria-pressed="true"><i class="ck"></i>Swell headed our way</button>
             <button type="button" class="hub-tg" data-l="wnd" data-mode="past" aria-pressed="false" hidden><i class="ck"></i>Wind arrows</button>
             <button type="button" class="hub-tg" data-l="rays" aria-pressed="true"><i class="ck"></i>Rays near Fishers</button>
+            <button type="button" class="hub-tg" data-l="storm" data-mode="week" aria-pressed="true"><i class="ck"></i>Pressure &amp; storms</button>
           </div></div>
-        <div class="hub-g" data-mode="week past"><div class="hub-h">Go to</div>
+        <div class="hub-g hub-goto" data-mode="week past"><div class="hub-h">Go to</div>
           <div class="seg hub-seg" role="group" aria-label="Go to" id="fcZoom"><button type="button" data-v="ocean" aria-pressed="false">Ocean</button><button type="button" data-v="reg" aria-pressed="true">Region</button><button type="button" data-v="fi" aria-pressed="false">Fishers</button></div></div>
         <div class="hub-g" data-mode="drop" hidden><div class="hub-h">Swell</div>
           <div class="hub-row"><label class="hub-f" for="tripSize">Size <input id="tripSize" type="number" min="0" max="40" step="0.5" value="6" inputmode="decimal"> ft</label><label class="hub-f" for="tripPer">Period <select id="tripPer"><option>6</option><option>8</option><option>10</option><option selected>12</option><option>14</option><option>16</option><option>18</option></select> s</label></div></div>
@@ -56,10 +57,12 @@
             <li><b>Color:</b> wave height from the model you pick, swell and wind sea together.</li>
             <li><b>Streaks:</b> which way the swell travels. Longer period moves faster.</li>
             <li><b>Pale dots:</b> open-ocean swell aimed at the spot from an angle its reef can see. Tap one: orange is the ray that reaches the spot, with when; gray is the rest of its spread.</li>
-            <li><b>Near Fishers:</b> the model's rays over the sea floor into the spot, colored by period.</li>
-            <li><b>Timeline:</b> GFS-Wave solid, ECMWF dashed, night shaded. Dots: wind at the spot (green clean, yellow cross-shore, red onshore). Gray bars: far-off swell arriving.</li>
+            <li class="hub-nofc"><b>Near Fishers:</b> the model's rays over the sea floor into the spot, colored by period.</li>
+            <li class="hub-fconly"><b>Near Fishers:</b> each swell's rays into the spot, colored like its row on the tab, thicker for a bigger share. Spot heights: the two models' mean.</li>
+            <li><b>Pressure &amp; storms</b> (zoomed out): GFS sea-level pressure every 4 hPa, <b>L</b> lows and <b>H</b> highs. White: each storm's track, brighter ahead, a dot every 6 h.</li>
+            <li class="hub-nofc"><b>Timeline:</b> GFS-Wave solid, ECMWF dashed, night shaded. Dots: wind at the spot (green clean, yellow cross-shore, red onshore). Gray bars: far-off swell arriving.</li>
             <li><b>Spot height:</b> each model's swell at buoy 44097 (white diamond), run through the reef's response. On 177 past hours it beat reading the models at the survey map's edge.</li>
-            <li><b>↻ Refresh:</b> loads the newest forecast pull without reloading the page. A new pull comes every 3 hours; to make one now, run “Update Sound Check forecast” under Actions on GitHub.</li>
+            <li class="hub-nofc"><b>↻ Refresh:</b> loads the newest forecast pull without reloading the page. A new pull comes every 3 hours; to make one now, run “Update Sound Check forecast” under Actions on GitHub.</li>
           </ul>
           <ul class="hub-fine">
             <li>GFS-Wave (NOAA): 0.16° near the coast, 0.25° offshore, separate swells.</li>

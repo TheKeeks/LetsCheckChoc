@@ -121,7 +121,7 @@
         if (v) { const t = el('text', { x: x + cell / 2, y: y + cell / 2 + 4, 'text-anchor': 'middle', 'font-size': 12, 'font-family': css('--mono'), fill: v / max > 0.55 ? '#1a0e06' : C.fg, 'pointer-events': 'none' }, g); t.textContent = v; }
         if (!PH.month[key(yr, m)] && PH.logMonth[key(yr, m)]) el('circle', { class: 'dec-lg', cx: x + cell - 8, cy: y + 8, r: 2.6, fill: v / max > 0.55 ? '#1a0e06' : '#e7edf2', 'pointer-events': 'none' }, g);
         if (PH.month[key(yr, m)]) { const fo = el('foreignObject', { x: x + cell - 15, y: y + 3, width: 12, height: 10, 'pointer-events': 'none' }, g); fo.innerHTML = `<div xmlns="http://www.w3.org/1999/xhtml" style="color:${v / max > 0.55 ? '#1a0e06' : '#e7edf2'};line-height:0">${CAM}</div>`; }
-        const pick = () => { sel = key(yr, m); draw(); month(); if (isOpen()) document.getElementById('decMonth').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); };
+        const pick = () => { sel = key(yr, m); draw(); month(); if (isOpen() || dock) document.getElementById('decMonth').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); };
         g.addEventListener('click', pick); g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
       }
     });
@@ -226,7 +226,26 @@
     const b = document.getElementById('pastDec'); if (b && b.offsetParent) b.focus();
   }
   window.CHOC.tenYears = { open: openTen, close: closeTen, isOpen };
-  if (ov) {
+  // The Explore tab (?ui=explore): the ten years stay out beside the map (under it on a phone), with the ocean that
+  // day under them, instead of opening over it. A day picked there shows on the map straight away, and the Past bar's
+  // month button brings them into view.
+  const EXPLORE = document.documentElement.dataset.researchUi === 'explore';
+  let dock = null;
+  if (EXPLORE && hub) {
+    dock = document.createElement('aside'); dock.id = 'exDock'; dock.className = 'ex-dock'; dock.setAttribute('aria-labelledby', 'exDockH');
+    dock.innerHTML = '<h2 id="exDockH" class="ex-h">Ten years, month by month</h2><p class="ex-lede">Every month since the buoy went in. Tap a month for its days, a day to see it on the map.</p>';
+    dock.appendChild(fig);
+    const od = document.getElementById('odWrap'); if (od) dock.appendChild(od);
+    hub.after(dock);
+  }
+  function toTen() {                                       // Explore: the month on show, in the column (or under the map)
+    const x = D[st.idx]; if (x) { sel = key(x.y, x.m); draw(); month(); }
+    const m = document.getElementById('decMonth'), wideDock = dock && getComputedStyle(dock).overflowY === 'auto';
+    if (wideDock) dock.scrollTo({ top: Math.max(0, m.offsetTop - dock.offsetTop - 8), behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    else dock.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
+  if (dock) document.getElementById('pastDec').addEventListener('click', toTen);
+  else if (ov) {
     document.getElementById('pastDec').addEventListener('click', openTen);
     document.getElementById('decOvX').addEventListener('click', closeTen);
     ov.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeTen(); } });

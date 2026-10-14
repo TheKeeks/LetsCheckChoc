@@ -6,10 +6,12 @@
 //   • each swell at the buoy and its share of Choc's energy, written
 //     "1° 0.5 ft @ 7 s SE 138° → 41% of Choc" with a bar as wide as the
 //     share, coloured by where it comes from (SE orange, SSW grey);
-//   • the ray map draws those swells' rays into Choc (landing rays only),
-//     labels each swell where it enters, and pins Choc;
+//   • the map is the Sound Check map (research/map.html) at the same hour:
+//     at Fishers it draws those swells' rays into Choc (landing rays only),
+//     labels each swell like its row with its share, and pins Choc; the
+//     zoom (Ocean, Region, Fishers) is remembered;
 //   • the week scrubber moves the hour (keys, the day jump, a mouse drag)
-//     and Now brings it back; the headline, swells and map follow;
+//     and Now brings it back; the headline, swells and the map's hour follow;
 //   • Wilderness switches every reading and is remembered;
 //   • the wind and tide for the hour; the buoy check: 44097's 8:30 AM reading
 //     (2 ft, stale) against Open-Meteo's forecast for 9 AM made 1, 2 and 3
@@ -28,7 +30,7 @@ module.exports = {
     ctx.serve('/research/fc/fc.json', { status: 200, headers: { 'content-type': 'application/json' }, body: ctx.fixture('soundcheck/fc.json') });
     await ctx.state(() => { try { localStorage.removeItem('lcc-f-spot'); } catch (_) { /* fine */ } }).catch(() => {});
     await ctx.open('/?preview=clean');
-    await ctx.waitFor(() => window.CLEAN && CLEAN.ready && CLEAN.forecastInfo && CLEAN.forecastInfo().fc === 'ok' && CLEAN.forecastInfo().rays > 0, { label: 'model forecast and rays' });
+    await ctx.waitFor(() => window.CLEAN && CLEAN.ready && CLEAN.forecastInfo && CLEAN.forecastInfo().fc === 'ok', { label: 'model forecast' });
     await ctx.waitFor(() => CLEAN.forecastInfo().prev === 'ok', { label: 'earlier forecasts at the buoy' });
     await ctx.waitForLoad();
     await ctx.waitFor(() => /mph/.test(document.querySelector('#cl-view-forecast .cl-f-cond').textContent) && /ft/.test(document.querySelector('#cl-view-forecast .cl-f-bc').textContent), { label: 'wind, tide and buoy painted' });
@@ -51,6 +53,17 @@ module.exports = {
       };
     });
 
+    // the map in its frame (research/map.html): its hour, spot, zoom and what it drew
+    const mf = () => page.frames().find(f => /research\/map\.html/.test(f.url()));
+    const mapAt = (t, spot) => mf().waitForFunction(([tt, ss]) => {
+      const f = window.CHOC && CHOC.trip && CHOC.trip.fc; return !!(f && f.d && Date.parse(f.d.gfs[f.i].t) === tt && f.spot === ss && f.rayCount > 0);
+    }, [t, spot], { timeout: 20000 });
+    const mapState = () => mf().evaluate(() => {
+      const f = CHOC.trip.fc, cv = document.getElementById('tripCv'), p = CHOC.trip._screen(-71.96339, 41.27557), k = cv.width / cv.clientWidth;
+      const pin = Array.from(cv.getContext('2d').getImageData(Math.round(p[0] * k), Math.round(p[1] * k), 1, 1).data.slice(0, 3));
+      return { t: Date.parse(f.d.gfs[f.i].t), spot: f.spot, W: CHOC.trip.state.cam.W, tags: f.rayTags, rays: f.rayCount, note: f.note, pin, label: f.spotLabel };
+    });
+
     // ── 11 AM at Choc ──
     let r = await read();
     log('now', JSON.stringify(r));
@@ -66,17 +79,19 @@ module.exports = {
     ], 'swells at the buoy, biggest share of Choc first; the wind sea that reaches nothing is left out');
     assert.deepEqual(r.rows.map(x => x.bar), ['41%', '41%', '18%'], 'bars as wide as the share');
     assert.deepEqual(r.rows.map(x => x.dot), ['rgb(240, 138, 75)', 'rgb(240, 138, 75)', 'rgb(140, 154, 168)'], 'SE orange; SSW (205°) grey');
-    assert.deepEqual(r.info.labels.map(sp), ['3° 1.5 ft @ 5 s SSW', '2° 0.5 ft @ 8 s SE', '1° 0.5 ft @ 7 s SE'], 'map labels each swell (biggest drawn last)');
-    assert.ok(r.info.rays > 50, `landing rays drawn (${r.info.rays})`);
-    assert.equal(r.info.note, '');
-    const pin = await ctx.state(async () => {
-      const fr = (await (await fetch('research/fr/land.json')).json()).frame;
-      const cv = document.querySelector('#cl-view-forecast .cl-f-map canvas');
-      const w = cv.clientWidth, WKM = (fr.world[1] - fr.world[0]) * fr.kmlon, k = cv.width / w;
-      const x = Math.round(fr.choc[0] * w / WKM * k), y = Math.round(fr.choc[1] * w / WKM * k);
-      return Array.from(cv.getContext('2d').getImageData(x, y, 1, 1).data.slice(0, 3));
-    });
-    assert.ok(pin[0] > 230 && pin[1] > 170 && pin[1] < 215 && pin[2] > 110 && pin[2] < 170, `Choc pin painted at its place (${pin})`);
+    // the map: the Sound Check map at the same hour; at Fishers each swell's landing rays, labelled like its row
+    await ctx.waitFor(() => CLEAN.forecastInfo().map.status === 'ready', { label: 'the map' });
+    assert.equal(r.info.map.zoom, 'reg', 'the map opens on the region');
+    await page.locator('#cl-view-forecast .cl-f-zseg button[data-zoom="fi"]').click();
+    await mapAt(r.info.t, 'choc');
+    let m = await mapState();
+    log('map at Fishers', JSON.stringify(m));
+    assert.ok(m.W < 160, 'Fishers zoom');
+    assert.deepEqual(m.tags.map(sp), ['3° 1.5 ft @ 5 s SSW · 18%', '2° 0.5 ft @ 8 s SE · 41%', '1° 0.5 ft @ 7 s SE · 41%'], 'each swell labelled like its row, with its share (biggest drawn last)');
+    assert.ok(m.rays > 50, `landing rays drawn (${m.rays})`);
+    assert.equal(m.note, '');
+    assert.ok(m.pin[0] > 220 && m.pin[1] > 110 && m.pin[1] < 165 && m.pin[2] < 110, `Choc pinned at its place (${m.pin})`);
+    assert.equal(m.label, 'Choc 0.5 ft', 'the map\'s Choc carries the headline\'s number');
     assert.match(sp(r.cond), /^Wind 7 mph SW, cross-shore · gusts 11 Tide 2\.3 ft ▲ · high 1:37 PM$/);
     assert.equal(sp(r.bc), 'Buoy 44097 2 ft all waves · 8:30 AM forecasts on track Forecast for 9 AM, made 1 · 2 · 3 days before: 2.4 · 2.4 · 2.4 ft');
     assert.ok(r.bcStale, 'a 2.5 h old reading is marked stale');
@@ -93,7 +108,9 @@ module.exports = {
     assert.equal(r.num, '0.3', 'GFS-Wave 0.6 and ECMWF 0 ft');
     assert.equal(sp(r.rows[0].text), '1° 1 ft @ 8 s SE 140° → 97% of Choc');
     assert.match(sp(r.rows[1].text), /^2° 1\.9 ft @ \d s N 351° wind sea → 3% of Choc$/);
-    assert.equal(sp(r.info.labels[r.info.labels.length - 1]), '1° 1 ft @ 8 s SE');
+    await mapAt(r.info.t, 'choc');
+    m = await mapState();
+    assert.equal(sp(m.tags[m.tags.length - 1]), '1° 1 ft @ 8 s SE · 97%', 'the map follows to the same hour');
     await page.keyboard.press('End');
     r = await read();
     assert.equal(sp(r.when), 'Thu 8 Oct, 8 AM', 'a week out the date comes along');
@@ -121,12 +138,16 @@ module.exports = {
     assert.equal(sp(r.models), 'GFS-Wave 0.4 · ECMWF 0.3 ft');
     assert.ok(r.rows.length >= 1 && r.rows.every(x => / of Wilderness$/.test(sp(x.text))), 'shares of Wilderness');
     assert.equal(r.info.spot, 'wild');
-    assert.ok(r.info.rays > 0, 'Wilderness rays');
+    await mapAt(r.info.t, 'wild');
+    m = await mapState();
+    assert.ok(m.rays > 0 && m.tags.every(t => /%$/.test(t)), 'Wilderness rays on the map');
     assert.equal(await page.getAttribute('#cl-view-forecast .cl-f-seg button[data-spot="wild"]', 'aria-pressed'), 'true');
     await ctx.screenshot('forecast-wilderness');
     await ctx.open('/?preview=clean');
     await ctx.waitFor(() => window.CLEAN && CLEAN.forecastInfo && CLEAN.forecastInfo().fc === 'ok', { label: 'reloaded' });
     assert.equal((await read()).info.spot, 'wild', 'Wilderness remembered across a reload');
+    assert.equal((await read()).info.map.zoom, 'fi', 'and the map\'s zoom');
+    assert.equal(await page.getAttribute('#cl-view-forecast .cl-f-zseg button[data-zoom="fi"]', 'aria-pressed'), 'true');
     await page.locator('#cl-view-forecast .cl-f-seg button[data-spot="choc"]').click();
     assert.equal(sp((await read()).unit), 'ft at Choc');
     await ctx.waitFor(() => CLEAN.forecastInfo().prev === 'ok', { label: 'earlier forecasts again' });

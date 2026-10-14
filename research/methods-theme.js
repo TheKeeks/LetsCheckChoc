@@ -7,6 +7,10 @@
   root.dataset.researchView = view === 'methods' || view === 'map' ? view : 'full';
   // The Map page's Model tab: only the map, filling its frame.
   if (view === 'map' && query.get('fill') === '1') root.dataset.researchFill = '1';
+  // ui=forecast: the Forecast tab's map (research/map.html), the forecast alone, its hour, spot and zoom set by the tab;
+  // ui=explore: the Explore tab's map
+  var ui = query.get('ui');
+  if (view === 'map' && (ui === 'forecast' || ui === 'explore')) root.dataset.researchUi = ui;
 
   function normalizeTheme(value) {
     if (value === 'dark' || value === 'night') return 'dark';
@@ -51,7 +55,7 @@
   }
 
   window.addEventListener('DOMContentLoaded', function () {
-    document.title = root.dataset.researchView === 'map' ? 'Map explorer · LetsCheckChoc' : 'Methods · LetsCheckChoc';
+    document.title = root.dataset.researchUi === 'forecast' ? 'Forecast map · LetsCheckChoc' : root.dataset.researchView === 'map' ? 'Map explorer · LetsCheckChoc' : 'Methods · LetsCheckChoc';
     function openMap(date) {
       if (window.parent !== window) {
         window.parent.postMessage({ type: 'lcc-open-map', date: date || null }, location.origin);

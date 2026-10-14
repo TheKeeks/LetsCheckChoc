@@ -5,7 +5,10 @@
   //  - a script error: its message and where it happened;
   //  - the browser killed the page and reloaded it (iPad Safari does this when a tab uses too much memory): noticed on
   //    the next load from a heartbeat that closing, reloading or switching away would have cleared.
-  const KEY = 'sc-alive';
+  // One heartbeat per kind of page (file, view, profile): the site runs several at once in one tab (the Forecast tab's
+  // map, Explore's, Methods), and one finding another's heartbeat took it for a crash.
+  const Q = new URLSearchParams(location.search);
+  const KEY = ['sc-alive', location.pathname.split('/').pop() || 'index.html', Q.get('view') || '', Q.get('ui') || ''].join(':');
   let box = null, shown = 0;
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   function show(html) {

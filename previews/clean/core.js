@@ -1195,7 +1195,7 @@
   // ════════════════════════════════════════════════════════════════════
   var TABS = [
     { id: 'forecast', label: 'Forecast', legacy: 'forecast' },
-    { id: 'map', label: 'Map', legacy: null },
+    { id: 'map', label: 'Explore', legacy: null },   // past days, the sea floor (the part and its #map link keep their name)
     { id: 'methods', label: 'Methods', legacy: null },
     { id: 'log', label: 'Log', legacy: 'surflog' },
     { id: 'model', label: 'My ratings', legacy: 'regression', requiresAuth: true }
@@ -1248,7 +1248,7 @@
     if (o) { t = o.title; s = o.sub; }
     else if (curTab === 'forecast') { t = isAfterDark() ? 'Tonight' : 'Today'; s = fmt.date(new Date()); }
     else if (curTab === 'log') { t = 'Log'; s = ''; }
-    else if (curTab === 'map') { t = 'Map'; s = 'Explore the water'; }
+    else if (curTab === 'map') { t = 'Explore'; s = 'Past days and the sea floor'; }
     else if (curTab === 'methods') { t = 'Methods'; s = 'How the forecast works'; }
     else { t = 'My ratings'; s = 'What your sessions say'; }
     if (titleEl.textContent !== t) titleEl.textContent = t;
