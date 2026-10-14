@@ -125,7 +125,7 @@ module.exports = {
       heads: [...document.querySelectorAll('#cl-sub-settings .cl-h2')].map(h => h.textContent),
       alert: !!document.querySelector('#cl-sub-settings [role="alert"]')
     }));
-    assert.deepEqual(set, { heads: ['Account', 'Display', 'Forecast', 'Data sources', 'Spot', 'Surf log'], alert: false });   // signed in: Import and Fetch again
+    assert.deepEqual(set, { heads: ['Account', 'Display', 'Forecast', 'Data sources', 'Spot'], alert: false });   // signed out, no sessions: no Surf log tools
     await page.keyboard.press('Escape');
     await ctx.waitFor(() => !document.querySelector('#cl-sub-settings'), { label: 'Settings closed (no Storage)' });
 

@@ -11,7 +11,7 @@
 //     (previews/clean/model.js shows the app's #reg-drilldown-inner in it).
 // Each payload would set window.__xss if its markup went live (an <img src=x onerror> fires as soon as the bogus
 // image 404s). One more payload sits in a timestamp: firestore.rules accept any string up to 40 characters, so a
-// session "at 09:<u" must read as text too. Every surface is checked before the scenario fails, so one report lists
+// session "at 09:<u" must never become markup: the ten years leave a time that isn't HH:MM out. Every surface is checked before the scenario fails, so one report lists
 // them all. The unit test tests/unit/w3-escaping.test.js covers app.js's own HTML (the drill-down, the form's readout).
 'use strict';
 
@@ -135,10 +135,11 @@ module.exports = {
     await ctx.screenshot('log-hostile');
 
     // ── The ten years: the day's sessions and the month's photos ──
-    // What decade.js should draw for the 28th: names (first word), times and notes as text, Kai's one https photo.
+    // What decade.js should draw for the 28th: names (first word), times and notes as text (Kai's "09:<u" is no
+    // time, so none), Kai's one https photo.
     const WANT_DAY = [
       'Logged by <img at 7:30 am: rated 7.0/10 (size 9, wind 7, ride 5)', NOTES_1,
-      'Logged by <svg/onload=__xss=11>Kai at 9:<u am: rated 6.0/10 (size 5, wind 6, ride 7)', NOTES_2
+      'Logged by <svg/onload=__xss=11>Kai: rated 6.0/10 (size 5, wind 6, ride 7)', NOTES_2
     ];
     const tenYears = (fr, where) => fr.evaluate(() => {
       const day = document.getElementById('decDay'), m = document.getElementById('decMonth');
