@@ -15,11 +15,13 @@ module.exports = {
 
     // Every section, in question order.
     const order = await page.evaluate(() => {
-      const ids = ['trip-h', 'how-h', 'q1-h', 'model-h', 'ans-h', 'q2-h', 'tr-h', 'dc-h', 'dec-h', 'week-h', 'wild-h', 'behind-h'];
+      const ids = ['trip-h', 'how-h', 'q1-h', 'model-h', 'ans-h', 'q2-h', 'tr-h', 'dc-h', 'dec-h', 'fcs-h', 'wild-h', 'behind-h'];
       const els = ids.map(i => document.getElementById(i));
       return { missing: ids.filter((i, k) => !els[k]), sorted: els.every((e, k) => !k || !e || !!(els[k - 1].compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING)) };
     });
-    assert.deepEqual(order, { missing: [], sorted: true }, 'map, method, question 1, question 2, ten years, forecast, Wilderness, behind the numbers');
+    assert.deepEqual(order, { missing: [], sorted: true }, 'map, method, question 1, question 2, ten years, how far ahead to trust the forecast, Wilderness, behind the numbers');
+    // the forecast itself is the map at the top (and the Forecast tab): no 7-day table and chart further down
+    assert.deepEqual(await page.evaluate(() => ['week-h', 'fcDays', 'fcChart'].filter(id => document.getElementById(id))), [], 'no second forecast');
 
     // The header answers both questions with the same numbers the charts show.
     const qa = await page.$$eval('.qa', as => as.map(a => ({ href: a.getAttribute('href'), text: a.textContent.replace(/\s+/g, ' ') })));

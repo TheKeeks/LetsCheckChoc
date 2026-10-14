@@ -867,7 +867,7 @@
     const p = etParts(ms), wall = Date.UTC(+p.year, ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(p.month), +p.day, p.h, +p.minute);
     return ms - (wall - Date.UTC(+p.year, ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(p.month), +p.day));
   }
-  const { sunWin, daylight } = window.CHOC;                 // sunrise and sunset at Choc (shared with the forecast table)
+  const { sunWin, daylight } = window.CHOC;                 // sunrise and sunset at Choc (v13_map.js)
   const COMP = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
   const compass = (d) => COMP[Math.round(((d % 360) + 360) % 360 / 22.5) % 16];
   // clean in light wind or wind near straight offshore: Choc 335 +-60, Wilderness 40 +-70 (as in Part 3)

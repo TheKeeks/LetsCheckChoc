@@ -89,10 +89,9 @@
   };
   // a list of short "label value" lines; a row with no value is a small heading over the lines below it
   window.CHOC.kv = (rows, cls) => `<dl class="kv${cls ? ' ' + cls : ''}">${rows.filter(Boolean).map(([k, v]) => (v == null ? `<dt class="kv-h">${k}</dt>` : `<dt>${k}</dt><dd>${v}</dd>`)).join('')}</dl>`;
-  // a swell picked elsewhere on the page (a forecast hour, a remembered day) is shown in Part 1's
+  // a swell picked elsewhere on the page (a day in Check a date) is shown in Part 1's
   // forward-ray figure: its strongest train
   const state = { trains: null, label: '' };
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   function compute() {
     const tr = state.trains; if (!tr || !tr.length || !window.CHOC.frSet) return;
     const m = tr.reduce((x, y) => (y.h > x.h ? y : x));
@@ -114,7 +113,7 @@
   };
   window.CHOC.fcData = Promise.all([fcGet(FC_LIVE, 6000), fcGet('fc/')]).then(([live, here]) => (live && (!here || live.made > here.made) ? live : here || null));
   // ↻ under the map's timeline: ask GitHub again for the latest pull and, when it is newer than the forecast on show,
-  // put it up everywhere the page shows the forecast (the map and the 7-day table). 'new' | 'same' | 'none' | 'unreachable'
+  // put it up on the map. 'new' | 'same' | 'none' | 'unreachable'
   const fcSubs = [];
   window.CHOC.onForecast = (fn) => { fcSubs.push(fn); };
   window.CHOC.fcRefresh = async () => {
@@ -125,56 +124,6 @@
     window.CHOC.fcData = Promise.resolve(live); fcSubs.forEach((f) => f(live));
     return 'new';
   };
-  const ETF = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hourCycle: 'h23' });
-  const etp = ms => { const o = {}; for (const p of ETF.formatToParts(new Date(ms))) o[p.type] = p.value; o.h = +o.hour % 24; return o; };
-  const hr12 = h => `${h % 12 || 12}${h < 12 ? 'am' : 'pm'}`;
-  const fcLabel = ms => { const p = etp(ms); return `${p.weekday} ${p.month} ${p.day}, ${hr12(p.h)}`; };
-  const KIND = { w1: 'swell', w2: 'secondary', w3: 'secondary', ww: 'wind' };
-  function showHour(r) {
-    state.trains = r.trains.filter(t => t.T >= 3).map(t => ({ kind: KIND[t.k], h: t.ft / FT, T: t.T, dir: t.D })); state.label = fcLabel(Date.parse(r.t)) + ' (GFS-Wave)';
-    compute(); document.getElementById('how-h').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' });
-  }
-  const gapD = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
-  const windOk = (wd, spot) => wd[0] < 6 || gapD(wd[1], spot === 'choc' ? 335 : 40) <= (spot === 'choc' ? 60 : 70);
-  async function thisWeek() {
-    const f = await window.CHOC.fcData, host = document.getElementById('fcChart'); if (!host) return;
-    if (!f) { host.textContent = 'The forecast file didn’t load.'; return; }
-    const g = f.gfs, n = g.length, ts = g.map(r => Date.parse(r.t));
-    const ec = ts.map(t => { let b = null, bd = 3 * 36e5 + 1; f.ec.forEach(q => { const d = Math.abs(Date.parse(q.t) - t); if (d < bd) { bd = d; b = q; } }); return b; });
-    const S = { cg: g.map(r => r.choc), ce: ec.map(q => (q ? q.choc : null)), wg: g.map(r => r.wild), we: ec.map(q => (q ? q.wild : null)), off: g.map(r => r.hs) };
-    const mean = (a, b) => (b == null ? a : (a + b) / 2), cm = S.cg.map((v, i) => mean(v, S.ce[i])), wm = S.wg.map((v, i) => mean(v, S.we[i]));
-    host.innerHTML = '';
-    const NS = 'http://www.w3.org/2000/svg', el = (nm, a, p) => { const e = document.createElementNS(NS, nm); for (const k in a) e.setAttribute(k, a[k]); p && p.appendChild(e); return e; };
-    const w = 700, h = 220, L = 34, B = 30, T = 12, Rr = 10, all = [...S.off, ...S.cg, ...S.ce, ...S.wg, ...S.we].filter(v => v != null), top = Math.max(3, Math.ceil(Math.max(...all) + 0.5));
-    const svg = el('svg', { viewBox: `0 0 ${w} ${h}`, role: 'img', 'aria-label': 'Forecast for Choc and Wilderness from GFS-Wave and ECMWF, next 7 days' }, host);
-    const x = t => L + (t - ts[0]) / (ts[n - 1] - ts[0]) * (w - L - Rr), y = v => h - B - v / top * (h - B - T);
-    for (let v = 0; v <= top; v += top > 8 ? 2 : 1) { el('line', { x1: L, x2: w - Rr, y1: y(v), y2: y(v), stroke: C.rule }, svg); const t = el('text', { x: L - 6, y: y(v) + 4, 'text-anchor': 'end', fill: C.fg3, 'font-size': 11, 'font-family': css('--mono') }, svg); t.textContent = v + (v === top ? ' ft' : ''); }
-    let lastDay = etp(ts[0]).day;
-    for (let t = ts[0]; t <= ts[n - 1]; t += 36e5) { const p = etp(t); if (p.day !== lastDay && p.h === 0) { lastDay = p.day; el('line', { x1: x(t), x2: x(t), y1: T, y2: h - B, stroke: C.rule, 'stroke-dasharray': '2 4' }, svg); const tx = el('text', { x: x(t) + 4, y: h - 10, fill: C.fg2, 'font-size': 11, 'font-family': css('--mono') }, svg); tx.textContent = `${p.weekday} ${p.day}`; } }
-    const line = (arr, col, wd, dash) => { const d = arr.map((v, i) => (v == null ? '' : `${i && arr[i - 1] != null ? 'L' : 'M'}${x(ts[i]).toFixed(1)},${y(v).toFixed(1)}`)).join(''); el('path', Object.assign({ d, fill: 'none', stroke: col, 'stroke-width': wd, 'stroke-linejoin': 'round' }, dash ? { 'stroke-dasharray': dash } : {}), svg); };
-    line(S.off, C.fg3, 1.3); line(S.we, '#9be3ee', 1.6, '5 3'); line(S.wg, '#9be3ee', 1.8); line(S.ce, C.swell, 2, '5 3'); line(S.cg, C.swell, 2.5);
-    const hl = el('line', { y1: T, y2: h - B, stroke: C.fg, opacity: 0 }, svg), hit = el('rect', { x: L, y: T, width: w - L - Rr, height: h - B - T, fill: 'transparent', style: 'cursor:pointer' }, svg);
-    const idxAt = e => { const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * w; let bi = 0; ts.forEach((t, i) => { if (Math.abs(x(t) - px) < Math.abs(x(ts[bi]) - px)) bi = i; }); return bi; };
-    const f1 = v => (v == null ? '–' : v.toFixed(1));
-    hit.addEventListener('mousemove', e => { const i = idxAt(e); hl.setAttribute('x1', x(ts[i])); hl.setAttribute('x2', x(ts[i])); hl.setAttribute('opacity', 0.6);
-      window.CHOC.showTip(e, `<b>${fcLabel(ts[i])}</b><br>Choc <b>${f1(S.cg[i])}</b> GFS · <b>${f1(S.ce[i])}</b> ECMWF<br>Wilderness ${f1(S.wg[i])} · ${f1(S.we[i])} ft<br>offshore ${f1(S.off[i])} ft · wind ${window.CHOC.windArrow(g[i].wind[1])}${g[i].wind[0]} kn from ${g[i].wind[1]}°<br><i>tap to see the swell rays</i>`); });
-    hit.addEventListener('mouseleave', () => { hl.setAttribute('opacity', 0); window.CHOC.hideTip(); });
-    hit.addEventListener('click', e => showHour(g[idxAt(e)]));
-    // best daylight hour per Eastern day per spot (sunrise + 30 min to sunset - 30 min at Choc), by the two models' average
-    const days = {};
-    ts.forEach((t, i) => { if (!window.CHOC.daylight(t)) return; const p = etp(t); const k = `${p.weekday} ${p.month} ${p.day}`; (days[k] = days[k] || []).push(i); });
-    const cell = (idxs, spot, vals, a, b) => {
-      let bi = idxs[0]; for (const i of idxs) if (vals[i] > vals[bi]) bi = i;
-      const ok = windOk(g[bi].wind, spot);
-      return `<button type="button" class="fcpick" data-i="${bi}"><b>${vals[bi].toFixed(1)} ft</b> ${hr12(etp(ts[bi]).h)} · <span style="color:${ok ? 'var(--offshore)' : 'var(--fg-3)'}">${ok ? 'clean' : 'wind'}</span><span class="fc-m">GFS ${f1(a[bi])} · EC ${f1(b[bi])}</span></button>`;
-    };
-    const tb = document.getElementById('fcDays');
-    tb.innerHTML = '<thead><tr><th>Day</th><th>Choc, best daylight hour</th><th>Wilderness, best daylight hour</th></tr></thead><tbody>' +
-      Object.entries(days).map(([d, idxs]) => `<tr><td class="mono">${d}</td><td>${cell(idxs, 'choc', cm, S.cg, S.ce)}</td><td>${cell(idxs, 'wild', wm, S.wg, S.we)}</td></tr>`).join('') + '</tbody>';
-    tb.querySelectorAll('.fcpick').forEach(b => b.addEventListener('click', () => showHour(g[+b.dataset.i])));
-    const p = etp(Date.parse(f.made)), ao = document.getElementById('fcAsOf2');
-    if (ao) ao.textContent = `Forecast as of ${p.weekday} ${p.month} ${p.day}, ${hr12(p.h)} ET · GFS-Wave and ECMWF ${hr12(etp(Date.parse(f.runs.gfs.replace(/Z$/, ':00Z'))).h)} runs`;
-  }
   // how far ahead to trust it: archived GFS-Wave forecasts for each logged session (fcscore.py)
   if (document.getElementById('fcScore')) fetch('fc/score.json').then(r => (r.ok ? r.json() : null)).catch(() => null).then(s => {
     const tb = document.getElementById('fcScore'); if (!tb || !s) return; const m = s.summary;
@@ -262,6 +211,6 @@
     if (tb) tb.innerHTML = '<thead><tr><th>Day</th><th class="num">Wilderness</th><th class="num">Choc</th><th class="num">Buoy</th><th>Wind at Wilderness</th></tr></thead><tbody>' + s.top.map(t => `<tr><td class="mono">${t.date}</td><td class="num">${t.wild} ft</td><td class="num">${t.choc} ft</td><td class="num">${t.buoy} ft</td><td>${t.wind_ok ? '<span style="color:var(--offshore)">clean</span>' : 'not clean'}${t.wdir != null ? ' · ' + window.CHOC.windArrow(t.wdir) + 'from ' + t.wdir + '°' : ''}</td></tr>`).join('') + '</tbody>';
   }
 
-  kresp('choc'); thisWeek(); window.CHOC.onForecast(thisWeek); wildSection(); dayCheck();
-  addEventListener('lcc-theme-change', () => { kresp('choc'); thisWeek(); wildSection(); });
+  kresp('choc'); wildSection(); dayCheck();
+  addEventListener('lcc-theme-change', () => { kresp('choc'); wildSection(); });
 })();
