@@ -15,7 +15,10 @@ The Map tab is now Explore: past days and the sea floor. It opens on the newest 
 
 The map also loads less. The wave tracer's depth grids (about 4 MB) load the first time a wave is traced, and Part 1's ray files (0.4–0.7 MB each) only when you zoom in near Fishers. The Forecast tab's map page leaves out the history (1.4 MB) and the charts. Its first view downloads about 3.7 MB, where the Sound Check map took 10.5 MB.
 
-Two fixes came with it. A wave traced from a dot needs the depth grids, so the first trace now says "Tracing it into Choc…" while they load. The page's "this page stopped and was reloaded" note kept one heartbeat for every map page; with the Forecast map and Explore's map open in one tab, each took the other's heartbeat for a crash. Each kind of page now keeps its own.
+Three fixes came with it:
+- A wave traced from a dot needs the depth grids, so the first trace now says "Tracing it into Choc…" while they load.
+- The page's "this page stopped and was reloaded" note kept one heartbeat for every map page. With the Forecast map and Explore's map open in one tab, each took the other's heartbeat for a crash. Each kind of page now keeps its own.
+- Signing in could be undone at start-up. `firebase-config.js` signs in anonymously 2 s after load when nobody is signed in. A sign-out in those first seconds started a second anonymous sign-in, and that one could land after a Google sign-in made in the meantime and switch the account back to anonymous. The Log tab's e2e test hit this once the page took a little longer to start. The start-up sign-in now stays out of it once the crew have signed in or out (new unit tests in `review-signin.test.js`, the first fails before the change).
 
 Verified: new e2e `preview-clean-explore.js` checks the Explore tab on an iPad and a phone:
 - the ten years beside or under the map;

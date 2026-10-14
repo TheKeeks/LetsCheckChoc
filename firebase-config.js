@@ -110,9 +110,15 @@ if (fbAuth) fbAuth.onAuthStateChanged(function(user) {
   if (typeof updateAuthUI === 'function') updateAuthUI(user);
 });
 
+// Set once the crew start a sign-in or a sign-out. The start-up anonymous
+// sign-in below then stays out of it: a sign-out signs back in anonymously by
+// itself, and a second anonymous sign-in started here could land after a
+// Google sign-in made in the meantime and undo it.
+var _authActed = false;
+
 // Only sign in anonymously if no persisted session is detected after a delay
 if (fbAuth) setTimeout(function() {
-  if (!fbAuth.currentUser) {
+  if (!fbAuth.currentUser && !_authActed) {
     fbAuth.signInAnonymously().catch(function(err) {
       console.warn('Anonymous auth failed:', err);
     });
@@ -125,6 +131,7 @@ function signInWithGoogle() {
   if (_signingIn) return;
   if (!fbAuth) { setAuthStatus(false, { code: 'auth/unavailable' }); return; }
   _signingIn = true;
+  _authActed = true;
   setAuthStatus(true);
   var provider = new firebase.auth.GoogleAuthProvider();
   var currentUser = fbAuth.currentUser;
@@ -183,6 +190,7 @@ function signInWithGoogle() {
 // Sign out and fall back to anonymous session
 function signOutUser() {
   if (!fbAuth) return;
+  _authActed = true;
   fbAuth.signOut().then(function() {
     fbAuth.signInAnonymously().catch(function(err) {
       console.warn('Anonymous auth failed:', err);
