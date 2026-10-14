@@ -43,7 +43,8 @@ module.exports = {
     assert.equal(await page.$eval('#kresp', n => !!n.closest('details')), false, 'not hidden in a collapsed box');
     assert.match(await page.$eval('#kresp', n => n.textContent), /the window/);
     // The tiles moved to the question they answer.
-    assert.match(await page.$eval('#q1Takes', n => n.textContent), /0\.85.*2\.2 ft/s);
+    // (ρ worked out from the sessions, tied ratings sharing their rank: 0.86 for Choc, 0.66 for the buoy)
+    assert.match(await page.$eval('#q1Takes', n => n.textContent), /0\.86.*0\.66.*2\.2 ft/s);
     assert.match(await page.$eval('#q2Takes', n => n.textContent), /54%.*29 Aug 2023/s);
     assert.ok(!/Part [123]\b/.test(await page.evaluate(() => document.body.innerText)), 'no leftover "Part 1/2/3" pointers in what you read');
 

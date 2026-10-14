@@ -2,7 +2,8 @@
 
 Everything the Sound Check says about the past (every day since May 2016, the month-by-month tiles, % of days with
 swell through the window, good-day shares, the storms, the swell trains, the share that bent in from outside the
-window, Wilderness vs Choc, the daily wind) comes from these scripts. Four times a day (from 5:23 AM Eastern)
+window, Wilderness vs Choc, the daily wind) comes from these scripts, and so does everything it says about the
+crew's surf log (the ratings model, its good days, how the sessions compare with the buoy, the forecast scorecard). Four times a day (from 5:23 AM Eastern)
 `.github/workflows/update-history.yml` fetches what's new, rebuilds the whole history from 2016 through yesterday
 (Eastern), and commits what changed to `main`. GitHub drops many scheduled runs, so the later runs catch up when an
 earlier one doesn't start; one that finds nothing new commits nothing.
@@ -11,6 +12,7 @@ earlier one doesn't start; one that finds nothing new commits nothing.
 python3 scripts/history/update.py                        # fetch, rebuild, write into the repo
 python3 scripts/history/update.py --offline              # rebuild from what's already in the cache
 python3 scripts/history/update.py --end 2026-10-05 --out /tmp/h   # stop at that day, write somewhere else
+python3 scripts/history/update.py --log surflog-export.json   # fit to an export of the log (the Log's Export JSON or CSV)
 python3 -m unittest scripts/test_history.py               # tests (numpy and scipy)
 ```
 
@@ -27,6 +29,8 @@ most of it CDIP's spectra archive. The workflow keeps the cache between runs, so
 | ERA5 at the over-water cell 41.25 N 72.00 W (Open-Meteo) | hourly wind | clean hours, good-day scores, Wilderness's wind; it lags about 6 days, so the newest days fill in their wind on later runs |
 | ECMWF IFS at a 4 x 5 grid over the sound (Open-Meteo), ERA5 for 2016 | daily wind | the map's wind arrows |
 | CO-OPS 8510719 (Silver Eel Pond) | highs and lows | the tide's rate (incoming or not) |
+| The crew's surf log (Firestore `surf_logs`), with the read-only key in the `SURFLOG_READ_KEY` secret | each session's time, its three ratings, the swell and tide the app saved | the ratings model and the sessions' statistics |
+| GFS-Wave's archived runs on AWS (NOAA's open data), for new sessions only | the forecast 1, 2 and 3 days before each session | the forecast scorecard |
 
 Two tables in `tables/` turn the buoy into the spots: `fwd_table.json`, the forward-ray table (share of the buoy's
 energy reaching Choc and Wilderness by period and direction, from `scripts/rays/build_tables.py`), and
@@ -43,14 +47,56 @@ Replace the forward-ray table with a new one and the next run rebuilds all ten y
 | `data/history/bend_days.json` | per day: % of Choc's energy that came from outside 115–158° |
 | `data/history/wild_stats.json` | Wilderness vs Choc by month, its biggest days, the peel read |
 | `data/history/windgrid_out.json` | the daily wind at 17 points |
+| `data/history/sess_pairs.json` | per session: the size you rated, the best 3 hours of its day at the buoy and modeled at Choc |
+| `data/history/sessions_all.json` | how well each daily measure of the buoy ranks the sessions by size, with bootstrap ranges |
 | `research/hist.js` | all of these as the page's constants (`scripts/sound-check/page/build_hist.py`) |
 | `research/ocean/day/<year>.json` | the `44097` lane only: the trains every hour, for the Past days panels |
+| `research/fc/score.json` | the forecast scorecard: per session, GFS-Wave's forecast for Choc 1, 2 and 3 days before and what the buoy-based model says arrived |
 
-`sessions_all.json` and `sess_pairs.json` come from the surf log and stay as they are, and so does the ratings
-model. The log lives in the crew's Firestore, which the bot doesn't read. Refitting the model with a new export of
-the log is a by-hand step, done with `scripts/sound-check/asbuilt/analyze4.py`.
 The other lanes of `research/ocean/day/` (Montauk, Long Island, the Copernicus model) and the model's ocean maps
 in `research/ocean/field/` aren't part of this update yet.
+
+## The surf log
+
+Every run reads the crew's log from Firestore (`surflog.py`) and fits to it (`ratings.py`): the ratings model (a
+small ridge regression of your ratings on modeled swell energy at Choc, offshore wind and the tide's rate, scored
+on sessions it hasn't seen), which then scores every hour of the ten years and so decides the good days; the
+session pairs; the buoy measures; and the scorecard. A session logged today counts from the first run after the
+history reaches its day. The scorecard keeps the forecasts it has (a past run never changes) and fetches those
+of new sessions, at most 24 sessions a run (GFS-Wave's archive starts in March 2021).
+
+What it keeps of a session: its time, the three ratings and their average as the app writes it, the swell and
+tide the app saved. Not the notes, the photos or who logged it: the files are public and keep every version (the
+site shows the notes and photos straight from Firestore, so a deleted note is gone).
+
+It leaves the committed model and files as they are when there is no key, when the log can't be read (the
+warning in the run's log says why: Google refused the key, or Firestore refused the read), when fewer than half
+the sessions the model was last fitted to come back (a read cut short; `--force` refits anyway), and when fewer
+than 10 sessions have conditions.
+
+### The key (once, by the owner)
+
+The bot reads with a Google service account that may only read the database:
+
+1. Google Cloud console → IAM & Admin → Service accounts, in the `letscheckchoc` project: **Create service
+   account**, named `history-bot`. Role: **Cloud Datastore Viewer** (read-only access to Firestore). Done.
+2. Open the account → **Keys** → **Add key** → **Create new key** → **JSON**. The browser downloads the key.
+3. GitHub → the repository's Settings → Secrets and variables → Actions → **New repository secret**, named
+   `SURFLOG_READ_KEY`; paste the whole key file as its value.
+4. Delete the downloaded file. To revoke the bot's access, delete the key in the console.
+
+The next run (or Actions → Update Sound Check history → Run workflow) fits to the log.
+
+### It reproduces the hand-built files
+
+Fitted to the 28 sessions of the export the model was first fitted to (through 18 Oct 2025), on the history
+through 13 Oct 2026, `update.py --offline --log surflog.csv` gives the committed model (every number, and the same
+28 sessions, minus their notes), the session pairs and every buoy measure of every session exactly. Two kinds of
+number move, because the bot takes the sessions in time order where the export listed them newest-saved first
+(an edit re-saves a session, which would shuffle them): a few of the buoy measures' bootstrap ranges, by 0.01-0.03,
+and three of the scorecard's rank correlations, by 0.01 (ties in your ratings were broken by that order). In the
+export's order both come out exactly as committed. The scorecard's forecasts, fetched again for three sessions,
+match to the hundredth of a foot.
 
 ## Every file ends on the same day
 

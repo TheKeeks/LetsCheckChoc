@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased] — The study refits itself to the surf log
+
+Everything the Sound Check said about your sessions was fixed at the 28 sessions in a hand export of the log from October 2025. That covered the ratings model (what makes a good session, and so every good day in the ten years), how modeled Choc and the buoy rank the sessions by size, which buoy measure ranks them best, and the forecast scorecard. The history bot rebuilt the buoy's history every day but carried those over unchanged: it couldn't read the log, which lives in the crew's Firestore. The page also quoted them as fixed text ("trained on your 28 logged sessions", "all 28 are June–October", "none from November to May", "0.85 … the raw buoy scores 0.66", "misses by 0.3–0.4 ft"), so a new session changed nothing.
+
+The history bot now reads the log every run, with a Google service account that may only read the database (its key is the repository secret `SURFLOG_READ_KEY`; the owner adds it once, as `scripts/history/README.md` describes). It fits everything to the sessions again:
+- the ratings model, which then scores every hour of the ten years, so the good days follow;
+- the session pairs and the buoy measures (`data/history/sess_pairs.json`, `sessions_all.json`);
+- the forecast scorecard (`research/fc/score.json`), which keeps the forecasts it has and fetches GFS-Wave's archived forecasts for new sessions, as the forecast bot reads them.
+
+It is the same arithmetic as the scripts that made the files by hand (`scripts/sound-check/asbuilt/`), now in `scripts/history/ratings.py`. It keeps only what the model needs: each session's time, its ratings, and the swell and tide the app saved. It keeps no notes, photos or names, because these files are public and keep every version. Without the key, when the log can't be read, or when it comes back with fewer than half the sessions, the committed files stay as they are and the run's log says why.
+
+The page now works out what it says about the sessions from those files, as it already did for the history: the session counts, how closely Choc and the buoy rank them, which months they cover (and whether winter is extrapolation), the flat ones, which input matters most after size, and how close the forecasts came. Two numbers change before any new session. The take box under Question 1 reads 0.86, worked out from the sessions with tied ratings sharing a rank; it said 0.85, from an earlier way of breaking ties. A few bootstrap ranges and three scorecard correlations also move by 0.01–0.03 on the first refit, because the bot takes the sessions in time order rather than the export's newest-saved-first order. The comparison of model versions under Behind the numbers stays as it was measured and now says so ("the 28 sessions logged through October 2025, when these versions were compared").
+
+Verified:
+- On the history through 13 Oct 2026 and the original export, the bot's fit gives the committed ratings model exactly (every coefficient, score and prediction, and the same 28 sessions, without their notes). The session pairs and every buoy measure of every session match too. In the export's order the bootstrap ranges and the scorecard come out exactly as committed. The scorecard's forecasts, fetched again from AWS for three sessions, match to the hundredth of a foot.
+- `scripts/test_history.py`: Firestore's documents and paging, the sessions kept (a missing swell or tide stays missing, the app's rounding of the average, nothing personal), the model refusing fewer than 10 sessions, the pairs, the measures, the scorecard keeping old forecasts and asking for new ones within its budget, a full update fitted to a made-up log, and a log cut short keeping the model.
+- `w6-swell-map-log-follows.js` (new): with the pinned files the page says what its markup says; with a 29th session (a flat December day), a model that ranks the tide second and a scorecard with bigger misses, every one of those sentences follows. It fails on the old page. `w6-swell-map-questions.js` expects 0.86. The research scenarios read the scorecard from a pinned copy (`tests/fixtures/soundcheck/score.json`), since the bot now updates it.
+
+No Firebase rules change: the service account reads with its own read-only role, which the rules don't govern.
+
 ## [Unreleased] — The Forecast tab's ↻ is back; Explore and Methods follow the surf log
 
 The Forecast tab had no refresh button. The one-map change hid the map's own bar (its timeline and ↻), because the tab has its own week scrubber, and nothing took the ↻'s place. The page refreshed the wind, tides and buoy in the background every 15 minutes, but a new model run only showed after a reload. And a session logged on the site didn't show on the ten years month by month (Explore, and Methods) until the page was reloaded: their page read the surf log once, when it opened. Explore's copy sits two frames down, inside the map page, where it couldn't see the site's Firebase connection, so it loaded a second copy of Firebase to read the log.

@@ -6,6 +6,10 @@ name: Update Sound Check history
 # research/ocean/day/. Rebuilding everything (about 5 minutes) means late or corrected readings anywhere in the
 # ten years land too. A run that fails commits nothing, so the site keeps the last good history, and GitHub
 # emails the owner.
+# It also reads the crew's surf log (Firestore surf_logs) with the read-only key in the SURFLOG_READ_KEY secret and
+# fits the ratings model, the sessions' statistics and the forecast scorecard (research/fc/score.json) to it, so a
+# logged session counts from the next run. Without the secret, or when the log can't be read, those stay as they
+# are (scripts/history/README.md says how to add it).
 on:
   schedule:
     # four times a day: GitHub drops many scheduled runs (the buoy bot's every-2-h schedule ran 3 times on 14 Oct and
@@ -45,8 +49,10 @@ jobs:
         with:
           python-version: '3.12'
 
+      # google-auth and requests: the service account's token for Firestore. Pillow and eccodes: the scorecard reads
+      # GFS-Wave's archived forecasts for new sessions as the forecast bot does (same versions as update-forecast.yml)
       - name: Install dependencies
-        run: pip install numpy==2.4.6 scipy==1.17.1
+        run: pip install numpy==2.4.6 scipy==1.17.1 pillow==12.3.0 eccodes==2.49.0 google-auth==2.58.1 requests==2.34.2
 
       # CDIP's spectra archive (about 750 MB) changes every month or two: keep it between runs, keyed by its
       # date, so it is downloaded only when CDIP updates it.
@@ -84,6 +90,8 @@ jobs:
       # the commit below is skipped.
       - name: Rebuild the history through yesterday
         id: update
+        env:
+          SURFLOG_READ_KEY: ${{ secrets.SURFLOG_READ_KEY }}
         run: |
           # (an assignment, so a failed update fails the step: inside echo's arguments bash would ignore it)
           end=$(python scripts/history/update.py)
@@ -93,7 +101,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/history research/hist.js research/ocean/day
+          git add data/history research/hist.js research/ocean/day research/fc/score.json
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else

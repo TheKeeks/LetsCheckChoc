@@ -4,6 +4,7 @@ day, and write it where the page reads it.
   python3 scripts/history/update.py                      fetch, rebuild, write
   python3 scripts/history/update.py --offline            rebuild from what's in the cache (no downloads)
   python3 scripts/history/update.py --end 2026-10-05 --out DIR    stop at that day; write under DIR, not the repo
+  python3 scripts/history/update.py --log surflog-export.json      fit the ratings model to an export of the log
 
 Run every day by .github/workflows/update-history.yml. It rebuilds everything from the raw readings each time (about
 5 minutes), so a late or corrected reading anywhere in the ten years lands on the next run, and every file ends on
@@ -16,10 +17,16 @@ Writes (all owned by the history bot; never edit them by hand):
   data/history/bend_days.json     per day: the share of Choc's swell that bent in from outside the window
   data/history/wild_stats.json    Wilderness vs Choc by month, its biggest days, the peel read
   data/history/windgrid_out.json  the daily wind at 17 points over the sound
-  research/hist.js                all of the above (and sessions_all.json, sess_pairs.json, which come from the
-                                  surf log and stay as they are) as the page's constants (build_hist.py)
+  data/history/sess_pairs.json    the surf log's sessions: size rating against the buoy and Choc
+  data/history/sessions_all.json  how each daily measure of the buoy ranks the sessions
+  research/hist.js                all of the above as the page's constants (build_hist.py)
   research/ocean/day/<year>.json  the Block Island lane of the Past days panels: the trains every hour (the
                                   other lanes in those files stay as they are)
+  research/fc/score.json          the forecast scorecard: GFS-Wave's forecasts for each session, 1-3 days ahead
+
+The ratings model (results4.json's model), the two session files and the scorecard are fitted to the crew's surf
+log (ratings.py), read from Firestore with the read-only key in SURFLOG_READ_KEY (surflog.py), or from an export
+given with --log. Without either, or when the log can't be read, they stay as committed.
 """
 import argparse, json, os, sys, datetime as dt
 from zoneinfo import ZoneInfo
@@ -27,7 +34,8 @@ from zoneinfo import ZoneInfo
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, '..', 'sound-check', 'page'))
-import spectra, analyze, derive, sources   # noqa: E402
+sys.path.insert(0, os.path.join(HERE, '..', 'forecast'))             # fcpull, for the scorecard's forecasts
+import spectra, analyze, derive, sources, surflog, ratings   # noqa: E402
 import build_hist                          # noqa: E402
 
 ROOT = sources.ROOT
@@ -37,6 +45,7 @@ TABLE = os.path.join(HERE, 'tables', 'fwd_table.json')            # the forward-
 KAVG = os.path.join(HERE, 'tables', 'kchoc_avg_s.json')           # the older direction/period table (fallback)
 HIST = os.path.join('data', 'history')
 DAY = os.path.join('research', 'ocean', 'day')
+SCORE = os.path.join('research', 'fc', 'score.json')
 SLACK = 7          # days a rebuild may lose against the committed history (its last day stepping back) before it's refused
 
 
@@ -45,8 +54,9 @@ def et_day(key):
     return dt.datetime.strptime(key, '%Y-%m-%dT%H').replace(tzinfo=UTC).astimezone(ET).date()
 
 
-def rebuild(inp, sp, buoy, end, model, kavg):
-    """everything through Eastern day `end` (a date) → {file: object}"""
+def rebuild(inp, sp, buoy, end, model, kavg, sessions=None):
+    """everything through Eastern day `end` (a date) → {file: object}. sessions: the surf log's, to fit the ratings
+    model to (None: keep `model`)"""
     e = end.isoformat()
     H = {s: {k: v for k, v in sp['heights'][s].items() if et_day(k) <= end} for s in ('choc', 'wild')}
     trains = [x for x in sp['trains'] if spectra.local_day(x[0])[0] <= e]
@@ -55,7 +65,7 @@ def rebuild(inp, sp, buoy, end, model, kavg):
     wind = analyze.wind_hours(inp['sea']); wh = derive.wind_by_hour(inp['sea'])
     C, W = derive.two(H['choc']), derive.two(H['wild'])
     return {
-        'results4.json': analyze.analyze(bh, H['choc'], wind, analyze.tide_turns(inp['hilo']), kavg, model),
+        'results4.json': analyze.analyze(bh, H['choc'], wind, analyze.tide_turns(inp['hilo']), kavg, model, sessions),
         'days2.json': derive.days2(C, W, wh, derive.per_dir(inp['f44097'])),
         'trains_days.json': spectra.trains_days(trains),
         'bend_days.json': spectra.bend_days(bent),
@@ -97,7 +107,42 @@ def dump(name, obj):
     """each file in the form the history was first written in (so an unchanged day is an unchanged file)"""
     if name == 'results4.json': return json.dumps(obj, separators=(',', ':'), default=str)
     if name == 'wild_stats.json': return json.dumps(obj)
+    if name == 'sessions_all.json': return json.dumps(obj, indent=1)
+    if name == 'score.json': return json.dumps(obj, indent=0)
     return json.dumps(obj, separators=(',', ':'))
+
+
+def read_log(path, stored):
+    """the surf log's sessions to fit to, or None (with the reason in the log): None without a key or an export, when
+    the log can't be read, or when it comes back with fewer than half the sessions the stored model was fitted to (a
+    read cut short must not replace the model: a deliberate clear-out of the log needs --force)"""
+    try:
+        sessions, src = surflog.load(path)
+    except Exception as e:                       # Firestore down, a key that may not read, ...: never the key itself
+        code = getattr(e, 'code', None)
+        why = ('Google refused the key (was the service account or its key deleted?)' if type(e).__name__ == 'RefreshError'
+               else f'Firestore answered {code} (does the service account have the Cloud Datastore Viewer role?)' if code in (401, 403)
+               else f'{type(e).__name__}' + (f' {code}' if isinstance(code, int) else ''))
+        sources.log(f'::warning::the surf log could not be read: {why}. The ratings model stays as committed')
+        return None
+    if sessions is None:
+        sources.log(src + '; the ratings model stays as committed'); return None
+    sources.log(f'surf log: {len(sessions)} sessions from {src}')
+    if len(sessions) < len(stored.get('sessions') or []) // 2:
+        sources.log(f'::warning::the surf log has {len(sessions)} sessions, the model was fitted to '
+                    f'{len(stored["sessions"])}: not refitting (--force to refit anyway)')
+        return None
+    return sessions
+
+
+def forecaster(offline):
+    """the scorecard's forecast reader (ratings.gfs_choc), or None offline or without eccodes"""
+    if offline: return None
+    try:
+        import fcpull  # noqa: F401              (numpy, eccodes, Pillow)
+    except ImportError as e:
+        sources.log(f'no forecasts for new sessions ({e}): the scorecard keeps the ones it has'); return None
+    return ratings.gfs_choc
 
 
 def main(argv=None):
@@ -107,12 +152,15 @@ def main(argv=None):
     ap.add_argument('--end', type=dt.date.fromisoformat, help='last day to include (default: yesterday, Eastern)')
     ap.add_argument('--out', default=ROOT, help='where to write (default: the repo)')
     ap.add_argument('--force', action='store_true', help='write even if the history gets shorter (a deliberate rebuild)')
+    ap.add_argument('--log', help='an export of the surf log (the Log\'s Export JSON or CSV) to fit to, instead of '
+                    'Firestore (whose read-only key is SURFLOG_READ_KEY)')
     a = ap.parse_args(argv)
     now = dt.datetime.now(ET)
     if not a.offline: sources.fetch_all(a.cache, now.astimezone(UTC).date())
     inp = sources.load(a.cache)
-    model = sources.jload(os.path.join(ROOT, HIST, 'results4.json'))['model']   # the ratings model, as fitted
+    model = sources.jload(os.path.join(ROOT, HIST, 'results4.json'))['model']   # the ratings model, as last fitted
     kavg = sources.jload(KAVG)['Kavg']
+    sessions = read_log(a.log, {} if a.force else model)
 
     sources.log('reading the spectra')
     sp = spectra.read_all(inp['historic'], inp['realtime'], spectra.Table(TABLE), T0)
@@ -122,7 +170,7 @@ def main(argv=None):
               dt.date.fromisoformat(spectra.local_day(sp['t'][-1])[0]), max(buoy).date())
     for _ in range(4):                       # every per-day file must end on the same day
         sources.log('rebuilding through', end)
-        out = rebuild(inp, sp, buoy, end, model, kavg)
+        out = rebuild(inp, sp, buoy, end, model, kavg, sessions)
         ends = last_days(out)
         if all(v == end for v in ends.values()): break
         sources.log('  files end on different days:', {k: str(v) for k, v in ends.items()})
@@ -132,15 +180,32 @@ def main(argv=None):
     lost = losses(out)
     if lost and not a.force:
         raise SystemExit('refusing to shorten the history (a source is missing or cut short?): ' + '; '.join(lost))
+    # the surf log's files, when the model was fitted to it (else they stay as committed)
+    refit = out['results4.json']['model'] is not model
+    if sessions is not None and not refit:
+        sources.log(f'too few sessions with conditions to fit to (under {ratings.MIN_SESSIONS}): the model stays as committed')
+    score = None
+    if refit:
+        cspec = {k: v for k, v in sp['heights']['choc'].items() if et_day(k) <= end}
+        b97 = {t: v for t, v in analyze.buoy_hours(inp['f44097'])[0].items() if t.date() <= end}   # 44097 alone, as fitted
+        out['sess_pairs.json'] = ratings.sess_pairs(sessions, cspec)
+        out['sessions_all.json'] = ratings.sessions_all(sessions, b97)
+        prev = sources.jload(os.path.join(ROOT, SCORE)) if os.path.exists(os.path.join(ROOT, SCORE)) else None
+        score = ratings.scorecard(sessions, cspec, prev, forecaster(a.offline), log=sources.log)
+        sources.log(f'ratings model fitted to {len(out["results4.json"]["model"]["sessions"])} sessions; '
+                    f'{len(out["sess_pairs.json"])} with a day in the history; scorecard: {len(score["sessions"])} sessions')
 
     os.makedirs(os.path.join(a.out, HIST), exist_ok=True)
     for name, obj in out.items():
         if name == 'lane': continue
         with open(os.path.join(a.out, HIST, name), 'w') as f: f.write(dump(name, obj))
-    for name in ('sessions_all.json', 'sess_pairs.json'):          # from the surf log: carried over as they are
+    for name in ('sessions_all.json', 'sess_pairs.json'):          # from the surf log: carried over when not refitted
         src, dst = os.path.join(ROOT, HIST, name), os.path.join(a.out, HIST, name)
-        if os.path.abspath(src) != os.path.abspath(dst):
+        if name not in out and os.path.abspath(src) != os.path.abspath(dst):
             with open(src) as f, open(dst, 'w') as g: g.write(f.read())
+    if score is not None:
+        os.makedirs(os.path.dirname(os.path.join(a.out, SCORE)), exist_ok=True)
+        with open(os.path.join(a.out, SCORE), 'w') as f: f.write(dump('score.json', score))
     os.makedirs(os.path.join(a.out, 'research'), exist_ok=True)
     with open(os.path.join(a.out, 'research', 'hist.js'), 'w') as f: f.write(build_hist.build(os.path.join(a.out, HIST)))
     os.makedirs(os.path.join(a.out, DAY), exist_ok=True)

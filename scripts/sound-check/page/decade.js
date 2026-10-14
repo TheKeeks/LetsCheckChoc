@@ -100,8 +100,12 @@
     });
     return rereading;
   };
+  // the months the ratings model has sessions from (the history bot fits it to the surf log)
+  const logged = new Set(((DATA.model || {}).sessions || []).map((s) => +s.date.slice(5, 7)));
   const CAP = {
-    good: 'A good day is one whose best 3 hours score 7/10 or better on the ratings model built from your surf log at Choc. Your log has no sessions from November to May, so winter counts are extrapolation.',
+    good: 'A good day is one whose best 3 hours score 7/10 or better on the ratings model built from your surf log at Choc. ' +
+      (![11, 12, 1, 2, 3, 4, 5].some((m) => logged.has(m)) ? 'Your log has no sessions from November to May, so winter counts are extrapolation.'
+        : logged.size < 12 ? 'Months with no logged sessions are extrapolation.' : 'Every month has logged sessions.'),
     big: 'A big swell day has at least 3 hours at 4 ft or more at the buoy, coming from inside the swell window.',
     c3: 'Choc 3 ft+ counts days when the ray model puts Choc at 3 ft or more over its best 3 hours.',
   };
