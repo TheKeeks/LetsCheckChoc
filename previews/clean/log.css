@@ -76,7 +76,7 @@
   appearance: none;
   box-shadow: none;
 }
-.cl-l-tin::placeholder { color: var(--muted); opacity: .55; font-weight: 500; }
+.cl-l-tin::placeholder { color: var(--muted); opacity: 1; font-weight: 500; }   /* --muted is 4.5:1 at full strength, not faded */
 /* Typing: the 2 px ink box of the board, without moving a pixel. */
 .cl .cl-l-tin:focus,
 .cl .cl-l-tin:focus-visible {
