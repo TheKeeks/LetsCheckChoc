@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════
-// CLEAN — tv.js (owner: TV part) · Choc TV under ?preview=clean
+// CLEAN — tv.js (owner: TV part) · Choc TV (?kiosk=1)
 // ────────────────────────────────────────────────────────────────────
 // The A2-TV boards over the real kiosk: three panels and one status
 // strip inside #cl-tv (core's root, shown only when isKioskMode()).
@@ -20,17 +20,16 @@
 // share of Choc. Tides, the low, wind, sun and moon come through
 // CLEAN.data.week() as before.
 //
-// The legacy kiosk keeps running underneath: its rotation timers, touch
-// pause, 15-min refresh, code-signature check, nightly reload and boot
-// watchdog are all kiosk.js's own. tv.js only renames KIOSK.panels to
-// its three panels (so no legacy panel draws behind #cl-tv), sets the
-// A2-Notes dwell times through kioskScheduleNext, and follows
-// kioskShowPanel. Every wrapper calls through, and falls back to the
-// legacy behaviour if the clean shell is ever taken down.
+// kiosk.js runs underneath: its rotation timers, touch pause, 15-min
+// refresh, code-signature check, nightly reload and boot watchdog are all
+// its own. tv.js sets KIOSK.panels to its three panels, sets the A2-Notes
+// dwell times through kioskScheduleNext, and follows kioskShowPanel.
+// Every wrapper calls through; if this screen can't mount, kiosk.js runs
+// as it is and index.html's "didn't start" card covers the screen.
 // ════════════════════════════════════════════════════════════════════
 (function () {
   'use strict';
-  if (!window.CLEAN) return;            // core failed: the classic Choc TV is showing
+  if (!window.CLEAN) return;            // core failed: index.html's "didn't start" card is up
   var C = window.CLEAN;
   if (!C.isTV) return;                  // phone: nothing to do (core never mounts 'tv' there)
 
@@ -45,7 +44,6 @@
   // Rotation (A2-Notes): next 3 days 10 s, days 4–6 6 s, radar 12 s —
   // a 28 s loop, so today is back inside 30 s. Cross-fades 600 ms.
   var PANELS = ['cl-days1', 'cl-days2', 'cl-radar'];
-  var LEGACY = { days1: 'cl-days1', days2: 'cl-days2', radar: 'cl-radar', spectral: 'cl-days1' };
   var DWELL = { 'cl-days1': 10e3, 'cl-days2': 6e3, 'cl-radar': 12e3 };
   var FADE_MS = 600;
 
@@ -55,7 +53,7 @@
     u: 1, fitTimer: null, secTimer: null, modelTimer: null,
     play: { idx: -1, timer: null, stepMs: 1000 },
     radarKey: '', chart: null,
-    orig: {}, legacyPanels: null
+    orig: {}
   };
 
   function err(where, e) { C.err('tv.' + where, e); }
@@ -172,7 +170,7 @@
   // PANELS — show / cross-fade
   // ════════════════════════════════════════════════════════════════════
   function showPanel(name, instant) {
-    if (PANELS.indexOf(name) < 0) name = LEGACY[name] || 'cl-days1';
+    if (PANELS.indexOf(name) < 0) name = PANELS[0];
     if (name === S.cur && !instant) return;
     var prev = S.cur;
     S.cur = name;
@@ -705,7 +703,7 @@
     }
   }
 
-  // ── Sources: the legacy card, restyled, with this TV's own content ──
+  // ── Sources: kiosk.js's card, restyled, with this TV's own content ──
   var TXT_MODEL = 'Choc’s height is the Sound Check model, as on the Forecast tab: GFS-Wave and ECMWF read at buoy 44097 and carried over the sea floor to the reef, the two models’ mean.';
   var TXT_DAYS = 'Each day shows Choc’s biggest height over the incoming tide in daylight (from a low to the next high), and the main swell then. ' + TXT_MODEL + ' The wind is the forecast at the low. Times in the dark are dimmed.';
   // NOAA's tide times missing: every day, or only some (a saved copy
@@ -752,7 +750,7 @@
     var ov = document.getElementById('kiosk-info-overlay');
     var card = document.getElementById('kiosk-info-card');
     if (!ov || !card) return;
-    // Adopt the legacy overlay: kioskInfoOpen() keeps reading it, so the
+    // Adopt kiosk.js's overlay: kioskInfoOpen() keeps reading it, so the
     // self-heal reload never fires under a reader, and kiosk.js still
     // closes it on a tap or a panel change.
     if (ov.parentNode !== S.root) S.root.appendChild(ov);
@@ -844,29 +842,13 @@
   function installHooks() {
     var K = kiosk();
     if (!K || typeof kioskShowPanel !== 'function') throw new Error('kiosk.js not loaded');
-    // Our three panels replace the legacy four, so no legacy panel (and
-    // no legacy radar canvas loop) draws behind #cl-tv.
-    S.legacyPanels = K.panels.slice();
     K.panels = PANELS.slice();
     K.idx = 0;
-    // kiosk.js reloads the TV when its code changes (signature of
-    // index.html, app.js, kiosk.js, styles-kiosk.css, polled every 15
-    // min). Sign this look's own files too, so a change to Choc TV here
-    // reaches the iPad the same way instead of waiting for 03:30.
-    try {
-      if (typeof KIOSK_CODE_FILES !== 'undefined' && Array.isArray(KIOSK_CODE_FILES)) {
-        ['previews/clean/theme.css', 'previews/clean/base.css', 'previews/clean/tv.css',
-          'previews/clean/theme.js', 'previews/clean/core.js', 'previews/clean/tv.js'].forEach(function (f) {
-          if (KIOSK_CODE_FILES.indexOf(f) < 0) KIOSK_CODE_FILES.push(f);
-        });
-      }
-    } catch (e) { err('codeFiles', e); }
 
     wrapGlobal('kioskShowPanel', function (orig) {
       return function (name) {
         var r = orig.apply(this, arguments);
         if (live()) { try { showPanel(name); } catch (e) { err('showPanel', e); } }
-        else if (!S.restored && S.mounted) restoreLegacy('shell gone');
         return r;
       };
     });
@@ -892,8 +874,7 @@
         var t = ev && ev.target && ev.target.closest ? ev.target : null;
         if (t && t.closest('#cl-tv .cl-tv-btn[data-act="next"]')) return undefined;
         var onInfo = t && (t.closest('#cl-tv .cl-tv-btn[data-act="sources"]') || t.closest('#kiosk-info-overlay'));
-        var infoBtn = document.getElementById('kiosk-info');
-        if (onInfo) { var ri = orig.call(this, { target: infoBtn || null }); secTick(); return ri; }
+        if (onInfo) { var ri = orig.call(this); secTick(); return ri; }
         var KK = kiosk();
         if (S.cur === 'cl-radar' && KK) {
           if (KK.state === 'paused' && typeof kioskResumeInPlace === 'function') { kioskResumeInPlace(); secTick(); return undefined; }
@@ -911,21 +892,15 @@
       };
     });
   }
-  // The clean shell went away (core unmounted): hand everything back.
-  function restoreLegacy(why) {
+  // This screen couldn't mount: give kiosk.js its own functions back.
+  function release(why) {
     if (S.restored) return;
     S.restored = true;
-    err('restore', why || 'restored');
+    err('release', why || 'released');
     stopPlay();
     clearInterval(S.secTimer);
     clearInterval(S.modelTimer);
     Object.keys(S.orig).forEach(function (k) { if (window[k] && window[k]._cleanTvOrig === S.orig[k]) window[k] = S.orig[k]; });
-    var K = kiosk();
-    if (K && S.legacyPanels) {
-      K.panels = S.legacyPanels;
-      K.idx = 0;
-      try { if (document.readyState !== 'loading' && typeof kioskShowPanel === 'function') { kioskShowPanel(K.panels[0]); kioskScheduleNext(); } } catch (e) { err('restore.show', e); }
-    }
   }
 
   // ════════════════════════════════════════════════════════════════════
@@ -951,13 +926,13 @@
       try {
         installHooks();
       } catch (e) {
-        // Leave kiosk.js exactly as it was; core hands the screen back.
-        restoreLegacy('mount: ' + (e && e.message));
+        // Leave kiosk.js exactly as it was; core puts up the "didn't start" card.
+        release('mount: ' + (e && e.message));
         throw e;
       }
       S.mounted = true;
       measureUnit();
-      // The legacy panel at boot is kiosk.js's first; ours is the same slot.
+      // kiosk.js shows its first panel at boot; ours is the same slot.
       showPanel(PANELS[0], true);
       S.strip.sources.addEventListener('click', guard('sources', openSources));
       S.strip.next.addEventListener('click', guard('next', onNext));

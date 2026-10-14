@@ -4,385 +4,59 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LetsCheckChoc</title>
-  <!-- One look: the approved "A refined" design (previews/clean/), on the
-       phone and on Choc TV. ?classic=1 still opens the old look, kept only
-       as an emergency fallback and for the tests of the app underneath, and
-       only then does the page load its Win95 styles, fonts and Leaflet maps.
-       Choc TV (?kiosk=1) also loads the classic TV's styles, its own
-       fallback. ?preview=clean names the default look (and wins over
-       ?classic=1); the retired candidate looks' names open it too. -->
+  <!-- One look, previews/clean/ (the approved "A refined" design), on the phone
+       and on Choc TV (?kiosk=1). The old look is gone; its URL parameters
+       are ignored. -->
   <script>
-    var LCC_CLASSIC = /[?&]classic=1(?:&|$)/.test(location.search) && !/[?&]preview=clean(?:&|$)/.test(location.search);
-    var LCC_PREVIEW = LCC_CLASSIC ? null : 'clean';
     var LCC_KIOSK = /[?&]kiosk=1(?:&|$)/.test(location.search);
-    // Google Fonts must not block first paint: a stalled fonts.googleapis.com
-    // held the whole page (boat gate included) blank. It loads as print-only,
-    // then switches to all media once it arrives; the fallback fonts show
-    // meanwhile (and for good if it never does).
-    var LCC_OLD_FONTS = 'https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap';
-    var LCC_OLD_SHEETS = ['styles-web1.css', 'styles-web1-extensions.css', 'styles-retro.css'];
-    if (LCC_CLASSIC) document.write(
-      '<link rel="preconnect" href="https://fonts.googleapis.com">' +
-      '<link rel="preload" href="fonts/ms_sans_serif.woff2" as="font" type="font/woff2" crossorigin>' +
-      '<link rel="preload" href="fonts/ms_sans_serif_bold.woff2" as="font" type="font/woff2" crossorigin>' +
-      '<link href="' + LCC_OLD_FONTS + '" rel="stylesheet" media="print" onload="this.media=\'all\'">' +
-      // Leaflet 1.9.4, vendored (see vendor/leaflet/README.md) so a CDN
-      // outage can't take the maps, or the app, down.
-      '<link rel="stylesheet" href="vendor/leaflet/leaflet.css">');
-    // When the new look gives the page back to the old one (core.js unmount),
-    // the old look's styles and fonts come back with it.
-    function lccLoadClassic() {
-      if (LCC_CLASSIC || window.lccClassicLoaded) return;
-      window.lccClassicLoaded = true;
-      [LCC_OLD_FONTS].concat(LCC_OLD_SHEETS, LCC_KIOSK ? [] : ['styles-kiosk.css']).forEach(function (href) {
-        var l = document.createElement('link');
-        l.rel = 'stylesheet';
-        l.href = href;
-        document.head.appendChild(l);
-      });
+    if (LCC_KIOSK) document.documentElement.classList.add('lcc-tv');
+    // The page couldn't start (the look's scripts failed to load or to mount):
+    // a plain card, styled right here so it shows without any stylesheet.
+    // Reload on a phone; Choc TV retries by itself (kiosk.js).
+    function lccDown(why) {
+      var root = document.documentElement;
+      if (root.classList.contains('lcc-down')) return;
+      root.classList.add('lcc-down');
+      var w = document.getElementById('lcc-down-why');
+      if (w) w.textContent = why ? 'Why: ' + why : '';
     }
   </script>
+  <style>
+    #lcc-down { display: none; }
+    html.lcc-down #lcc-down {
+      display: flex; position: fixed; inset: 0; z-index: 2147483647; align-items: center; justify-content: center;
+      padding: 24px; background: #0D1217; color: #EDF2EE; text-align: center;
+      font: 400 18px/1.45 -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+    }
+    #lcc-down h1 { margin: 0 0 8px; font-size: 26px; font-weight: 600; }
+    #lcc-down p { margin: 8px 0; color: #9AAAA2; }
+    #lcc-down button { margin-top: 16px; padding: 12px 28px; border: 0; border-radius: 12px; background: #EDF2EE; color: #0D1217; font: inherit; font-weight: 600; }
+    html.lcc-tv #lcc-down button, #lcc-down .lcc-down-tv { display: none; }
+    html.lcc-tv #lcc-down .lcc-down-tv { display: block; }
+  </style>
   <link rel="stylesheet" href="style.css">
-  <script>
-    if (LCC_CLASSIC) document.write(LCC_OLD_SHEETS.map(function (h) { return '<link rel="stylesheet" href="' + h + '">'; }).join(''));
-    if (LCC_CLASSIC || LCC_KIOSK) document.write('<link rel="stylesheet" href="styles-kiosk.css">');
-    if (LCC_PREVIEW) document.write('<link rel="stylesheet" href="previews/' + LCC_PREVIEW + '/theme.css">');
-  </script>
+  <link rel="stylesheet" href="previews/clean/theme.css">
   <!-- Choc TV kiosk mode PWA (?kiosk=1): installable via Add to Home Screen -->
   <link rel="manifest" href="manifest.webmanifest">
-  <meta name="theme-color" content="#C0C0C0">
+  <meta name="theme-color" content="#FFFFFF">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Choc TV">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 </head>
-<body data-era="web1">
-  <!-- Boat question gate (Win95 modal) -->
-  <div id="gate-overlay">
-    <div id="gate-card" class="w1-window" role="dialog" aria-modal="true" aria-labelledby="gate-titlebar-text">
-      <div class="w1-titlebar">
-        <span class="title" id="gate-titlebar-text">Are you coming by boat today?</span>
-        <span class="ctrls" aria-hidden="true">
-          <button type="button" tabindex="-1" aria-label="minimize">_</button>
-          <button type="button" tabindex="-1" aria-label="maximize">□</button>
-          <button type="button" tabindex="-1" aria-label="close">×</button>
-        </span>
-      </div>
-      <div class="gate-body">
-        <div id="gate-question">
-          <div style="display:flex;align-items:center;">
-            <div class="gate-icon" aria-hidden="true">⚓</div>
-            <h2>Are you coming by boat today?</h2>
-          </div>
-          <div class="gate-buttons">
-            <button id="gate-yes" class="gate-btn">Yes</button>
-            <button id="gate-no" class="gate-btn gate-btn-primary">No</button>
-          </div>
-        </div>
-        <div id="gate-go-home" class="hidden">Go Home</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Main app -->
-  <div id="app-window" class="hidden">
-    <!-- Win95 page-level title bar (full viewport width). Pure decoration. -->
-    <div id="win95-titlebar" aria-hidden="true">
-      <span class="win95-titlebar-icon">
-        <!-- Tiny 2-color wave glyph in 16x16 -->
-        <svg width="16" height="16" viewBox="0 0 16 16">
-          <rect width="16" height="16" fill="#000080"/>
-          <path d="M1 10 Q3 6 5 10 T9 10 T13 10 L15 10 L15 13 L1 13 Z" fill="#FFFFFF"/>
-        </svg>
-      </span>
-      <span class="win95-titlebar-text">LetsCheckChoc</span>
-      <span class="win95-titlebar-ctrls">
-        <button type="button" tabindex="-1" aria-hidden="true" class="win95-tb-btn">_</button>
-        <button type="button" tabindex="-1" aria-hidden="true" class="win95-tb-btn">&#9633;</button>
-        <button type="button" tabindex="-1" aria-hidden="true" class="win95-tb-btn">&times;</button>
-      </span>
-    </div>
+<body>
+  <!-- The app's engine room, never shown: the surf-log form the Log tab drives
+       (previews/clean/log.js) and the panels My ratings borrows for its Details
+       (previews/clean/model.js). app.js wires and draws them by id. -->
+  <div id="app-window" hidden>
     <div id="app">
-    <header id="app-header">
-      <div class="header-left">
-        <h1 class="site-title">LetsCheckChoc</h1>
-        <span id="header-location" class="header-location">Select a buoy or drag the pin</span>
-      </div>
-      <div class="header-right">
-        <label class="header-buoy-selector">
-          <span class="header-buoy-label">Buoy:</span>
-          <select id="buoy-select" aria-label="Select a buoy"></select>
-        </label>
-        <span id="header-update-time" class="header-meta"></span>
-        <div class="auth-bar" id="auth-bar">
-          <span class="auth-user-name" id="auth-user-name" style="display:none;"></span>
-          <button class="auth-btn" id="auth-signin-btn">Sign in with Google</button>
-          <button class="auth-btn auth-btn-out" id="auth-signout-btn" style="display:none;">Sign out</button>
-        </div>
-      </div>
-    </header>
-
-    <!-- Buoy selector map (shared header / context for all tabs).
-         Lives outside #view-forecast so it sits above the tab strip. -->
-    <section class="panel panel-buoy-map" id="panel-map">
-      <div id="buoy-map-summary" class="buoy-map-summary" style="display:none;">
-        <span id="buoy-map-summary-text"></span>
-        <button type="button" id="buoy-map-expand" class="buoy-map-expand-btn">[change]</button>
-      </div>
-      <div id="buoy-map" class="map-container"></div>
-    </section>
-
-    <!-- Tab navigation -->
-    <nav class="tab-bar" id="tab-bar">
-      <button class="tab-btn active" data-tab="forecast" id="tab-btn-forecast">Forecast</button>
-      <button class="tab-btn" data-tab="regression" id="tab-btn-regression">Regression</button>
-      <button class="tab-btn" data-tab="surflog" id="tab-btn-surflog">Surf Log</button>
-      <button class="tab-btn" data-tab="research" id="tab-btn-research">Sound Check</button>
-    </nav>
-
-    <!-- ═══ TAB 1 — CURRENT CONDITIONS & FORECAST ═══ -->
-    <div id="view-forecast">
-
-      <!-- 1. Lineup map (Choc only) -->
-      <section class="panel" id="panel-lineup" style="display:none;">
-        <div class="retro-card-title-strip">Satellite Map &mdash; Lineup</div>
-        <h3 class="panel-title" style="display:none;">Satellite Map · Lineup</h3>
-        <details class="widget-help">
-          <summary>What is this?</summary>
-          <p>Stylised lineup view of Chocomount Beach with the swell window cone, reef heading, primary &amp; secondary swell arrows, and wind arrow drawn from the current observation. The arrows always converge on the lineup at image centre; arrow length is energy-scaled.</p>
-        </details>
-        <div class="lineup-frame" id="lineup-frame">
-          <img class="lineup-img" id="lineup-img" src="project/assets/lineup.jpg" alt="Chocomount lineup view">
-          <svg class="lineup-overlay" id="lineup-overlay" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet"></svg>
-          <div class="lineup-caption" id="lineup-caption"></div>
-          <div class="lineup-legend lineup-legend-overlay">
-            <span class="lineup-legend-item"><span class="lineup-legend-swatch lineup-swatch-swell"></span>Swell direction</span>
-            <span class="lineup-legend-item"><span class="lineup-legend-swatch lineup-swatch-wind"></span>Wind direction</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- 2. Unified forecast card (Swell + Wind + Tide stacked) -->
-      <section class="panel" id="panel-forecast">
-        <div class="retro-card-title-strip">Forecast &mdash; 7 Day Outlook</div>
-        <div class="forecast-header-row" style="display:none;">
-          <h3 class="panel-title forecast-panel-title">
-            <span class="forecast-title-text">Swell Forecast</span>
-            <details class="forecast-help-popover">
-              <summary aria-label="What is this?" title="What is this?">?</summary>
-              <p>A 7-day projection of three sea-surface parameters — swell height, swell period, and wind speed — rendered on a shared time axis so their interactions are visible at a glance. Drag the cursor to scrub through hours; the lineup map and stat grid update to match.</p>
-            </details>
-          </h3>
-        </div>
-        <div class="chart-container chart-container-tall" id="forecast-chart-container">
-          <div class="forecast-detail-bar" id="forecast-detail-bar">
-            <div class="detail-row" id="forecast-detail-row"></div>
-            <button type="button" id="forecast-reset-now" class="forecast-reset-btn" style="visibility:hidden;">Reset to now</button>
-          </div>
-          <div class="forecast-day-row" id="forecast-day-header" aria-hidden="true"></div>
-          <div class="forecast-card forecast-card-swell">
-            <div class="forecast-section-label">Swell</div>
-            <canvas id="forecast-canvas-swell"></canvas>
-            <canvas id="forecast-compass" aria-hidden="true" style="display:none;"></canvas>
-          </div>
-          <div class="forecast-card forecast-card-wind">
-            <div class="forecast-section-label">Wind</div>
-            <canvas id="forecast-canvas-wind"></canvas>
-          </div>
-          <div class="forecast-card forecast-card-tide">
-            <div class="forecast-section-label">Tide</div>
-            <canvas id="forecast-canvas-tide"></canvas>
-          </div>
-        </div>
-        <!-- Bottom controls bar -->
-        <div class="forecast-controls-bar" id="forecast-controls-bar">
-          <span id="forecast-cache-indicator" class="forecast-cache-indicator" style="display:none;" aria-live="polite">Cached · refreshing…</span>
-          <label class="forecast-model-label">
-            <span class="forecast-model-label-txt">Model:</span>
-            <select id="forecast-model-select" aria-label="Forecast model">
-              <option value="">Auto (MFWAM)</option>
-            </select>
-          </label>
-          <label class="forecast-coord-toggle" id="forecast-coord-toggle-wrap" style="display:none;">
-            <input type="checkbox" id="forecast-coord-toggle">
-            <span>Buoy coords</span>
-          </label>
-          <span class="forecast-controls-spacer"></span>
-        </div>
-        <div class="panel-footer" id="footer-forecast"></div>
-      </section>
-
-      <!-- Wave Spectra + Spectral Compass Rose (promoted to sit directly
-           under the unified forecast card). The original placement
-           below the conditions-row is gone. -->
-      <section class="panel-row" id="panel-spectral-row" style="display:none;">
-        <div class="panel panel-half" id="panel-spectral-summary">
-          <div class="retro-card-title-strip">Wave Spectra</div>
-          <h3 class="panel-title" style="display:none;">Wave Spectra</h3>
-          <details class="widget-help">
-            <summary>What is this?</summary>
-            <p>A decomposition of the buoy's raw wave spectrum into three interpretable rows:</p>
-            <ul>
-              <li><strong>Swell 10 s+</strong> — NDBC's own swell split. Choc's buoy (44097) reports no split point, so NDBC cuts at a fixed 10 s and counts only energy at 10 s and longer as swell.</li>
-              <li><strong>Wind waves &lt;10 s</strong> — everything shorter, which at this buoy includes real 8–9 s swell. For Choc, read the swell card's 8 s+ band instead.</li>
-              <li><strong>Significant Hs</strong> — the total significant wave height of the sea state (mean of the highest one-third of waves); the combined energy of every ripple, chop, and groundswell currently present.</li>
-            </ul>
-          </details>
-          <div id="spectral-summary-table"></div>
-          <div class="panel-footer" id="footer-spectral-summary"></div>
-        </div>
-        <div class="panel panel-half" id="panel-compass">
-          <div class="retro-card-title-strip">Spectral Compass Rose</div>
-          <div class="rose-header" style="display:none;">
-            <h3 class="panel-title">Spectral Compass Rose</h3>
-          </div>
-          <div class="rose-scale-toggle" role="group" aria-label="Radial scale">
-            <button type="button" class="rose-scale-chip" data-scale="linear">Linear</button>
-            <button type="button" class="rose-scale-chip" data-scale="sqrt">&radic;</button>
-          </div>
-          <details class="widget-help">
-            <summary>What is this?</summary>
-            <p>Polar plot of wave energy by arrival direction. Radial distance from the center encodes energy magnitude; hue encodes the period of that energy band, so directionality and period can be read together.</p>
-          </details>
-          <div class="chart-container chart-container-sq">
-            <canvas id="compass-canvas"></canvas>
-          </div>
-          <div class="rose-readout" id="rose-readout" aria-live="polite">hover a petal to inspect that swell band</div>
-          <div class="rose-legend" aria-hidden="true">
-            <div class="rose-legend-bar"></div>
-            <div class="rose-legend-ticks">
-              <span>2s</span>
-              <span>11s</span>
-              <span>22s+</span>
-            </div>
-            <div class="rose-legend-caption">Swell period</div>
-          </div>
-          <div class="panel-footer" id="footer-compass"></div>
-        </div>
-      </section>
-
-      <!-- 3. Current conditions row -->
-      <section class="conditions-row" id="conditions-row">
-        <div class="condition-card" id="card-swell">
-          <div class="condition-label">Swell: Current</div>
-          <div class="condition-value" id="val-swell-height">—</div>
-          <div class="condition-detail" id="val-swell-detail">—</div>
-          <div class="condition-extra" id="val-swell-arrival" style="display:none;"></div>
-          <div class="panel-footer" id="footer-swell"></div>
-          <div class="panel-footer footer-coord" id="footer-swell-coord"></div>
-        </div>
-        <div class="condition-card" id="card-secondary-swell" style="display:none;">
-          <div class="condition-label">Secondary Swell</div>
-          <div class="condition-value" id="val-sec-swell-height">—</div>
-          <div class="condition-detail" id="val-sec-swell-detail">—</div>
-          <div class="panel-footer" id="footer-sec-swell"></div>
-          <div class="panel-footer footer-coord" id="footer-sec-swell-coord"></div>
-        </div>
-        <div class="condition-card" id="card-wind">
-          <div class="condition-label">Wind: Current</div>
-          <div class="condition-value" id="val-wind-speed">—</div>
-          <div class="condition-detail" id="val-wind-detail">—</div>
-          <div class="panel-footer" id="footer-wind"></div>
-          <div class="panel-footer footer-coord" id="footer-wind-coord"></div>
-        </div>
-        <div class="condition-card" id="card-tide">
-          <div class="condition-label">Tide</div>
-          <div class="condition-value" id="val-tide">—</div>
-          <div class="condition-detail" id="val-tide-detail">—</div>
-          <div class="panel-footer" id="footer-tide-card"></div>
-        </div>
-        <div class="condition-card" id="card-temp">
-          <div class="condition-label">Water Temp</div>
-          <div class="condition-value" id="val-water-temp">—</div>
-          <div class="condition-detail" id="val-temp-detail">—</div>
-          <div class="panel-footer" id="footer-temp"></div>
-        </div>
-        <div class="condition-card" id="card-daylight">
-          <div class="condition-label">Daylight</div>
-          <div class="condition-value" id="val-daylight">—</div>
-          <div class="condition-detail" id="val-daylight-detail">—</div>
-          <div class="panel-footer" id="footer-daylight"></div>
-        </div>
-      </section>
-
-      <!-- 5. Wave Energy Spectrum (full width) -->
-      <section class="panel" id="panel-spectrum" style="display:none;">
-        <h3 class="panel-title">Wave Energy Spectrum</h3>
-        <details class="widget-help">
-          <summary>What is this?</summary>
-          <p>Spectral energy density plotted as a function of wave period. Each peak is a distinct wave train present in the sea state; peak height indicates that train's share of total energy.</p>
-        </details>
-        <div class="chart-container chart-container-sq">
-          <canvas id="spectrum-canvas"></canvas>
-        </div>
-        <div class="panel-footer" id="footer-spectrum"></div>
-      </section>
-
-      <!-- Tides panel (kept; renders next to tide-station selector) -->
-      <section class="panel" id="panel-tides" style="display:none;">
-        <h3 class="panel-title">Tides</h3>
-        <details class="widget-help">
-          <summary>What is this?</summary>
-          <p>Predicted water-level curve derived from NOAA CO-OPS harmonic constants for the selected station. Peaks mark high tides, troughs mark low tides, and the dashed vertical line marks the current moment.</p>
-        </details>
-        <div class="chart-container chart-container-sm">
-          <canvas id="tide-canvas"></canvas>
-        </div>
-        <div id="tide-hilo-list" class="tide-list"></div>
-        <div class="panel-footer" id="footer-tides"></div>
-      </section>
-
-      <!-- 8. Tide station selector map -->
-      <section class="panel" id="panel-tide-map">
-        <h3 class="panel-title">Tide Stations</h3>
-        <div id="tide-map" class="map-container map-container-sm"></div>
-        <div id="tide-map-info" class="tide-map-info"></div>
-        <div class="panel-footer" id="footer-tide-map"></div>
-      </section>
-
-    </div><!-- end #view-forecast -->
-
-    <!-- ═══ TAB 2 — REGRESSION RESULTS ═══ -->
-    <div id="view-regression" style="display:none;">
-
-      <section class="panel" id="panel-regression-empty" style="display:none;">
-        <h3 class="panel-title">Regression Results</h3>
-        <p class="sl-hint">Regression is currently Chocomount-only.</p>
-      </section>
-
-      <!-- 1. Header strip -->
-      <section class="panel" id="panel-regression-summary" style="display:none;">
-        <div class="reg-header-strip">
-          <h3 class="panel-title reg-header-title">Regression Results</h3>
-          <div id="regression-sample-summary" class="regression-sample-summary"></div>
-          <div class="regression-source-note">
-            Model trained on Open-Meteo <code>best_match</code> historical conditions · refits on every session save
-          </div>
-        </div>
-      </section>
-
-      <!-- 2. "If I went at scrubbed time" prediction widget -->
-      <section class="panel" id="panel-regression-prediction" style="display:none;">
-        <div class="reg-prediction-card" id="reg-prediction-card"></div>
-      </section>
-
+    <div id="view-regression">
       <!-- 3. Predicted vs Actual scatters -->
       <section class="panel" id="panel-regression-pva" style="display:none;">
         <fieldset class="w1-fieldset">
           <legend>Predicted vs Actual</legend>
           <div class="reg-pva-grid" id="reg-pva-grid"></div>
-        </fieldset>
-      </section>
-
-      <!-- 4. Match threshold tuning -->
-      <section class="panel" id="panel-regression-thresholds" style="display:none;">
-        <fieldset class="w1-fieldset">
-          <legend>Match Thresholds</legend>
-          <div class="reg-threshold-panel" id="reg-threshold-panel"></div>
-          <div class="reg-threshold-note sl-hint">
-            Currently scrubbed hour gets 3 lights using these thresholds.
-          </div>
         </fieldset>
       </section>
 
@@ -475,19 +149,8 @@
       <aside id="reg-drilldown" class="reg-drilldown" style="display:none;" aria-hidden="true">
         <div class="reg-drilldown-inner" id="reg-drilldown-inner"></div>
       </aside>
-
-    </div><!-- end #view-regression -->
-
-    <!-- ═══ TAB 3 — LOG A SESSION ═══ -->
-    <div id="view-surflog" style="display:none;">
-
-      <!-- Sign-in prompt (shown when not authenticated with a real account) -->
-      <div id="sl-auth-prompt" class="sl-auth-prompt" style="display:none;">
-        <span class="sl-auth-prompt-text">Sign in w/ Google to log sessions</span>
-        <button class="sl-btn sl-btn-sm" id="sl-auth-prompt-signin">Sign in</button>
-        <button class="sl-auth-prompt-dismiss" id="sl-auth-prompt-dismiss">Continue without signing in</button>
-      </div>
-
+    </div>
+    <div id="view-surflog">
       <!-- Log a session form (Choc only) -->
       <section class="panel" id="panel-surflog-form" style="display:none;">
         <fieldset class="w1-fieldset">
@@ -526,14 +189,7 @@
 
           <div class="sl-field">
             <label class="sl-label">Photos</label>
-            <div class="sl-photo-input-row">
-              <input type="text" id="sl-photo-url" class="sl-input sl-input-grow" placeholder="Paste image URL...">
-              <button class="sl-btn sl-btn-sm" id="sl-add-url">Add URL</button>
-              <label class="sl-btn sl-btn-sm sl-btn-file">
-                Upload
-                <input type="file" id="sl-photo-file" accept="image/*" multiple style="display:none;">
-              </label>
-            </div>
+            <input type="file" id="sl-photo-file" accept="image/*" multiple>
             <div class="sl-photo-gallery" id="sl-photo-gallery"></div>
           </div>
 
@@ -553,114 +209,35 @@
         </div>
         </fieldset>
       </section>
-
-      <!-- Past sessions table (always visible — crowdsourced view) -->
-      <section class="panel" id="panel-surflog-entries">
-        <fieldset class="w1-fieldset">
-          <legend>Past Sessions</legend>
-        <div class="sl-crowdsource-note">
-          Crowdsourced log — sessions from all signed-in users are visible. Training uses your sessions only.
-        </div>
-        <div class="sl-filters" id="sl-filters">
-          <div class="sl-filter-group">
-            <label class="sl-label sl-label-sm" for="sl-filter-from">From</label>
-            <input type="date" id="sl-filter-from" class="sl-input sl-input-sm">
-          </div>
-          <div class="sl-filter-group">
-            <label class="sl-label sl-label-sm" for="sl-filter-to">To</label>
-            <input type="date" id="sl-filter-to" class="sl-input sl-input-sm">
-          </div>
-          <div class="sl-filter-group">
-            <label class="sl-label sl-label-sm" for="sl-filter-rating">Min Avg Rating</label>
-            <input type="number" id="sl-filter-rating" class="sl-input sl-input-sm" min="1" max="10" step="0.5" placeholder="1">
-          </div>
-        </div>
-        <div class="surflog-table-wrap">
-          <table class="surflog-table" id="surflog-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Photos</th>
-                <th>Size</th>
-                <th>Wind</th>
-                <th>Ride</th>
-                <th>Avg</th>
-                <th>Notes</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="surflog-tbody"></tbody>
-          </table>
-        </div>
-        <div id="surflog-empty" class="sl-empty">
-          No sessions logged yet.
-        </div>
-        <div class="sl-export-row" id="sl-export-row">
-          <button class="sl-btn sl-btn-sm" id="sl-export-json">Export JSON</button>
-          <button class="sl-btn sl-btn-sm" id="sl-import-json-btn">Import JSON</button>
-          <input type="file" id="sl-import-json" accept=".json" style="display:none;">
-          <button class="sl-btn sl-btn-sm" id="sl-export-csv">Export CSV</button>
-          <button class="sl-btn sl-btn-sm" id="sl-backfill-archive-btn">Re-fetch all session conditions from Open-Meteo archive</button>
-          <span class="sl-storage-note" id="sl-storage-note"></span>
-        </div>
-        <div id="sl-backfill-progress" style="display:none; padding:8px 14px; font-family: var(--mono, monospace); font-size: 0.72rem;">
-          <div style="height:10px; background:#c0c0c0; border:1px solid #808080; box-shadow: inset 1px 1px 0 #404040, inset -1px -1px 0 #ffffff; padding:1px;">
-            <div id="sl-backfill-bar-fill" style="height:100%; width:0%; background:#000080; transition: width 0.2s linear;"></div>
-          </div>
-          <div id="sl-backfill-status" style="margin-top:4px; color:#404040;"></div>
-        </div>
-        </fieldset>
-      </section>
-
-    </div><!-- end #view-surflog -->
-
-    <!-- ═══ TAB 4 — SWELL MAP (research/: the forecast, past-day and wave-trip map
-         plus the ten-year analysis). Its own page in a frame, loaded on first open. ═══ -->
-    <div id="view-research" style="display:none;">
-      <iframe id="research-frame" class="research-frame" title="Sound Check: swell map and ten-year research" data-src="research/index.html" loading="lazy"></iframe>
-      <p class="research-open"><a href="research/index.html" target="_blank" rel="noopener">Open the swell map on its own page</a></p>
-    </div><!-- end #view-research -->
-
-    <!-- ═══ MATCH DETAIL MODAL (photo viewer only) ═══ -->
-    <div id="match-modal" class="modal-overlay" style="display:none;">
-      <div class="modal-card">
-        <button class="modal-close" id="match-modal-close">&times;</button>
-        <div class="modal-carousel" id="modal-carousel">
-          <button class="modal-carousel-btn modal-carousel-prev" id="modal-carousel-prev">&lsaquo;</button>
-          <img class="modal-carousel-img" id="modal-carousel-img" src="" alt="Session photo">
-          <button class="modal-carousel-btn modal-carousel-next" id="modal-carousel-next">&rsaquo;</button>
-          <div class="modal-carousel-dots" id="modal-carousel-dots"></div>
-        </div>
-        <div class="modal-body">
-          <div class="modal-match-badge" id="modal-match-badge"></div>
-          <h4 class="modal-title" id="modal-title"></h4>
-          <div class="modal-conditions" id="modal-conditions"></div>
-          <div class="modal-ratings" id="modal-ratings"></div>
-          <div class="modal-notes" id="modal-notes"></div>
-        </div>
-      </div>
     </div>
+    </div>
+  </div>
 
-    <!-- Page footer -->
-    <footer id="page-footer">
-      <span>LetsCheckChoc — data from <a href="https://www.ndbc.noaa.gov/" target="_blank" rel="noopener">ndbc</a>, <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, <a href="https://tidesandcurrents.noaa.gov/" target="_blank" rel="noopener">CO-OPS</a></span>
-    </footer>
-    </div><!-- end #app -->
-  </div><!-- end #app-window -->
+  <div id="lcc-down" role="alert">
+    <div>
+      <h1>LetsCheckChoc didn’t start</h1>
+      <p class="lcc-down-tv">Choc TV tries again by itself in a few minutes.</p>
+      <p id="lcc-down-why"></p>
+      <button type="button" onclick="location.reload()">Reload</button>
+    </div>
+  </div>
 
   <!-- Firebase SDK (compat) -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
-  <script>
-    if (LCC_CLASSIC) document.write('<script src="vendor/leaflet/leaflet.js"><\/script>');
-  </script>
   <script src="firebase-config.js"></script>
   <script src="app.js"></script>
   <script src="kiosk.js"></script>
+  <script src="previews/clean/theme.js"></script>
   <script>
-    if (LCC_PREVIEW) document.write('<script src="previews/' + LCC_PREVIEW + '/theme.js"><\/script>');
+    // A look that never came up (theme.js or core.js failed to load): say so.
+    document.addEventListener('DOMContentLoaded', function () {
+      setTimeout(function () {
+        if (!window.CLEAN || !window.CLEAN.ready) lccDown('the page’s scripts didn’t load');
+      }, 5000);
+    });
   </script>
   <div id="toast-container" class="toast-container"></div>
 </body>

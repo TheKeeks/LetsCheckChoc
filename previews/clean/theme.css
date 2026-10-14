@@ -2,10 +2,11 @@
    CLEAN — ?preview=clean · tokens and legacy hiding (owner: Core)
    ────────────────────────────────────────────────────────────────────
    The "A refined" boards from Claude Design, layered over the real app.
-   index.html writes this file after styles-kiosk.css. Each part owns
-   one imported file; core.js owns the tokens below and the shell in
-   base.css. Nothing here applies until core.js has mounted its shell
-   and set html.cl-on, so a failed core.js leaves the classic app as is.
+   Each part owns one imported file; core.js owns the tokens below and
+   the shell in base.css. Nothing here applies until core.js has mounted
+   its shell and set html.cl-on; until then (or if it never does) the
+   app's engine room stays hidden and index.html's "didn't start" card
+   covers a failure.
 
    Tokens (A2-Tokens): day values are the default, night swaps in under
    html[data-clean-theme="night"]. Contrast is against --bg: 7:1 for
@@ -77,20 +78,16 @@ html.cl-on[data-clean-theme="night"] {
   color-scheme: dark;
 }
 
-/* ── Legacy chrome off, legacy nodes kept ─────────────────────────────
-   Parts drive the legacy nodes (inputs, STATE, the scrubber), so they
-   stay in the DOM; only their boxes go. The Win95 frame, header, tabs,
-   boat gate and every Choc TV panel/strip are hidden on phone and TV. */
-html.cl-on #gate-overlay,
+/* ── The engine room stays hidden ─────────────────────────────────────
+   Parts drive the app's own nodes (the surf-log form, the panels My
+   ratings borrows), so they stay in the DOM; only their boxes go.
+   kiosk.js's Sources overlay shows once tv.js adopts it into #cl-tv. */
 html.cl-on #app-window,
-html.cl-on #kiosk-status,
-html.cl-on #kiosk-stale-banner,
 html.cl-on #kiosk-info-overlay {
   display: none !important;
 }
 
-html.cl-on body,
-html.cl-on body.kiosk {
+html.cl-on body {
   margin: 0;
   padding: 0;
   min-height: 100vh;

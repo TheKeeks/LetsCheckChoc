@@ -1,8 +1,10 @@
 // ════════════════════════════════════════════════
 // LetsCheckChoc — app.js
-// Multi-buoy surf forecast dashboard
+// The app underneath the look: Chocomount's forecast, tides and buoy (with
+// their saved copies and true ages), the surf log and its ratings models,
+// and the panels My ratings borrows. The look (previews/clean/) draws the
+// screens; Choc TV runs on kiosk.js.
 // ════════════════════════════════════════════════
-
 
 'use strict';
 
@@ -18,8 +20,6 @@ const CONFIG = {
     lon: -71.963310,
     forecastLat: 41.089152,
     forecastLon: -71.721050,
-    starLat: 41.089152,
-    starLon: -71.721050,
     buoyId: '44097',
     tideStation: '8510719',
     waterTempStation: '8510560',
@@ -44,21 +44,13 @@ const CONFIG = {
     // used are dead (corsproxy.io 403 "keyless_legacy_url", allorigins 522
     // after ~20 s, codetabs 503), and walking them cost every load ~15 s
     // before the chart and ~34 s before the spectra. Chocomount reads the
-    // pipeline's data/buoy.json instead (scripts/fetch_buoy.py, every 2 h);
-    // other buoys show an honest "no live data" state.
+    // pipeline's data/buoy.json instead (scripts/fetch_buoy.py, every 2 h).
     // To re-add a WORKING relay you control (e.g. a Cloudflare Worker that
     // fetches the NDBC URL and adds Access-Control-Allow-Origin: *):
     //   { name: 'worker', wrap: function(url) { return 'https://<your-worker>.workers.dev/?url=' + encodeURIComponent(url); } }
-    // It is then tried for non-Choc buoys (off the chart's critical path)
-    // and by the surf log's NDBC-history fallback.
+    // It is then tried by the surf log's NDBC-history fallback.
     ndbcProxies: [],
     ndbcBase: 'https://www.ndbc.noaa.gov/data/realtime2/'
-  },
-  map: {
-    center: [38.5, -73.0],
-    zoom: 5,
-    tileUrl: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    tileAttr: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>'
   },
   coopsNearbyRadiusMiles: 50
 };
@@ -66,21 +58,14 @@ const CONFIG = {
 // ── State ────────────────────────────────────────
 const STATE = {
   isChocomount: false,
-  boatGatePassed: false,
+  appStarted: false,     // startApp ran (once per page)
   selectedBuoy: null,
   pinLat: null,
   pinLon: null,
   buoys: [],
   tideStations: [],
   nearestTideStation: null,
-  buoyMap: null,
-  tideMap: null,
-  forecastPin: null,
-  buoyMarkers: [],
-  chocMarker: null,
-  tideMarkers: [],
-  activeTideMarker: null,
-  forecastChart: null,   // cached chart state for tooltip
+  forecastData: null,    // the forecast on screen: { marine, wind, tideHiLo, tidePred, buoyParsed }
   // Surf log
   surfLog: [],
   surfLogWaveWeights: null,
@@ -94,17 +79,7 @@ const STATE = {
   surfLogCondValidation: null,
   surfLogEditId: null,
   surfLogEditRepairCandidates: [],
-  activeTab: 'forecast',
-  personalMatchesOpen: false,
-  matchModalData: null,
-  matchModalPhotoIdx: 0,
-  lastSpectral: null,
-  lastBuoyParsed: null,
-  lastSpecSummary: null,    // latest .spec/pipeline summary row (shared Hs source)
-  roseScaleMode: 'linear',  // 'linear' | 'sqrt'; persisted to localStorage
-  _roseHover: null,         // wedge id under the cursor (compass rose inspection)
-  _roseWedges: null,        // hit-test geometry recorded by drawCompassRose
-  _roseGeom: null
+  activeTab: 'forecast'   // the look's tab in the app's names (switchTab)
 };
 
 // ── Utility functions ────────────────────────────
@@ -126,23 +101,6 @@ function directionLabel(deg) {
   return dirs[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
 }
 
-function directionArrow(deg) {
-  if (deg == null || isNaN(deg)) return '';
-  // Meteorological: deg is "from" direction.
-  // Arrow points where wind is blowing TO: N wind (0°) → ↓ (southward).
-  const arrows = ['↓','↙','←','↖','↑','↗','→','↘'];
-  const idx = Math.round((((deg) % 360 + 360) % 360) / 45) % 8;
-  return arrows[idx];
-}
-
-function tempColorClass(f) {
-  if (f == null) return '';
-  if (f < 50) return 'temp-cold';
-  if (f < 60) return 'temp-cool';
-  if (f < 70) return 'temp-warm';
-  return 'temp-hot';
-}
-
 function swellDirClass(deg) {
   if (!STATE.isChocomount || deg == null) return '';
   const min = CONFIG.chocomount.swellWindowMin;
@@ -152,15 +110,6 @@ function swellDirClass(deg) {
   if (deg >= min - edge && deg < min) return 'dir-edge';
   if (deg > max && deg <= max + edge) return 'dir-edge';
   return 'dir-out';
-}
-
-function swellDirColor(deg) {
-  if (!STATE.isChocomount || deg == null) return '#5a7fa0'; // blue for non-choc
-  const cls = swellDirClass(deg);
-  if (cls === 'dir-in') return '#3a7d56';
-  if (cls === 'dir-edge') return '#b87a2e';
-  if (cls === 'dir-out') return '#a09890';
-  return '#5a7fa0';
 }
 
 function formatTime(date) {
@@ -180,14 +129,6 @@ function formatAgo(date) {
     return m ? `${h}h ${m}m ago` : `${h}h ago`;
   }
   return `${Math.round(h / 24)}d ago`;
-}
-
-function formatDay(date) {
-  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
-}
-
-function formatDayShort(date) {
-  return date.toLocaleDateString('en-US', { weekday: 'short' });
 }
 
 function el(id) { return document.getElementById(id); }
@@ -376,44 +317,6 @@ function swellArrivalTime(periodSeconds, distanceMiles) {
   };
 }
 
-// ── Gate logic ───────────────────────────────────
-function initGate() {
-  const saved = sessionStorage.getItem('lcc-gate');
-  if (saved === 'no') {
-    STATE.boatGatePassed = true;
-    el('gate-overlay').classList.add('hidden');
-    el('app').classList.remove('hidden');
-    el('app-window')?.classList.remove('hidden');
-    initApp();
-    return;
-  }
-
-  el('gate-yes').addEventListener('click', () => {
-    // No persistence: Yes means "go home". Show splash, then return to question.
-    const question = el('gate-question');
-    question.classList.add('hidden');
-    const goHome = el('gate-go-home');
-    const clone = goHome.cloneNode(true);
-    clone.classList.remove('hidden');
-    goHome.replaceWith(clone);
-    setTimeout(() => {
-      // Re-show the question; user can pick again or click No to enter.
-      const splash = el('gate-go-home');
-      splash.classList.add('hidden');
-      question.classList.remove('hidden');
-    }, 2000);
-  });
-
-  el('gate-no').addEventListener('click', () => {
-    sessionStorage.setItem('lcc-gate', 'no');
-    STATE.boatGatePassed = true;
-    el('gate-overlay').classList.add('hidden');
-    el('app').classList.remove('hidden');
-    el('app-window')?.classList.remove('hidden');
-    initApp();
-  });
-}
-
 // ── Data fetching helpers ────────────────────────
 
 async function fetchJSON(url, timeout = 10000) {
@@ -498,9 +401,6 @@ function tidePredCacheKey(stationId, rangeDays, rangeHours) {
 function tideHiLoCacheKey(stationId, rangeDays) {
   return `lcc-cache-hilo-${stationId}-d${rangeDays}`;
 }
-function waterTempCacheKey(stationId) {
-  return `lcc-cache-water-${stationId}`;
-}
 
 // Tide spans the forecast chart (and Choc TV's day cards) fetch. The fetch
 // calls and the cache-first reads both use these, so their keys match.
@@ -520,30 +420,6 @@ function dropLegacyTideCacheKeys() {
       .filter(k => /^lcc-cache-tide-.+-d\d*-h\d*$/.test(k))
       .forEach(k => localStorage.removeItem(k));
   } catch (_) { /* non-fatal */ }
-}
-
-async function fetchText(url, timeout = 10000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
-  try {
-    const resp = await fetch(url, { signal: controller.signal });
-    clearTimeout(timer);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    return await resp.text();
-  } catch (err) {
-    clearTimeout(timer);
-    console.warn('Fetch failed:', url, err.message);
-    return null;
-  }
-}
-
-async function fetchTextWithProxies(rawUrl, timeout = 15000) {
-  for (const proxy of CONFIG.api.ndbcProxies) {
-    const url = proxy.wrap(rawUrl);
-    const result = await fetchText(url, timeout);
-    if (result) return result;
-  }
-  return null;
 }
 
 // Proxy chain for the NDBC stdmet historical archive. Used only by
@@ -700,41 +576,6 @@ async function fetchTideHiLo(stationId, rangeDays = 3) {
   return data;
 }
 
-async function fetchWaterTemp(stationId) {
-  const cached = readCache(waterTempCacheKey(stationId), CACHE_TTL.water);
-  if (cached) return cached;
-  const params = new URLSearchParams({
-    date: 'latest',
-    station: stationId,
-    product: 'water_temperature',
-    units: 'english',
-    time_zone: 'lst_ldt',
-    application: 'letscheckchoc',
-    format: 'json'
-  });
-  const data = await fetchJSON(`${CONFIG.api.coops}?${params}`);
-  if (data) writeCache(waterTempCacheKey(stationId), data);
-  return data;
-}
-
-// ── API: NDBC via CORS proxy ─────────────────────
-async function fetchNDBCStdmet(buoyId) {
-  return fetchTextWithProxies(CONFIG.api.ndbcBase + buoyId + '.txt', 15000);
-}
-
-async function fetchNDBCSpectral(buoyId) {
-  const base = CONFIG.api.ndbcBase + buoyId;
-  const [spec, dataSpec, swdir, swdir2, swr1, swr2] = await Promise.all([
-    fetchTextWithProxies(base + '.spec', 15000),
-    fetchTextWithProxies(base + '.data_spec', 15000),
-    fetchTextWithProxies(base + '.swdir', 15000),
-    fetchTextWithProxies(base + '.swdir2', 15000),
-    fetchTextWithProxies(base + '.swr1', 15000),
-    fetchTextWithProxies(base + '.swr2', 15000)
-  ]);
-  return { spec, dataSpec, swdir, swdir2, swr1, swr2 };
-}
-
 // ── API: Pipeline fallback for Chocomount ────────
 async function fetchPipelineBuoy() {
   const cached = readCache(PIPELINE_CACHE_KEY, CACHE_TTL.pipeline);
@@ -742,89 +583,6 @@ async function fetchPipelineBuoy() {
   const data = await fetchJSON('data/buoy.json');
   if (data) writeCache(PIPELINE_CACHE_KEY, data);
   return data;
-}
-
-// ── Parse NDBC stdmet text ───────────────────────
-function parseNDBCStdmet(text) {
-  if (!text) return null;
-  const lines = text.trim().split('\n');
-  if (lines.length < 3) return null;
-  // First two lines are headers
-  const headers = lines[0].trim().split(/\s+/);
-  const data = lines[2].trim().split(/\s+/);
-  if (data.length < 10) return null;
-
-  const obj = {};
-  headers.forEach((h, i) => { obj[h] = data[i]; });
-
-  const wvht = parseFloat(obj.WVHT);
-  const dpd = parseFloat(obj.DPD);
-  const apd = parseFloat(obj.APD);
-  const mwd = parseFloat(obj.MWD);
-  const wtmp = parseFloat(obj.WTMP);
-  const wspd = parseFloat(obj.WSPD);
-  const wdir = parseFloat(obj.WDIR);
-  const gst = parseFloat(obj.GST);
-
-  return {
-    waveHeight: isNaN(wvht) || wvht >= 99 ? null : wvht * 3.28084,
-    dominantPeriod: isNaN(dpd) || dpd >= 99 ? null : dpd,
-    avgPeriod: isNaN(apd) || apd >= 99 ? null : apd,
-    meanDirection: isNaN(mwd) || mwd >= 999 ? null : mwd,
-    waterTemp: isNaN(wtmp) || wtmp >= 99 ? null : wtmp * 9/5 + 32,
-    windSpeed: isNaN(wspd) || wspd >= 99 ? null : wspd * 2.237,
-    windDir: isNaN(wdir) || wdir >= 999 ? null : wdir,
-    windGust: isNaN(gst) || gst >= 99 ? null : gst * 2.237,
-    time: `${obj['#YY']}-${obj.MM}-${obj.DD} ${obj.hh}:${obj.mm} UTC`
-  };
-}
-
-// ── Parse NDBC spectral data ─────────────────────
-// NDBC realtime2 spectral files interleave each value with its frequency in
-// parens:  YY MM DD hh mm [sep_freq] v1 (f1) v2 (f2) v3 (f3) ...
-// data_spec has the extra sep_freq scalar before the pairs; swdir/swdir2/
-// swr1/swr2 do not.
-function parseSpectralFile(text, hasSepFreq) {
-  if (!text) return null;
-  const lines = text.trim().split('\n');
-  if (lines.length < 2) return null;
-  const row = lines[1].trim().split(/\s+/);
-  let i = 5 + (hasSepFreq ? 1 : 0);
-  const freqs = [], values = [];
-  while (i + 1 < row.length) {
-    const v = Number(row[i]);
-    const f = Number(row[i + 1].replace(/[()]/g, ''));
-    if (!Number.isFinite(v) || !Number.isFinite(f)) break;
-    values.push(v);
-    freqs.push(f);
-    i += 2;
-  }
-  return freqs.length ? { freqs, values } : null;
-}
-
-function parseNDBCSpectral(spectralData) {
-  if (!spectralData || !spectralData.dataSpec) return null;
-
-  const energy = parseSpectralFile(spectralData.dataSpec, true);
-  if (!energy) return null;
-
-  const dir1 = parseSpectralFile(spectralData.swdir, false);
-  const dir2 = parseSpectralFile(spectralData.swdir2, false);
-  const r1 = parseSpectralFile(spectralData.swr1, false);
-  const r2 = parseSpectralFile(spectralData.swr2, false);
-
-  const freqs = energy.freqs;
-  const bins = freqs.map((f, i) => ({
-    freq: f,
-    period: f > 0 ? 1 / f : 0,
-    energy: energy.values[i] || 0,
-    dir1: dir1 && dir1.values[i] != null ? dir1.values[i] : null,
-    dir2: dir2 && dir2.values[i] != null ? dir2.values[i] : 0,
-    r1: r1 && r1.values[i] != null ? r1.values[i] : 0.5,
-    r2: r2 && r2.values[i] != null ? r2.values[i] : 0.25
-  }));
-
-  return { freqs, bins };
 }
 
 // ── Find nearest tide station ────────────────────
@@ -842,406 +600,29 @@ function findNearestTideStation(lat, lon) {
   return { ...best, distance: bestDist };
 }
 
-// ── Find nearest NDBC buoy ───────────────────────
-function findNearestBuoy(lat, lon) {
-  let best = null;
-  let bestDist = Infinity;
-  for (const b of STATE.buoys) {
-    const d = haversineDistanceMiles(lat, lon, b.lat, b.lon);
-    if (d < bestDist) {
-      bestDist = d;
-      best = b;
-    }
-  }
-  return { ...best, distance: bestDist };
-}
-
-// ════════════════════════════════════════════════
-// MAP INITIALIZATION
-// ════════════════════════════════════════════════
-
-function initBuoyMap() {
-  STATE.buoyMap = L.map('buoy-map', {
-    zoomControl: true,
-    scrollWheelZoom: true
-  }).setView(CONFIG.map.center, CONFIG.map.zoom);
-
-  L.tileLayer(CONFIG.map.tileUrl, {
-    attribution: CONFIG.map.tileAttr,
-    maxZoom: 18,
-    subdomains: 'abcd'
-  }).addTo(STATE.buoyMap);
-
-  // Add buoy markers
-  STATE.buoys.forEach(buoy => {
-    if (buoy.home === 'chocomount' && !STATE.boatGatePassed) return;
-
-    const color = '#5a7fa0'; // default blue
-    // Chocomount buoy gets a regular dot marker (the star is placed separately)
-    const icon = L.divIcon({
-      className: 'buoy-marker',
-      html: `<div style="width:12px;height:12px;border-radius:50%;background:${color};"></div>`,
-      iconSize: [12, 12],
-      iconAnchor: [6, 6]
-    });
-
-    const marker = L.marker([buoy.lat, buoy.lon], { icon })
-      .addTo(STATE.buoyMap)
-      .bindTooltip(`${buoy.name}<br>${buoy.id}`, { direction: 'top', offset: [0, -8] });
-
-    marker.on('click', () => selectBuoy(buoy));
-    STATE.buoyMarkers.push({ marker, buoy });
-  });
-
-  // Add permanent Chocomount Star marker at the forecast point
-  if (STATE.boatGatePassed) {
-    const starIcon = L.divIcon({
-      className: 'choc-marker',
-      html: '⭐',
-      iconSize: [28, 28],
-      iconAnchor: [14, 14]
-    });
-    STATE.chocMarker = L.marker(
-      [CONFIG.chocomount.starLat, CONFIG.chocomount.starLon],
-      { icon: starIcon, zIndexOffset: 500 }
-    )
-      .addTo(STATE.buoyMap)
-      .bindTooltip('Chocomount Star<br>41.089°N, 71.721°W', { direction: 'top', offset: [0, -10] });
-
-    STATE.chocMarker.on('click', () => {
-      const chocBuoy = STATE.buoys.find(b => b.home === 'chocomount');
-      if (chocBuoy) selectBuoy(chocBuoy);
-    });
-  }
-
-  // Add draggable forecast pin
-  const pinIcon = L.divIcon({ className: 'pin-marker', html: '📍', iconSize: [24, 24], iconAnchor: [12, 24] });
-  STATE.forecastPin = L.marker([40.5, -72.0], {
-    icon: pinIcon,
-    draggable: true,
-    zIndexOffset: 1000
-  }).addTo(STATE.buoyMap);
-
-  STATE.forecastPin.on('dragend', () => {
-    const pos = STATE.forecastPin.getLatLng();
-    selectPin(pos.lat, pos.lng);
-  });
-
-  // Right-click to add custom spot
-  STATE.buoyMap.on('contextmenu', (e) => {
-    const name = prompt('Name this spot:');
-    if (!name) return;
-    const spots = JSON.parse(localStorage.getItem('lcc-spots') || '[]');
-    spots.push({ name, lat: e.latlng.lat, lon: e.latlng.lng });
-    localStorage.setItem('lcc-spots', JSON.stringify(spots));
-    addCustomSpotMarker({ name, lat: e.latlng.lat, lon: e.latlng.lng });
-  });
-
-  // Load saved custom spots
-  const spots = JSON.parse(localStorage.getItem('lcc-spots') || '[]');
-  spots.forEach(s => addCustomSpotMarker(s));
-
-  // Wire the [change] button on the collapsed summary
-  const expandBtn = el('buoy-map-expand');
-  if (expandBtn) {
-    expandBtn.addEventListener('click', () => setBuoyMapCollapsed(false));
-  }
-
-  // Restore collapse state on load. If a buoy/pin is already selected (saved
-  // session restore would have set STATE.selectedBuoy), respect the stored
-  // preference; otherwise force-expand.
-  const storedCollapsed = localStorage.getItem('lcc-buoy-map-collapsed');
-  const hasSelection = !!STATE.selectedBuoy || (STATE.pinLat != null && STATE.pinLon != null);
-  if (hasSelection && storedCollapsed === 'true') {
-    const lat = STATE.selectedBuoy ? STATE.selectedBuoy.lat : STATE.pinLat;
-    const lon = STATE.selectedBuoy ? STATE.selectedBuoy.lon : STATE.pinLon;
-    setBuoyMapCollapsed(true, buoyMapSummaryFor(STATE.selectedBuoy, lat, lon));
-  } else {
-    setBuoyMapCollapsed(false);
-  }
-}
-
-function addCustomSpotMarker(spot) {
-  const icon = L.divIcon({
-    className: 'pin-marker',
-    html: '📌',
-    iconSize: [18, 18],
-    iconAnchor: [9, 18]
-  });
-  L.marker([spot.lat, spot.lon], { icon })
-    .addTo(STATE.buoyMap)
-    .bindTooltip(spot.name, { direction: 'top', offset: [0, -12] })
-    .on('click', () => selectPin(spot.lat, spot.lon));
-}
-
-function initTideMap() {
-  STATE.tideMap = L.map('tide-map', {
-    zoomControl: true,
-    scrollWheelZoom: true
-  }).setView(CONFIG.map.center, CONFIG.map.zoom);
-
-  L.tileLayer(CONFIG.map.tileUrl, {
-    attribution: CONFIG.map.tileAttr,
-    maxZoom: 18,
-    subdomains: 'abcd'
-  }).addTo(STATE.tideMap);
-
-  STATE.tideStations.forEach(station => {
-    const icon = L.divIcon({
-      className: 'tide-station-marker',
-      html: `<div style="width:8px;height:8px;border-radius:50%;background:#5a7fa0;"></div>`,
-      iconSize: [8, 8],
-      iconAnchor: [4, 4]
-    });
-    const marker = L.marker([station.lat, station.lon], { icon })
-      .addTo(STATE.tideMap)
-      .bindTooltip(station.name, { direction: 'top', offset: [0, -6] });
-
-    marker.on('click', () => selectTideStation(station));
-    STATE.tideMarkers.push({ marker, station });
-  });
-
-  setFooter('footer-tide-map',
-    'CO-OPS tide prediction stations',
-    'https://tidesandcurrents.noaa.gov/tide_predictions.html',
-    'tidesandcurrents.noaa.gov'
-  );
-}
-
 // ════════════════════════════════════════════════
 // SELECTION LOGIC
 // ════════════════════════════════════════════════
 
-function buoyMapSummaryFor(buoy, lat, lon) {
-  const latStr = `${lat.toFixed(2)}°N`;
-  const lonStr = `${lon.toFixed(2)}°W`;
-  if (buoy) {
-    const prefix = buoy.home === 'chocomount' ? 'Choc · ' : '';
-    return `📍 ${prefix}${buoy.id} — ${buoy.name} · ${latStr}, ${lonStr}`;
-  }
-  return `📍 ${latStr}, ${lonStr}`;
-}
-
-function setBuoyMapCollapsed(collapsed, summaryText) {
-  const panel = el('panel-map');
-  if (!panel) return;
-  const summary = el('buoy-map-summary');
-  if (collapsed) {
-    panel.classList.add('is-collapsed');
-    if (summaryText && el('buoy-map-summary-text')) {
-      el('buoy-map-summary-text').textContent = summaryText;
-    }
-    if (summary) summary.style.display = '';
-  } else {
-    panel.classList.remove('is-collapsed');
-    if (summary) summary.style.display = 'none';
-    // Force Leaflet to recompute size after re-show
-    setTimeout(() => { if (STATE.buoyMap) STATE.buoyMap.invalidateSize(); }, 50);
-  }
-  localStorage.setItem('lcc-buoy-map-collapsed', collapsed ? 'true' : 'false');
-}
-
-function collapseBuoyMapForSelection(buoy, lat, lon) {
-  setBuoyMapCollapsed(true, buoyMapSummaryFor(buoy, lat, lon));
-}
-
 function selectBuoy(buoy) {
   STATE.selectedBuoy = buoy;
   STATE.isChocomount = buoy.home === 'chocomount';
-
-  const lat = buoy.lat;
-  const lon = buoy.lon;
-  STATE.pinLat = lat;
-  STATE.pinLon = lon;
-
-  // Move forecast pin near buoy (no pin when Leaflet failed to load)
-  STATE.forecastPin?.setLatLng([lat, lon]);
-
-  // Update header
-  const prefix = STATE.isChocomount ? 'Choc · ' : '';
-  el('header-location').textContent = `${prefix}${buoy.id} ${buoy.name}`;
-
-  // Update tab bar / per-tab visibility
-  updateTabBarVisibility();
-  syncBuoySelectDropdown();
-
-  // Collapse the buoy-selector map down to a one-line summary.
-  collapseBuoyMapForSelection(buoy, lat, lon);
-
-  // Load all data
+  STATE.pinLat = buoy.lat;
+  STATE.pinLon = buoy.lon;
   loadAllData(buoy);
-}
-
-function selectPin(lat, lon) {
-  STATE.selectedBuoy = null;
-  STATE.isChocomount = false;
-  STATE.pinLat = lat;
-  STATE.pinLon = lon;
-
-  el('header-location').textContent = `${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`;
-
-  updateTabBarVisibility();
-  syncBuoySelectDropdown();
-  collapseBuoyMapForSelection(null, lat, lon);
-  loadPinData(lat, lon);
-}
-
-async function selectTideStation(station) {
-  // Highlight the station on the map
-  STATE.tideMarkers.forEach(tm => {
-    tm.marker.getElement()?.querySelector('div')?.style.setProperty('background', '#5a7fa0');
-    tm.marker.getElement()?.classList.remove('tide-station-marker-active');
-  });
-  const found = STATE.tideMarkers.find(tm => tm.station.id === station.id);
-  if (found) {
-    found.marker.getElement()?.querySelector('div')?.style.setProperty('background', '#2c2825');
-    found.marker.getElement()?.classList.add('tide-station-marker-active');
-  }
-
-  // Fetch and display hi/lo tides
-  el('tide-map-info').innerHTML = `Loading tides for ${station.name}...`;
-  const hiloData = await fetchTideHiLo(station.id, 2);
-  if (hiloData && hiloData.predictions) {
-    let html = `<strong>${station.name}</strong> (${station.id})<br>`;
-    hiloData.predictions.slice(0, 8).forEach(p => {
-      const d = new Date(p.t);
-      const type = p.type === 'H' ? 'High' : 'Low';
-      const cls = p.type === 'H' ? 'tide-type-h' : 'tide-type-l';
-      html += `<span class="tide-item"><span class="tide-type ${cls}">${type}</span> ${formatTime(d)} ${formatDay(d)} · ${parseFloat(p.v).toFixed(1)} ft</span><br>`;
-    });
-    el('tide-map-info').innerHTML = html;
-  } else {
-    el('tide-map-info').innerHTML = `No tide data available for ${station.name}`;
-  }
 }
 
 // ════════════════════════════════════════════════
 // DATA LOADING
 // ════════════════════════════════════════════════
 
-// Renders condition cards + forecast chart for a buoy/pin context. Reused
-// by the SWR pre-render path (cached data) and the post-fetch refresh.
+// One forecast for the selected buoy: the SWR pre-paint (saved copies) and the
+// post-fetch refresh both land here, with the whole context. The look hooks
+// this function by name (previews/clean/core.js keeps ctx and raises 'data');
+// the look and Choc TV read STATE.forecastData.
 function renderForecastSet(ctx) {
-  const {
-    buoy, isChoc, selectedModel,
-    forecastLat, forecastLon, displayLat, displayLon,
-    marine, wind, buoyParsed, pipelineData,
-    tideHiLo, tidePred, tideStn
-  } = ctx;
-
-  updateSwellCard(buoyParsed, marine, buoy, pipelineSwellBand(pipelineData, buoy));
-  updateWindCard(wind, buoyParsed, isChoc, displayLat, displayLon);
-  updateWaterTempCard(buoyParsed, marine, isChoc);
-  updateDaylightCard(displayLat, displayLon);
-  updateSecondarySwellCard(marine, isChoc, forecastLat, forecastLon);
-  updateCoordFooters(buoy, forecastLat, forecastLon, displayLat, displayLon);
-  setForecastUnavailable(!(marine && marine.hourly));
-
-  if (marine && marine.hourly) {
-    const daylight = calcDaylight(displayLat, displayLon, new Date());
-
-    STATE._cachedMarine = marine;
-    STATE._cachedWind = wind;
-    STATE._cachedTideHiLo = tideHiLo;
-    STATE._cachedTidePred = tidePred;
-
-    updateTideCard(tideHiLo, tideStn);
-    drawForecastChart(marine, wind, daylight, tideHiLo, tidePred, buoyParsed);
-
-    if (isChoc) drawLineupMap(marine, wind, buoyParsed);
-
-    const coordLabel = isChoc
-      ? `${forecastLat}°N, ${Math.abs(forecastLon)}°W (open water)`
-      : `${forecastLat.toFixed(3)}°N, ${Math.abs(forecastLon).toFixed(3)}°W`;
-    // The marine cache ts is the true fetch time on both the SWR pre-paint
-    // and the post-fetch refresh (fetchMarineForecast writes it per fetch).
-    const marineTs = readCacheTs(marineCacheKey(forecastLat, forecastLon, selectedModel));
-    const updatedStr = marineTs
-      ? ` · updated ${formatTime(new Date(marineTs))} (${formatAgo(new Date(marineTs))})`
-      : '';
-    setFooter('footer-forecast',
-      `Open-Meteo Marine · ${describeForecastModel(selectedModel)} · ${coordLabel}${updatedStr}`,
-      'https://open-meteo.com/en/docs/marine-weather-api',
-      'open-meteo.com'
-    );
-  }
-}
-
-// Same as above, minus buoy-specific bits (used by pin loads).
-function renderPinForecastSet(ctx) {
-  const {
-    selectedModel, lat, lon,
-    marine, wind, tideHiLo, tidePred, tideStn
-  } = ctx;
-
-  updateSwellCard(null, marine, null);
-  updateWindCard(wind, null, false, lat, lon);
-  updateWaterTempCard(null, marine, false);
-  updateDaylightCard(lat, lon);
-  updateSecondarySwellCard(marine, false, lat, lon);
-  updateCoordFooters(null, lat, lon, lat, lon);
-  setForecastUnavailable(!(marine && marine.hourly));
-
-  if (marine && marine.hourly) {
-    const daylight = calcDaylight(lat, lon, new Date());
-    STATE._cachedTidePred = tidePred;
-    updateTideCard(tideHiLo, tideStn);
-    drawForecastChart(marine, wind, daylight, tideHiLo, tidePred);
-    const marineTs = readCacheTs(marineCacheKey(lat, lon, selectedModel));
-    const updatedStr = marineTs
-      ? ` · updated ${formatTime(new Date(marineTs))} (${formatAgo(new Date(marineTs))})`
-      : '';
-    setFooter('footer-forecast',
-      `Open-Meteo Marine · ${describeForecastModel(selectedModel)} · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W${updatedStr}`,
-      'https://open-meteo.com/en/docs/marine-weather-api',
-      'open-meteo.com'
-    );
-  }
-}
-
-// visible: the cache-first paint is up while the refresh runs. staleAsOf
-// (epoch ms): the refresh FAILED and the chart shows the last good copy
-// from then, so say so instead of "refreshing…".
-function setCacheRefreshIndicator(visible, staleAsOf) {
-  const ind = el('forecast-cache-indicator');
-  if (!ind) return;
-  const stale = Number.isFinite(staleAsOf);
-  ind.style.display = visible || stale ? '' : 'none';
-  ind.classList.toggle('is-stale', stale);
-  ind.textContent = stale
-    ? `Saved forecast from ${formatAsOfTime(staleAsOf)} · refresh failed`
-    : 'Cached · refreshing…';
-}
-
-// Explicit empty state for the forecast chart when there is truly no
-// forecast (Open-Meteo failed and no saved copy is young enough), instead
-// of blank canvases under a header claiming "Updated".
-function setForecastUnavailable(on) {
-  const container = el('forecast-chart-container');
-  if (!container) return;
-  container.classList.toggle('is-unavailable', !!on);
-  let note = el('forecast-unavailable-msg');
-  if (!on) {
-    if (note) note.style.display = 'none';
-    return;
-  }
-  if (!note) {
-    note = document.createElement('div');
-    note.id = 'forecast-unavailable-msg';
-    note.className = 'forecast-unavailable-msg';
-    note.setAttribute('role', 'status');
-    container.insertBefore(note, container.firstChild);
-  }
-  note.textContent = "Forecast unavailable: Open-Meteo didn't respond and there's no saved forecast from the last 24 h. Reload to try again.";
-  note.style.display = '';
-}
-
-// "6:12 AM" today, "Wed 6:12 PM" on any other day.
-function formatAsOfTime(ms) {
-  const d = new Date(ms);
-  return d.toDateString() === new Date().toDateString()
-    ? formatTime(d)
-    : `${formatDayShort(d)} ${formatTime(d)}`;
+  const { marine, wind, buoyParsed, tideHiLo, tidePred } = ctx;
+  if (marine && marine.hourly) STATE.forecastData = { marine, wind, tideHiLo, tidePred, buoyParsed };
 }
 
 // ── Buoy obs from the pipeline / NDBC ──
@@ -1279,15 +660,6 @@ function buoyParsedFromPipeline(pData, buoy) {
     windGust: b.wind_gust,
     time: b.time || 'pipeline data'
   }, buoy, 'pipeline');
-}
-
-// Pipeline spectral bins for the compass rose / spectrum, or null when the
-// pipeline file isn't this buoy's or has no bins.
-function pipelineSpectralFor(buoy, pData) {
-  if (!pipelineIsFor(pData, buoy)) return null;
-  const bins = pData.spectral_bins;
-  if (!Array.isArray(bins) || !bins.length) return null;
-  return { freqs: bins.map(b => b.freq), bins };
 }
 
 // The swell card's 8 s+ band for this buoy: the pipeline's own swell_band
@@ -1441,9 +813,10 @@ async function fetchForecastRound({ forecastLat, forecastLon, windLat, windLon, 
 //                     tides:{asOf, origin}, buoy:{obsMs, origin} }; origin is
 //                     'live' | 'cache' | 'stale-cache' | 'pipeline' | 'failed'.
 // STATE.lastLoadCompletedAt stays the "a load finished" signal; these say
-// how old the data on screen really is. The header shows the same truth.
+// how old the data on screen really is. The look hooks this function by name
+// (previews/clean/core.js raises 'data').
 let _forecastDrawnAsOf = null;   // age of the forecast last drawn by a load
-function recordDataHealth(health, buoyHealth, hasTideStation) {
+function recordDataHealth(health, buoyHealth) {
   STATE.dataHealth = {
     marine: health.marine,
     wind: health.wind,
@@ -1460,31 +833,13 @@ function recordDataHealth(health, buoyHealth, hasTideStation) {
   // cards keeps its real age (past the 24 h fallback cap); none → null.
   const fd = STATE.forecastData;
   STATE.dataAsOf = fd && fd.marine ? _forecastDrawnAsOf : null;
-
-  const anyStale = forecast.some(s => s.origin === 'stale-cache');
-  const hdr = el('header-update-time');
-  if (!hdr) return;
-  let text;
-  if (health.marine.origin === 'failed') {
-    text = 'Forecast unavailable';
-  } else if (anyStale) {
-    text = `Refresh failed · data from ${formatAsOfTime(STATE.dataAsOf)}`;
-  } else {
-    const missing = [];
-    if (health.wind.origin === 'failed') missing.push('wind');
-    if (hasTideStation && health.tides.origin === 'failed') missing.push('tides');
-    text = `Updated ${formatAsOfTime(STATE.dataAsOf)}` + (missing.length ? ` · no ${missing.join(' or ')}` : '') +
-      (hasTideStation && health.tides.origin === 'stale-cache' ? ' · saved tides' : '');
-  }
-  hdr.textContent = text;
-  hdr.classList.toggle('is-stale', health.marine.origin === 'failed' || anyStale);
 }
 
 // ── Load concurrency guard ──────────────────────
-// Rapid buoy clicks, model changes, or the kiosk auto-refresh can start a
-// new load while an older one is still awaiting fetches; the generation
-// counter makes the superseded run stop touching the DOM at its next
-// checkpoint, and _loadInFlight lets timers skip firing mid-load.
+// A model change, the ↻ refresh or Choc TV's auto-refresh can start a new
+// load while an older one is still awaiting fetches; the generation counter
+// makes the superseded run stop writing STATE at its next checkpoint, and
+// _loadInFlight lets timers skip firing mid-load.
 let _loadGen = 0;
 let _loadInFlight = false;
 function isDataLoadInFlight() { return _loadInFlight; }
@@ -1543,255 +898,39 @@ async function _loadAllDataImpl(buoy, _gen) {
       buoyParsed: cachedBuoyParsed, pipelineData: cachedPipeline,
       tideHiLo: cachedHiLo, tidePred: cachedPred, tideStn
     });
-    setCacheRefreshIndicator(true);
-  } else {
-    el('val-swell-height').textContent = '···';
-    // The whole swell card, so the previous buoy's detail and source can't
-    // sit under this buoy's name while the load runs.
-    el('val-swell-detail').textContent = '···';
-    el('val-swell-arrival').style.display = 'none';
-    setFooter('footer-swell', '');
-    el('val-wind-speed').textContent = '···';
-    el('val-water-temp').textContent = '···';
-    el('val-tide').textContent = '···';
-    setCacheRefreshIndicator(false);
   }
 
-  // Live NDBC (non-Choc buoys, and only with a relay in
-  // CONFIG.api.ndbcProxies) starts now but never gates the chart: the
-  // forecast renders on Open-Meteo + CO-OPS and the buoy reading is patched
-  // in when it lands. Choc's buoy comes from the pipeline's data/buoy.json.
-  const liveBuoyP = buoy.spectral && !isChoc ? fetchNDBCStdmet(buoy.id) : Promise.resolve(null);
+  // Choc's buoy comes from the pipeline's data/buoy.json (scripts/fetch_buoy.py
+  // reads NDBC every 2 h: a browser can't). It never gates the forecast.
   const pipelineP = isChoc ? fetchPipelineBuoy() : Promise.resolve(null);
 
-  // ── Forecast chart deps (live → saved copy → nothing) ──
+  // ── Forecast (live → saved copy → nothing) ──
   const round = await fetchForecastRound({
     forecastLat, forecastLon, windLat: displayLat, windLon: displayLon, tideStn, selectedModel
   });
   const pipelineData = await pipelineP;
   if (_gen !== _loadGen) return; // superseded by a newer load
 
-  let buoyParsed = buoyParsedFromPipeline(pipelineData, buoy);
+  const buoyParsed = buoyParsedFromPipeline(pipelineData, buoy);
   STATE._cachedBuoyParsed = buoyParsed;
 
-  const renderCtx = {
+  renderForecastSet({
     buoy, isChoc, selectedModel: round.marineModel,
     forecastLat, forecastLon, displayLat, displayLon,
     marine: round.marine, wind: round.wind, buoyParsed, pipelineData,
     tideHiLo: round.hiloRaw ? round.hiloRaw.predictions : null,
     tidePred: round.predRaw ? round.predRaw.predictions : null,
     tideStn
-  };
-  renderForecastSet(renderCtx);
-  setCacheRefreshIndicator(false,
-    round.health.marine.origin === 'stale-cache' ? round.health.marine.asOf : undefined);
+  });
 
-  // ── Tides panel ──
-  if (STATE.nearestTideStation) {
-    await loadTidesPanel(STATE.nearestTideStation);
-    el('panel-tides').style.display = '';
-  } else {
-    el('panel-tides').style.display = 'none';
-  }
-  if (_gen !== _loadGen) return; // superseded by a newer load
-
-  // ── Live buoy reading (non-Choc, relay configured) ──
-  const liveParsed = tagBuoyParsed(parseNDBCStdmet(await liveBuoyP), buoy, 'live');
-  if (_gen !== _loadGen) return; // superseded by a newer load
-  if (liveParsed) {
-    buoyParsed = liveParsed;
-    STATE._cachedBuoyParsed = buoyParsed;
-    renderForecastSet(Object.assign(renderCtx, { buoyParsed }));
-  }
-
-  // ── Spectral data (compass rose + spectrum) ──
-  if (buoy.spectral) {
-    el('panel-spectral-row').style.display = '';
-    el('panel-spectral-summary').style.display = '';
-    // Drop the previous buoy's summary so a failed load can't leak a stale
-    // Hs into the compass-rose center (resolveHsFt prefers it).
-    STATE.lastSpecSummary = null;
-    let parsed = null;
-    let spectralRaw = null;
-    let isStale = false;
-
-    // Live NDBC for non-Choc buoys (only with a relay configured; with none
-    // every file comes back null at once). Choc is pipeline-only.
-    if (!isChoc) {
-      try {
-        spectralRaw = await fetchNDBCSpectral(buoy.id);
-        parsed = parseNDBCSpectral(spectralRaw);
-      } catch (err) {
-        console.warn('Spectral CORS fetch failed:', buoy.id, err);
-      }
-    }
-
-    // Pipeline data, only when it is this buoy's own
-    if (!parsed || !parsed.bins || parsed.bins.length === 0) {
-      try {
-        const pData = pipelineData || await fetchPipelineBuoy();
-        const fromPipeline = pipelineSpectralFor(buoy, pData);
-        if (fromPipeline) {
-          parsed = fromPipeline;
-          isStale = true;
-          // Use pipeline spectral summary for the summary table
-          if (pData.spectral_summary) {
-            spectralRaw = spectralRaw || {};
-            spectralRaw._pipelineSummary = pData.spectral_summary;
-            spectralRaw._fetchTime = pData.fetch_time;
-            // Buoy observation time ("YYYY-MM-DD HH:mm UTC") for the
-            // ARCHIVE freshness badge.
-            spectralRaw._obsTimeStr = pData.buoy && pData.buoy.time ? pData.buoy.time : null;
-          }
-        }
-      } catch (err) {
-        console.warn('Pipeline spectral fallback failed:', err);
-      }
-    }
-    if (_gen !== _loadGen) return; // superseded by a newer load
-
-    if (parsed && parsed.bins && parsed.bins.length > 0) {
-      STATE.lastSpectral = parsed;
-      STATE.lastBuoyParsed = buoyParsed;
-      // New bins → any prior hover selection points at stale wedges.
-      _setRoseHover(null);
-      showSpectralCharts();
-      renderSpectralSummary(spectralRaw, buoyParsed);
-      requestAnimationFrame(() => {
-        drawCompassRose(parsed, buoyParsed);
-        drawSpectrum(parsed);
-      });
-      const staleNote = isStale ? ' · pipeline fallback' : '';
-      setFooter('footer-compass',
-        `ndbc ${buoy.id} · ${buoy.name} · ${buoy.lat}°N, ${Math.abs(buoy.lon)}°W${staleNote}`,
-        `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}`,
-        'ndbc station page'
-      );
-      setFooter('footer-spectrum',
-        `ndbc ${buoy.id} spectral data${staleNote}`,
-        `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}`,
-        'ndbc station page'
-      );
-      // Freshness (live/stale/archive + timestamps) lives in the table's
-      // status strip; the footer keeps only the station identity.
-      setFooter('footer-spectral-summary',
-        `ndbc ${buoy.id} spectral summary`,
-        `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}`,
-        'ndbc station page'
-      );
-    } else {
-      console.warn('Spectral parse returned no bins for buoy', buoy.id);
-      if (!isChoc) {
-        // Nothing of this buoy's own: drop the last buoy's spectrum so a
-        // resize or rose-scale redraw can't repaint it under this name.
-        STATE.lastSpectral = null;
-        STATE.lastBuoyParsed = null;
-      }
-      showSpectralEmpty(buoy.id, isChoc
-        ? `No spectral data for ${buoy.id} in the latest pipeline update.`
-        : `No live spectrum for ${buoy.id}: NDBC doesn't allow browser requests and no relay is set up. ` +
-          `Only Choc's buoy (44097) is fetched, every 2 h, by the pipeline.`);
-      el('panel-spectral-summary').style.display = 'none';
-    }
-  } else {
-    el('panel-spectral-row').style.display = '';
-    el('panel-spectral-summary').style.display = 'none';
-    STATE.lastSpecSummary = null;
-    showSpectralEmpty();
-  }
-
-  // ── Tide station map ──
-  highlightNearestTideStation(displayLat, displayLon);
-
-  // Update time: lastLoadCompletedAt = this load finished; dataAsOf and the
-  // header = how old the data on screen really is.
+  // lastLoadCompletedAt = this load finished; dataAsOf and dataHealth = how
+  // old the data on screen really is.
   STATE.lastLoadCompletedAt = Date.now();
   recordDataHealth(round.health, {
     obsMs: buoyParsed ? buoyParsed.obsMs : null,
     origin: buoyParsed ? buoyParsed.src : 'failed'
-  }, !!tideStn);
-}
-
-async function loadPinData(lat, lon) {
-  const gen = ++_loadGen;
-  _loadInFlight = true;
-  try {
-    await _loadPinDataImpl(lat, lon, gen);
-  } finally {
-    if (gen === _loadGen) _loadInFlight = false;
-  }
-}
-
-async function _loadPinDataImpl(lat, lon, _gen) {
-  const selectedModel = getForecastModel();
-  const tideStn = findNearestTideStation(lat, lon);
-  STATE.nearestTideStation = tideStn;
-
-  // ── SWR: paint from cache before any network hits ──
-  const cachedMarine  = readCache(marineCacheKey(lat, lon, selectedModel), CACHE_TTL.marine);
-  const cachedWind    = readCache(windCacheKey(lat, lon), CACHE_TTL.wind);
-  const cachedHiLoRaw = tideStn ? readCache(tideHiLoCacheKey(tideStn.id, CHART_TIDE_SPAN.hiloDays), CACHE_TTL.hilo) : null;
-  const cachedPredRaw = tideStn ? readCache(tidePredCacheKey(tideStn.id, undefined, CHART_TIDE_SPAN.predHours), CACHE_TTL.tide) : null;
-  const cachedHiLo = cachedHiLoRaw && cachedHiLoRaw.predictions ? cachedHiLoRaw.predictions : null;
-  const cachedPred = cachedPredRaw && cachedPredRaw.predictions ? cachedPredRaw.predictions : null;
-
-  const tidesCacheReady = !tideStn || (cachedHiLo && cachedPred);
-  const canRenderFromCache = !!(cachedMarine && cachedMarine.hourly && cachedWind && tidesCacheReady);
-
-  if (canRenderFromCache) {
-    renderPinForecastSet({
-      selectedModel, lat, lon,
-      marine: cachedMarine, wind: cachedWind,
-      tideHiLo: cachedHiLo, tidePred: cachedPred, tideStn
-    });
-    setCacheRefreshIndicator(true);
-  } else {
-    el('val-swell-height').textContent = '···';
-    el('val-swell-detail').textContent = '···';
-    el('val-swell-arrival').style.display = 'none';
-    setFooter('footer-swell', '');
-    el('val-wind-speed').textContent = '···';
-    el('val-water-temp').textContent = '···';
-    el('val-tide').textContent = '···';
-    setCacheRefreshIndicator(false);
-  }
-
-  // ── Fire fresh fetches in parallel (live → saved copy → nothing) ──
-  const round = await fetchForecastRound({
-    forecastLat: lat, forecastLon: lon, windLat: lat, windLon: lon, tideStn, selectedModel
   });
-  if (_gen !== _loadGen) return; // superseded by a newer load
-
-  renderPinForecastSet({
-    selectedModel: round.marineModel, lat, lon,
-    marine: round.marine, wind: round.wind,
-    tideHiLo: round.hiloRaw ? round.hiloRaw.predictions : null,
-    tidePred: round.predRaw ? round.predRaw.predictions : null,
-    tideStn
-  });
-  setCacheRefreshIndicator(false,
-    round.health.marine.origin === 'stale-cache' ? round.health.marine.asOf : undefined);
-
-  if (STATE.nearestTideStation) {
-    await loadTidesPanel(STATE.nearestTideStation);
-    el('panel-tides').style.display = '';
-  } else {
-    el('panel-tides').style.display = 'none';
-  }
-  if (_gen !== _loadGen) return; // superseded by a newer load
-
-  // No spectral for pin — show empty state
-  el('panel-spectral-row').style.display = '';
-  showSpectralEmpty();
-
-  highlightNearestTideStation(lat, lon);
-  STATE.lastLoadCompletedAt = Date.now();
-  recordDataHealth(round.health, { obsMs: null, origin: 'failed' }, !!tideStn);
 }
-
-// ════════════════════════════════════════════════
-// UPDATE CONDITION CARDS
-// ════════════════════════════════════════════════
 
 // ── Swell band (hero swell card) ──
 // The card reports the >= 8 s part of the buoy spectrum. NDBC's own SwH at
@@ -1835,9 +974,6 @@ function swellBandFromBins(bins, minPeriod = SWELL_BAND_MIN_PERIOD_S) {
 }
 
 // ── Buoy obs age ──
-// The pipeline lands every 2-8 h, so a "current" reading can be most of a
-// tide cycle old. Amber past 2 h, red past 6 h; "Current" only within 90 min.
-const BUOY_OBS_CURRENT_MS = 90 * 60 * 1000;
 const BUOY_OBS_STALE_MS = 2 * 60 * 60 * 1000;
 const BUOY_OBS_OLD_MS = 6 * 60 * 60 * 1000;
 
@@ -1854,326 +990,15 @@ function buoyObsAge(obsMs, nowMs = Date.now()) {
   };
 }
 
-// The buoy sits ~50 mi out, so what it measured reaches Choc one travel
-// time after the OBSERVATION, not after now. A clock time keeps an old
-// reading from passing for an ETA.
-function buoySwellArrivalText(periodS, obsMs, nowMs = Date.now()) {
-  const arrival = swellArrivalTime(periodS, CONFIG.chocomount.buoyDistanceMiles);
-  if (!arrival) return null;
-  if (!Number.isFinite(obsMs)) return `${arrival.label} buoy-to-Choc travel`;
-  const atMs = obsMs + arrival.minutes * 60 * 1000;
-  return `${atMs > nowMs ? 'reaches' : 'reached'} Choc ~${formatTime(new Date(atMs))}`;
-}
-
-function updateSwellCard(buoyParsed, marine, buoy, swellBand) {
-  const isChoc = STATE.isChocomount;
-  const card = el('card-swell');
-  card.classList.remove('quality-good', 'quality-fair', 'quality-poor', 'is-stale', 'is-old');
-  const label = card.querySelector('.condition-label');
-  const extra = el('val-swell-arrival');
-
-  // Prefer buoy data for current swell
-  if (buoyParsed && buoyParsed.waveHeight != null) {
-    const totalH = buoyParsed.waveHeight;  // WVHT total (ft) — swell + wind waves
-    const age = buoyObsAge(buoyParsed.obsMs);
-
-    // Hero number: the 8 s+ band of the spectrum (see SWELL_BAND_MIN_PERIOD_S),
-    // with its own peak period and direction (the buoy's MWD when the band
-    // has none: flat, or no direction file). Total WVHT stays in the detail.
-    const band = swellBand && Number.isFinite(swellBand.hsM) ? swellBand : null;
-    const swellFt = band ? Math.round(band.hsM * 3.28084 * 10) / 10 : null;
-    const d = band && band.dir != null ? Math.round(band.dir) : buoyParsed.meanDirection;
-    const displayP = band ? band.peakPeriod : buoyParsed.dominantPeriod;
-
-    // Card accent based on total wave height
-    if (totalH >= 3) card.classList.add('quality-good');
-    else if (totalH >= 1.5) card.classList.add('quality-fair');
-    else card.classList.add('quality-poor');
-    if (age && age.level !== 'fresh') card.classList.add('is-' + age.level);
-
-    if (label) {
-      const what = band ? `Swell ${band.minPeriod}+ sec` : 'Swell';
-      label.textContent = `${what}: ${age && age.ageMs <= BUOY_OBS_CURRENT_MS ? 'Current' : 'Buoy'}`;
-    }
-    el('val-swell-height').textContent = swellFt != null
-      ? `${swellFt.toFixed(1)} ft swell`
-      : `${totalH.toFixed(1)} ft`;
-    el('val-swell-height').className = `condition-value ${swellDirClass(d)}`;
-    el('val-swell-detail').textContent = `${displayP ? displayP.toFixed(0) + 's' : '—'} · ${directionLabel(d)} (${d != null ? d + '°' : '—'})${swellFt != null ? ' · ' + totalH.toFixed(1) + ' ft total' : ''}`;
-
-    // When the buoy measured it, and (Choc) when that swell reaches the
-    // beach, from the band's period.
-    const parts = [];
-    if (age) parts.push(`Buoy obs ${formatAsOfTime(buoyParsed.obsMs)} (${age.label})`);
-    const arrivalText = isChoc && displayP ? buoySwellArrivalText(displayP, buoyParsed.obsMs) : null;
-    if (arrivalText) parts.push(arrivalText);
-    extra.style.display = parts.length ? '' : 'none';
-    extra.textContent = parts.join(' · ');
-
-    const buoyLabel = buoy ? `ndbc ${buoy.id} · ${buoy.name}` : 'ndbc buoy';
-    const obsNote = age ? ` · obs ${formatAsOfTime(buoyParsed.obsMs)}` : '';
-    const buoyUrl = buoy ? `https://www.ndbc.noaa.gov/station_page.php?station=${buoy.id}` : 'https://www.ndbc.noaa.gov/';
-    setFooter('footer-swell', buoyLabel + obsNote, buoyUrl, 'ndbc station page');
-
-  } else if (marine && marine.current) {
-    // No buoy reading: Open-Meteo's model nowcast (swell-only variables)
-    const c = marine.current;
-    const h = c.swell_wave_height ?? c.wave_height;
-    const p = c.swell_wave_period ?? c.wave_period;
-    const d = c.swell_wave_direction ?? c.wave_direction;
-    if (label) label.textContent = 'Swell: Current';
-    el('val-swell-height').textContent = h != null ? `${h.toFixed(1)} ft` : '—';
-    el('val-swell-height').className = 'condition-value';
-    el('val-swell-detail').textContent = `${p ? p.toFixed(0) + 's' : '—'} · ${directionLabel(d)}`;
-    extra.style.display = 'none';
-    setFooter('footer-swell', 'Open-Meteo Marine', 'https://open-meteo.com/en/docs/marine-weather-api', 'open-meteo.com');
-  } else {
-    if (label) label.textContent = 'Swell: Current';
-    el('val-swell-height').textContent = '—';
-    el('val-swell-detail').textContent = 'No data available';
-    extra.style.display = 'none';
-    setFooter('footer-swell', 'No data source available');
-  }
-}
-
-function updateWindCard(wind, buoyParsed, isChoc, lat, lon) {
-  if (wind && wind.current) {
-    const s = wind.current.wind_speed_10m;
-    const d = wind.current.wind_direction_10m;
-    const g = wind.current.wind_gusts_10m;
-    const arrow = directionArrow(d);
-    el('val-wind-speed').textContent = s != null ? `${Math.round(s)} mph` : '—';
-
-    el('val-wind-detail').innerHTML = d != null
-      ? `<span class="wind-arrow-inline">${arrow}</span> ${directionLabel(d)} (${Math.round(d)}°) · gusts ${g != null ? Math.round(g) : '—'} mph`
-      : `${directionLabel(d)} · gusts ${g != null ? Math.round(g) : '—'} mph`;
-    setFooter('footer-wind',
-      `Open-Meteo Weather · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`,
-      'https://open-meteo.com/en/docs',
-      'open-meteo.com'
-    );
-  } else if (buoyParsed && buoyParsed.windSpeed != null) {
-    const arrow = directionArrow(buoyParsed.windDir);
-    el('val-wind-speed').textContent = `${Math.round(buoyParsed.windSpeed)} mph`;
-    el('val-wind-detail').innerHTML = `<span class="wind-arrow-inline">${arrow}</span> ${directionLabel(buoyParsed.windDir)} · gusts ${buoyParsed.windGust ? Math.round(buoyParsed.windGust) : '—'} mph`;
-    setFooter('footer-wind', 'ndbc buoy', 'https://www.ndbc.noaa.gov/', 'ndbc');
-  } else {
-    el('val-wind-speed').textContent = '—';
-    el('val-wind-detail').textContent = 'No data available';
-    setFooter('footer-wind', 'No data source available');
-  }
-}
-
-async function updateWaterTempCard(buoyParsed, marine, isChoc) {
-  let temp = null;
-  let source = '';
-  let sourceUrl = '';
-
-  if (isChoc) {
-    // Try CO-OPS Montauk first
-    const coopsData = await fetchWaterTemp(CONFIG.chocomount.waterTempStation);
-    if (coopsData && coopsData.data && coopsData.data.length > 0) {
-      temp = parseFloat(coopsData.data[0].v);
-      source = `CO-OPS ${CONFIG.chocomount.waterTempStation} · Montauk, NY`;
-      sourceUrl = `https://tidesandcurrents.noaa.gov/stationhome.html?id=${CONFIG.chocomount.waterTempStation}`;
-    }
-  }
-
-  if (temp == null && buoyParsed && buoyParsed.waterTemp != null) {
-    temp = buoyParsed.waterTemp;
-    source = 'ndbc buoy (offshore)';
-    sourceUrl = 'https://www.ndbc.noaa.gov/';
-  }
-
-  if (temp == null && marine && marine.current && marine.current.sea_surface_temperature != null) {
-    temp = marine.current.sea_surface_temperature;
-    source = 'Open-Meteo sst';
-    sourceUrl = 'https://open-meteo.com/en/docs/marine-weather-api';
-  }
-
-  if (temp != null) {
-    el('val-water-temp').textContent = `${Math.round(temp)}°F`;
-    el('val-water-temp').className = `condition-value ${tempColorClass(temp)}`;
-    el('val-temp-detail').textContent = temp < 50 ? 'Very cold' : temp < 60 ? 'Cold' : temp < 70 ? 'Comfortable' : 'Warm';
-    setFooter('footer-temp', source, sourceUrl, 'source');
-  } else {
-    el('val-water-temp').textContent = '—';
-    el('val-water-temp').className = 'condition-value';
-    el('val-temp-detail').textContent = 'No data available';
-    setFooter('footer-temp', 'No data source available');
-  }
-}
-
-function updateDaylightCard(lat, lon) {
-  const dl = calcDaylight(lat, lon, new Date());
-  if (dl.alwaysDay) {
-    el('val-daylight').textContent = 'Midnight sun';
-    el('val-daylight-detail').textContent = '24 hrs of daylight';
-  } else if (dl.alwaysNight) {
-    el('val-daylight').textContent = 'Polar night';
-    el('val-daylight-detail').textContent = '0 hrs of daylight';
-  } else {
-    const h = Math.floor(dl.daylightHours);
-    const m = Math.round((dl.daylightHours - h) * 60);
-    el('val-daylight').textContent = `${formatTime(dl.firstLight)} → ${formatTime(dl.lastLight)}`;
-    el('val-daylight-detail').textContent = `${h}h ${m}m of daylight`;
-  }
-  setFooter('footer-daylight', `Astronomical calc · ${lat.toFixed(3)}°N, ${Math.abs(lon).toFixed(3)}°W`);
-}
-
 // ════════════════════════════════════════════════
-// TIDE CONDITION CARD
+// CHART PALETTE (the forecast-vs-buoy check in My ratings' Details)
 // ════════════════════════════════════════════════
 
-function updateTideCard(tideHiLo, station) {
-  const card = el('card-tide');
-  if (!card) return;
+// The look's own type (previews/clean/theme.css --sans), for the canvas labels.
+let FC_CHART_FONT = '-apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif';
 
-  if (!tideHiLo || tideHiLo.length === 0) {
-    el('val-tide').textContent = '—';
-    el('val-tide-detail').textContent = 'No tide data';
-    setFooter('footer-tide-card', '');
-    return;
-  }
-
-  const now = Date.now();
-  // Find next upcoming tide event
-  let next = null;
-  let prev = null;
-  for (const p of tideHiLo) {
-    const t = new Date(p.t).getTime();
-    if (t > now && !next) next = p;
-    if (t <= now) prev = p;
-  }
-
-  if (next) {
-    const nd = new Date(next.t);
-    const type = next.type === 'H' ? 'High' : 'Low';
-    const timeStr = formatTime(nd);
-    const dayStr = nd.toLocaleDateString('en-US', { weekday: 'short' });
-    const val = parseFloat(next.v).toFixed(1);
-    el('val-tide').textContent = `${type} ${timeStr}`;
-    el('val-tide-detail').textContent = `${dayStr} · ${val} ft`;
-
-    // Color accent: low tide = good for surfing
-    card.classList.remove('quality-good', 'quality-fair', 'quality-poor');
-    if (next.type === 'L') card.classList.add('quality-good');
-    else card.classList.add('quality-fair');
-  }
-
-  if (prev && next) {
-    // Show "rising" or "falling"
-    const prevType = prev.type === 'H' ? 'High' : 'Low';
-    const trend = prev.type === 'H' ? 'Falling' : 'Rising';
-    el('val-tide-detail').textContent += ` · ${trend}`;
-  }
-
-  if (station) {
-    setFooter('footer-tide-card',
-      `CO-OPS ${station.id}`,
-      `https://tidesandcurrents.noaa.gov/noaatidepredictions.html?id=${station.id}`,
-      'tides'
-    );
-  }
-}
-
-// ════════════════════════════════════════════════
-// TIDES PANEL
-// ════════════════════════════════════════════════
-
-async function loadTidesPanel(station) {
-  const [predData, hiloData] = await Promise.all([
-    fetchTidePredictions(station.id, 3),
-    fetchTideHiLo(station.id, 3)
-  ]);
-
-  if (predData && predData.predictions && predData.predictions.length > 0) {
-    drawTideChart(predData.predictions);
-  }
-
-  if (hiloData && hiloData.predictions) {
-    const list = el('tide-hilo-list');
-    list.innerHTML = '';
-    hiloData.predictions.slice(0, 12).forEach(p => {
-      const d = new Date(p.t);
-      const type = p.type === 'H' ? 'H' : 'L';
-      const cls = p.type === 'H' ? 'tide-type-h' : 'tide-type-l';
-      const item = document.createElement('span');
-      item.className = 'tide-item';
-      item.innerHTML = `<span class="tide-type ${cls}">${type}</span> ${formatTime(d)} ${formatDayShort(d)} · ${parseFloat(p.v).toFixed(1)}ft`;
-      list.appendChild(item);
-    });
-  }
-
-  const distLabel = station.distance ? ` · ${Math.round(station.distance)} mi away` : '';
-  setFooter('footer-tides',
-    `CO-OPS ${station.id} · ${station.name}${distLabel}`,
-    `https://tidesandcurrents.noaa.gov/noaatidepredictions.html?id=${station.id}`,
-    'tidesandcurrents.noaa.gov'
-  );
-}
-
-function highlightNearestTideStation(lat, lon) {
-  const nearest = findNearestTideStation(lat, lon);
-  STATE.tideMarkers.forEach(tm => {
-    const div = tm.marker.getElement()?.querySelector('div');
-    if (div) div.style.background = '#5a7fa0';
-  });
-  if (nearest) {
-    const found = STATE.tideMarkers.find(tm => tm.station.id === nearest.id);
-    if (found) {
-      const div = found.marker.getElement()?.querySelector('div');
-      if (div) div.style.background = '#2c2825';
-    }
-    // Center tide map on the area
-    STATE.tideMap?.setView([lat, lon], 8);
-  }
-}
-
-// ════════════════════════════════════════════════
-// SWELL FORECAST CHART (Canvas 2D, three stacked card-panels)
-// ════════════════════════════════════════════════
-//
-// Three independent <canvas> elements, each inside its own card:
-//
-//   ┌─ #forecast-chart-container ─────────────────────────┐
-//   │  ┌─ day row ── HTML #forecast-day-header ────────┐  │
-//   │  ┌─ swell card ─ canvas#forecast-canvas-swell  ──┐  │
-//   │  ┌─ wind  card ─ canvas#forecast-canvas-wind  ──┐  │
-//   │  ┌─ tide  card ─ canvas#forecast-canvas-tide  ──┐  │
-//   └──────────────────────────────────────────────────────┘
-//
-// Coordination: a single `_drawForecastChartFull` cycle calls into
-// drawSwellPanel → drawWindPanel → drawTidePanel → renderDayLabels in
-// sequence. Every canvas (and the HTML day row) uses the same
-// horizontal padding (FC_PAD.left/right) so the per-canvas xPos
-// matches the HTML label positions; day separators / nighttime shading
-// land at the same x on every card and below each day header label.
-// Visual reference: project/Swell Forecast.html (React prototype).
-
-const FORECAST_HOURS = 168; // 7 × 24
-
-// Canvas-internal padding (CSS px). Identical on every panel canvas so
-// the time-axis (xPos) matches across all three cards.
-// Left gutter is sized for the longest tick label ("+3.5ft" — the top
-// tick of each axis carries the unit suffix so no unit text floats
-// inside the plot).
-const FC_PAD = { left: 44, right: 40 };
-
-// Web1-era font stacks for all chart-rendered text on the forecast tab.
-// Primary chart labels (numbers, axes, compass cardinals, inline tide
-// markers) use the same Tahoma-family sans-serif as the surrounding IE
-// chrome so canvas text reads as text rather than a rasterized image.
-// Monospace numeric readouts use Courier New, matching the address-bar
-// and detail-bar field fonts.
-let FC_CHART_FONT = '"MS Sans Serif", Tahoma, sans-serif'; // kiosk.js re-points this at Orbitron
-const FC_CHART_FONT_MONO = '"Courier New", Courier, monospace';
-
-// Retro Win95 chart palette — hardcoded hex literals to match the
-// Forecast-tab visual overhaul. NO css variable indirection.
-// NOTE: every color the chart drawers use lives in this palette (no
-// hardcoded literals in the draw functions) so kiosk.js can re-theme the
-// charts at boot via Object.assign without touching any drawing code.
+// Every color the chart drawers use lives here (model.js swaps plotBg to
+// match the theme).
 const FC_RETRO = {
   plotBg:        '#F8F4E8',
   grid:          '#808080',
@@ -2211,1749 +1036,9 @@ const FC_RETRO = {
   pulseRing:     '26, 59, 106'               // rgb triplet; alpha composed per frame
 };
 
-// Dashed gridline helper — 0.5px stroke, 2-2 dash, color #808080.
-function _fcDrawDashedHGrid(ctx, x0, x1, y) {
-  ctx.save();
-  ctx.strokeStyle = FC_RETRO.grid;
-  ctx.lineWidth = 0.5;
-  ctx.setLineDash([2, 2]);
-  ctx.beginPath();
-  ctx.moveTo(x0, y);
-  ctx.lineTo(x1, y);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
-}
-
-function drawForecastChart(marine, wind, daylight, tideHiLo, tidePred, buoyParsed) {
-  // Cache so the scrubber and external reflows can re-render without re-fetching.
-  STATE.forecastData = { marine, wind, daylight, tideHiLo, tidePred, buoyParsed };
-  // New data → re-resolve scrubber position (may reload from sessionStorage).
-  STATE.scrubberIdx = -1;
-  _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred, buoyParsed);
-}
-
-// ── Shared per-canvas helpers ──────────────────────
-//
-// Every panel canvas receives the same `common` payload (time range,
-// daylight, etc.). Each panel computes its own (cssW, cssH, plotW) but
-// uses identical FC_PAD.left/right so the time-axis lines up across
-// all three cards.
-
-function _fcXFor(time, common, plotLeft, plotW) {
-  return plotLeft + ((time.getTime() - common.t0) / common.tRange) * plotW;
-}
-
-// Dashed vertical "now" marker — drawn on every panel so the current
-// moment reads as one continuous line across the stacked cards. Returns
-// the x position (CSS px) or null when "now" is outside the chart window.
-function _fcDrawNowLine(ctx, common, plotLeft, plotW, top, bottom) {
-  const nowMs = Date.now();
-  if (nowMs < common.t0 || nowMs > common.tEnd) return null;
-  const nowX = _fcXFor(new Date(nowMs), common, plotLeft, plotW);
-  ctx.save();
-  ctx.strokeStyle = FC_RETRO.nowLine;
-  ctx.lineWidth = 1;
-  ctx.setLineDash([3, 3]);
-  ctx.beginPath();
-  ctx.moveTo(nowX, top);
-  ctx.lineTo(nowX, bottom);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
-  return nowX;
-}
-
-// Subtle wash over hours already in the past, so elapsed vs upcoming
-// reads at a glance without fighting the night shading.
-function _fcDrawPastDim(ctx, common, plotLeft, plotW, top, h) {
-  const nowMs = Date.now();
-  if (nowMs <= common.t0) return;
-  const nowX = Math.min(
-    _fcXFor(new Date(nowMs), common, plotLeft, plotW),
-    plotLeft + plotW
-  );
-  ctx.fillStyle = FC_RETRO.pastDim;
-  ctx.fillRect(plotLeft, top, nowX - plotLeft, h);
-}
-
-function _fcDrawNightShading(ctx, common, plotLeft, plotW, top, height) {
-  const dl0 = common.daylight;
-  if (!dl0 || dl0.alwaysDay) return;
-  ctx.fillStyle = FC_RETRO.nightShade;
-  for (let dayOff = 0; dayOff < common.dayCount + 1; dayOff++) {
-    const dayDate = new Date(common.firstDay);
-    dayDate.setDate(dayDate.getDate() + dayOff);
-    const dl = calcDaylight(common.pinLat, common.pinLon, dayDate);
-    if (!dl || !dl.sunset || !dl.sunrise) continue;
-    const sunsetX = _fcXFor(dl.sunset, common, plotLeft, plotW);
-    const midnightDate = new Date(dayDate);
-    midnightDate.setDate(midnightDate.getDate() + 1);
-    midnightDate.setHours(0, 0, 0, 0);
-    const midnightX = _fcXFor(midnightDate, common, plotLeft, plotW);
-    if (sunsetX < plotLeft + plotW && midnightX > plotLeft) {
-      ctx.fillRect(Math.max(sunsetX, plotLeft), top,
-        Math.min(midnightX, plotLeft + plotW) - Math.max(sunsetX, plotLeft), height);
-    }
-    const morningStart = new Date(dayDate); morningStart.setHours(0, 0, 0, 0);
-    const mStartX = _fcXFor(morningStart, common, plotLeft, plotW);
-    const sunriseX = _fcXFor(dl.sunrise, common, plotLeft, plotW);
-    if (mStartX < plotLeft + plotW && sunriseX > plotLeft) {
-      ctx.fillRect(Math.max(mStartX, plotLeft), top,
-        Math.min(sunriseX, plotLeft + plotW) - Math.max(mStartX, plotLeft), height);
-    }
-  }
-}
-
-function _fcDrawDaySeparators(ctx, common, plotLeft, plotW, top, height) {
-  // Light midnight verticals — appear as continuous columns when drawn
-  // on every panel canvas; kept faint so they read as calendar guides,
-  // not data.
-  ctx.strokeStyle = FC_RETRO.daySep;
-  ctx.lineWidth = 1;
-  for (let dayOff = 0; dayOff <= common.dayCount; dayOff++) {
-    const midDate = new Date(common.firstDay);
-    midDate.setDate(midDate.getDate() + dayOff);
-    const xx = _fcXFor(midDate, common, plotLeft, plotW);
-    if (xx > plotLeft && xx < plotLeft + plotW) {
-      ctx.beginPath();
-      ctx.moveTo(xx, top);
-      ctx.lineTo(xx, top + height);
-      ctx.stroke();
-    }
-  }
-}
-
-// Filled black 3px circle. Color arg is accepted for backwards-compat
-// with prior call sites but the retro spec mandates black dots.
-function drawScrubberDot(ctx, x, y, _color) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(x, y, 3, 0, Math.PI * 2);
-  ctx.fillStyle = FC_RETRO.scrubDot;
-  ctx.fill();
-  ctx.restore();
-}
-
-// ── Per-panel drawers ──────────────────────────────
-
-function drawSwellPanel(common, data) {
-  const canvas = el('forecast-canvas-swell');
-  if (!canvas) return null;
-  const ctx = canvas.getContext('2d');
-  const { cssW, cssH } = ensureCanvasCssDims(canvas, ctx);
-
-  const isMobile = common.isMobile;
-  const plotLeft = FC_PAD.left;
-  const plotW    = cssW - FC_PAD.left - FC_PAD.right;
-  // Upper region (~66%) hosts swell-height area + period line — the main
-  // signal gets the space; the direction sub-panel takes the rest.
-  const top      = 4;
-  const usableH  = cssH - 8;
-  const h        = Math.round(usableH * 0.66);
-  const subTop   = top + h + 5;
-  const subBot   = cssH - 2;
-
-  // Cream plot background.
-  ctx.fillStyle = FC_RETRO.plotBg;
-  ctx.fillRect(0, 0, cssW, cssH);
-
-  const { heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellDiv, periodMax, obsHsFt, obsMs } = data;
-
-  // Dashed horizontal gridlines on the upper region, one per axis division.
-  for (let q = 1; q < swellDiv; q++) {
-    const yy = top + (h * q / swellDiv);
-    _fcDrawDashedHGrid(ctx, plotLeft, plotLeft + plotW, yy);
-  }
-
-  // Night shading + day separators span both regions (same x-coords) but
-  // stay inside the framed plot band, not the full canvas.
-  _fcDrawNightShading(ctx, common, plotLeft, plotW, top, subBot - top);
-  _fcDrawDaySeparators(ctx, common, plotLeft, plotW, top, subBot - top);
-  _fcDrawPastDim(ctx, common, plotLeft, plotW, top, subBot - top);
-  const ySwell  = (val) => top + h - (Math.min(val, swellMaxY) / swellMaxY) * h;
-  const yPeriod = (val) => {
-    const v = Math.max(0, Math.min(periodMax, val));
-    return top + h - (v / periodMax) * h;
-  };
-  const xPos = (t) => _fcXFor(t, common, plotLeft, plotW);
-
-  // Clipped panel area
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(plotLeft, top, plotW, h);
-  ctx.clip();
-
-  // Secondary area
-  if (secHeights.length) {
-    ctx.beginPath();
-    ctx.moveTo(xPos(common.allTimes[0]), ySwell(0));
-    for (let i = 0; i <= common.lastIdx; i++) {
-      const v = secHeights[i] != null ? secHeights[i] : 0;
-      ctx.lineTo(xPos(common.allTimes[i]), ySwell(v));
-    }
-    ctx.lineTo(xPos(common.allTimes[common.lastIdx]), ySwell(0));
-    ctx.closePath();
-    ctx.fillStyle = FC_RETRO.secSwellFill;
-    ctx.fill();
-  }
-
-  // Primary area
-  ctx.beginPath();
-  ctx.moveTo(xPos(common.allTimes[0]), ySwell(0));
-  for (let i = 0; i <= common.lastIdx; i++) {
-    const v = heights[i] != null ? heights[i] : 0;
-    ctx.lineTo(xPos(common.allTimes[i]), ySwell(v));
-  }
-  ctx.lineTo(xPos(common.allTimes[common.lastIdx]), ySwell(0));
-  ctx.closePath();
-  ctx.fillStyle = FC_RETRO.swellFill;
-  ctx.fill();
-
-  // Primary stroke (1px outline on filled area).
-  ctx.beginPath();
-  ctx.strokeStyle = FC_RETRO.swellStroke;
-  ctx.lineWidth = 1;
-  let started = false;
-  for (let i = 0; i <= common.lastIdx; i++) {
-    const v = heights[i];
-    if (v == null) continue;
-    const x = xPos(common.allTimes[i]);
-    const y = ySwell(v);
-    if (!started) { ctx.moveTo(x, y); started = true; }
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  // Period line on the right axis (burnt orange) with a white halo
-  // beneath so it stays legible against the dark-blue swell area. Two
-  // passes over the same coordinates: 4px white at 0.95 alpha, then
-  // 2px solid orange. Direct beginPath avoids any Path2D edge cases.
-  const periodPts = [];
-  for (let i = 0; i <= common.lastIdx; i++) {
-    const p = wavePeriods[i];
-    if (p == null || !Number.isFinite(p)) continue;
-    periodPts.push([xPos(common.allTimes[i]), yPeriod(p)]);
-  }
-  if (periodPts.length >= 2) {
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    // Background-tinted halo for legibility against the swell fill.
-    ctx.beginPath();
-    ctx.moveTo(periodPts[0][0], periodPts[0][1]);
-    for (let i = 1; i < periodPts.length; i++) ctx.lineTo(periodPts[i][0], periodPts[i][1]);
-    ctx.strokeStyle = FC_RETRO.periodHalo;
-    ctx.lineWidth = 4;
-    ctx.stroke();
-    // Period line — rust orange, 2px.
-    ctx.beginPath();
-    ctx.moveTo(periodPts[0][0], periodPts[0][1]);
-    for (let i = 1; i < periodPts.length; i++) ctx.lineTo(periodPts[i][0], periodPts[i][1]);
-    ctx.strokeStyle = FC_RETRO.period;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  // Y-axis labels: quartile ticks in regular 11px MS Sans Serif black
-  // (classic dialog text). The top tick carries the unit ("6ft", "24s")
-  // so no unit text floats inside the plot, and label y is clamped so
-  // the end glyphs never clip against the panel edges.
-  const clampLabelY = (yy) => Math.min(Math.max(yy, 7), cssH - 7);
-  ctx.font = `11px ${FC_CHART_FONT}`;
-  ctx.fillStyle = FC_RETRO.ink;
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  for (let q = 0; q <= swellDiv; q++) {
-    const v = swellMaxY * (1 - q / swellDiv);
-    const label = q === 0 ? `${v}ft` : String(v);
-    ctx.fillText(label, plotLeft - 4, clampLabelY(top + (h * q / swellDiv)));
-  }
-  // Period axis wears the period line's own color so the right-hand
-  // scale reads as belonging to that line.
-  ctx.textAlign = 'left';
-  ctx.fillStyle = FC_RETRO.period;
-  for (let q = 0; q <= swellDiv; q++) {
-    const v = periodMax * (1 - q / swellDiv);
-    const label = q === 0 ? `${v}s` : String(v);
-    ctx.fillText(label, plotLeft + plotW + 4, clampLabelY(top + (h * q / swellDiv)));
-  }
-  ctx.fillStyle = FC_RETRO.ink;
-
-  // ── Direction sub-panel ──
-  // Y-axis is compass degrees the swell is COMING FROM. The visible band
-  // is auto-fit to ±120° around the configured swell-window midpoint, so
-  // the window band itself + plenty of headroom for adjacent directions
-  // is always in view.
-  const winMin = CONFIG.chocomount.swellWindowMin;
-  const winMax = CONFIG.chocomount.swellWindowMax;
-  const winMid = (winMin + winMax) / 2;
-  // Owner call: the axis never shows north of due east — swell at Choc
-  // can't arrive from over the island, so E (90°) caps the top.
-  const dirRangeMin = Math.max(winMid - 120, 90);
-  const dirRangeMax = winMid + 120;
-  const dirRange    = dirRangeMax - dirRangeMin;
-  const subInsetT = subTop + 4;
-  const subInsetB = subBot - 4;
-  const subInsetH = subInsetB - subInsetT;
-  const yDir = (deg) => subInsetT + ((deg - dirRangeMin) / dirRange) * subInsetH;
-
-  // Window band: shaded rectangle covering the swellWindow degrees.
-  ctx.fillStyle = FC_RETRO.windBand;
-  const yWinTop = yDir(winMin);
-  const yWinBot = yDir(winMax);
-  ctx.fillRect(plotLeft, Math.min(yWinTop, yWinBot), plotW, Math.abs(yWinBot - yWinTop));
-
-  // Helper: draw a polyline through compass-degree values, breaking the
-  // line wherever the absolute jump between consecutive samples exceeds
-  // 180° (interpreted as a wraparound, not a real direction change).
-  const drawDirPolyline = (ctx2, dirs, opts) => {
-    const include = opts.include || (() => true);
-    ctx2.save();
-    ctx2.beginPath();
-    ctx2.rect(plotLeft, subTop, plotW, subBot - subTop);
-    ctx2.clip();
-    if (opts.dash) ctx2.setLineDash(opts.dash);
-    ctx2.strokeStyle = opts.color;
-    ctx2.lineWidth = opts.lineWidth || 1.5;
-    ctx2.lineCap = 'round';
-    ctx2.beginPath();
-    let prevVal = null;
-    let prevOk = false;
-    for (let i = 0; i <= common.lastIdx; i++) {
-      const v = dirs[i];
-      const ok = (v != null) && include(i);
-      if (!ok) { prevOk = false; prevVal = null; continue; }
-      const x = xPos(common.allTimes[i]);
-      const y = yDir(v);
-      if (!prevOk) {
-        ctx2.moveTo(x, y);
-      } else if (Math.abs(v - prevVal) > 180) {
-        // Wraparound — start a new sub-segment instead of drawing a long
-        // diagonal across the panel.
-        ctx2.moveTo(x, y);
-      } else {
-        ctx2.lineTo(x, y);
-      }
-      prevVal = v;
-      prevOk = true;
-    }
-    ctx2.stroke();
-    ctx2.restore();
-  };
-
-  if (swellDirs && swellDirs.length) {
-    drawDirPolyline(ctx, swellDirs, { color: FC_RETRO.dirPrimary, lineWidth: 1.5 });
-  }
-  if (secDirs && secDirs.length) {
-    drawDirPolyline(ctx, secDirs, {
-      color: FC_RETRO.dirSecondary,
-      lineWidth: 1.5,
-      dash: [4, 3],
-      // Only draw secondary direction where the secondary height is
-      // meaningful — leaves natural gaps when there's no real secondary
-      // swell to attribute the line to.
-      include: (i) => secHeights[i] != null && secHeights[i] >= 1.0
-    });
-  }
-
-  // Y-axis tick labels (compass abbreviations falling inside the
-  // visible direction range).
-  const compassPoints = [
-    { deg:   0, label: 'N'   }, { deg:  45, label: 'NE'  },
-    { deg:  90, label: 'E'   }, { deg: 135, label: 'SE'  },
-    { deg: 180, label: 'S'   }, { deg: 225, label: 'SW'  },
-    { deg: 270, label: 'W'   }, { deg: 315, label: 'NW'  }
-  ];
-  ctx.font = `11px ${FC_CHART_FONT}`;
-  ctx.fillStyle = FC_RETRO.ink;
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  for (const cp of compassPoints) {
-    if (cp.deg < dirRangeMin || cp.deg > dirRangeMax) continue;
-    ctx.fillText(cp.label, plotLeft - 4, yDir(cp.deg));
-  }
-
-  // "FROM" label clarifies the y-axis represents the direction the
-  // swell is COMING FROM (oceanographic convention). Top-right of the
-  // sub-panel, away from the compass tick labels in the left gutter.
-  ctx.font = `bold 10px ${FC_CHART_FONT}`;
-  ctx.fillStyle = FC_RETRO.ink2;
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'top';
-  ctx.fillText('FROM', plotLeft + plotW - 6, subTop + 3);
-
-  // Crisp 1px frames around both plot regions — Excel-97 style finished
-  // edges instead of fills bleeding into the cream.
-  ctx.strokeStyle = FC_RETRO.frame;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(plotLeft + 0.5, top + 0.5, plotW - 1, h - 1);
-  ctx.strokeRect(plotLeft + 0.5, subTop + 0.5, plotW - 1, subBot - subTop - 1);
-
-  // Dashed "now" line spanning the height region and the direction
-  // sub-panel, drawn before the scrubber dots so markers layer on top.
-  _fcDrawNowLine(ctx, common, plotLeft, plotW, top, subBot);
-
-  // Buoy observation — white diamond on the swell panel at the time it was
-  // MEASURED (the pipeline lands every 2-8 h, so pinning it to the now line
-  // passed an old reading off as current); skipped when that time is
-  // unknown or over 6 h old. The buoy reports TOTAL significant height while
-  // the line plots the swell component, so this reads as "measured sea vs
-  // forecast swell" (approximate by design). Clamped to the axis ceiling.
-  const obsX = obsHsFt != null && obsMs != null && Date.now() - obsMs <= BUOY_OBS_OLD_MS &&
-    obsMs >= common.t0 && obsMs <= common.tEnd ? xPos(new Date(obsMs)) : null;
-  if (obsX != null) {
-    const oy = ySwell(Math.min(obsHsFt, swellMaxY));
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(obsX, oy - 4);
-    ctx.lineTo(obsX + 4, oy);
-    ctx.lineTo(obsX, oy + 4);
-    ctx.lineTo(obsX - 4, oy);
-    ctx.closePath();
-    ctx.fillStyle = FC_RETRO.obsFill;
-    ctx.fill();
-    ctx.strokeStyle = FC_RETRO.obsStroke;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    if (!isMobile) {
-      ctx.font = `9px ${FC_CHART_FONT}`;
-      ctx.fillStyle = FC_RETRO.ink2;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('obs', obsX + 7, oy);
-    }
-    ctx.restore();
-  }
-
-  // Scrubber dots. The vertical scrub line itself is the HTML
-  // .forecast-crosshair overlay — drawing a second line on the canvas at
-  // the same x doubled it into a smudge, so the canvas only marks values.
-  const sIdx = STATE.scrubberIdx;
-  if (typeof sIdx === 'number' && sIdx >= 0 && sIdx <= common.lastIdx) {
-    const tx = xPos(common.allTimes[sIdx]);
-    // Upper region: secondary height, primary height, period.
-    const secH = secHeights[sIdx];
-    if (secH != null && secH >= 1.0) {
-      drawScrubberDot(ctx, tx, ySwell(secH));
-    }
-    const priH = heights[sIdx];
-    if (priH != null) {
-      drawScrubberDot(ctx, tx, ySwell(priH));
-    }
-    const per = wavePeriods[sIdx];
-    if (per != null && Number.isFinite(per)) {
-      drawScrubberDot(ctx, tx, yPeriod(per));
-    }
-    // Direction sub-panel: primary direction, secondary direction
-    // (gated by secondary height ≥ 1ft, matching the line's gating).
-    // Clipped so a direction outside the visible y-range is hidden — same
-    // treatment the existing direction polylines get.
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(plotLeft, subTop, plotW, subBot - subTop);
-    ctx.clip();
-    const priDir = swellDirs ? swellDirs[sIdx] : null;
-    if (priDir != null) {
-      drawScrubberDot(ctx, tx, yDir(priDir));
-    }
-    const secDir = secDirs ? secDirs[sIdx] : null;
-    if (secDir != null && secH != null && secH >= 1.0) {
-      drawScrubberDot(ctx, tx, yDir(secDir));
-    }
-    ctx.restore();
-  }
-
-  return {
-    canvas, cssW, cssH, plotLeft, plotW, top, h,
-    swellMaxY, ySwell, yPeriod
-  };
-}
-
-function drawWindPanel(common, data) {
-  const canvas = el('forecast-canvas-wind');
-  if (!canvas) return null;
-  const ctx = canvas.getContext('2d');
-  const { cssW, cssH } = ensureCanvasCssDims(canvas, ctx);
-
-  const isMobile = common.isMobile;
-  const plotLeft = FC_PAD.left;
-  const plotW    = cssW - FC_PAD.left - FC_PAD.right;
-  const top      = 4;
-  const h        = cssH - 8;
-
-  ctx.fillStyle = FC_RETRO.plotBg;
-  ctx.fillRect(0, 0, cssW, cssH);
-  _fcDrawNightShading(ctx, common, plotLeft, plotW, top, h);
-  _fcDrawDaySeparators(ctx, common, plotLeft, plotW, top, h);
-  _fcDrawPastDim(ctx, common, plotLeft, plotW, top, h);
-
-  const { windSpeeds, windDirs, windMaxY } = data;
-  const yWind = (val) => top + h - (Math.min(val, windMaxY) / windMaxY) * h;
-  const xPos  = (t) => _fcXFor(t, common, plotLeft, plotW);
-
-  // Wind quality colors — offshore (green) / cross-shore (yellow) / onshore (red).
-  // Light winds (<5 mph) upgrade one tier so colors don't mislead at calm hours.
-  const OFFSHORE_CENTER = 335;
-  const colorFor = (dir, speed) => {
-    if (dir == null) return FC_RETRO.windNull;
-    const gap = Math.min(((dir - OFFSHORE_CENTER) % 360 + 360) % 360,
-                        ((OFFSHORE_CENTER - dir) % 360 + 360) % 360);
-    let bucket;
-    if (gap < 60)        bucket = 'off';
-    else if (gap < 120)  bucket = 'cross';
-    else                 bucket = 'on';
-    if (speed != null && speed < 5) {
-      if (bucket === 'cross') bucket = 'off';
-      else if (bucket === 'on') bucket = 'cross';
-    }
-    if (bucket === 'off')   return FC_RETRO.windOff;
-    if (bucket === 'cross') return FC_RETRO.windCross;
-    return FC_RETRO.windOn;
-  };
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(plotLeft, top, plotW, h);
-  ctx.clip();
-  for (let i = 0; i < common.lastIdx; i++) {
-    const x1 = xPos(common.allTimes[i]);
-    const x2 = xPos(common.allTimes[i + 1]);
-    const w1 = windSpeeds[i]     != null ? windSpeeds[i]     : 0;
-    const w2 = windSpeeds[i + 1] != null ? windSpeeds[i + 1] : 0;
-    ctx.beginPath();
-    ctx.moveTo(x1, yWind(0));
-    ctx.lineTo(x1, yWind(w1));
-    ctx.lineTo(x2, yWind(w2));
-    ctx.lineTo(x2, yWind(0));
-    ctx.closePath();
-    ctx.fillStyle = colorFor(windDirs[i], windSpeeds[i]);
-    ctx.fill();
-  }
-  ctx.beginPath();
-  ctx.strokeStyle = FC_RETRO.windStroke;
-  ctx.lineWidth = 1.25;
-  let wStarted = false;
-  for (let i = 0; i <= common.lastIdx; i++) {
-    const w = windSpeeds[i];
-    if (w == null) continue;
-    const x = xPos(common.allTimes[i]);
-    const y = yWind(w);
-    if (!wStarted) { ctx.moveTo(x, y); wStarted = true; }
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-  ctx.restore();
-
-  // Horizontal dashed gridlines at 5 mph intervals — #808080, 0.5px, 2-2.
-  for (let v = 5; v < windMaxY; v += 5) {
-    _fcDrawDashedHGrid(ctx, plotLeft, plotLeft + plotW, yWind(v));
-  }
-
-  // Y-axis labels: every 5 mph in regular 11px sans, black. Top tick
-  // carries the unit ("25mph"); label y clamped so end glyphs don't clip.
-  ctx.font = `11px ${FC_CHART_FONT}`;
-  ctx.fillStyle = FC_RETRO.ink;
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  for (let v = 0; v <= windMaxY; v += 5) {
-    const label = v === windMaxY ? `${v}mph` : String(v);
-    const yy = Math.min(Math.max(yWind(v), 7), cssH - 7);
-    ctx.fillText(label, plotLeft - 4, yy);
-  }
-
-  // Crisp 1px plot frame, then the dashed "now" line beneath the markers.
-  ctx.strokeStyle = FC_RETRO.frame;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(plotLeft + 0.5, top + 0.5, plotW - 1, h - 1);
-  _fcDrawNowLine(ctx, common, plotLeft, plotW, top, top + h);
-
-  // Scrubber dot (the scrub line is the HTML crosshair overlay).
-  const sIdx = STATE.scrubberIdx;
-  if (typeof sIdx === 'number' && sIdx >= 0 && sIdx <= common.lastIdx) {
-    const tx = xPos(common.allTimes[sIdx]);
-    const ws = windSpeeds[sIdx];
-    if (ws != null) {
-      drawScrubberDot(ctx, tx, yWind(ws));
-    }
-  }
-
-  return { canvas, cssW, cssH, plotLeft, plotW, top, h, windMaxY };
-}
-
-function drawTidePanel(common, data) {
-  const canvas = el('forecast-canvas-tide');
-  if (!canvas) return null;
-  const ctx = canvas.getContext('2d');
-  const { cssW, cssH } = ensureCanvasCssDims(canvas, ctx);
-
-  const isMobile = common.isMobile;
-  const plotLeft = FC_PAD.left;
-  const plotW    = cssW - FC_PAD.left - FC_PAD.right;
-  const top      = 4;
-  const h        = cssH - 8;
-
-  ctx.fillStyle = FC_RETRO.plotBg;
-  ctx.fillRect(0, 0, cssW, cssH);
-  _fcDrawNightShading(ctx, common, plotLeft, plotW, top, h);
-  _fcDrawDaySeparators(ctx, common, plotLeft, plotW, top, h);
-  _fcDrawPastDim(ctx, common, plotLeft, plotW, top, h);
-
-  const { tidePred, tideHiLo } = data;
-  let tideMin = 0, tideMax = 1, tideY = null;
-  if (tidePred && tidePred.length > 1) {
-    const vals = tidePred.map(p => parseFloat(p.v)).filter(Number.isFinite);
-    tideMin = Math.min(...vals);
-    tideMax = Math.max(...vals);
-    const tideRange = (tideMax - tideMin) || 1;
-    const padInside = 4;
-    tideY = (v) => (top + padInside) + (1 - (v - tideMin) / tideRange) * (h - 2 * padInside);
-
-    // Today's portion gets full opacity; days 2-7 fade to 0.7. Subtle
-    // "you are here" cue without breaking the curve continuity.
-    const todayEnd = new Date(); todayEnd.setHours(24, 0, 0, 0);
-    const todayEndX = _fcXFor(todayEnd, common, plotLeft, plotW);
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(plotLeft, top, plotW, h);
-    ctx.clip();
-
-    const tideStroke = FC_RETRO.tide;
-    const drawSegment = (alpha, xClipMin, xClipMax) => {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(xClipMin, top, Math.max(0, xClipMax - xClipMin), h);
-      ctx.clip();
-      ctx.beginPath();
-      ctx.strokeStyle = tideStroke;
-      ctx.globalAlpha = alpha;
-      ctx.lineWidth = 2.5;
-      let tStarted = false;
-      for (const p of tidePred) {
-        const tt = new Date(p.t).getTime();
-        if (tt < common.t0 || tt > common.tEnd) continue;
-        const v = parseFloat(p.v);
-        if (!Number.isFinite(v)) continue;
-        const x = _fcXFor(new Date(tt), common, plotLeft, plotW);
-        const y = tideY(v);
-        if (!tStarted) { ctx.moveTo(x, y); tStarted = true; }
-        else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-      ctx.restore();
-    };
-    drawSegment(1.0, plotLeft, Math.min(todayEndX, plotLeft + plotW));
-    drawSegment(0.7, Math.max(todayEndX, plotLeft), plotLeft + plotW);
-    ctx.restore();
-  }
-
-  // Y-axis labels for tide range: max / 0 / min in regular 11px sans.
-  // Top tick carries the unit ("+3.5ft"); ends clamped against clipping.
-  if (tideY && Number.isFinite(tideMin) && Number.isFinite(tideMax)) {
-    ctx.font = `11px ${FC_CHART_FONT}`;
-    ctx.fillStyle = FC_RETRO.ink;
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    const fmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(1);
-    ctx.fillText(fmt(tideMax) + 'ft', plotLeft - 4, Math.max(tideY(tideMax), 7));
-    ctx.fillText(fmt(tideMin), plotLeft - 4, Math.min(tideY(tideMin), cssH - 7));
-    if (tideMin < 0 && tideMax > 0) {
-      ctx.fillText('0', plotLeft - 4, tideY(0));
-      _fcDrawDashedHGrid(ctx, plotLeft, plotLeft + plotW, tideY(0));
-    }
-  }
-
-  // Low-tide markers + sparse labels (with collision avoidance)
-  const nowMs = Date.now();
-  if (tideHiLo && tideY) {
-    const lowsInWindow = tideHiLo
-      .filter(p => p.type === 'L')
-      .map(p => ({ t: new Date(p.t).getTime(), v: parseFloat(p.v) }))
-      .filter(p => p.t >= common.t0 && p.t <= common.tEnd && Number.isFinite(p.v));
-    const lowsAfterNow = lowsInWindow.filter(p => p.t >= nowMs).sort((a, b) => a.t - b.t);
-    const labelSet = new Set(lowsAfterNow.slice(0, 2).map(p => p.t));
-
-    // First pass: unlabeled markers.
-    for (const lo of lowsInWindow) {
-      if (labelSet.has(lo.t)) continue;
-      const xx = _fcXFor(new Date(lo.t), common, plotLeft, plotW);
-      if (xx < plotLeft || xx > plotLeft + plotW) continue;
-      const yy = tideY(lo.v);
-      ctx.fillStyle = FC_RETRO.tideMarkFaint;
-      ctx.beginPath();
-      ctx.moveTo(xx, yy + 1);
-      ctx.lineTo(xx - 3, yy - 4);
-      ctx.lineTo(xx + 3, yy - 4);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // Second pass: labeled lows (the next two after nowMs).
-    // Estimate label width once so we can collision-check.
-    ctx.font = `${isMobile ? '9px' : '10px'} ${FC_CHART_FONT}`;
-    const labelWidth = ctx.measureText('12:00pm').width + 8;
-    const labeled = lowsAfterNow.slice(0, 2).map(lo => ({
-      ...lo,
-      xx: _fcXFor(new Date(lo.t), common, plotLeft, plotW),
-      yy: tideY(lo.v)
-    }));
-
-    for (let li = 0; li < labeled.length; li++) {
-      const lo = labeled[li];
-      const xx = lo.xx, yy = lo.yy;
-      if (xx < plotLeft || xx > plotLeft + plotW) continue;
-      const td = new Date(lo.t);
-      const hrs = td.getHours();
-      const mins = td.getMinutes();
-      const ampm = hrs >= 12 ? 'pm' : 'am';
-      const h12 = hrs % 12 || 12;
-      const timeStr = mins === 0 ? `${h12}${ampm}` : `${h12}:${String(mins).padStart(2, '0')}${ampm}`;
-      const heightStr = `${lo.v.toFixed(1)}ft`;
-
-      // Triangle marker at the trough
-      ctx.fillStyle = FC_RETRO.tideMark;
-      ctx.beginPath();
-      ctx.moveTo(xx, yy + 2);
-      ctx.lineTo(xx - 3, yy - 3);
-      ctx.lineTo(xx + 3, yy - 3);
-      ctx.closePath();
-      ctx.fill();
-
-      // Collision: if the previous labeled low is closer than labelWidth
-      // in x, push this one's stack down by ~14px and draw a connector.
-      let pushDown = false;
-      if (li > 0) {
-        const prev = labeled[li - 1];
-        if (Math.abs(xx - prev.xx) < labelWidth) pushDown = true;
-      }
-
-      ctx.font = `bold 10px ${FC_CHART_FONT}`;
-      ctx.fillStyle = FC_RETRO.tide;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      const baseTop = yy + 4;
-      const lowOff = pushDown ? 14 : 0;
-      const stackBelow = (baseTop + lowOff + 9) < (top + h) - 2;
-      if (stackBelow) {
-        if (pushDown) {
-          // Connector: thin teal line from trough up to label baseline.
-          ctx.save();
-          ctx.strokeStyle = FC_RETRO.tideConn;
-          ctx.lineWidth = 0.5;
-          ctx.beginPath();
-          ctx.moveTo(xx, yy + 2);
-          ctx.lineTo(xx, baseTop + lowOff - 1);
-          ctx.stroke();
-          ctx.restore();
-        }
-        ctx.fillText(timeStr,   xx, baseTop + lowOff);
-        ctx.fillText(heightStr, xx, baseTop + lowOff + 9);
-      } else {
-        ctx.textBaseline = 'bottom';
-        const baseBot = yy - 4 - lowOff;
-        if (pushDown) {
-          ctx.save();
-          ctx.strokeStyle = FC_RETRO.tideConn;
-          ctx.lineWidth = 0.5;
-          ctx.beginPath();
-          ctx.moveTo(xx, yy - 2);
-          ctx.lineTo(xx, baseBot + 1);
-          ctx.stroke();
-          ctx.restore();
-        }
-        ctx.fillText(heightStr, xx, baseBot);
-        ctx.fillText(timeStr,   xx, baseBot - 9);
-      }
-    }
-  }
-
-  // Crisp 1px plot frame, then the dashed "now" line beneath the markers.
-  ctx.strokeStyle = FC_RETRO.frame;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(plotLeft + 0.5, top + 0.5, plotW - 1, h - 1);
-  _fcDrawNowLine(ctx, common, plotLeft, plotW, top, top + h);
-
-  // Scrubber dot on the tide curve. Tide values come from tidePred
-  // (non-hourly samples), so interpolate to the scrubbed hour timestamp.
-  const sIdx = STATE.scrubberIdx;
-  if (typeof sIdx === 'number' && sIdx >= 0 && sIdx <= common.lastIdx
-      && tideY && tidePred && tidePred.length > 1) {
-    const ts = common.allTimes[sIdx];
-    const tMs = ts.getTime();
-    let lo = null, hi = null;
-    for (let i = 0; i < tidePred.length - 1; i++) {
-      const a = new Date(tidePred[i].t).getTime();
-      const b = new Date(tidePred[i + 1].t).getTime();
-      if (tMs >= a && tMs <= b) { lo = tidePred[i]; hi = tidePred[i + 1]; break; }
-    }
-    if (lo && hi) {
-      const a = new Date(lo.t).getTime();
-      const b = new Date(hi.t).getTime();
-      const va = parseFloat(lo.v), vb = parseFloat(hi.v);
-      if (Number.isFinite(va) && Number.isFinite(vb) && b > a) {
-        const v = va + (vb - va) * ((tMs - a) / (b - a));
-        const tx = _fcXFor(ts, common, plotLeft, plotW);
-        drawScrubberDot(ctx, tx, tideY(v));
-      }
-    }
-  }
-
-  return { canvas, cssW, cssH, plotLeft, plotW, top, h, tideMin, tideMax };
-}
-
-// Day labels are native HTML — positioned above the chart cards as a
-// header strip, x-aligned to the canvas plot area via the same FC_PAD
-// padding the chart canvases use. Rendered as bold text in the web1
-// sans family so they read as crisp window-bar labels rather than
-// rasterized canvas text.
-function renderDayLabels(common) {
-  const host = el('forecast-day-header');
-  if (!host) return;
-  host.replaceChildren();
-  const W = host.clientWidth;
-  if (W <= 0) return;
-  const plotLeft = FC_PAD.left;
-  const plotW    = W - FC_PAD.left - FC_PAD.right;
-  if (plotW <= 0) return;
-
-  const todayLocal = new Date(); todayLocal.setHours(0, 0, 0, 0);
-  for (let dayOff = 0; dayOff < common.dayCount; dayOff++) {
-    const dayStart = new Date(common.firstDay);
-    dayStart.setDate(dayStart.getDate() + dayOff);
-    const dayEnd = new Date(dayStart);
-    dayEnd.setDate(dayEnd.getDate() + 1);
-    const visStart = Math.max(_fcXFor(dayStart, common, plotLeft, plotW), plotLeft);
-    const visEnd   = Math.min(_fcXFor(dayEnd,   common, plotLeft, plotW), plotLeft + plotW);
-    if (visEnd <= visStart + 8) continue;
-    const xx = (visStart + visEnd) / 2;
-    const colW = visEnd - visStart;
-    const dayDelta = Math.round((dayStart - todayLocal) / 86400000);
-    // Pick a label that fits the day's column so narrow (mobile) charts
-    // don't render "Tue 7/TodayomorrTni…" overlaps: full name when the
-    // column is wide, bare weekday when tight, alternating when tighter.
-    let label;
-    if (colW >= 76) {
-      if (dayDelta === 0)      label = 'Today';
-      else if (dayDelta === 1) label = 'Tomorrow';
-      else label = `${dayStart.toLocaleDateString('en-US',{weekday:'short'})} ${dayStart.getMonth()+1}/${dayStart.getDate()}`;
-    } else if (colW >= 34) {
-      label = dayDelta === 0 ? 'Today' : dayStart.toLocaleDateString('en-US', { weekday: 'short' });
-    } else if (dayOff % 2 === 0 || dayDelta === 0) {
-      label = dayDelta === 0 ? 'Now' : dayStart.toLocaleDateString('en-US', { weekday: 'narrow' });
-    } else {
-      continue; // too narrow — skip to keep neighbors legible
-    }
-    const span = document.createElement('span');
-    span.className = 'forecast-day-label';
-    span.textContent = label;
-    span.style.left = xx + 'px';
-    host.appendChild(span);
-  }
-}
-
-// ── Persistent compass dial (top-right of the swell card) ──
-//
-// Renders a small ~60x60 dial showing the primary and (when present)
-// secondary swell FROM directions for the currently-scrubbed hour.
-// Arrow points TOWARD the FROM direction (oceanographic convention),
-// not where the swell is heading.
-function drawCompassDial(_scrubberIdx) {
-  // Compass dial removed in the Win95 visual overhaul. Direction reads
-  // off the swell card's expanded direction sub-panel (~45% of plot
-  // height); the corner is freed for the sub-title strip.
-}
-
-function _drawForecastChartFull(marine, wind, daylight, tideHiLo, tidePred, buoyParsed) {
-  const container = el('forecast-chart-container');
-  if (!container) return;
-  const W = container.clientWidth;
-  const isMobile = W < 600;
-
-  // ── Hourly arrays ──
-  const allTimes = marine.hourly.time.map(t => new Date(t));
-  const heights      = marine.hourly.swell_wave_height || marine.hourly.wave_height || [];
-  const secHeights   = marine.hourly.secondary_swell_wave_height || [];
-  const swellDirs    = marine.hourly.swell_wave_direction || [];
-  const secDirs      = marine.hourly.secondary_swell_wave_direction || [];
-  // Use peak period when the API actually filled it in, otherwise mean
-  // period. Some Open-Meteo models return the peak_period key as an
-  // array of all nulls — checking length alone hides the line because
-  // every sample then fails the `p == null` guard at draw time.
-  const peakPeriods  = marine.hourly.swell_wave_peak_period || [];
-  const meanPeriods  = marine.hourly.swell_wave_period || marine.hourly.wave_period || [];
-  const peakHasData  = peakPeriods.some(v => v != null && Number.isFinite(v));
-  const wavePeriods  = peakHasData ? peakPeriods : meanPeriods;
-  const windSpeeds   = wind && wind.hourly ? wind.hourly.wind_speed_10m   || [] : [];
-  const windDirs     = wind && wind.hourly ? wind.hourly.wind_direction_10m || [] : [];
-  const windGusts    = wind && wind.hourly ? wind.hourly.wind_gusts_10m   || [] : [];
-
-  const t0      = allTimes[0].getTime();
-  const lastIdx = Math.min(allTimes.length - 1, FORECAST_HOURS);
-  const tEnd    = allTimes[lastIdx].getTime();
-  const tRange  = tEnd - t0;
-  const extStart = 0;
-  const extEnd   = lastIdx;
-  const firstDay = new Date(t0); firstDay.setHours(0, 0, 0, 0);
-  const lastDay  = new Date(tEnd); lastDay.setHours(0, 0, 0, 0);
-  const dayCount = Math.max(1, Math.round((lastDay - firstDay) / 86400000) + 1);
-
-  // ── Per-panel scales ──
-  // Swell left axis: 0 → max(primary, secondary) × 1.2, rounded up to nearest 2.
-  let swellPeak = 0;
-  for (let i = extStart; i <= extEnd; i++) {
-    if (heights[i]    != null && heights[i]    > swellPeak) swellPeak = heights[i];
-    if (secHeights[i] != null && secHeights[i] > swellPeak) swellPeak = secHeights[i];
-  }
-  // Tight, even axis: smallest max from {4, 6, 8, 12, 16, …} that clears the
-  // peak by ~10%, so a small week isn't squashed into the bottom quarter of
-  // an oversized scale. 6 splits into thirds (0/2/4/6); multiples of 4 into
-  // quarters — either way every tick (and the paired period tick) lands on a
-  // whole number.
-  const swellTarget = swellPeak * 1.1;
-  let swellMaxY;
-  if (swellTarget <= 4) swellMaxY = 4;
-  else if (swellTarget <= 6) swellMaxY = 6;
-  else swellMaxY = Math.ceil(swellTarget / 4) * 4;
-  const swellDiv = swellMaxY === 6 ? 3 : 4; // shared y-axis division count
-  // Period right axis: fixed 0–24s (divides evenly by 3 and 4).
-  const periodMax = 24;
-  // Wind axis: 0 → max(speed) × 1.2, rounded to nearest 5, floor 10.
-  let windPeak = 0;
-  for (let i = extStart; i <= extEnd; i++) {
-    if (windSpeeds[i] != null && windSpeeds[i] > windPeak) windPeak = windSpeeds[i];
-  }
-  // Fixed 0–25 mph axis. Hours that exceed 25 mph clip at the ceiling
-  // — communicates "wind is howling" without rescaling the whole panel
-  // around a single storm hour.
-  const windMaxY = 25;
-
-  // Common payload passed to each panel drawer.
-  const common = {
-    t0, tEnd, tRange, allTimes,
-    lastIdx,
-    firstDay, dayCount,
-    daylight,
-    pinLat: STATE.pinLat || CONFIG.chocomount.lat,
-    pinLon: STATE.pinLon || CONFIG.chocomount.lon,
-    isMobile
-  };
-
-  // Draw each panel canvas.
-  const swellPayload = {
-    heights, secHeights, swellDirs, secDirs, wavePeriods, swellMaxY, swellDiv, periodMax,
-    // Observed total Hs (feet) from the buoy and when it was measured, for
-    // the "obs" marker.
-    obsHsFt: buoyParsed && buoyParsed.waveHeight != null ? buoyParsed.waveHeight : null,
-    obsMs: buoyParsed && Number.isFinite(buoyParsed.obsMs) ? buoyParsed.obsMs : null
-  };
-  const windPayload  = { windSpeeds, windDirs, windMaxY };
-  const tidePayload  = { tidePred, tideHiLo };
-  const swellInfo = drawSwellPanel(common, swellPayload);
-  drawWindPanel(common, windPayload);
-  const tideInfo = drawTidePanel(common, tidePayload);
-  renderDayLabels(common);
-
-  // Cache so the scrubber can re-render dots without recomputing axes.
-  STATE._forecastPanelPayloads = { common, swellPayload, windPayload, tidePayload };
-
-  // Container-relative geometry for the scrubber crosshair / handle.
-  const swellCanvas = el('forecast-canvas-swell');
-  const tideCanvas  = el('forecast-canvas-tide');
-  const swellCard   = swellCanvas ? swellCanvas.parentElement : null;
-  const tideCard    = tideCanvas ? tideCanvas.parentElement : null;
-
-  const offsetTopWithin = (node, ancestor) => {
-    let y = 0, n = node;
-    while (n && n !== ancestor) { y += n.offsetTop; n = n.offsetParent; }
-    return y;
-  };
-  const offsetLeftWithin = (node, ancestor) => {
-    let x = 0, n = node;
-    while (n && n !== ancestor) { x += n.offsetLeft; n = n.offsetParent; }
-    return x;
-  };
-
-  // Container-relative plot anchor (uses swell card's canvas as reference;
-  // every canvas shares the same FC_PAD so this anchor is canonical).
-  const swellCanvasLeft = swellCanvas ? offsetLeftWithin(swellCanvas, container) : 0;
-  const plotLeft = swellCanvasLeft + FC_PAD.left;
-  const plotW    = swellInfo ? swellInfo.plotW : 0;
-
-  const swellCardTop  = swellCard ? offsetTopWithin(swellCard, container) : 0;
-  const tideCardTop   = tideCard  ? offsetTopWithin(tideCard,  container) : 0;
-  const tideCardBot   = tideCard  ? tideCardTop + tideCard.offsetHeight : 0;
-
-  // Swell drawing area within the container (for handle Y).
-  const swellPanelTop = swellCanvas
-    ? offsetTopWithin(swellCanvas, container) + (swellInfo ? swellInfo.top : 0)
-    : swellCardTop;
-  const swellPanelH = swellInfo ? swellInfo.h : 0;
-
-  // ── Store chart state for interaction ──
-  STATE.forecastChart = {
-    pad: { left: plotLeft, right: 0, top: swellCardTop, bottom: 0 },
-    plotW,
-    plotH: swellPanelH,
-    W, H: container.clientHeight,
-    t0, tEnd, tRange,
-    times: allTimes,
-    heights, secHeights, wavePeriods, swellDirs, secDirs, windSpeeds, windDirs, windGusts,
-    tideHiLo, tidePred, firstDay, dayCount,
-    layout: {
-      plotLeft, plotW,
-      swellTop: swellPanelTop,
-      swellH: swellPanelH,
-      swellMaxY,
-      tideMin: tideInfo ? tideInfo.tideMin : 0,
-      tideMax: tideInfo ? tideInfo.tideMax : 1,
-      crosshairTop: swellCardTop,
-      crosshairBot: tideCardBot
-    }
-  };
-  setupForecastInteraction(container);
-
-  // "Now" pulse overlay — re-sized to the container on every full draw
-  // (covers resizes), then the rAF loop keeps the marker drifting in
-  // real time without touching the panel canvases.
-  const overlay = _ensureNowOverlay(container);
-  setCanvasDPR(overlay, overlay.getContext('2d'), W, container.clientHeight);
-  _nowPulsePrev = null;
-  startNowPulse();
-}
-
-
 // ════════════════════════════════════════════════
-// FORECAST CHART SCRUBBER
+// BUOY SPECTRUM BINS
 // ════════════════════════════════════════════════
-//
-// Scrubber state lives at STATE.scrubberIdx (an integer index into the
-// hourly arrays of the cached marine forecast). On idle, the scrubber
-// resolves to the hour matching Date.now(); the user can click or drag
-// to move it. The position persists for the session via
-// sessionStorage 'lcc-scrubber-hour' (ISO hour string).
-
-let _forecastInteractionAbort = null;
-// Gesture state lives here, not in setupForecastInteraction's closure:
-// a ResizeObserver redraw re-wires the listeners, and a drag must survive
-// that (audit C45). drag = the canvas a mouse drag started on; touch =
-// the touch's start point and its locked direction ('h' scrubs, 'v'
-// scrolls the page).
-const _fcGesture = { drag: null, touchStart: null, touchMode: null };
-const FC_TOUCH_SLOP_PX = 8;
-
-function findHourIndexForTime(targetMs, cs) {
-  let best = -1;
-  let bestDiff = Infinity;
-  for (let i = 0; i < cs.times.length; i++) {
-    const tt = cs.times[i].getTime();
-    if (tt > cs.tEnd + 30 * 60 * 1000) break;
-    const d = Math.abs(tt - targetMs);
-    if (d < bestDiff) { bestDiff = d; best = i; }
-  }
-  return best;
-}
-
-function getScrubberIndex() {
-  const cs = STATE.forecastChart;
-  if (!cs) return -1;
-  if (typeof STATE.scrubberIdx === 'number' && STATE.scrubberIdx >= 0 && STATE.scrubberIdx < cs.times.length) {
-    return STATE.scrubberIdx;
-  }
-  // Restore from sessionStorage if present — but only honor it if the
-  // stored hour is still close enough to "now" to be meaningful. Without
-  // this guard, a mobile tab kept alive overnight will resurrect an
-  // 11-hour-stale scrubber position on next view (the "-11H" bug).
-  let stored = null;
-  try { stored = sessionStorage.getItem('lcc-scrubber-hour'); } catch (_) {}
-  if (stored) {
-    const targetMs = new Date(stored).getTime();
-    if (Number.isFinite(targetMs)) {
-      // Honor stored value only if it points to the current hour or a
-      // future hour; if it's >1 hour in the past treat it as stale and
-      // default to "now" instead.
-      const stalenessMs = Date.now() - targetMs;
-      if (stalenessMs <= 60 * 60 * 1000) {
-        const idx = findHourIndexForTime(targetMs, cs);
-        if (idx >= 0) {
-          STATE.scrubberIdx = idx;
-          return idx;
-        }
-      } else {
-        // Drop the stale value so we don't keep re-evaluating it.
-        try { sessionStorage.removeItem('lcc-scrubber-hour'); } catch (_) {}
-      }
-    }
-  }
-  // Default: nearest hour to "now"
-  const idx = findHourIndexForTime(Date.now(), cs);
-  STATE.scrubberIdx = idx;
-  return idx;
-}
-
-function isScrubberAtNow() {
-  const cs = STATE.forecastChart;
-  if (!cs) return true;
-  const nowIdx = findHourIndexForTime(Date.now(), cs);
-  return STATE.scrubberIdx === nowIdx;
-}
-
-function applyScrubberToHour(idx) {
-  const cs = STATE.forecastChart;
-  if (!cs || idx < 0) return;
-  const t = cs.times[idx];
-  const h = cs.heights[idx];
-  const p = cs.wavePeriods[idx];
-  const dir = cs.swellDirs[idx];
-  const ws = cs.windSpeeds[idx];
-  const wd = cs.windDirs[idx];
-  const wg = cs.windGusts[idx];
-
-  // ── Floating label below chart ──
-  // Field order: time | swell h @ p | swell dir | wind speed (gust) dir | tide level
-  const detailBar = el('forecast-detail-bar');
-  if (detailBar) {
-    const dayName = t.toLocaleDateString('en-US', { weekday: 'short' });
-    const timeStr = t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-
-    const swellStr = (h != null && p != null)
-      ? `${h.toFixed(1)}ft @ ${p.toFixed(1)}s`
-      : (h != null ? `${h.toFixed(1)}ft` : '—');
-    const swellDirStr = dir != null
-      ? `${Math.round(dir)}° ${directionLabel(dir)}`
-      : '—';
-    let windStr = '—';
-    if (ws != null) {
-      windStr = `wind ${Math.round(ws)}mph`;
-      if (wg != null) windStr += ` (gust ${Math.round(wg)})`;
-      if (wd != null) windStr += ` ${directionLabel(wd)}`;
-    }
-
-    // Tide level interpolated from tidePred at t.
-    let tideStr = '';
-    if (cs.tidePred && cs.tidePred.length) {
-      const tMs = t.getTime();
-      let lo = null, hi = null;
-      for (let i = 0; i < cs.tidePred.length - 1; i++) {
-        const a = new Date(cs.tidePred[i].t).getTime();
-        const b = new Date(cs.tidePred[i + 1].t).getTime();
-        if (tMs >= a && tMs <= b) { lo = cs.tidePred[i]; hi = cs.tidePred[i + 1]; break; }
-      }
-      if (lo && hi) {
-        const a = new Date(lo.t).getTime();
-        const b = new Date(hi.t).getTime();
-        const va = parseFloat(lo.v), vb = parseFloat(hi.v);
-        if (Number.isFinite(va) && Number.isFinite(vb) && b > a) {
-          const v = va + (vb - va) * ((tMs - a) / (b - a));
-          tideStr = `tide ${v >= 0 ? '+' : ''}${v.toFixed(1)}ft`;
-        }
-      }
-    }
-
-    // Write only into the inner row so the sibling Reset-to-now button
-    // (declared statically in HTML) stays wired up across re-renders.
-    const detailRow = el('forecast-detail-row');
-    const rowHTML =
-      `<span class="detail-time">${dayName} ${timeStr}</span>` +
-      `<span class="detail-item"><span class="detail-val">${swellStr}</span></span>` +
-      `<span class="detail-item"><span class="detail-val">${swellDirStr}</span></span>` +
-      `<span class="detail-item"><span class="detail-val">${windStr}</span></span>` +
-      (tideStr ? `<span class="detail-item"><span class="detail-tide">${tideStr}</span></span>` : '');
-    if (detailRow) {
-      detailRow.innerHTML = rowHTML;
-    } else {
-      detailBar.innerHTML = `<div class="detail-row">${rowHTML}</div>`;
-    }
-    detailBar.classList.add('active');
-    detailBar.classList.toggle('scrub-active', !isScrubberAtNow());
-  }
-
-  // ── Move overlay crosshair ──
-  // The handle is now drawn on canvas as one of seven scrubber dots,
-  // each tracking its own data line (see drawScrubberDot).
-  const container = el('forecast-chart-container');
-  if (container) {
-    let crosshair = container.querySelector('.forecast-crosshair');
-    if (!crosshair) {
-      crosshair = document.createElement('div');
-      crosshair.className = 'forecast-crosshair';
-      container.appendChild(crosshair);
-    }
-    const L = cs.layout;
-    const dataXPx = L.plotLeft + ((t.getTime() - cs.t0) / cs.tRange) * L.plotW;
-    // Crosshair spans swell + wind + tide panels + arrow strip.
-    crosshair.style.display = '';
-    crosshair.style.left = dataXPx + 'px';
-    crosshair.style.top = L.crosshairTop + 'px';
-    crosshair.style.height = (L.crosshairBot - L.crosshairTop) + 'px';
-  }
-
-  // ── Repaint canvas panels so the scrubber dots snap to the new hour. ──
-  const pp = STATE._forecastPanelPayloads;
-  if (pp) {
-    drawSwellPanel(pp.common, pp.swellPayload);
-    drawWindPanel(pp.common, pp.windPayload);
-    drawTidePanel(pp.common, pp.tidePayload);
-  }
-
-  // ── Compass dial in swell card top-right ──
-  drawCompassDial(idx);
-
-  // ── Cross-feature: lineup map arrows ──
-  if (STATE.isChocomount && STATE.forecastData) {
-    const fd = STATE.forecastData;
-    drawLineupMap(fd.marine, fd.wind, null, idx);
-  }
-
-  // Stat grid cards (Swell/Wind/Tide/Temp/Daylight) intentionally do
-  // NOT follow the scrubber — they are a real-time "what's it doing
-  // right now" snapshot. The chart is the time-travel surface. Strip
-  // any leftover scrub badge so old state can't leak in.
-  document.querySelectorAll('.scrub-badge').forEach(b => b.remove());
-
-  // ── "Reset to now" link visibility (lives inside the detail bar) ──
-  // At rest style.css also drops it from layout (.scrub-active is off),
-  // so a phone's sticky bar stays two lines; the re-wrap on the first
-  // scrub is harmless because the drag state survives a re-wire (C45).
-  const resetBtn = el('forecast-reset-now');
-  if (resetBtn) resetBtn.style.visibility = isScrubberAtNow() ? 'hidden' : 'visible';
-
-  // ── Cross-feature: Tab 2 prediction widget tracks the scrubber too. ──
-  if (typeof _regNotifyScrubberMoved === 'function') _regNotifyScrubberMoved();
-}
-
-function setupForecastInteraction(container) {
-  if (_forecastInteractionAbort) _forecastInteractionAbort.abort();
-  _forecastInteractionAbort = new AbortController();
-  const signal = _forecastInteractionAbort.signal;
-
-  // Resolve initial scrubber position and apply it.
-  const initialIdx = getScrubberIndex();
-  if (initialIdx >= 0) applyScrubberToHour(initialIdx);
-
-  // The scrubber is interactive on each panel canvas. Click X is mapped
-  // to a chart-time using the canvas's own bounding rect; FC_PAD.left is
-  // identical across all three canvases, so any of them can drive the
-  // scrubber and the result is the same hour.
-  function indexFromClientXOnCanvas(clientX, canvasEl) {
-    const cs = STATE.forecastChart;
-    if (!cs || !canvasEl) return -1;
-    const rect = canvasEl.getBoundingClientRect();
-    const localX = clientX - rect.left;
-    const cssW = canvasEl.clientWidth || rect.width;
-    const plotW = cssW - FC_PAD.left - FC_PAD.right;
-    const tFrac = Math.max(0, Math.min(1, (localX - FC_PAD.left) / plotW));
-    const targetT = cs.t0 + tFrac * cs.tRange;
-    return findHourIndexForTime(targetT, cs);
-  }
-
-  function setScrubberToIdx(idx, persist) {
-    const cs = STATE.forecastChart;
-    if (!cs || idx < 0) return;
-    STATE.scrubberIdx = idx;
-    if (persist) {
-      try {
-        const t = cs.times[idx];
-        const iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') +
-          '-' + String(t.getDate()).padStart(2, '0') +
-          'T' + String(t.getHours()).padStart(2, '0') + ':00';
-        sessionStorage.setItem('lcc-scrubber-hour', iso);
-      } catch (_) {}
-    }
-    applyScrubberToHour(idx);
-  }
-
-  const canvases = [
-    el('forecast-canvas-swell'),
-    el('forecast-canvas-wind'),
-    el('forecast-canvas-tide')
-  ].filter(Boolean);
-
-  const g = _fcGesture;
-
-  for (const cv of canvases) {
-    cv.addEventListener('mousedown', (e) => {
-      g.drag = cv;
-      cv.style.cursor = 'ew-resize';
-      const idx = indexFromClientXOnCanvas(e.clientX, cv);
-      setScrubberToIdx(idx, true);
-      e.preventDefault();
-    }, { signal });
-
-    cv.addEventListener('mousemove', (e) => {
-      if (!g.drag) return;
-      const idx = indexFromClientXOnCanvas(e.clientX, g.drag);
-      setScrubberToIdx(idx, true);
-    }, { signal });
-
-    // Touch: the canvases are touch-action: pan-y, so the browser keeps
-    // vertical swipes as page scrolls. Nothing moves on touchstart; once
-    // the finger has travelled FC_TOUCH_SLOP_PX the gesture locks to a
-    // direction, and only a horizontal drag scrubs (and blocks the
-    // default). A plain tap still scrubs via the compatibility mousedown.
-    cv.addEventListener('touchstart', (e) => {
-      g.touchMode = null;
-      g.touchStart = e.touches.length === 1
-        ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
-    }, { passive: true, signal });
-
-    cv.addEventListener('touchmove', (e) => {
-      if (!g.touchStart || e.touches.length !== 1) return;
-      const t = e.touches[0];
-      if (!g.touchMode) {
-        const dx = Math.abs(t.clientX - g.touchStart.x);
-        const dy = Math.abs(t.clientY - g.touchStart.y);
-        if (dx < FC_TOUCH_SLOP_PX && dy < FC_TOUCH_SLOP_PX) return;
-        g.touchMode = dx > dy ? 'h' : 'v';
-      }
-      if (g.touchMode !== 'h') return;
-      if (e.cancelable) e.preventDefault();
-      setScrubberToIdx(indexFromClientXOnCanvas(t.clientX, cv), true);
-    }, { passive: false, signal });
-
-    const endTouch = () => { g.touchStart = null; g.touchMode = null; };
-    cv.addEventListener('touchend', endTouch, { passive: true, signal });
-    cv.addEventListener('touchcancel', endTouch, { passive: true, signal });
-  }
-
-  // Even when the cursor strays off a canvas, dragging should still follow
-  // until mouseup. Listen to window-level mousemove for that.
-  window.addEventListener('mousemove', (e) => {
-    if (!g.drag) return;
-    const idx = indexFromClientXOnCanvas(e.clientX, g.drag);
-    setScrubberToIdx(idx, true);
-  }, { signal });
-
-  window.addEventListener('mouseup', () => {
-    if (g.drag) g.drag.style.cursor = '';
-    g.drag = null;
-  }, { signal });
-}
-
-function resetScrubberToNow() {
-  const cs = STATE.forecastChart;
-  if (!cs) return;
-  STATE.scrubberIdx = findHourIndexForTime(Date.now(), cs);
-  try { sessionStorage.removeItem('lcc-scrubber-hour'); } catch (_) {}
-  applyScrubberToHour(STATE.scrubberIdx);
-}
-
-// Wire the "Reset to now" link once. The button is hidden by default
-// and revealed by applyScrubberToHour when off-now.
-(function wireForecastReset() {
-  function attach() {
-    const btn = el('forecast-reset-now');
-    if (btn && !btn._wired) {
-      btn._wired = true;
-      btn.addEventListener('click', resetScrubberToNow);
-    }
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', attach);
-  } else {
-    attach();
-  }
-})();
-
-// ── "Now" pulse overlay ─────────────────────────
-//
-// A lazily-created canvas layered over the whole forecast-chart container
-// and animated with rAF. It lives OUTSIDE the three panel canvases, so
-// scrubber repaints and the pulse never invalidate each other; it is
-// pointer-events:none so the canvases' scrubber hit-testing is unaffected.
-
-let _nowPulseRAF = null;
-let _nowPulsePrev = null; // last drawn {x, y} for dirty-rect clearing
-// Each frame makes the browser re-composite the whole overlay, so the
-// ring animates at ~10 fps (it is a 3 px, 1.6 s fade; 60 fps bought
-// nothing visible) and the loop stops while the chart is hidden or
-// scrolled off-screen (audit C36).
-const NOW_PULSE_FRAME_MS = 100;
-let _nowPulseInView = true;   // IntersectionObserver verdict; true until it reports
-let _nowPulseIO = null;
-
-function _ensureNowOverlay(container) {
-  let overlay = el('forecast-now-overlay');
-  if (!overlay) {
-    overlay = document.createElement('canvas');
-    overlay.id = 'forecast-now-overlay';
-    overlay.style.position = 'absolute';
-    overlay.style.left = '0';
-    overlay.style.top = '0';
-    overlay.style.pointerEvents = 'none';
-    // Below the crosshair (z 5) and the sticky detail bar (z 10).
-    overlay.style.zIndex = '3';
-    container.appendChild(overlay);
-  }
-  return overlay;
-}
-
-// Container-relative marker position: x tracks Date.now() continuously,
-// y is the primary swell height interpolated between the bounding hourly
-// samples. Returns null when "now" is outside the chart window.
-function _nowMarkerGeom() {
-  const cs = STATE.forecastChart;
-  if (!cs || !cs.layout) return null;
-  const nowMs = Date.now();
-  if (nowMs < cs.t0 || nowMs > cs.tEnd) return null;
-  const L = cs.layout;
-  const x = L.plotLeft + ((nowMs - cs.t0) / cs.tRange) * L.plotW;
-  let y = null;
-  for (let i = 0; i < cs.times.length - 1; i++) {
-    const a = cs.times[i].getTime(), b = cs.times[i + 1].getTime();
-    if (nowMs >= a && nowMs <= b) {
-      const va = cs.heights[i], vb = cs.heights[i + 1];
-      if (va != null && vb != null && b > a) {
-        const v = va + (vb - va) * ((nowMs - a) / (b - a));
-        y = L.swellTop + L.swellH - (Math.min(v, L.swellMaxY) / L.swellMaxY) * L.swellH;
-      }
-      break;
-    }
-  }
-  if (y == null) return null;
-  return { x, y };
-}
-
-function _drawNowPulseFrame(staticFrame) {
-  const container = el('forecast-chart-container');
-  const overlay = el('forecast-now-overlay');
-  // Skip while the tab/panel is hidden (zero-width container).
-  if (!container || !overlay || container.offsetWidth === 0) return;
-  const ctx = overlay.getContext('2d');
-  // Clear only a dirty square around the previously drawn marker.
-  if (_nowPulsePrev) {
-    ctx.clearRect(_nowPulsePrev.x - 14, _nowPulsePrev.y - 14, 28, 28);
-    _nowPulsePrev = null;
-  }
-  const g = _nowMarkerGeom();
-  if (!g) return;
-  // Core dot.
-  ctx.beginPath();
-  ctx.arc(g.x, g.y, 2.5, 0, Math.PI * 2);
-  ctx.fillStyle = FC_RETRO.pulseCore;
-  ctx.fill();
-  // Expanding, fading ring (~1.6s cycle).
-  if (!staticFrame) {
-    const phase = (performance.now() % 1600) / 1600;
-    ctx.beginPath();
-    ctx.arc(g.x, g.y, 3 + phase * 3, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(${FC_RETRO.pulseRing}, ${(0.6 * (1 - phase)).toFixed(3)})`;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-  }
-  _nowPulsePrev = g;
-}
-
-function startNowPulse() {
-  if (_nowPulseRAF != null) return; // idempotent — full draws can't stack loops
-  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    _drawNowPulseFrame(true); // single static marker, no animation loop
-    return;
-  }
-  _watchNowPulseViewport();
-  let last = -Infinity;
-  const tick = (ts) => {
-    // Hidden (another tab, a kiosk panel without the chart) or scrolled
-    // away: end the loop instead of spinning. switchTab, the observer
-    // below, visibilitychange and every full chart draw restart it.
-    const container = el('forecast-chart-container');
-    if (!container || container.offsetWidth === 0 || !_nowPulseInView) {
-      _nowPulseRAF = null;
-      return;
-    }
-    if (ts - last >= NOW_PULSE_FRAME_MS) {
-      last = ts;
-      _drawNowPulseFrame(false);
-    }
-    _nowPulseRAF = requestAnimationFrame(tick);
-  };
-  _nowPulseRAF = requestAnimationFrame(tick);
-}
-
-// Pause the pulse while the chart is scrolled off-screen (long phone
-// pages) and resume when it comes back. Created once, on first start.
-function _watchNowPulseViewport() {
-  if (_nowPulseIO || typeof IntersectionObserver !== 'function') return;
-  const container = el('forecast-chart-container');
-  if (!container) return;
-  _nowPulseIO = new IntersectionObserver(entries => {
-    _nowPulseInView = entries[entries.length - 1].isIntersecting;
-    if (_nowPulseInView && STATE.forecastChart && !document.hidden) startNowPulse();
-  });
-  _nowPulseIO.observe(container);
-}
-
-function stopNowPulse() {
-  if (_nowPulseRAF != null) {
-    cancelAnimationFrame(_nowPulseRAF);
-    _nowPulseRAF = null;
-  }
-  const overlay = el('forecast-now-overlay');
-  if (overlay) {
-    const octx = overlay.getContext('2d');
-    octx.clearRect(0, 0, overlay.width, overlay.height);
-  }
-  _nowPulsePrev = null;
-}
-
-// No rAF burn while the browser tab is hidden.
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) stopNowPulse();
-  else if (STATE.forecastChart) startNowPulse();
-});
-
-function drawArrow(ctx, x, y, dirDeg, size, color, lineW) {
-  // dirDeg is "from" direction (meteorological). Arrow points in the "to" direction.
-  const rad = degToRad((dirDeg + 180) % 360 - 90);
-  const headLen = Math.max(5, size * 0.6);
-  const headW = Math.max(4, size * 0.45);
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(rad);
-  // Shaft with rounded cap
-  ctx.strokeStyle = color;
-  ctx.lineWidth = lineW + 0.5;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(-size, 0);
-  ctx.lineTo(size - headLen * 0.5, 0);
-  ctx.stroke();
-  // Filled arrowhead triangle
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(size, 0);
-  ctx.lineTo(size - headLen, -headW);
-  ctx.lineTo(size - headLen, headW);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-}
-
-// Filled triangle marker (no shaft) used for the inline daily-peak swell
-// arrows. White fill, colored stroke. dirDeg is "from" direction;
-// the arrow points where the swell is HEADING (dir + 180).
-function drawArrowFilled(ctx, x, y, dirDeg, size, fillColor, strokeColor, lineW) {
-  const rad = degToRad((dirDeg + 180) % 360 - 90);
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(rad);
-  ctx.beginPath();
-  ctx.moveTo(size, 0);
-  ctx.lineTo(-size * 0.7, -size * 0.7);
-  ctx.lineTo(-size * 0.4, 0);
-  ctx.lineTo(-size * 0.7, size * 0.7);
-  ctx.closePath();
-  ctx.fillStyle = fillColor;
-  ctx.fill();
-  ctx.lineJoin = 'round';
-  ctx.strokeStyle = strokeColor;
-  ctx.lineWidth = lineW;
-  ctx.stroke();
-  ctx.restore();
-}
-
-// ════════════════════════════════════════════════
-// TIDE CHART (Canvas 2D)
-// ════════════════════════════════════════════════
-
-function drawTideChart(predictions) {
-  const canvas = el('tide-canvas');
-  const container = canvas.parentElement;
-  const W = container.clientWidth;
-  const H = container.clientHeight;
-  const ctx = canvas.getContext('2d');
-  setCanvasDPR(canvas, ctx, W, H);
-
-  const pad = { top: 12, right: 16, bottom: 28, left: 40 };
-  const plotW = W - pad.left - pad.right;
-  const plotH = H - pad.top - pad.bottom;
-
-  const data = predictions.map(p => ({ t: new Date(p.t), v: parseFloat(p.v) }));
-  const minV = Math.min(...data.map(d => d.v));
-  const maxV = Math.max(...data.map(d => d.v));
-  const range = maxV - minV || 1;
-  const padV = range * 0.1;
-
-  const t0 = data[0].t.getTime();
-  const tEnd = data[data.length - 1].t.getTime();
-  const tRange = tEnd - t0;
-
-  function xPos(t) { return pad.left + ((t.getTime() - t0) / tRange) * plotW; }
-  function yPos(v) { return pad.top + plotH - ((v - minV + padV) / (range + 2 * padV)) * plotH; }
-
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, W, H);
-
-  // Grid
-  ctx.strokeStyle = '#eae6e0';
-  ctx.lineWidth = 0.5;
-  const gridStep = range > 6 ? 2 : 1;
-  for (let v = Math.floor(minV); v <= Math.ceil(maxV); v += gridStep) {
-    const yy = yPos(v);
-    ctx.beginPath();
-    ctx.moveTo(pad.left, yy);
-    ctx.lineTo(pad.left + plotW, yy);
-    ctx.stroke();
-    ctx.fillStyle = '#8a827a';
-    ctx.font = `10px ${FC_CHART_FONT}`;
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(`${v}`, pad.left - 4, yy);
-  }
-
-  // Now line
-  const nowX = xPos(new Date());
-  if (nowX > pad.left && nowX < pad.left + plotW) {
-    ctx.strokeStyle = '#d4844c';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    ctx.beginPath();
-    ctx.moveTo(nowX, pad.top);
-    ctx.lineTo(nowX, pad.top + plotH);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  // Tide curve
-  ctx.beginPath();
-  ctx.strokeStyle = '#5a7fa0';
-  ctx.lineWidth = 1.5;
-  data.forEach((d, i) => {
-    const x = xPos(d.t);
-    const y = yPos(d.v);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-
-  // Fill below
-  ctx.lineTo(xPos(data[data.length - 1].t), yPos(minV - padV));
-  ctx.lineTo(xPos(data[0].t), yPos(minV - padV));
-  ctx.closePath();
-  ctx.fillStyle = 'rgba(90, 127, 160, 0.08)';
-  ctx.fill();
-
-  // X-axis day labels
-  ctx.fillStyle = '#8a827a';
-  ctx.font = `bold 10px ${FC_CHART_FONT}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  for (let dayOff = 0; dayOff < 4; dayOff++) {
-    const d = new Date(data[0].t);
-    d.setDate(d.getDate() + dayOff);
-    d.setHours(12, 0, 0, 0);
-    const xx = xPos(d);
-    if (xx > pad.left && xx < pad.left + plotW) {
-      ctx.fillText(formatDayShort(d), xx, pad.top + plotH + 6);
-    }
-  }
-}
-
-// ════════════════════════════════════════════════
-// SPECTRAL SUMMARY TABLE
-// ════════════════════════════════════════════════
-
-const COMPASS_TO_DEG = {
-  'N': 0, 'NNE': 22.5, 'NE': 45, 'ENE': 67.5,
-  'E': 90, 'ESE': 112.5, 'SE': 135, 'SSE': 157.5,
-  'S': 180, 'SSW': 202.5, 'SW': 225, 'WSW': 247.5,
-  'W': 270, 'WNW': 292.5, 'NW': 315, 'NNW': 337.5
-};
-
-// Parse the UTC observation timestamp from a .spec data row's first five
-// columns (YY MM DD hh mm). Old-format files use 2-digit years.
-function parseSpecRowTime(cols) {
-  let y = parseInt(cols[0], 10);
-  const mo = parseInt(cols[1], 10), d = parseInt(cols[2], 10);
-  const h = parseInt(cols[3], 10), mi = parseInt(cols[4], 10);
-  if (![y, mo, d, h, mi].every(Number.isFinite)) return null;
-  if (y < 100) y += 2000;
-  return new Date(Date.UTC(y, mo - 1, d, h, mi));
-}
-
-// Parse NDBC .spec summary rows, newest first (lines[0]/[1] are header/units).
-// Columns: YY MM DD hh mm WVHT SwH SwP WWH WWP SwD WWD STEEPNESS APD MWD
-// Indices: 0  1  2  3  4  5    6   7   8   9   10  11  12        13  14
-// SwD and WWD are text compass (e.g. "SE", "SSE"); MWD is numeric degrees.
-// Returns [] for garbage input — e.g. an HTML error page handed back by a
-// CORS proxy as a "successful" response (real files start with "#YY ...").
-function parseSpecRows(specText, maxRows) {
-  if (!specText) return [];
-  const limit = maxRows || 12;
-  const lines = specText.trim().split('\n');
-  if (lines.length < 3 || !lines[0].trim().startsWith('#')) return [];
-  const out = [];
-  for (let li = 2; li < lines.length && out.length < limit; li++) {
-    const data = lines[li].trim().split(/\s+/);
-    if (data.length < 15) continue;
-    const time = parseSpecRowTime(data);
-    if (!time) continue;
-    const sf = (idx, invalid) => {
-      const v = parseFloat(data[idx]);
-      if (!Number.isFinite(v)) return null;
-      return v < (invalid || 99) ? v : null;
-    };
-    const compass = idx => {
-      const t = data[idx];
-      return t ? (COMPASS_TO_DEG[t.toUpperCase()] ?? null) : null;
-    };
-    out.push({
-      time,
-      hs: sf(5),
-      swellHt: sf(6),
-      swellPeriod: sf(7),
-      windHt: sf(8),
-      windPeriod: sf(9),
-      swellDir: compass(10),
-      windDir: compass(11),
-      meanDir: sf(14, 999)
-    });
-  }
-  return out;
-}
-
-function parseSpecSummaryFromText(specText) {
-  return parseSpecRows(specText, 1)[0] || null;
-}
-
-// Pick the historical row to diff against: the one closest to one hour
-// before the latest observation, accepted only when its age relative to
-// the latest is between 45 min and 3.5 h. Time-based (not row-index) so
-// 30-min-cadence stations and files with gaps both behave.
-function pickTrendBaseline(rows) {
-  if (!rows || rows.length < 2) return null;
-  const latestMs = rows[0].time.getTime();
-  const targetMs = latestMs - 60 * 60 * 1000;
-  let best = null, bestDiff = Infinity;
-  for (let i = 1; i < rows.length; i++) {
-    const age = latestMs - rows[i].time.getTime();
-    if (age < 45 * 60 * 1000 || age > 3.5 * 60 * 60 * 1000) continue;
-    const diff = Math.abs(rows[i].time.getTime() - targetMs);
-    if (diff < bestDiff) { bestDiff = diff; best = rows[i]; }
-  }
-  return best;
-}
-
-// Per-cell deltas vs the baseline row, in DISPLAY units (ft / s) so the
-// arrow numbers match the rendered cells. dir: 'up' | 'down' | 'flat';
-// null when either side is missing. Thresholds: ±0.2 ft, ±0.5 s.
-function computeSpecTrends(latest, baseline) {
-  if (!latest || !baseline) return null;
-  const mft = v => v == null ? null : v * 3.28084;
-  const trend = (a, b, threshold) => {
-    if (a == null || b == null) return null;
-    const delta = a - b;
-    if (Math.abs(delta) < threshold) return { delta, dir: 'flat' };
-    return { delta, dir: delta > 0 ? 'up' : 'down' };
-  };
-  return {
-    hs:          trend(mft(latest.hs),      mft(baseline.hs),      0.2),
-    swellHt:     trend(mft(latest.swellHt), mft(baseline.swellHt), 0.2),
-    swellPeriod: trend(latest.swellPeriod,  baseline.swellPeriod,  0.5),
-    windHt:      trend(mft(latest.windHt),  mft(baseline.windHt),  0.2),
-    windPeriod:  trend(latest.windPeriod,   baseline.windPeriod,   0.5)
-  };
-}
 
 // A bin's dir1 is a measurement only when it is finite and not NDBC's 999
 // sentinel. Without the swdir file, older pipeline runs wrote dir1 = 0 in
@@ -3965,763 +1050,6 @@ function binHasMeasuredDir(b) {
 function binsHaveMeasuredDir(bins) {
   return Array.isArray(bins) && bins.some(b => binHasMeasuredDir(b) && b.dir1 !== 0);
 }
-
-// Energy-weighted circular mean of dir1 over bins in the swell band (>=8s).
-// Falls back to all positive-energy bins if the swell band is empty.
-// Bins without a measured direction are left out; none at all gives null.
-function computePrimarySwellDir(bins) {
-  if (!binsHaveMeasuredDir(bins)) return null;
-  const measured = bins.filter(binHasMeasuredDir);
-  const swell = measured.filter(b => b.period >= 8 && b.energy > 0);
-  const pool = swell.length ? swell : measured.filter(b => b.energy > 0);
-  if (!pool.length) return null;
-  let sx = 0, sy = 0, wsum = 0;
-  for (const b of pool) {
-    const rad = b.dir1 * Math.PI / 180;
-    sx += Math.cos(rad) * b.energy;
-    sy += Math.sin(rad) * b.energy;
-    wsum += b.energy;
-  }
-  if (wsum === 0) return null;
-  return (Math.atan2(sy / wsum, sx / wsum) * 180 / Math.PI + 360) % 360;
-}
-
-function renderSpectralSummary(spectralRaw, buoyParsed) {
-  const container = el('spectral-summary-table');
-  if (!container) return;
-  container.innerHTML = '';
-
-  let summary = null;
-  let trends = null;
-  let source = null; // 'live' (realtime NDBC .spec) | 'pipeline' (2h archive)
-  if (spectralRaw && spectralRaw.spec) {
-    const specRows = parseSpecRows(spectralRaw.spec);
-    summary = specRows[0] || null;
-    if (summary) {
-      source = 'live';
-      trends = computeSpecTrends(summary, pickTrendBaseline(specRows));
-    }
-  }
-  if (!summary && spectralRaw && spectralRaw._pipelineSummary) {
-    const ps = spectralRaw._pipelineSummary;
-    source = 'pipeline';
-    summary = {
-      hs: ps.significant_wave_height_m,
-      swellHt: ps.swell_height_m,
-      swellPeriod: ps.swell_period,
-      swellDir: ps.swell_direction,
-      windHt: ps.wind_wave_height_m,
-      windPeriod: ps.wind_wave_period,
-      windDir: ps.wind_wave_direction
-    };
-  }
-  if (!summary) {
-    STATE.lastSpecSummary = null;
-    container.innerHTML = '<div class="spectral-empty-msg">Spectral summary unavailable</div>';
-    return;
-  }
-
-  // Prefer the energy-weighted direction from the bins when available — more
-  // precise than the 22.5° compass value in the .spec summary.
-  const bins = STATE.lastSpectral && STATE.lastSpectral.bins;
-  const derivedDir = computePrimarySwellDir(bins);
-  if (derivedDir != null) summary.swellDir = derivedDir;
-
-  // Share with the compass rose so both surfaces resolve the same Hs.
-  STATE.lastSpecSummary = summary;
-
-  const mToFt = v => v != null ? (v * 3.28084).toFixed(1) : '—';
-  const fmtP = v => v != null ? v.toFixed(1) : '—';
-
-  // Trend marker (▲ / ▼ + delta in display units) next to a numeric cell.
-  // Flat / unavailable trends render nothing.
-  const trendHTML = (t, unit) => {
-    if (!t || t.dir === 'flat') return '';
-    const cls = t.dir === 'up' ? 'trend-up' : 'trend-down';
-    const sym = t.dir === 'up' ? '▲' : '▼';
-    const sign = t.delta > 0 ? '+' : '−';
-    const mag = Math.abs(t.delta).toFixed(1);
-    return ` <span class="trend ${cls}" title="${sign}${mag} ${unit} vs ~1h ago">${sym}${mag}</span>`;
-  };
-
-  // NDBC directions are FROM (meteorological). The glyph points in the
-  // TRAVEL (to) direction — same convention as drawArrow() and the
-  // lineup-map arrows — while the text keeps the FROM label.
-  const fmtDir = v => {
-    if (v == null) return '—';
-    const toDeg = (v + 180) % 360;
-    return `<span class="dir-arrow" style="transform:rotate(${Math.round(toDeg)}deg)" ` +
-      `title="from ${directionLabel(v)} (${Math.round(v)}°), traveling ${directionLabel(toDeg)}">↑</span>` +
-      `${directionLabel(v)} (${Math.round(v)}°)`;
-  };
-
-  // Period cell: color chip keyed to the compass-rose legend ramp (2s→22s+).
-  const fmtPeriodCell = (p, t) => {
-    if (p == null) return '—';
-    return `<span class="period-chip" style="background:${periodColorRGBA(p, 1)}"></span>` +
-      fmtP(p) + trendHTML(t, 's');
-  };
-  const fmtHtCell = (m, t) => m == null ? '—' : mToFt(m) + trendHTML(t, 'ft');
-
-  const hsFt = resolveHsFt(summary.hs, buoyParsed && buoyParsed.waveHeight, bins);
-  const hsCell = hsFt != null
-    ? hsFt.toFixed(1) + trendHTML(trends && trends.hs, 'ft')
-    : '—';
-
-  const t = trends || {};
-  // NDBC's own swell / wind-sea split (SwH / WWH). The pipeline's buoy,
-  // 44097, reports no separation frequency, so NDBC cuts at a fixed 10 s
-  // and 8-9 s swell lands under wind waves; the swell card's 8 s+ band is
-  // the number to read for Choc. The labels name the cut and stay short
-  // (a longer "(NDBC 10 s split)" pushed the table off 390 px phones and
-  // Choc TV); the panel's "What is this?" says why.
-  const pipe = source === 'pipeline';
-  const rows = [
-    { label: pipe ? 'Swell 10 s+' : 'Swell', ht: fmtHtCell(summary.swellHt, t.swellHt), period: fmtPeriodCell(summary.swellPeriod, t.swellPeriod), dir: fmtDir(summary.swellDir) },
-    { label: pipe ? 'Wind waves &lt;10 s' : 'Wind waves', ht: fmtHtCell(summary.windHt, t.windHt), period: fmtPeriodCell(summary.windPeriod, t.windPeriod), dir: fmtDir(summary.windDir) },
-    { label: 'Significant Hs', ht: hsCell, period: '—', dir: '—' }
-  ];
-
-  // Freshness strip — green LIVE for a recent realtime observation, amber
-  // STALE for an old one, amber ARCHIVE on the pipeline fallback.
-  const strip = document.createElement('div');
-  strip.className = 'spectral-status-strip';
-  if (source === 'live' && summary.time) {
-    const ageMs = Date.now() - summary.time.getTime();
-    const state = ageMs <= 2 * 60 * 60 * 1000 ? 'live' : 'stale';
-    strip.classList.add(`is-${state}`);
-    strip.textContent =
-      `${state.toUpperCase()} · obs ${formatTime(summary.time)} (${formatAgo(summary.time)})`;
-  } else if (source === 'pipeline') {
-    strip.classList.add('is-archive');
-    let txt = 'ARCHIVE · pipeline';
-    // Pipeline timestamps arrive as "YYYY-MM-DD HH:mm UTC" strings.
-    const obs = spectralRaw._obsTimeStr
-      ? new Date(spectralRaw._obsTimeStr.replace(' UTC', 'Z').replace(' ', 'T'))
-      : null;
-    if (obs && !isNaN(obs)) txt += ` · obs ${formatTime(obs)} (${formatAgo(obs)})`;
-    if (spectralRaw._fetchTime) {
-      const ft = new Date(spectralRaw._fetchTime);
-      if (!isNaN(ft)) txt += ` · fetched ${formatTime(ft)}`;
-    }
-    strip.textContent = txt;
-  } else {
-    strip.classList.add('is-stale');
-    strip.textContent = 'obs time unavailable';
-  }
-  container.appendChild(strip);
-
-  const table = document.createElement('table');
-  table.className = 'spectral-summary-tbl';
-  const thead = '<thead><tr><th>Component</th><th>Height (ft)</th><th>Period (s)</th><th>Direction</th></tr></thead>';
-  const tbody = rows.map(r =>
-    `<tr><td>${r.label}</td><td class="num-cell">${r.ht}</td><td class="num-cell">${r.period}</td><td class="num-cell">${r.dir}</td></tr>`
-  ).join('');
-  table.innerHTML = thead + '<tbody>' + tbody + '</tbody>';
-  container.appendChild(table);
-}
-
-// ════════════════════════════════════════════════
-// SPECTRAL EMPTY STATE HELPERS
-// ════════════════════════════════════════════════
-
-// buoyId: a spectral buoy whose data isn't available; message says why.
-function showSpectralEmpty(buoyId, message) {
-  const compassContainer = el('compass-canvas').parentElement;
-  const spectrumContainer = el('spectrum-canvas').parentElement;
-  el('compass-canvas').style.display = 'none';
-  el('spectrum-canvas').style.display = 'none';
-  // Remove old empty messages if present
-  compassContainer.querySelectorAll('.spectral-empty-msg').forEach(e => e.remove());
-  spectrumContainer.querySelectorAll('.spectral-empty-msg').forEach(e => e.remove());
-  const msg = document.createElement('div');
-  msg.className = 'spectral-empty-msg';
-  msg.textContent = message || 'Please select a buoy with spectral data (e.g., 44097) to view wave energy.';
-  const msg2 = msg.cloneNode(true);
-  compassContainer.appendChild(msg);
-  spectrumContainer.appendChild(msg2);
-  if (buoyId) {
-    setFooter('footer-compass', `ndbc ${buoyId} · no spectral data currently available`);
-    setFooter('footer-spectrum', `ndbc ${buoyId} · no spectral data currently available`);
-  } else {
-    setFooter('footer-compass', 'Select a spectral buoy to view data');
-    setFooter('footer-spectrum', 'Select a spectral buoy to view data');
-  }
-}
-
-function showSpectralCharts() {
-  el('compass-canvas').style.display = '';
-  el('spectrum-canvas').style.display = '';
-  const compassContainer = el('compass-canvas').parentElement;
-  const spectrumContainer = el('spectrum-canvas').parentElement;
-  compassContainer.querySelectorAll('.spectral-empty-msg').forEach(e => e.remove());
-  spectrumContainer.querySelectorAll('.spectral-empty-msg').forEach(e => e.remove());
-}
-
-// ════════════════════════════════════════════════
-// COMPASS ROSE (Canvas 2D)
-// ════════════════════════════════════════════════
-
-// Period (s) → [R,G,B] anchor stops. Colors keyed to the app's earth-tone
-// palette, re-purposed as a continuous period ramp. Short = wind chop;
-// long = long-period groundswell.
-// Rose/compass colors — palette object (not literals) so kiosk.js can
-// re-theme the rose the same way it re-themes FC_RETRO.
-const ROSE_THEME = {
-  bg:       '#F8F4E8',
-  ring:     '#808080',
-  cardinal: '#000000',
-  window:   '#3a7d56',
-  hs:       '#2c2825',
-  hsSub:    '#8a827a'
-};
-
-const PERIOD_COLOR_STOPS = [
-  [2,  [90, 127, 160]],   // #5a7fa0 steel blue
-  [7,  [58, 125, 125]],   // #3a7d7d teal
-  [11, [58, 125,  86]],   // #3a7d56 sage
-  [16, [184, 122, 46]],   // #b87a2e burnt orange
-  [22, [138,  58, 46]]    // #8a3a2e deep rust
-];
-
-function periodColorRGBA(period, alpha) {
-  const stops = PERIOD_COLOR_STOPS;
-  if (!(period > 0) || period <= stops[0][0]) {
-    const c = stops[0][1];
-    return `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
-  }
-  if (period >= stops[stops.length - 1][0]) {
-    const c = stops[stops.length - 1][1];
-    return `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
-  }
-  for (let i = 0; i < stops.length - 1; i++) {
-    const [p0, c0] = stops[i];
-    const [p1, c1] = stops[i + 1];
-    if (period >= p0 && period <= p1) {
-      const t = (period - p0) / (p1 - p0);
-      const rr = Math.round(c0[0] + (c1[0] - c0[0]) * t);
-      const gg = Math.round(c0[1] + (c1[1] - c0[1]) * t);
-      const bb = Math.round(c0[2] + (c1[2] - c0[2]) * t);
-      return `rgba(${rr},${gg},${bb},${alpha})`;
-    }
-  }
-  return `rgba(128,128,128,${alpha})`;
-}
-
-// Hs = 4 * sqrt(m0) from spectral bins, in FEET (m0 = Σ energy·df).
-function hsFromBinsFt(bins) {
-  if (!bins || !bins.length) return null;
-  let m0 = 0;
-  for (let i = 0; i < bins.length; i++) {
-    const df = i < bins.length - 1
-      ? Math.abs(bins[i + 1].freq - bins[i].freq)
-      : (i > 0 ? Math.abs(bins[i].freq - bins[i - 1].freq) : 0.005);
-    m0 += bins[i].energy * df;
-  }
-  return m0 > 0 ? 4 * Math.sqrt(m0) * 3.28084 : null;
-}
-
-// Single source of truth for the significant wave height shown in the
-// Wave Spectra table and the compass-rose center, so the two adjacent
-// widgets can never disagree. Preference: .spec/pipeline-reported Hs
-// (meters) → buoy stdmet Hs (already feet) → 4√m0 from the bins.
-function resolveHsFt(specHsM, buoyHsFt, bins) {
-  if (specHsM != null) return specHsM * 3.28084;
-  if (buoyHsFt != null) return buoyHsFt;
-  return hsFromBinsFt(bins);
-}
-
-function drawCompassRose(spectral, buoyParsed) {
-  const canvas = el('compass-canvas');
-  const container = canvas.parentElement;
-  const size = Math.min(
-    container.clientWidth || container.offsetWidth || 260,
-    container.clientHeight || container.offsetHeight || 260
-  );
-  if (size <= 0) return;
-  const ctx = canvas.getContext('2d');
-  setCanvasDPR(canvas, ctx, size, size);
-
-  const compact = size < 380;
-  const padLabel = compact ? 10 : 14;
-  const cx = size / 2;
-  const cy = size / 2;
-  const r = size / 2 - (compact ? 22 : 30);
-
-  // Cream Win95 background.
-  ctx.fillStyle = ROSE_THEME.bg;
-  ctx.fillRect(0, 0, size, size);
-
-  // Concentric reference rings (geometric scaffolding only; radial axis now
-  // encodes wave energy density, so no period labels).
-  const guideRings = [0.25, 0.5, 0.75, 1.0];
-  guideRings.forEach(frac => {
-    ctx.strokeStyle = ROSE_THEME.ring;
-    ctx.lineWidth = 0.5;
-    ctx.setLineDash([2, 2]);
-    ctx.beginPath();
-    ctx.arc(cx, cy, frac * r, 0, Math.PI * 2);
-    ctx.stroke();
-  });
-  ctx.setLineDash([]);
-
-  // Cardinal labels — bold black MS Sans Serif.
-  ctx.fillStyle = ROSE_THEME.cardinal;
-  ctx.font = `bold 11px ${FC_CHART_FONT}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('N', cx, cy - r - padLabel);
-  ctx.fillText('S', cx, cy + r + padLabel);
-  ctx.fillText('E', cx + r + padLabel + 2, cy);
-  ctx.fillText('W', cx - r - padLabel - 2, cy);
-
-  // Swell window (Chocomount only)
-  if (STATE.isChocomount) {
-    const min = CONFIG.chocomount.swellWindowMin;
-    const max = CONFIG.chocomount.swellWindowMax;
-    ctx.strokeStyle = ROSE_THEME.window;
-    ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.4;
-    [min, max].forEach(deg => {
-      const rad = degToRad(deg - 90);
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(cx + Math.cos(rad) * r, cy + Math.sin(rad) * r);
-      ctx.stroke();
-    });
-    // Fill the window arc
-    ctx.fillStyle = ROSE_THEME.window;
-    ctx.globalAlpha = 0.06;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, r, degToRad(min - 90), degToRad(max - 90));
-    ctx.closePath();
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    // Swell window degree labels
-    ctx.font = `9px ${FC_CHART_FONT}`;
-    ctx.fillStyle = ROSE_THEME.window;
-    ctx.globalAlpha = 0.6;
-    [min, max].forEach(deg => {
-      const rad = degToRad(deg - 90);
-      const lx = cx + Math.cos(rad) * (r + 8);
-      const ly = cy + Math.sin(rad) * (r + 8);
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`${deg}°`, lx, ly);
-    });
-    // "swell window" label along the arc midpoint
-    const midDeg = (min + max) / 2;
-    const midRad = degToRad(midDeg - 90);
-    const labelR = r * 0.55;
-    ctx.font = `italic 9px ${FC_CHART_FONT}`;
-    ctx.fillStyle = ROSE_THEME.window;
-    ctx.globalAlpha = 0.5;
-    ctx.fillText('swell window', cx + Math.cos(midRad) * labelR, cy + Math.sin(midRad) * labelR);
-    ctx.globalAlpha = 1;
-  }
-
-  // Hopewaves-style directional wave spectrum. One wedge per NDBC
-  // frequency bin, centered on that bin's mean direction (dir1). Radial
-  // length encodes wave energy density S(f); color encodes period; angular
-  // half-width follows the directional-spread parameter r1. All wedges
-  // originate at center and overlap at a fixed alpha so distinct swell
-  // trains remain visually separable.
-  STATE._roseWedges = null;
-  STATE._roseGeom = null;
-  if (spectral && spectral.bins && spectral.bins.length) {
-    const rMax = r * 0.95;
-    const compressed = STATE.roseScaleMode === 'sqrt';
-    const scaleFn = compressed ? Math.sqrt : (v => v);
-
-    // Total spectral energy (Σ energy·df) so each wedge can report its
-    // share in the hover readout. df mirrors hsFromBinsFt's differencing.
-    const bins = spectral.bins;
-    let m0 = 0;
-    const binShare = bins.map((b, i) => {
-      const df = i < bins.length - 1
-        ? Math.abs(bins[i + 1].freq - bins[i].freq)
-        : (i > 0 ? Math.abs(bins[i].freq - bins[i - 1].freq) : 0.005);
-      const e = b.energy > 0 ? b.energy * df : 0;
-      m0 += e;
-      return e;
-    });
-
-    const wedges = [];
-    let maxScaled = 0;
-    for (let i = 0; i < bins.length; i++) {
-      const b = bins[i];
-      if (!(b.energy > 0) || !(b.period > 0) || !Number.isFinite(b.dir1)) continue;
-      const scaled = scaleFn(b.energy);
-      if (scaled > maxScaled) maxScaled = scaled;
-      wedges.push({
-        id: wedges.length,
-        period: b.period,
-        dir: ((b.dir1 % 360) + 360) % 360,
-        r1: Number.isFinite(b.r1) ? Math.max(0, Math.min(1, b.r1)) : null,
-        share: m0 > 0 ? binShare[i] / m0 : 0,
-        scaled
-      });
-    }
-    if (maxScaled > 0) {
-      // Render largest wedges first so small ones stay visible on top.
-      wedges.sort((a, b) => b.scaled - a.scaled);
-
-      const hoverId = STATE._roseHover;
-      const hasHover = hoverId != null && wedges.some(w => w.id === hoverId);
-      const ALPHA = 0.55;
-      const drawn = [];
-      for (const w of wedges) {
-        const rOuter = (w.scaled / maxScaled) * rMax;
-        if (rOuter <= 0.5) continue;
-        // Angular half-width: σ_θ = sqrt(2·(1 − r1)) radians, converted to
-        // degrees and clamped to a legible range. Narrow r1 (tight beam) →
-        // thin wedge; diffuse sea → wider.
-        const halfDeg = w.r1 == null
-          ? 6
-          : Math.max(3, Math.min(25, Math.sqrt(2 * (1 - w.r1)) * (180 / Math.PI)));
-        const startAngle = degToRad(w.dir - halfDeg - 90);
-        const endAngle = degToRad(w.dir + halfDeg - 90);
-        const isHover = hasHover && w.id === hoverId;
-
-        ctx.fillStyle = periodColorRGBA(w.period, isHover ? 0.9 : (hasHover ? 0.18 : ALPHA));
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.arc(cx, cy, rOuter, startAngle, endAngle);
-        ctx.closePath();
-        ctx.fill();
-        if (isHover) {
-          ctx.strokeStyle = periodColorRGBA(w.period, 1);
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-        }
-        // Keep hit-test geometry only for wedges actually drawn.
-        drawn.push({ id: w.id, dir: w.dir, halfDeg, rOuter, period: w.period, share: w.share });
-      }
-      STATE._roseWedges = drawn;
-      STATE._roseGeom = { cx, cy, size };
-    }
-  }
-
-  // Hs value at center — shared resolver (resolveHsFt) so the rose and
-  // the Wave Spectra table always display the same number.
-  const hsFt = resolveHsFt(
-    STATE.lastSpecSummary && STATE.lastSpecSummary.hs,
-    buoyParsed && buoyParsed.waveHeight,
-    spectral && spectral.bins
-  );
-  const hsVal = hsFt != null ? hsFt.toFixed(1) : null;
-  if (hsVal) {
-    ctx.font = `bold 14px ${FC_CHART_FONT_MONO}`;
-    ctx.fillStyle = ROSE_THEME.hs;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(`${hsVal} ft`, cx, cy);
-    ctx.font = `9px ${FC_CHART_FONT}`;
-    ctx.fillStyle = ROSE_THEME.hsSub;
-    ctx.fillText('Hs', cx, cy + 14);
-  }
-}
-
-// ── Compass rose hover / tap inspection ─────────
-//
-// Hit-tests the pointer against the wedge geometry recorded by
-// drawCompassRose, highlights the most specific (smallest) wedge under
-// the cursor, and describes that swell band in the readout strip.
-// Desktop: hover; touch: tap toggles, tapping empty space clears.
-
-function _roseWedgeAt(evX, evY) {
-  const g = STATE._roseGeom;
-  const wedges = STATE._roseWedges;
-  if (!g || !wedges || !wedges.length) return null;
-  const dx = evX - g.cx;
-  const dy = evY - g.cy;
-  const radius = Math.hypot(dx, dy);
-  if (radius > g.size / 2) return null;
-  const angle = (radToDeg(Math.atan2(dy, dx)) + 90 + 360) % 360;
-  let best = null;
-  for (const w of wedges) {
-    let d = Math.abs(angle - w.dir) % 360;
-    if (d > 180) d = 360 - d;
-    if (d > w.halfDeg + 1) continue;
-    if (radius > w.rOuter + 2) continue;
-    // Smallest covering wedge = the one visually on top (largest drawn first).
-    if (!best || w.rOuter < best.rOuter) best = w;
-  }
-  return best;
-}
-
-function _setRoseHover(w) {
-  const id = w ? w.id : null;
-  if (STATE._roseHover === id) return;
-  STATE._roseHover = id;
-  const readout = el('rose-readout');
-  if (readout) {
-    if (w) {
-      const inWin = STATE.isChocomount && swellDirClass(w.dir) === 'dir-in';
-      const pct = w.share >= 0.01 ? Math.round(w.share * 100) + '%' : '<1%';
-      readout.textContent =
-        `${w.period.toFixed(1)}s from ${directionLabel(w.dir)} (${Math.round(w.dir)}°) · ${pct} of energy${inWin ? ' · in window' : ''}`;
-      readout.classList.add('has-band');
-      readout.classList.toggle('in-window', inWin);
-    } else {
-      readout.textContent = 'hover a petal to inspect that swell band';
-      readout.classList.remove('has-band', 'in-window');
-    }
-  }
-  if (STATE.lastSpectral) drawCompassRose(STATE.lastSpectral, STATE.lastBuoyParsed);
-}
-
-(function initRoseHover() {
-  let raf = null;
-  function attach() {
-    const canvas = el('compass-canvas');
-    if (!canvas || canvas._roseHoverWired) return;
-    canvas._roseHoverWired = true;
-    canvas.addEventListener('mousemove', (e) => {
-      if (raf) return; // one hit-test per frame
-      raf = requestAnimationFrame(() => {
-        raf = null;
-        const rect = canvas.getBoundingClientRect();
-        _setRoseHover(_roseWedgeAt(e.clientX - rect.left, e.clientY - rect.top));
-      });
-    });
-    canvas.addEventListener('mouseleave', () => _setRoseHover(null));
-    canvas.addEventListener('click', (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const w = _roseWedgeAt(e.clientX - rect.left, e.clientY - rect.top);
-      // Tap a petal to select it (no-op if already selected via hover);
-      // tap empty space to clear — the touch equivalent of mouseleave.
-      _setRoseHover(w);
-    });
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', attach);
-  } else {
-    attach();
-  }
-})();
-
-// ════════════════════════════════════════════════
-// WAVE ENERGY SPECTRUM (Canvas 2D)
-// ════════════════════════════════════════════════
-
-function drawSpectrum(spectral) {
-  const canvas = el('spectrum-canvas');
-  const container = canvas.parentElement;
-  const W = container.clientWidth;
-  const H = container.clientHeight;
-  if (W <= 0 || H <= 0) return;
-  const ctx = canvas.getContext('2d');
-  setCanvasDPR(canvas, ctx, W, H);
-
-  const pad = { top: 12, right: 16, bottom: 36, left: 52 };
-  const plotW = W - pad.left - pad.right;
-  const plotH = H - pad.top - pad.bottom;
-
-  if (!spectral || !spectral.bins || spectral.bins.length === 0) return;
-
-  const bins = spectral.bins.filter(b => b.freq > 0.03 && b.freq < 0.5 && b.energy > 0);
-  if (bins.length === 0) return;
-
-  const maxE = Math.max(...bins.map(b => b.energy));
-
-  // Background
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, W, H);
-
-  // Y-axis grid lines first (behind the fill)
-  ctx.fillStyle = '#8a827a';
-  ctx.font = `10px ${FC_CHART_FONT}`;
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  const eStep = maxE > 10 ? Math.ceil(maxE / 5) : maxE > 1 ? 1 : 0.5;
-  for (let e = 0; e <= maxE; e += eStep) {
-    const y = pad.top + plotH - (e / maxE) * plotH;
-    ctx.fillText(e.toFixed(e < 1 ? 1 : 0), pad.left - 6, y);
-    ctx.strokeStyle = '#eae6e0';
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(pad.left, y);
-    ctx.lineTo(pad.left + plotW, y);
-    ctx.stroke();
-  }
-
-  // Filled area chart — per-bin vertical strips colored by direction
-  const baseline = pad.top + plotH;
-  let peakIdx = 0;
-  let peakE = 0;
-  bins.forEach((bin, i) => {
-    if (bin.energy > peakE) { peakE = bin.energy; peakIdx = i; }
-    const x0 = pad.left + (i / bins.length) * plotW;
-    const x1 = pad.left + ((i + 1) / bins.length) * plotW;
-    const h = (bin.energy / maxE) * plotH;
-    const y = baseline - h;
-
-    ctx.fillStyle = swellDirColor(bin.dir1);
-    ctx.globalAlpha = 0.45;
-    ctx.fillRect(x0, y, x1 - x0, h);
-    ctx.globalAlpha = 1;
-  });
-
-  // Smooth line on top of area
-  ctx.beginPath();
-  ctx.strokeStyle = '#5c554d';
-  ctx.lineWidth = 1.5;
-  bins.forEach((bin, i) => {
-    const x = pad.left + ((i + 0.5) / bins.length) * plotW;
-    const y = baseline - (bin.energy / maxE) * plotH;
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-
-  // Peak period annotation (vertical dashed line)
-  if (peakE > 0) {
-    const peakX = pad.left + ((peakIdx + 0.5) / bins.length) * plotW;
-    const peakY = baseline - (peakE / maxE) * plotH;
-    ctx.setLineDash([3, 3]);
-    ctx.strokeStyle = '#2c2825';
-    ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(peakX, pad.top);
-    ctx.lineTo(peakX, baseline);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.globalAlpha = 1;
-    // Peak label
-    ctx.font = `bold 9px ${FC_CHART_FONT}`;
-    ctx.fillStyle = '#2c2825';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    const peakPeriod = bins[peakIdx].period;
-    ctx.fillText(`${peakPeriod.toFixed(1)}s peak`, peakX, peakY - 4);
-  }
-
-  // X-axis: period labels (thin out on narrow screens to avoid overlap)
-  ctx.fillStyle = '#8a827a';
-  ctx.font = `10px ${FC_CHART_FONT}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  const labelPeriods = W < 360
-    ? [4, 8, 12, 16, 20]
-    : [4, 6, 8, 10, 12, 14, 16, 18, 20];
-  labelPeriods.forEach(p => {
-    const f = 1 / p;
-    const idx = bins.findIndex(b => b.freq >= f);
-    if (idx >= 0) {
-      const x = pad.left + (idx / bins.length) * plotW;
-      ctx.fillText(`${p}s`, x, baseline + 8);
-    }
-  });
-
-  // X-axis title
-  ctx.fillText('period', pad.left + plotW / 2, baseline + 22);
-
-  // Y-axis label (rotated)
-  ctx.save();
-  ctx.translate(10, pad.top + plotH / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.font = `9px ${FC_CHART_FONT}`;
-  ctx.fillStyle = '#8a827a';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('Energy (m\u00B2/Hz)', 0, 0);
-  ctx.restore();
-}
-
-// ════════════════════════════════════════════════
-// CANVAS RESIZE OBSERVER (all four charts)
-// ════════════════════════════════════════════════
-
-(function initCanvasResizeObserver() {
-  let resizeTimer = null;
-  const observer = new ResizeObserver(() => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      if (STATE.lastSpectral) {
-        drawCompassRose(STATE.lastSpectral, STATE.lastBuoyParsed);
-        drawSpectrum(STATE.lastSpectral);
-      }
-      if (STATE.forecastData && STATE.forecastData.marine) {
-        // Drop cached CSS dims and inline sizing on the chart canvases
-        // so the next draw re-measures from their CSS-driven natural
-        // size (rather than reusing dims that pre-date the resize).
-        invalidateCanvasDPR(el('forecast-canvas-swell'));
-        invalidateCanvasDPR(el('forecast-canvas-wind'));
-        invalidateCanvasDPR(el('forecast-canvas-tide'));
-        const d = STATE.forecastData;
-        drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo, d.tidePred, d.buoyParsed);
-      }
-      if (STATE._cachedTidePred) {
-        drawTideChart(STATE._cachedTidePred);
-      }
-    }, 250);
-  });
-  function attach() {
-    const cc = el('compass-canvas');
-    const sc = el('spectrum-canvas');
-    const fcContainer = el('forecast-chart-container');
-    const tc = el('tide-canvas');
-    if (cc && cc.parentElement) observer.observe(cc.parentElement);
-    if (sc && sc.parentElement) observer.observe(sc.parentElement);
-    if (fcContainer) observer.observe(fcContainer);
-    if (tc && tc.parentElement) observer.observe(tc.parentElement);
-    initRoseScaleToggle();
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', attach);
-  } else {
-    attach();
-  }
-})();
-
-// Canvas text is rasterized at draw time, so charts painted before the
-// self-hosted pixel font (style.css @font-face "MS Sans Serif") finished
-// loading would keep fallback glyphs forever. Repaint once fonts settle;
-// the guards make this a no-op when nothing has been drawn yet.
-if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
-  document.fonts.ready.then(() => {
-    if (STATE.forecastData && STATE.forecastData.marine) {
-      const d = STATE.forecastData;
-      drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo, d.tidePred, d.buoyParsed);
-    }
-    if (STATE.lastSpectral) {
-      drawCompassRose(STATE.lastSpectral, STATE.lastBuoyParsed);
-      drawSpectrum(STATE.lastSpectral);
-    }
-  }).catch(() => { /* font load failure → fallback stack already on screen */ });
-}
-
-function initRoseScaleToggle() {
-  try {
-    const saved = localStorage.getItem('lcc-rose-scale');
-    if (saved === 'linear' || saved === 'sqrt') STATE.roseScaleMode = saved;
-  } catch (_) { /* localStorage unavailable */ }
-
-  const chips = document.querySelectorAll('.rose-scale-chip');
-  if (!chips.length) return;
-
-  const sync = () => {
-    chips.forEach(c => {
-      c.classList.toggle('is-active', c.dataset.scale === STATE.roseScaleMode);
-    });
-  };
-  sync();
-
-  chips.forEach(chip => {
-    chip.addEventListener('click', () => {
-      const mode = chip.dataset.scale;
-      if (mode !== 'linear' && mode !== 'sqrt') return;
-      if (STATE.roseScaleMode === mode) return;
-      STATE.roseScaleMode = mode;
-      try { localStorage.setItem('lcc-rose-scale', mode); } catch (_) {}
-      sync();
-      if (STATE.lastSpectral) drawCompassRose(STATE.lastSpectral, STATE.lastBuoyParsed);
-    });
-  });
-}
-
 
 // ════════════════════════════════════════════════
 // Auth UI & toast notifications
@@ -4740,26 +1068,10 @@ function showToast(message, type) {
   }, 3500);
 }
 
-function updateAuthUI(user) {
-  var signinBtn = el('auth-signin-btn');
-  var signoutBtn = el('auth-signout-btn');
-  var userName = el('auth-user-name');
-  var authPrompt = el('sl-auth-prompt');
-  if (user && !user.isAnonymous) {
-    if (signinBtn) signinBtn.style.display = 'none';
-    if (signoutBtn) signoutBtn.style.display = '';
-    if (userName) {
-      userName.textContent = user.displayName || user.email || '';
-      userName.style.display = '';
-    }
-    if (authPrompt) authPrompt.style.display = 'none';
-  } else {
-    if (signinBtn) signinBtn.style.display = '';
-    if (signoutBtn) signoutBtn.style.display = 'none';
-    if (userName) userName.style.display = 'none';
-  }
-  updateStorageNote();
-}
+// Every sign-in change lands here (firebase-config.js). The look hooks it by
+// name (previews/clean/core.js raises 'auth'): Settings, Log and My ratings
+// follow who is signed in.
+function updateAuthUI(user) {}
 
 // Called by firebase-config.js just before an anonymous session signs in to
 // a Google account that already exists (a returning crew member on a new
@@ -4799,7 +1111,7 @@ async function restoreReleasedEntries(released) {
       console.warn('Could not restore released entry:', e);
     }
   }
-  saveSurfLog(); renderSurfLogTable();
+  saveSurfLog(); surfLogChanged();
 }
 
 // Called by firebase-config.js when an anonymous session becomes a Google
@@ -4842,7 +1154,6 @@ async function migrateAnonDataToUser(prevAnonUid) {
   } catch(e) {
     console.warn('Post-migration Firebase load failed:', e);
   }
-  updateStorageNote();
 }
 
 // ════════════════════════════════════════════════
@@ -4869,7 +1180,6 @@ async function loadSurfLog() {
 function saveSurfLog() {
   try {
     localStorage.setItem('lcc_surfLog', JSON.stringify(STATE.surfLog));
-    updateStorageNote();
   } catch (e) { alert('Storage full — try removing photos or exporting.'); }
 }
 
@@ -4878,7 +1188,7 @@ async function addLogEntry(entry) {
   entry.userId = window._fbUserId || '';
   entry.displayName = window._fbDisplayName || '';
   STATE.surfLog.unshift(entry);
-  saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
+  saveSurfLog(); slRetrain(); surfLogChanged();
   try {
     await saveLogEntryToFirebase(entry);
   } catch(e) {
@@ -4888,19 +1198,19 @@ async function addLogEntry(entry) {
   // Re-save after Firebase upload replaces data-URI photos with Storage URLs.
   // A log load that landed meanwhile kept this entry (loadLogsFromFirebase).
   saveSurfLog();
-  renderSurfLogTable();
+  surfLogChanged();
 }
 
 async function updateLogEntry(id, updates) {
   const idx = STATE.surfLog.findIndex(e => e.id === id);
   if (idx < 0) return;
   Object.assign(STATE.surfLog[idx], updates);
-  saveSurfLog(); slRetrain(); renderSurfLogTable();
+  saveSurfLog(); slRetrain(); surfLogChanged();
   try {
     await saveLogEntryToFirebase(STATE.surfLog[idx]);
     // Re-save after Firebase upload replaces data-URI photos with Storage URLs
     saveSurfLog();
-    renderSurfLogTable();
+    surfLogChanged();
   } catch(e) {
     console.warn('Firebase save failed (entry saved locally):', e);
     showToast('\u26a0 Saved locally \u2014 sync failed', 'warn');
@@ -4912,17 +1222,7 @@ async function deleteLogEntry(id) {
   if (window._fbUserId) {
     try { await fbFirestore.collection('surf_logs').doc(id).delete(); } catch(e) { console.warn('Firestore delete failed:', e); }
   }
-  saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
-}
-
-function updateStorageNote() {
-  const noteEl = el('sl-storage-note');
-  if (!noteEl) return;
-  const count = STATE.surfLog.length;
-  const synced = window._fbUserIsAnon === false;
-  noteEl.textContent = count + ' entries \u00b7 ' + (synced ? '\u2713 Synced to cloud' : '\u26a0 Local only \u2014 sign in to sync');
-  noteEl.classList.toggle('note-synced', synced);
-  noteEl.classList.toggle('note-local', !synced);
+  saveSurfLog(); slRetrain(); surfLogChanged();
 }
 
 // ════════════════════════════════════════════════
@@ -4963,7 +1263,7 @@ async function retryFailedPhotoUploads() {
     if (remaining > 0) stillFailing++;
   }
   saveSurfLog();
-  renderSurfLogTable();
+  surfLogChanged();
   if (stillFailing === 0) {
     showToast('All photos synced', 'success');
   } else {
@@ -5137,71 +1437,20 @@ async function loadLogsFromFirebase() {
     return !unsynced.some(function(u) { return u.id === e.id; });
   }));
   saveSurfLog();
-  slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
+  slRetrain(); surfLogChanged();
 }
 
 // ════════════════════════════════════════════════
-// SURF LOG — Tab Navigation
+// THE LOOK'S TAB
 // ════════════════════════════════════════════════
 
-function initTabBar() {
-  el('tab-btn-forecast')?.addEventListener('click', () => switchTab('forecast'));
-  el('tab-btn-regression')?.addEventListener('click', () => switchTab('regression'));
-  el('tab-btn-surflog')?.addEventListener('click', () => switchTab('surflog'));
-  el('tab-btn-research')?.addEventListener('click', () => switchTab('research'));
-}
-
+// The look keeps the app's tab in step (previews/clean/core.js showTab): My
+// ratings is the app's 'regression' tab, whose borrowed panels redraw while it
+// shows, and Log is 'surflog', whose list hook ('log') fires on the switch.
 function switchTab(tab) {
   STATE.activeTab = tab;
-  el('tab-btn-forecast')?.classList.toggle('active', tab === 'forecast');
-  el('tab-btn-regression')?.classList.toggle('active', tab === 'regression');
-  el('tab-btn-surflog')?.classList.toggle('active', tab === 'surflog');
-  el('tab-btn-research')?.classList.toggle('active', tab === 'research');
-  const vF = el('view-forecast'), vR = el('view-regression'), vS = el('view-surflog'), vM = el('view-research');
-  if (vF) vF.style.display = tab === 'forecast' ? '' : 'none';
-  if (vR) vR.style.display = tab === 'regression' ? '' : 'none';
-  if (vS) vS.style.display = tab === 'surflog' ? '' : 'none';
-  if (vM) vM.style.display = tab === 'research' ? '' : 'none';
-  // The swell map is a large page (sea-floor tiles, forecast fields): it loads only when first opened.
-  const frame = el('research-frame');
-  if (tab === 'research' && frame && !frame.getAttribute('src')) frame.setAttribute('src', frame.dataset.src);
-  // The now-pulse stops itself while the forecast view is hidden.
-  if (tab === 'forecast' && STATE.forecastChart) startNowPulse();
-  if (tab === 'regression') {
-    renderRegressionTab();
-  }
-  if (tab === 'surflog') {
-    renderSurfLogTable();
-    const authPrompt = el('sl-auth-prompt');
-    if (authPrompt && window._fbUserIsAnon !== false) {
-      authPrompt.style.display = '';
-    }
-  }
-}
-
-// Tabs are always visible. Per-tab content gates on STATE.isChocomount instead.
-function updateTabBarVisibility() {
-  const tabBar = el('tab-bar');
-  if (tabBar) tabBar.style.display = '';
-  applyChocOnlyVisibility();
-}
-
-// Tab 1: lineup map shown only for Choc.
-// Tab 2: weights panel + summary shown only for Choc; otherwise empty-state.
-// Tab 3: log form shown only for Choc; past sessions stay visible regardless.
-function applyChocOnlyVisibility() {
-  const isChoc = STATE.isChocomount;
-  // Tab 1
-  const lineup = el('panel-lineup');
-  if (lineup) lineup.style.display = isChoc ? '' : 'none';
-  const fcToggleWrap = el('forecast-coord-toggle-wrap');
-  if (fcToggleWrap) fcToggleWrap.style.display = isChoc ? '' : 'none';
-  // Tab 3
-  const slForm = el('panel-surflog-form');
-  if (slForm) slForm.style.display = isChoc ? '' : 'none';
-  // Tab 2 surfaces refreshed lazily on switchTab; pull current values now too
-  // so the rendered tab reflects the latest selection without re-clicking.
-  if (STATE.activeTab === 'regression') renderRegressionTab();
+  if (tab === 'regression') renderRegressionTab();
+  if (tab === 'surflog') surfLogChanged();
 }
 
 // ════════════════════════════════════════════════
@@ -5548,8 +1797,6 @@ async function _fetchNDBCHistoricalConditionsCore(dateStr, preFetchedTide) {
 
 function fmtDate(d) { return d.toISOString().split('T')[0]; }
 
-function angularDist(a, b) { let d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
-
 // Wave group velocity approximation: speed (knots) ≈ SWELL_SPEED_KTS_PER_PERIOD × period (seconds)
 // This is the standard surf forecaster rule (deep-water group velocity ~1.5 × period).
 const SWELL_SPEED_KTS_PER_PERIOD = 1.5;
@@ -5752,26 +1999,6 @@ function _isFabricatedTide(t) {
 function _dropFabricatedTide(cond) {
   if (cond && _isFabricatedTide(cond.tide)) cond.tide = null;
   return cond;
-}
-
-// Estimate swell travel lag from buoy to Chocomount.
-// Looks at swell periods 2-5 hours before session, computes average group velocity travel time.
-function estimateSwellLag(marine, sessionDateStr) {
-  if (!marine?.hourly) return 0;
-  const sessionT = new Date(sessionDateStr).getTime();
-  const t5h = sessionT - 5 * 3600000;
-  const t2h = sessionT - 2 * 3600000;
-  const times = marine.hourly.time || [];
-  const periods = marine.hourly.swell_wave_period || marine.hourly.wave_period || [];
-  let sumPeriod = 0, count = 0;
-  for (let i = 0; i < times.length; i++) {
-    const t = new Date(times[i]).getTime();
-    if (t >= t5h && t <= t2h && periods[i] > 0) { sumPeriod += periods[i]; count++; }
-  }
-  if (count === 0) return 0;
-  const avgPeriod = sumPeriod / count;
-  const arrival = swellArrivalTime(avgPeriod, CONFIG.chocomount.buoyDistanceMiles);
-  return arrival ? arrival.minutes : 0;
 }
 
 // Open-Meteo marine archive (reanalysis) lookup — primary historical-
@@ -6014,20 +2241,6 @@ function renderConditionsDisplay(cond) {
 
 let _slConditions = null;
 
-// Slider description maps
-const SIZE_DESCS = { 1:'Ankle', 2:'Flat', 3:'Knee', 4:'Waist', 5:'Waist', 6:'Chest', 7:'Chest', 8:'Head high', 9:'Overhead', 10:'2X Overhead' };
-const WIND_DESCS = { 1:'Unmanageable', 2:'Unmanageable', 3:'Choppy', 4:'Choppy', 5:'Choppy but enjoyable', 6:'Choppy but enjoyable', 7:'Glassy / Light Offshore', 8:'Glassy / Light Offshore', 9:'Glassy / Light Offshore', 10:'Glassy / Light Offshore' };
-const RIDE_DESCS = { 1:'Breaking inside out', 2:'Go straight', 3:'Go straight', 4:'One critical turn', 5:'One critical turn', 6:'Connecting to beach', 7:'Connecting to beach', 8:'Reeling to beach', 9:'Reeling to beach', 10:'Reeling to beach' };
-
-function updateSliderDesc(sliderId, descId, val) {
-  const descEl = el(descId);
-  if (!descEl) return;
-  const v = parseInt(val);
-  if (sliderId.includes('size')) descEl.textContent = SIZE_DESCS[v] || '';
-  else if (sliderId.includes('wind')) descEl.textContent = WIND_DESCS[v] || '';
-  else if (sliderId.includes('ride')) descEl.textContent = RIDE_DESCS[v] || '';
-}
-
 // Save button stays disabled until all three rating sliders have been
 // touched. Editing an existing entry pre-touches the sliders.
 function _slUpdateSaveEnabled() {
@@ -6072,10 +2285,6 @@ function initSurfLogForm() {
     if (s && el(did)) el(did).textContent = descFn(s.value);
   });
   _slUpdateSaveEnabled();
-  el('sl-add-url')?.addEventListener('click', () => {
-    const input = el('sl-photo-url'), url = (input.value||'').trim();
-    if (url) { _slPhotos.push(url); _slPhotoFiles.push(null); input.value = ''; renderPhotoGallery(); }
-  });
   el('sl-photo-file')?.addEventListener('change', async e => {
     for (const f of Array.from(e.target.files)) {
       const uri = await resizeImageFile(f, 800, 0.7);
@@ -6153,14 +2362,6 @@ function initSurfLogForm() {
   el('sl-cancel-edit-btn')?.addEventListener('click', () => {
     STATE.surfLogEditId = null; el('sl-cancel-edit-btn').style.display = 'none';
     el('sl-save-btn').textContent = 'Save Entry'; resetSurfLogForm();
-  });
-  el('sl-export-json')?.addEventListener('click', exportJSON);
-  el('sl-export-csv')?.addEventListener('click', exportCSV);
-  el('sl-import-json-btn')?.addEventListener('click', () => el('sl-import-json')?.click());
-  el('sl-import-json')?.addEventListener('change', importJSON);
-  el('sl-backfill-archive-btn')?.addEventListener('click', backfillAllSessionsFromArchive);
-  ['sl-filter-from','sl-filter-to','sl-filter-rating'].forEach(id => {
-    el(id)?.addEventListener('change', () => renderSurfLogTable());
   });
 }
 
@@ -6315,7 +2516,7 @@ function importJSON(ev) {
         }
       }
       STATE.surfLog.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
-      saveSurfLog(); slRetrain(); renderSurfLogTable(); updatePersonalMatchToggle();
+      saveSurfLog(); slRetrain(); surfLogChanged();
       alert('Imported ' + imported + ' entries.' +
         (skipped ? ' Skipped ' + skipped + ' (owned by another account — sign in as its owner — or invalid ratings).' : '') +
         (unsynced ? ' ' + unsynced + ' saved locally only — sync failed.' : ''));
@@ -6445,7 +2646,7 @@ async function backfillAllSessionsFromArchive() {
   if (bar) bar.style.width = '100%';
   saveSurfLog();
   if (typeof slRetrain === 'function') slRetrain();
-  if (typeof renderSurfLogTable === 'function') renderSurfLogTable();
+  if (typeof surfLogChanged === 'function') surfLogChanged();
   if (btn) { btn.disabled = false; btn.textContent = 'Re-fetch all session conditions from Open-Meteo archive'; }
 
   const tideTotal = tideRising + tideFalling + tideSlack;
@@ -6474,14 +2675,8 @@ async function backfillAllSessionsFromArchive() {
 }
 
 // ════════════════════════════════════════════════
-// SURF LOG — Table Rendering
+// SURF LOG — Incomplete entries
 // ════════════════════════════════════════════════
-
-function ratingBadge(val) {
-  const v = typeof val === 'number' ? val : parseFloat(val);
-  const cls = v >= 7 ? 'sl-badge-good' : v >= 4 ? 'sl-badge-fair' : 'sl-badge-poor';
-  return '<span class="sl-rating-badge '+cls+'">'+v+'</span>';
-}
 
 // One predicate (audit C44): an entry is incomplete when getIncompleteFields
 // finds anything. It drives the "needs review" banner AND _modelRows, so a
@@ -6523,113 +2718,11 @@ function getIncompleteFields(entry) {
 window._llcIsLogEntryIncomplete = isLogEntryIncomplete;
 window._llcGetIncompleteFields = getIncompleteFields;
 
-function renderSurfLogTable() {
-  const tbody = el('surflog-tbody'), emptyEl = el('surflog-empty'), exportRow = el('sl-export-row');
-  if (!tbody) return;
-  tbody.innerHTML = '';
-  let entries = [...STATE.surfLog];
-  const fromD = el('sl-filter-from')?.value, toD = el('sl-filter-to')?.value;
-  const minR = parseFloat(el('sl-filter-rating')?.value || '0');
-  if (fromD) entries = entries.filter(e => e.timestamp >= fromD);
-  if (toD) entries = entries.filter(e => e.timestamp <= toD + 'T23:59:59');
-  if (minR > 0) entries = entries.filter(e => (e.ratings.size+e.ratings.windQuality+e.ratings.rideQuality)/3 >= minR);
-
-  // Partition into incomplete + complete so flagged rows surface at the top of the table.
-  const isIncomplete = (entry) => !!(window._llcIsLogEntryIncomplete && window._llcIsLogEntryIncomplete(entry));
-  const byDateDesc = (a, b) => new Date(b.timestamp) - new Date(a.timestamp);
-  const incomplete = entries.filter(isIncomplete).sort(byDateDesc);
-  const complete = entries.filter(e => !isIncomplete(e)).sort(byDateDesc);
-  entries = [...incomplete, ...complete];
-
-  renderIncompleteBanner(incomplete.length);
-
-  const tableEl = el('surflog-table');
-  if (entries.length === 0) {
-    if (emptyEl) emptyEl.style.display = '';
-    if (tableEl) tableEl.style.display = 'none';
-  } else {
-    if (emptyEl) emptyEl.style.display = 'none';
-    if (tableEl) tableEl.style.display = '';
-  }
-
-  entries.forEach(entry => {
-    const tr = document.createElement('tr');
-    const d = new Date(entry.timestamp);
-    const dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'});
-    const timeStr = d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
-    const avg = ((entry.ratings.size+entry.ratings.windQuality+entry.ratings.rideQuality)/3).toFixed(1);
-    // Every entry field below can be written by any crew member (or an
-    // import), and the community log renders for everyone: escape it all
-    // (audit C27). Notes are escaped AFTER slicing so an entity is never cut.
-    const validPhotos = (entry.photos||[]).map(p=>safeUrl(photoUrl(p))).filter(Boolean).slice(0,3);
-    const photoHtml = validPhotos.length > 0
-      ? '<div class="sl-row-photos">'+validPhotos.map(url=>'<img src="'+url+'" alt="" onerror="this.style.display=\'none\'">').join('')+'</div>'
-      : '<span style="color:var(--ink4)">\u2014</span>';
-    const notesRaw = String(entry.notes||'');
-    const notes = escHtml(notesRaw.slice(0,30)) + (notesRaw.length>30?'...':'');
-    const isOwn = entry.userId === window._fbUserId;
-    const attribution = (!isOwn && entry.displayName) ? '<br><span style="color:var(--ink4);font-size:0.6rem">'+escHtml(entry.displayName)+'</span>' : '';
-    const incompletePill = isIncomplete(entry) ? '<br><span class="sl-incomplete-pill">\u26a0 incomplete</span>' : '';
-    const actionHtml = isOwn
-      ? '<button class="sl-btn sl-btn-sm sl-edit-btn" data-id="'+escHtml(entry.id)+'">Edit</button> <button class="sl-btn sl-btn-sm sl-btn-danger sl-delete-btn" data-id="'+escHtml(entry.id)+'">Del</button>'
-      : '<span style="color:var(--ink4);font-size:0.65rem">community</span>';
-    tr.innerHTML = '<td style="white-space:nowrap">'+dateStr+'<br><span style="color:var(--ink4);font-size:0.65rem">'+timeStr+'</span>'+attribution+incompletePill+'</td>'
-      +'<td>'+photoHtml+'</td>'
-      +'<td>'+ratingBadge(entry.ratings.size)+'</td>'
-      +'<td>'+ratingBadge(entry.ratings.windQuality)+'</td>'
-      +'<td>'+ratingBadge(entry.ratings.rideQuality)+'</td>'
-      +'<td>'+ratingBadge(parseFloat(avg))+'</td>'
-      +'<td style="max-width:120px;overflow:hidden;text-overflow:ellipsis">'+(notes||'<span style="color:var(--ink4)">\u2014</span>')+'</td>'
-      +'<td style="white-space:nowrap">'+actionHtml+'</td>';
-    tr.style.cursor = 'pointer';
-    tr.addEventListener('click', ev => { if (!ev.target.closest('button')) toggleEntryDetail(entry, tr); });
-    tbody.appendChild(tr);
-  });
-
-  tbody.querySelectorAll('.sl-edit-btn').forEach(b => b.addEventListener('click', () => editLogEntry(b.dataset.id)));
-  tbody.querySelectorAll('.sl-delete-btn').forEach(b => b.addEventListener('click', () => { if(confirm('Delete this session?')) deleteLogEntry(b.dataset.id); }));
-  updateStorageNote();
-  if (exportRow) exportRow.style.display = STATE.surfLog.length > 0 ? '' : 'none';
-}
-
-function renderIncompleteBanner(count) {
-  const existing = el('sl-incomplete-banner');
-  if (count <= 0) {
-    if (existing) existing.remove();
-    return;
-  }
-  const noun = count === 1 ? 'entry is' : 'entries are';
-  const text = count + ' ' + noun + ' incomplete and excluded from your model. Click Edit on flagged rows to repair.';
-  if (existing) {
-    existing.textContent = text;
-    return;
-  }
-  const tableWrap = document.querySelector('#panel-surflog-entries .surflog-table-wrap');
-  if (!tableWrap) return;
-  const banner = document.createElement('div');
-  banner.id = 'sl-incomplete-banner';
-  banner.className = 'sl-incomplete-banner';
-  banner.textContent = text;
-  tableWrap.parentNode.insertBefore(banner, tableWrap);
-}
-
-function toggleEntryDetail(entry, tr) {
-  const existing = tr.nextElementSibling;
-  if (existing?.classList.contains('sl-detail-row')) { existing.remove(); return; }
-  const dr = document.createElement('tr'); dr.className = 'sl-detail-row';
-  const c = entry.conditions;
-  let h = '<td colspan="8"><div class="sl-detail-content">';
-  if (c) {
-    // Stored values from any crew member's entry: escape them (audit C27).
-    const sw = c.swell || {}, w = c.wind || {}, e = escHtml;
-    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Swell</span>'+e(sw.height)+'ft '+e(sw.period)+'s '+directionLabel(sw.direction)+' ('+e(sw.direction)+'\u00b0)';
-    if (sw.secondary) h += '<br>2nd: '+e(sw.secondary.height)+'ft '+e(sw.secondary.period)+'s '+directionLabel(sw.secondary.direction);
-    h += '</div><div class="sl-cond-group"><span class="sl-cond-group-title">Wind</span>'+e(w.speed)+' mph '+directionLabel(w.direction)+' ('+e(w.direction)+'\u00b0)</div>';
-    h += '<div class="sl-cond-group"><span class="sl-cond-group-title">Tide</span>'+e(_formatTideReadout(c.tide))+'</div>';
-  } else { h += '<div style="grid-column:1/-1;color:var(--ink4)">No conditions recorded</div>'; }
-  h += '</div></td>';
-  dr.innerHTML = h; tr.after(dr);
-}
+// Every change to the surf log ends here: loaded, saved, edited, deleted, or
+// a crew member's session arriving from Firestore. The look hooks it by name
+// (previews/clean/core.js raises 'log'): the Log list, My ratings, and
+// Explore's and Methods' ten years follow.
+function surfLogChanged() {}
 
 // ════════════════════════════════════════════════
 // SURF LOG — Linear Regression (Normal Equation)
@@ -7221,22 +3314,6 @@ function renderWeightsPanel() {
 // SURF LOG — Forecast Matching
 // ════════════════════════════════════════════════
 
-function _matchPct(ef, ff, weights, stats) {
-  if (!stats) return 0;
-  const w = weights || new Array(ef.length).fill(1);
-  let dist = 0;
-  for (let i=0;i<ef.length;i++) {
-    const sd = stats.std[i]; if (sd < 1e-10) continue;
-    const ze = (ef[i] - stats.mean[i]) / sd;
-    const zf = (ff[i] - stats.mean[i]) / sd;
-    dist += Math.abs(w[i]) * Math.pow(ze - zf, 2);
-  }
-  return Math.round(Math.exp(-Math.sqrt(dist))*100);
-}
-function computeWaveMatch(ef, ff) { return _matchPct(ef, ff, STATE.surfLogWaveWeights, STATE.surfLogWaveStats); }
-function computeRideMatch(ef, ff) { return _matchPct(ef, ff, STATE.surfLogRideWeights, STATE.surfLogRideStats); }
-function computeCondMatch(ef, ff) { return _matchPct(ef, ff, STATE.surfLogCondWeights, STATE.surfLogCondStats); }
-
 function _predict(ff, weights, stats) {
   if (!weights||!stats) return null;
   let pred = stats.targetMean || 0;
@@ -7246,11 +3323,6 @@ function _predict(ff, weights, stats) {
 function predictWaveRating(wf) { return _predict(wf, STATE.surfLogWaveWeights, STATE.surfLogWaveStats); }
 function predictRideRating(rf) { return _predict(rf, STATE.surfLogRideWeights, STATE.surfLogRideStats); }
 function predictCondRating(cf) { return _predict(cf, STATE.surfLogCondWeights, STATE.surfLogCondStats); }
-
-function simpleMatchPct(a,b) {
-  let dist=0; for(let i=0;i<a.length;i++) dist+=Math.pow(a[i]-b[i],2);
-  return Math.round(Math.exp(-Math.sqrt(dist)/a.length)*100);
-}
 
 // Where the live marine forecast is read: the open-water forecast point, or
 // buoy 44097 when "Use buoy coordinates" is on (see _loadAllDataImpl).
@@ -7313,130 +3385,8 @@ function buildForecastConditions(marine, wind, tideHiLo, tidePred, hi) {
     wind:{speed:wSpd,direction:wDir}, tide:tideInfo, swellLagHours: si !== hi ? Math.round(lagH * 10) / 10 : 0 };
 }
 
-function findBestMatchPerDay(marine, wind, tideHiLo, tidePred) {
-  if (!STATE.surfLog.length||!marine?.hourly) return [];
-  const entries = STATE.surfLog.filter(e=>e.conditions).map(e=>({
-    entry:e,
-    wf:extractWaveFeatures(e.conditions),
-    rf:extractRideFeatures(e.conditions),
-    cf:extractCondFeatures(e.conditions)
-  })).filter(x=>x.wf&&x.rf);
-  if (!entries.length) return [];
-  const times = marine.hourly.time||[], dayMap={};
-  times.forEach((t,i) => { const day=t.split('T')[0]; if(!dayMap[day]) dayMap[day]=[]; dayMap[day].push(i); });
-  const results = [];
-  Object.entries(dayMap).forEach(([day, idxs]) => {
-    let bestWM=0,bestRM=0,bestCM=0,bestE=null,bestWP=null,bestRP=null,bestCP=null,bestH=0;
-    idxs.forEach(hi => {
-      const fc=buildForecastConditions(marine,wind,tideHiLo,tidePred,hi); if(!fc) return;
-      const fwf=extractWaveFeatures(fc), frf=extractRideFeatures(fc), fcf=extractCondFeatures(fc);
-      if(!fwf||!frf) return;
-      entries.forEach(({entry,wf,rf,cf}) => {
-        const wPct=STATE.surfLogWaveWeights?computeWaveMatch(wf,fwf):simpleMatchPct(wf,fwf);
-        const rPct=STATE.surfLogRideWeights?computeRideMatch(rf,frf):simpleMatchPct(rf,frf);
-        const cPct=STATE.surfLogCondWeights?computeCondMatch(cf,fcf):simpleMatchPct(cf,fcf);
-        const avg=(wPct+rPct+cPct)/3;
-        if(avg>((bestWM+bestRM+bestCM)/3)){
-          bestWM=wPct;bestRM=rPct;bestCM=cPct;bestE=entry;bestH=hi;
-          bestWP=STATE.surfLogWaveWeights?predictWaveRating(fwf):null;
-          bestRP=STATE.surfLogRideWeights?predictRideRating(frf):null;
-          bestCP=STATE.surfLogCondWeights?predictCondRating(fcf):null;
-        }
-      });
-    });
-    if(bestE) results.push({day,waveMatch:bestWM,rideMatch:bestRM,condMatch:bestCM,entry:bestE,waveRating:bestWP,rideRating:bestRP,condRating:bestCP,hourIdx:bestH});
-  });
-  return results;
-}
-
-// The personal-matches surface was removed from Tab 1 in favour of the
-// regression results coming on Tab 2. The match-scoring functions below
-// (findBestMatchPerDay, renderPersonalMatchCards) stay because the upcoming
-// Tab 2 work will reuse them; this wrapper is now a no-op kept so existing
-// call sites in addLogEntry/updateLogEntry/loadLogsFromFirebase don't blow up.
-function updatePersonalMatchToggle() { /* intentionally empty */ }
-
-function renderPersonalMatchCards() {
-  const container = el('personal-match-cards');
-  if (!container||!STATE.personalMatchesOpen) return;
-  if (!STATE._cachedMarine||!STATE._cachedWind) {
-    container.innerHTML = '<div style="padding:16px;text-align:center;font-family:var(--mono);font-size:0.75rem;color:var(--ink3)">Load forecast data first.</div>';
-    return;
-  }
-  const matches = findBestMatchPerDay(STATE._cachedMarine, STATE._cachedWind, STATE._cachedTideHiLo, STATE._cachedTidePred);
-  if (!matches.length) { container.innerHTML = '<div style="padding:16px;text-align:center;font-family:var(--mono);font-size:0.75rem;color:var(--ink3)">No matches. Log more sessions.</div>'; return; }
-  let h = '<div class="pm-cards-row">';
-  matches.slice(0,7).forEach(m => {
-    const dl = new Date(m.day).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-    const thumb = m.entry.photos?.[0] ? safeUrl(photoUrl(m.entry.photos[0])) : '';
-    const imgH = thumb ? '<img class="pm-card-img" src="'+thumb+'" alt="" onerror="this.style.display=\'none\'">' : '<div class="pm-card-img" style="display:flex;align-items:center;justify-content:center;color:var(--ink4);font-family:var(--mono);font-size:0.7rem">No photo</div>';
-    const waveLine = '<span class="pm-score-wave">Wave: '+(m.waveRating?m.waveRating.toFixed(1):'--')+'</span>';
-    const rideLine = '<span class="pm-score-ride">Ride: '+(m.rideRating?m.rideRating.toFixed(1):'--')+'</span>';
-    const condLine = '<span class="pm-score-cond">Cond: '+(m.condRating?m.condRating.toFixed(1):'--')+'</span>';
-    const matchLine = '<span class="pm-match-wave">W '+m.waveMatch+'%</span> <span class="pm-match-ride">R '+m.rideMatch+'%</span> <span class="pm-match-cond">C '+m.condMatch+'%</span>';
-    h += '<div class="pm-card" data-day="'+escHtml(m.day)+'" data-eid="'+escHtml(m.entry.id)+'" data-hi="'+m.hourIdx+'">'+imgH+'<div class="pm-card-body"><div class="pm-card-date">'+dl+'</div><div class="pm-card-scores">'+waveLine+' '+rideLine+' '+condLine+'</div><div class="pm-card-match">'+matchLine+'</div></div></div>';
-  });
-  h += '</div>'; container.innerHTML = h;
-  container.querySelectorAll('.pm-card').forEach(c => c.addEventListener('click', () => {
-    const e = STATE.surfLog.find(x=>x.id===c.dataset.eid);
-    if (e) openMatchModal(e, c.dataset.day, parseInt(c.dataset.hi));
-  }));
-}
-
 // ════════════════════════════════════════════════
-// SURF LOG — Match Modal
-// ════════════════════════════════════════════════
-
-function openMatchModal(entry, forecastDay, hi) {
-  STATE.matchModalData = { entry, forecastDay, forecastHourIdx: hi };
-  STATE.matchModalPhotoIdx = 0;
-  el('match-modal').style.display = '';
-  updateModalCarousel(entry.photos||[], 0);
-  const fc = buildForecastConditions(STATE._cachedMarine, STATE._cachedWind, STATE._cachedTideHiLo, STATE._cachedTidePred, hi);
-  let wPct = 0, cPct = 0;
-  if (fc && entry.conditions) {
-    const ewf=extractWaveFeatures(entry.conditions), fwf=extractWaveFeatures(fc);
-    const ecf=extractCondFeatures(entry.conditions), fcf=extractCondFeatures(fc);
-    if(ewf&&fwf) wPct = STATE.surfLogWaveWeights ? computeWaveMatch(ewf,fwf) : simpleMatchPct(ewf,fwf);
-    if(ecf&&fcf) cPct = STATE.surfLogCondWeights ? computeCondMatch(ecf,fcf) : simpleMatchPct(ecf,fcf);
-  }
-  el('modal-match-badge').innerHTML = '<span class="pm-match-wave">Wave '+wPct+'%</span> <span class="pm-match-cond">Cond '+cPct+'%</span>';
-  el('modal-title').textContent = new Date(entry.timestamp).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
-  const ce = el('modal-conditions');
-  if (ce && entry.conditions) {
-    const c=entry.conditions, dl=(l,v)=>'<span class="mc-label">'+l+'</span><span class="mc-val">'+escHtml(v)+'</span>';
-    const tideStr = c.tide ? (c.tide.height+'ft '+c.tide.stage + (typeof c.tide.rate === 'number' ? ' ('+(c.tide.rate>=0?'+':'')+c.tide.rate.toFixed(2)+' ft/hr)' : '')) : '—';
-    ce.innerHTML = [dl('Swell',c.swell.height+'ft '+c.swell.period+'s '+directionLabel(c.swell.direction)), dl('Wind',c.wind.speed+'mph '+directionLabel(c.wind.direction)), dl('Tide',tideStr), fc?dl('Fcst Wind',Math.round(fc.wind.speed)+'mph '+directionLabel(fc.wind.direction)):''].join('');
-  }
-  el('modal-ratings').innerHTML = ratingBadge(entry.ratings.size)+' Size '+ratingBadge(entry.ratings.windQuality)+' Wind '+ratingBadge(entry.ratings.rideQuality)+' Ride';
-  el('modal-notes').textContent = entry.notes || '';
-}
-
-function updateModalCarousel(photos, idx) {
-  const img=el('modal-carousel-img'), dots=el('modal-carousel-dots'), prev=el('modal-carousel-prev'), next=el('modal-carousel-next');
-  if (!img) return;
-  if (!photos.length) { img.src=''; prev.style.display='none'; next.style.display='none'; dots.innerHTML=''; return; }
-  img.src = photoUrl(photos[idx]);
-  prev.style.display = photos.length>1?'':'none';
-  next.style.display = photos.length>1?'':'none';
-  dots.innerHTML = photos.map((_,i)=>'<span class="dot'+(i===idx?' active':'')+'"></span>').join('');
-}
-
-function initMatchModal() {
-  el('match-modal-close')?.addEventListener('click', () => { el('match-modal').style.display='none'; });
-  el('match-modal')?.addEventListener('click', e => { if(e.target===el('match-modal')) el('match-modal').style.display='none'; });
-  el('modal-carousel-prev')?.addEventListener('click', () => {
-    if(!STATE.matchModalData) return; const p=STATE.matchModalData.entry.photos||[];
-    STATE.matchModalPhotoIdx=(STATE.matchModalPhotoIdx-1+p.length)%p.length; updateModalCarousel(p,STATE.matchModalPhotoIdx);
-  });
-  el('modal-carousel-next')?.addEventListener('click', () => {
-    if(!STATE.matchModalData) return; const p=STATE.matchModalData.entry.photos||[];
-    STATE.matchModalPhotoIdx=(STATE.matchModalPhotoIdx+1)%p.length; updateModalCarousel(p,STATE.matchModalPhotoIdx);
-  });
-}
-
-// ════════════════════════════════════════════════
-// SECONDARY SWELL CARD (Tab 1)
+// FORECAST HOURS
 // ════════════════════════════════════════════════
 
 // Index of the current hour in an Open-Meteo hourly series. The series is
@@ -7452,259 +3402,16 @@ function marineNowIndex(marine, nowMs = Date.now()) {
   return key < String(times[0]).slice(0, 13) ? 0 : times.length - 1;
 }
 
-function updateSecondarySwellCard(marine, isChoc, forecastLat, forecastLon) {
-  const card = el('card-secondary-swell');
-  if (!card) return;
-  const hourly = marine && marine.hourly ? marine.hourly : null;
-  // Open-Meteo's "current" block has no secondary-swell fields, so read the
-  // hourly slot for the current hour (slot 0 is local midnight).
-  const i = marineNowIndex(marine);
-  const h = hourly && hourly.secondary_swell_wave_height ? hourly.secondary_swell_wave_height[i] : null;
-  const p = hourly && hourly.secondary_swell_wave_period ? hourly.secondary_swell_wave_period[i] : null;
-  const d = hourly && hourly.secondary_swell_wave_direction ? hourly.secondary_swell_wave_direction[i] : null;
-  if (h == null || h < 1) {
-    card.style.display = 'none';
-    return;
-  }
-  card.style.display = '';
-  el('val-sec-swell-height').textContent = h.toFixed(1) + ' ft';
-  el('val-sec-swell-detail').textContent = (p != null ? p.toFixed(0) + 's' : '—') + ' · ' + directionLabel(d) + (d != null ? ' (' + Math.round(d) + '°)' : '');
-  setFooter('footer-sec-swell', 'Open-Meteo Marine', 'https://open-meteo.com/en/docs/marine-weather-api', 'open-meteo.com');
-  setFooter('footer-sec-swell-coord', _forecastCoordLabel(isChoc, forecastLat, forecastLon));
-}
-
 // ════════════════════════════════════════════════
-// COORD FOOTERS (Tab 1 stat grid)
-// ════════════════════════════════════════════════
-
-function _forecastCoordLabel(isChoc, lat, lon) {
-  if (isChoc) {
-    return 'Forecast pt: ' + lat.toFixed(3) + '°N, ' + lon.toFixed(3) + '°W';
-  }
-  return lat.toFixed(3) + '°N, ' + Math.abs(lon).toFixed(3) + '°W';
-}
-function _windCoordLabel(isChoc, lat, lon) {
-  if (isChoc) {
-    return 'Wind pt: ' + lat.toFixed(3) + '°N, ' + lon.toFixed(3) + '°W (land)';
-  }
-  return lat.toFixed(3) + '°N, ' + Math.abs(lon).toFixed(3) + '°W';
-}
-function _buoyCoordLabel(buoy) {
-  if (!buoy) return '';
-  return 'Buoy ' + buoy.id + ': ' + buoy.lat.toFixed(3) + '°N, ' + Math.abs(buoy.lon).toFixed(3) + '°W';
-}
-
-// Refreshes the small italic coord footer beneath each card on Tab 1.
-// Called from selectBuoy / selectPin after the data loaders run.
-function updateCoordFooters(buoy, forecastLat, forecastLon, displayLat, displayLon) {
-  const isChoc = !!(buoy && buoy.home === 'chocomount');
-  // Swell card: forecast pt (Choc → open water; non-Choc → buoy/pin coord).
-  // For non-Choc the buoy lat/lon equals the forecast pt, so show one line.
-  if (isChoc && buoy) {
-    setFooter('footer-swell-coord', _forecastCoordLabel(true, forecastLat, forecastLon) + ' · ' + _buoyCoordLabel(buoy));
-  } else if (buoy) {
-    setFooter('footer-swell-coord', _buoyCoordLabel(buoy));
-  } else {
-    setFooter('footer-swell-coord', _forecastCoordLabel(false, forecastLat, forecastLon));
-  }
-  setFooter('footer-wind-coord', _windCoordLabel(isChoc, displayLat, displayLon));
-}
-
-// ════════════════════════════════════════════════
-// LINEUP MAP (Tab 1, Choc only)
-// ════════════════════════════════════════════════
-
-const LINEUP_REEF_HEADING = 335;
-
-function _lineupArrow(svg, fromDeg, length, color, label) {
-  if (fromDeg == null) return;
-  const rad = (((fromDeg % 360) + 360) % 360) * Math.PI / 180;
-  const ux = Math.sin(rad);     // forward (apex → origin) unit x
-  const uy = -Math.cos(rad);    // forward unit y (screen y inverted)
-  const px = Math.cos(rad);     // 90° CW perpendicular
-  const py = Math.sin(rad);
-  const HEAD_LEN = 5, HEAD_HALF_W = 3;
-  const originX = 50 + length * ux;
-  const originY = 50 + length * uy;
-  const headBaseX = 50 + HEAD_LEN * ux;
-  const headBaseY = 50 + HEAD_LEN * uy;
-  const cornerLX = headBaseX - HEAD_HALF_W * px;
-  const cornerLY = headBaseY - HEAD_HALF_W * py;
-  const cornerRX = headBaseX + HEAD_HALF_W * px;
-  const cornerRY = headBaseY + HEAD_HALF_W * py;
-  const ns = 'http://www.w3.org/2000/svg';
-  const g = document.createElementNS(ns, 'g');
-  g.setAttribute('style', 'filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6))');
-  const line = document.createElementNS(ns, 'line');
-  line.setAttribute('x1', headBaseX.toFixed(2));
-  line.setAttribute('y1', headBaseY.toFixed(2));
-  line.setAttribute('x2', originX.toFixed(2));
-  line.setAttribute('y2', originY.toFixed(2));
-  line.setAttribute('stroke', color);
-  line.setAttribute('stroke-width', '2');
-  line.setAttribute('stroke-linecap', 'round');
-  g.appendChild(line);
-  const poly = document.createElementNS(ns, 'polygon');
-  poly.setAttribute('points', '50,50 ' + cornerLX.toFixed(2) + ',' + cornerLY.toFixed(2) + ' ' + cornerRX.toFixed(2) + ',' + cornerRY.toFixed(2));
-  poly.setAttribute('fill', color);
-  g.appendChild(poly);
-  if (label) {
-    const OFFSET = 1.8;
-    const fontSize = 2.6;
-    const charW = fontSize * (1.35 / 2.6);
-    const w = Math.max(6, label.length * charW + 2.8);
-    const h = fontSize + 1.4;
-    const cx = originX + (OFFSET + w / 2) * px;
-    const cy = originY + (OFFSET + w / 2) * py;
-    const rect = document.createElementNS(ns, 'rect');
-    rect.setAttribute('x', (cx - w / 2).toFixed(2));
-    rect.setAttribute('y', (cy - h / 2).toFixed(2));
-    rect.setAttribute('width', w.toFixed(2));
-    rect.setAttribute('height', h.toFixed(2));
-    rect.setAttribute('rx', '0.9');
-    rect.setAttribute('fill', '#ffffff');
-    rect.setAttribute('stroke', color);
-    rect.setAttribute('stroke-width', '0.25');
-    g.appendChild(rect);
-    const text = document.createElementNS(ns, 'text');
-    text.setAttribute('x', cx.toFixed(2));
-    text.setAttribute('y', cy.toFixed(2));
-    text.setAttribute('font-size', fontSize);
-    text.setAttribute('fill', '#0a0c18');
-    text.setAttribute('font-weight', '700');
-    text.setAttribute('text-anchor', 'middle');
-    text.setAttribute('dominant-baseline', 'middle');
-    text.textContent = label;
-    g.appendChild(text);
-  }
-  svg.appendChild(g);
-}
-
-function drawLineupMap(marine, wind, buoyParsed, hourIdx) {
-  const svg = el('lineup-overlay');
-  if (!svg) return;
-  while (svg.firstChild) svg.removeChild(svg.firstChild);
-  const ns = 'http://www.w3.org/2000/svg';
-
-  // When hourIdx is supplied (scrubber moved), pull all values from
-  // marine.hourly[hourIdx] / wind.hourly[hourIdx]. Otherwise fall back to
-  // hourly[0] / current as before.
-  const hr = marine && marine.hourly ? marine.hourly : null;
-  const cur = marine && marine.current ? marine.current : {};
-  const i = (typeof hourIdx === 'number' && hourIdx >= 0) ? hourIdx : 0;
-  const useScrub = typeof hourIdx === 'number' && hourIdx >= 0;
-  const waveFt = (hr && hr.swell_wave_height ? hr.swell_wave_height[i] : null) ?? (useScrub ? null : (cur.swell_wave_height ?? cur.wave_height));
-  const period = (hr && hr.swell_wave_period ? hr.swell_wave_period[i] : null) ?? (useScrub ? null : (cur.swell_wave_period ?? cur.wave_period));
-  const swellDir = (hr && hr.swell_wave_direction ? hr.swell_wave_direction[i] : null) ?? (useScrub ? null : (cur.swell_wave_direction ?? cur.wave_direction));
-  const sHeight = hr && hr.secondary_swell_wave_height ? hr.secondary_swell_wave_height[i] : null;
-  const sPeriod = hr && hr.secondary_swell_wave_period ? hr.secondary_swell_wave_period[i] : null;
-  const sDir    = hr && hr.secondary_swell_wave_direction ? hr.secondary_swell_wave_direction[i] : null;
-  const wHr = wind && wind.hourly ? wind.hourly : null;
-  const wSpd = useScrub
-    ? (wHr && wHr.wind_speed_10m ? wHr.wind_speed_10m[i] : null)
-    : (wind && wind.current ? wind.current.wind_speed_10m : null);
-  const wDir = useScrub
-    ? (wHr && wHr.wind_direction_10m ? wHr.wind_direction_10m[i] : null)
-    : (wind && wind.current ? wind.current.wind_direction_10m : null);
-
-  // ── Cone (swell window) ──
-  const coneRadius = 40;
-  const minRad = (CONFIG.chocomount.swellWindowMin * Math.PI) / 180;
-  const maxRad = (CONFIG.chocomount.swellWindowMax * Math.PI) / 180;
-  const coneX1 = 50 + coneRadius * Math.sin(minRad);
-  const coneY1 = 50 - coneRadius * Math.cos(minRad);
-  const coneX2 = 50 + coneRadius * Math.sin(maxRad);
-  const coneY2 = 50 - coneRadius * Math.cos(maxRad);
-  const path = document.createElementNS(ns, 'path');
-  path.setAttribute('d', 'M 50 50 L ' + coneX1.toFixed(2) + ' ' + coneY1.toFixed(2) +
-    ' A ' + coneRadius + ' ' + coneRadius + ' 0 0 1 ' + coneX2.toFixed(2) + ' ' + coneY2.toFixed(2) + ' Z');
-  path.setAttribute('fill', 'rgba(103, 232, 249, 0.18)');
-  svg.appendChild(path);
-
-  // ── Reef heading dashed line ──
-  const reefRad = LINEUP_REEF_HEADING * Math.PI / 180;
-  const reefLen = 15;
-  const reefEndX = 50 + reefLen * Math.sin(reefRad);
-  const reefEndY = 50 - reefLen * Math.cos(reefRad);
-  const reefLine = document.createElementNS(ns, 'line');
-  reefLine.setAttribute('x1', '50'); reefLine.setAttribute('y1', '50');
-  reefLine.setAttribute('x2', reefEndX.toFixed(2));
-  reefLine.setAttribute('y2', reefEndY.toFixed(2));
-  reefLine.setAttribute('stroke', 'rgba(255,255,255,0.45)');
-  reefLine.setAttribute('stroke-width', '0.6');
-  reefLine.setAttribute('stroke-dasharray', '2 2');
-  svg.appendChild(reefLine);
-  const reefLabel = document.createElementNS(ns, 'text');
-  reefLabel.setAttribute('x', (50 + (reefLen + 5) * Math.sin(reefRad)).toFixed(2));
-  reefLabel.setAttribute('y', (50 - (reefLen + 5) * Math.cos(reefRad)).toFixed(2));
-  reefLabel.setAttribute('font-size', '3');
-  reefLabel.setAttribute('fill', 'rgba(255,255,255,0.6)');
-  reefLabel.setAttribute('text-anchor', 'middle');
-  reefLabel.setAttribute('dominant-baseline', 'middle');
-  reefLabel.textContent = 'reef ' + LINEUP_REEF_HEADING + '°';
-  svg.appendChild(reefLabel);
-
-  // ── Arrow length helpers ──
-  const ARROW_MIN = 10, ARROW_MAX = 32;
-  const K_SWELL = 1.4, K_WIND = 0.6;
-  function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
-  // Secondary first (so primary draws on top)
-  const showSecondary = sHeight != null && sHeight >= 1
-    && (waveFt == null || sHeight >= 0.25 * waveFt);
-  if (showSecondary) {
-    const energy2 = sHeight * sHeight * (sPeriod || 1);
-    const len2 = clamp(Math.sqrt(energy2) * K_SWELL, ARROW_MIN, ARROW_MAX);
-    const lbl = sHeight.toFixed(1) + 'ft @ ' + (sPeriod ? sPeriod.toFixed(0) + 's' : '–') + ' ' + directionLabel(sDir);
-    _lineupArrow(svg, sDir, len2, '#67e8f9', lbl);
-  }
-  if (waveFt != null && swellDir != null) {
-    const energy = waveFt * waveFt * (period || 1);
-    const len = clamp(Math.sqrt(energy) * K_SWELL, ARROW_MIN, ARROW_MAX);
-    const lbl = waveFt.toFixed(1) + 'ft @ ' + (period ? period.toFixed(0) + 's' : '–') + ' ' + directionLabel(swellDir);
-    _lineupArrow(svg, swellDir, len, '#67e8f9', lbl);
-  }
-  if (wDir != null) {
-    const len = clamp((wSpd || 0) * K_WIND, ARROW_MIN, ARROW_MAX);
-    const lbl = (wSpd != null ? Math.round(wSpd) : '–') + 'mph ' + directionLabel(wDir);
-    _lineupArrow(svg, wDir, len, '#fbbf24', lbl);
-  }
-  const caption = el('lineup-caption');
-  if (caption) {
-    if (useScrub && hr && hr.time && hr.time[i]) {
-      const t = new Date(hr.time[i]);
-      const stamp = t.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
-      caption.textContent = `Scrubbed to ${stamp} — primary swell, secondary swell, wind. Arrows converge on the lineup.`;
-    } else {
-      caption.textContent = 'Live "now" — primary swell, secondary swell, wind. Arrows converge on the lineup.';
-    }
-  }
-}
-
-// ════════════════════════════════════════════════
-// FORECAST-COORDS TOGGLE (Tab 1, Choc only)
+// FORECAST POINT (Settings › Spot: at the buoy or off the reef)
 // ════════════════════════════════════════════════
 
 function getForecastUseBuoyCoords() {
   return localStorage.getItem('lcc-forecast-use-buoy-coords') === '1';
 }
 
-function initForecastCoordsToggle() {
-  const cb = el('forecast-coord-toggle');
-  if (!cb) return;
-  cb.checked = getForecastUseBuoyCoords();
-  cb.addEventListener('change', () => {
-    try {
-      localStorage.setItem('lcc-forecast-use-buoy-coords', cb.checked ? '1' : '0');
-    } catch (_) {}
-    // Re-fetch and re-render the active selection.
-    if (STATE.selectedBuoy) {
-      loadAllData(STATE.selectedBuoy);
-    }
-  });
-}
-
 // ════════════════════════════════════════════════
-// FORECAST MODEL TOGGLE (Tab 1)
+// FORECAST MODEL (Settings › Forecast model)
 // ════════════════════════════════════════════════
 
 function getForecastModel() {
@@ -7722,14 +3429,6 @@ function setForecastModel(v) {
     if (v) localStorage.setItem('lcc-forecast-model', v);
     else localStorage.removeItem('lcc-forecast-model');
   } catch (_) {}
-  const sel = el('forecast-model-select');
-  if (sel) sel.value = v || '';
-}
-
-function describeForecastModel(v) {
-  if (!v) return 'Auto (Open-Meteo best_match = MeteoFrance MFWAM 0.08° at Choc)';
-  const m = FORECAST_MODELS.find(x => x.value === v);
-  return m ? `${v} · ${m.label}` : v;
 }
 
 // Quick sanity check for the post-fetch fallback path.
@@ -7740,191 +3439,32 @@ function marineHasUsableData(marine) {
   return h.some(v => v != null && Number.isFinite(v));
 }
 
-function initForecastModelDropdown() {
-  const sel = el('forecast-model-select');
-  if (!sel) return;
-  // Populate options (default option already exists in HTML).
-  for (const m of FORECAST_MODELS) {
-    const opt = document.createElement('option');
-    opt.value = m.value;
-    opt.textContent = m.label;
-    sel.appendChild(opt);
-  }
-  sel.value = getForecastModel();
-  sel.addEventListener('change', () => {
-    setForecastModel(sel.value);
-    // Re-fetch the active selection with the new model.
-    if (STATE.selectedBuoy) loadAllData(STATE.selectedBuoy);
-    else if (STATE.pinLat != null && STATE.pinLon != null) loadPinData(STATE.pinLat, STATE.pinLon);
-  });
-}
-
 // ════════════════════════════════════════════════
-// PANEL INFO/SOURCE TOGGLE
-// ════════════════════════════════════════════════
-//
-// Each forecast-tab panel (.panel / .panel-half / .condition-card) hides
-// its attribution footer by default. A ⓘ button injected into the top-
-// right toggles the footer visible. Default state: collapsed.
-
-function initPanelInfoToggles() {
-  const containers = document.querySelectorAll(
-    '#view-forecast .panel, #view-forecast .panel-half, #view-forecast .condition-card'
-  );
-  containers.forEach(panel => {
-    // Only inject if the panel actually contains an attribution footer.
-    const footers = Array.from(panel.children).filter(c =>
-      c.classList && c.classList.contains('panel-footer'));
-    if (!footers.length) return;
-    // Avoid double-init across re-renders.
-    if (panel.querySelector(':scope > .panel-info-toggle')) return;
-    // Establish positioning context for the absolute button.
-    const cs = getComputedStyle(panel);
-    if (cs.position === 'static') panel.style.position = 'relative';
-    // Wrap the panel-footer(s) in a single popover container so the
-    // ⓘ click reveals one anchored yellow callout, not an inline block.
-    const popover = document.createElement('div');
-    popover.className = 'panel-info-popover';
-    popover.setAttribute('role', 'tooltip');
-    footers.forEach(f => popover.appendChild(f));
-    panel.appendChild(popover);
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'panel-info-toggle';
-    btn.setAttribute('aria-label', 'Show sources');
-    btn.setAttribute('aria-expanded', 'false');
-    btn.title = 'Sources';
-    btn.textContent = 'ⓘ';
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const open = panel.classList.toggle('show-info');
-      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    });
-    panel.appendChild(btn);
-  });
-  // Click anywhere outside an open popover to close it.
-  if (!window._panelInfoOutsideHandlerInstalled) {
-    document.addEventListener('click', (e) => {
-      document.querySelectorAll('#view-forecast .show-info').forEach(p => {
-        if (!p.contains(e.target)) {
-          p.classList.remove('show-info');
-          const b = p.querySelector(':scope > .panel-info-toggle');
-          if (b) b.setAttribute('aria-expanded', 'false');
-        }
-      });
-    });
-    window._panelInfoOutsideHandlerInstalled = true;
-  }
-}
-
-// ════════════════════════════════════════════════
-// BUOY SELECT DROPDOWN (global header)
-// ════════════════════════════════════════════════
-
-function initBuoySelectDropdown() {
-  const sel = el('buoy-select');
-  if (!sel) return;
-  sel.innerHTML = '';
-  const placeholder = document.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = '— Pick a buoy —';
-  sel.appendChild(placeholder);
-  STATE.buoys.forEach(buoy => {
-    if (buoy.home === 'chocomount' && !STATE.boatGatePassed) return;
-    const opt = document.createElement('option');
-    opt.value = buoy.id;
-    opt.textContent = (buoy.home === 'chocomount' ? 'Choc · ' : '') + buoy.id + ' — ' + buoy.name;
-    sel.appendChild(opt);
-  });
-  sel.addEventListener('change', () => {
-    const id = sel.value;
-    if (!id) return;
-    const buoy = STATE.buoys.find(b => b.id === id);
-    if (buoy) selectBuoy(buoy);
-  });
-}
-
-function syncBuoySelectDropdown() {
-  const sel = el('buoy-select');
-  if (!sel) return;
-  if (STATE.selectedBuoy) sel.value = STATE.selectedBuoy.id;
-  else sel.value = '';
-}
-
-// ════════════════════════════════════════════════
-// REGRESSION TAB (Tab 2)
+// MY RATINGS' DETAILS (the app's Tab 2 panels, borrowed)
 // ════════════════════════════════════════════════
 
 // Tab 2 sub-model state — drives §6, §7, §8, §9 below.
 let _regActiveSubmodel = 'wave';
 
-// Trim a trailing "now" indicator off the summary so it reads cleanly.
-function _regFmtFitTimestamp(ms) {
-  if (!ms) return '—';
-  const d = new Date(ms);
-  // ISO-ish UTC stamp matches the spec's "2026-05-04 14:32 UTC" form.
-  const yyyy = d.getUTCFullYear();
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  const hh = String(d.getUTCHours()).padStart(2, '0');
-  const mi = String(d.getUTCMinutes()).padStart(2, '0');
-  return yyyy + '-' + mm + '-' + dd + ' ' + hh + ':' + mi + ' UTC';
-}
-
-function _regFmtDate(ms) {
-  if (!ms) return '—';
-  const d = new Date(ms);
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-}
-
+// My ratings' Details (previews/clean/model.js) borrows these panels and
+// calls this to draw them: predicted vs actual, the per-factor charts, the raw
+// weights and the forecast-vs-buoy check. Chocomount only.
 function renderRegressionTab() {
-  const isChoc = STATE.isChocomount;
-  const empty = el('panel-regression-empty');
-  const summary = el('panel-regression-summary');
-  const prediction = el('panel-regression-prediction');
   const pva = el('panel-regression-pva');
-  const thresholds = el('panel-regression-thresholds');
   const submodel = el('panel-regression-submodel');
   const weights = el('panel-surflog-weights');
   const verification = el('panel-verification');
-  const sections = [summary, prediction, pva, thresholds, submodel, weights, verification];
-  if (!isChoc) {
-    if (empty) empty.style.display = '';
-    sections.forEach(s => { if (s) s.style.display = 'none'; });
+  if (!STATE.isChocomount) {
+    [pva, submodel, weights, verification].forEach(s => { if (s) s.style.display = 'none'; });
     return;
   }
-  if (empty) empty.style.display = 'none';
-  if (summary) summary.style.display = '';
-
-  // Header strip
-  const box = el('regression-sample-summary');
-  if (box) {
-    const n = STATE._lastFitN || 0;
-    const range = STATE._lastFitDateRange;
-    const earliest = range ? _regFmtDate(range.min) : '—';
-    const latest = range ? _regFmtDate(range.max) : '—';
-    const fitText = _regFmtFitTimestamp(STATE._lastFitAt);
-    box.innerHTML = 'Trained on <strong>' + n + '</strong> session' + (n === 1 ? '' : 's') +
-      ' · earliest <strong>' + earliest + '</strong>' +
-      ' · latest <strong>' + latest + '</strong>' +
-      ' · last refit <strong>' + fitText + '</strong>';
-  }
-
-  // The remaining sections are populated incrementally per Prompt #5.
-  if (prediction) prediction.style.display = '';
   if (pva) pva.style.display = '';
-  if (thresholds) thresholds.style.display = '';
   if (submodel) submodel.style.display = '';
-
-  renderRegressionPredictionWidget();
   renderRegressionPVA();
-  renderRegressionThresholds();
   _regWireSubmodelTabs();
   _regUpdateSubmodelSurfaces();
-
   // Weights panel (renderWeightsPanel toggles its own display).
   renderWeightsPanel();
-
   renderVerificationPanel();
 }
 
@@ -8715,137 +4255,6 @@ function _regUpdateSubmodelSurfaces() {
   });
 }
 
-// ── Tab 2 §3: "If I went at scrubbed time" prediction widget ──────────
-//
-// Reads the scrubbed hour index from STATE.scrubberIdx (or the persisted
-// sessionStorage hour). Pulls the same cached marine/wind/tide data Tab 1
-// uses, runs buildForecastConditions + the three predict* helpers, and
-// renders three rating bars with forecast detail.
-function _regResolveScrubberHour() {
-  const cs = STATE.forecastChart;
-  const marine = STATE._cachedMarine, wind = STATE._cachedWind;
-  if (!marine?.hourly?.time?.length || !wind?.hourly) return null;
-  let idx = (typeof STATE.scrubberIdx === 'number' && STATE.scrubberIdx >= 0)
-    ? STATE.scrubberIdx
-    : -1;
-  // Fall back to sessionStorage if scrubber state isn't initialized yet.
-  if (idx < 0) {
-    let stored = null;
-    try { stored = sessionStorage.getItem('lcc-scrubber-hour'); } catch (_) {}
-    if (stored && cs) {
-      const targetMs = new Date(stored).getTime();
-      if (Number.isFinite(targetMs)) idx = findHourIndexForTime(targetMs, cs);
-    }
-  }
-  if (idx < 0) {
-    // Default to "now" — find the hour closest to now in marine.hourly.time.
-    const now = Date.now();
-    const times = marine.hourly.time;
-    let best = 0, bd = Infinity;
-    for (let i = 0; i < times.length; i++) {
-      const d = Math.abs(new Date(times[i]).getTime() - now);
-      if (d < bd) { bd = d; best = i; }
-    }
-    idx = best;
-  }
-  return idx;
-}
-
-function _regRatingBar(label, value) {
-  const v = (typeof value === 'number' && isFinite(value)) ? value : null;
-  const filled = v == null ? 0 : Math.max(0, Math.min(10, Math.round(v)));
-  const dots = [];
-  for (let i = 0; i < 10; i++) {
-    dots.push('<span class="reg-dot' + (i < filled ? ' filled' : '') + '"></span>');
-  }
-  const right = v == null ? '<span class="reg-rating-empty">— / 10 · needs more sessions</span>'
-    : '<span class="reg-rating-num">' + v.toFixed(1) + ' / 10</span>';
-  return '<div class="reg-rating-row">' +
-    '<span class="reg-rating-label">' + label + '</span>' +
-    '<span class="reg-rating-dots">' + dots.join('') + '</span>' +
-    right +
-    '</div>';
-}
-
-function _regForecastSummaryLine(cond) {
-  if (!cond?.swell) return '';
-  const s = cond.swell, w = cond.wind || {}, t = cond.tide || {};
-  const swH = (s.height != null) ? s.height.toFixed(1) + 'ft' : '—';
-  const swP = (s.period != null) ? s.period.toFixed(1) + 's' : '—';
-  const swD = (s.direction != null) ? directionLabel(s.direction) : '—';
-  const wSpd = (w.speed != null) ? Math.round(w.speed) : '—';
-  const wDir = (w.direction != null) ? directionLabel(w.direction) : '';
-  const tH = (t.height != null) ? (t.height >= 0 ? '+' : '') + t.height.toFixed(1) + 'ft' : '—';
-  // The ratings use the swell reaching the reef at this hour, read
-  // swellLagHours earlier offshore, so it can differ from the chart's
-  // reading at this hour. Say so rather than call it "Forecast".
-  const swLabel = cond.swellLagHours > 0
-    ? 'On the reef: ' + swH + ' @ ' + swP + ' ' + swD + ' (offshore ~' + cond.swellLagHours + 'h earlier)'
-    : 'Forecast: ' + swH + ' @ ' + swP + ' ' + swD;
-  return swLabel + ' · wind ' + wSpd + 'mph ' + wDir + ' · tide ' + tH;
-}
-
-function _regHeaderLabelForHour(hourMs) {
-  const cs = STATE.forecastChart;
-  const nowIdx = cs ? findHourIndexForTime(Date.now(), cs) : -1;
-  const t = new Date(hourMs);
-  const dayMs = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
-  const todayMs = (() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime(); })();
-  const diffDays = Math.round((dayMs - todayMs) / 86400000);
-  const isNow = (cs && nowIdx >= 0 && cs.times && cs.times[nowIdx] && cs.times[nowIdx].getTime() === t.getTime());
-  if (isNow) return 'IF I WENT NOW';
-  let dayLabel;
-  if (diffDays === 0) dayLabel = 'Today';
-  else if (diffDays === 1) dayLabel = 'Tomorrow';
-  else dayLabel = t.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
-  const timeLabel = formatTime(t);
-  return 'IF I WENT AT ' + dayLabel + ', ' + timeLabel.replace(/\s/g, '');
-}
-
-function renderRegressionPredictionWidget() {
-  const card = el('reg-prediction-card');
-  if (!card) return;
-  const marine = STATE._cachedMarine, wind = STATE._cachedWind, tideHiLo = STATE._cachedTideHiLo, tidePred = STATE._cachedTidePred;
-  if (!marine?.hourly || !wind?.hourly) {
-    card.innerHTML = '<div class="reg-prediction-empty sl-hint">Forecast not loaded yet — predictions will appear once the chart is populated.</div>';
-    return;
-  }
-  const idx = _regResolveScrubberHour();
-  if (idx == null || idx < 0) {
-    card.innerHTML = '<div class="reg-prediction-empty sl-hint">Couldn\'t resolve the scrubbed hour.</div>';
-    return;
-  }
-  const hourTimeStr = marine.hourly.time?.[idx];
-  if (!hourTimeStr) {
-    card.innerHTML = '<div class="reg-prediction-empty sl-hint">Hour out of range.</div>';
-    return;
-  }
-  const cond = buildForecastConditions(marine, wind, tideHiLo, tidePred, idx);
-  const wf = cond ? extractWaveFeatures(cond) : null;
-  const rf = cond ? extractRideFeatures(cond) : null;
-  const cf = cond ? extractCondFeatures(cond) : null;
-  const wavePred = wf ? predictWaveRating(wf) : null;
-  const ridePred = rf ? predictRideRating(rf) : null;
-  const condPred = cf ? predictCondRating(cf) : null;
-  const header = _regHeaderLabelForHour(new Date(hourTimeStr).getTime());
-  const bars = _regRatingBar('Wave size', wavePred) +
-    _regRatingBar('Ride quality', ridePred) +
-    _regRatingBar('Wind/conditions', condPred);
-  const summary = _regForecastSummaryLine(cond);
-  card.innerHTML = '<div class="reg-prediction-header">' + header + '</div>' +
-    '<div class="reg-prediction-bars">' + bars + '</div>' +
-    (summary ? '<div class="reg-prediction-summary">' + summary + '</div>' : '');
-}
-
-// Lightweight notify hook called by applyScrubberToHour so Tab 2 can
-// re-render the scrubber-tracking surfaces.
-function _regNotifyScrubberMoved() {
-  if (STATE.activeTab !== 'regression') return;
-  try { renderRegressionPredictionWidget(); } catch (_) {}
-  try { _regUpdateThresholdLights(); } catch (_) {}
-  try { renderRegressionFeatureGrid(); } catch (_) {}
-}
-
 // ── Tab 2: Sub-model registry ─────────────────────────────────────────
 //
 // Centralises the three sub-models so per-feature/per-importance/etc.
@@ -9063,13 +4472,6 @@ function _regProjectXY(v, opts, plotW, plotH) {
   const x = pad.left + plotW * ((v.x - opts.xMin) / (opts.xMax - opts.xMin));
   const y = pad.top + plotH * (1 - (v.y - opts.yMin) / (opts.yMax - opts.yMin));
   return { x, y };
-}
-
-function _regR2Color(r2) {
-  if (r2 == null || !isFinite(r2)) return 'var(--ink3)';
-  if (r2 > 0.5) return 'var(--green)';
-  if (r2 >= 0.2) return 'var(--orange)';
-  return 'var(--red-m)';
 }
 
 function _regBuildScatterCanvas(sub, looData) {
@@ -9326,107 +4728,7 @@ function _regBuildAttributionPlaceholder(entry, sub) {
   return _regBuildAttribution(entry, sub);
 }
 
-// ── Tab 2 §5: Match threshold tuning ──────────────────────────────────
-//
-// Three independent sliders (wave / ride / cond), 0–100 step 5, default 60.
-// Stored at lcc-match-threshold-{wave,ride,cond}. Live preview light shows
-// how the currently-scrubbed hour scores against the user's average past
-// session — green ≥ threshold, yellow ≥ (threshold − 15), red otherwise.
-const REG_THRESHOLD_KEYS = {
-  wave: 'lcc-match-threshold-wave',
-  ride: 'lcc-match-threshold-ride',
-  cond: 'lcc-match-threshold-cond'
-};
-function _regGetThreshold(sub) {
-  let raw = null;
-  try { raw = localStorage.getItem(REG_THRESHOLD_KEYS[sub]); } catch (_) {}
-  const v = parseInt(raw, 10);
-  return (isFinite(v) && v >= 0 && v <= 100) ? v : 60;
-}
-function _regSetThreshold(sub, v) {
-  try { localStorage.setItem(REG_THRESHOLD_KEYS[sub], String(v)); } catch (_) {}
-}
-
-// Computes the best match score at the scrubbed hour for the given sub-
-// model: pick the past session whose features are closest to the scrubbed-
-// hour features under the current sub-model's match formula.
-function _regBestMatchAtScrub(sub) {
-  const cfg = REG_SUBMODELS[sub];
-  const marine = STATE._cachedMarine, wind = STATE._cachedWind, tideHiLo = STATE._cachedTideHiLo, tidePred = STATE._cachedTidePred;
-  if (!marine?.hourly || !wind?.hourly) return null;
-  const idx = _regResolveScrubberHour();
-  if (idx == null || idx < 0) return null;
-  const fc = buildForecastConditions(marine, wind, tideHiLo, tidePred, idx);
-  if (!fc) return null;
-  const ff = cfg.extractor(fc);
-  if (!ff) return null;
-  const stats = STATE[cfg.statsKey];
-  const weights = STATE[cfg.weightsKey];
-  if (!stats) return null;
-  const uid = window._fbUserId;
-  const userScoped = uid ? STATE.surfLog.filter(e => e.userId === uid) : STATE.surfLog;
-  let best = 0;
-  for (const e of userScoped) {
-    if (!e.conditions?.swell) continue;
-    const ef = cfg.extractor(e.conditions);
-    if (!ef) continue;
-    const m = _matchPct(ef, ff, weights, stats);
-    if (m > best) best = m;
-  }
-  return best;
-}
-
-function _regThresholdLightClass(matchPct, threshold) {
-  if (matchPct == null) return 'reg-light-none';
-  if (matchPct >= threshold) return 'reg-light-green';
-  if (matchPct >= threshold - 15) return 'reg-light-yellow';
-  return 'reg-light-red';
-}
-
-function renderRegressionThresholds() {
-  const panel = el('reg-threshold-panel');
-  if (!panel) return;
-  const rows = ['wave', 'ride', 'cond'].map(sub => {
-    const cfg = REG_SUBMODELS[sub];
-    const v = _regGetThreshold(sub);
-    const lbl = sub === 'wave' ? 'Wave (size match)'
-      : sub === 'ride' ? 'Ride (quality match)'
-      : 'Conditions match';
-    return '<div class="reg-threshold-row" data-sub="' + sub + '">' +
-      '<label class="reg-threshold-label" for="reg-thresh-' + sub + '">' + lbl + '</label>' +
-      '<input type="range" id="reg-thresh-' + sub + '" class="reg-threshold-slider" ' +
-        'min="0" max="100" step="5" value="' + v + '" data-sub="' + sub + '">' +
-      '<span class="reg-threshold-value" id="reg-thresh-val-' + sub + '">' + v + '%</span>' +
-      '<span class="reg-threshold-light" id="reg-thresh-light-' + sub + '"></span>' +
-      '<span class="reg-threshold-pct" id="reg-thresh-pct-' + sub + '"></span>' +
-      '</div>';
-  }).join('');
-  panel.innerHTML = rows;
-  for (const sub of ['wave', 'ride', 'cond']) {
-    const slider = el('reg-thresh-' + sub);
-    if (!slider) continue;
-    slider.addEventListener('input', () => {
-      const v = parseInt(slider.value, 10);
-      _regSetThreshold(sub, v);
-      const valEl = el('reg-thresh-val-' + sub);
-      if (valEl) valEl.textContent = v + '%';
-      _regUpdateThresholdLights();
-    });
-  }
-  _regUpdateThresholdLights();
-}
-
-function _regUpdateThresholdLights() {
-  for (const sub of ['wave', 'ride', 'cond']) {
-    const lightEl = el('reg-thresh-light-' + sub);
-    const pctEl = el('reg-thresh-pct-' + sub);
-    if (!lightEl) continue;
-    const threshold = _regGetThreshold(sub);
-    const matchPct = _regBestMatchAtScrub(sub);
-    lightEl.className = 'reg-threshold-light ' + _regThresholdLightClass(matchPct, threshold);
-    if (pctEl) pctEl.textContent = matchPct == null ? '—' : matchPct + '%';
-  }
-}
+// ── Tab 2 §11: Drill-down, open and close ─────────────────────────────
 
 function openRegressionDrilldown(entry, sub) {
   if (!entry) return;
@@ -9488,15 +4790,6 @@ function openRegressionDrilldown(entry, sub) {
     ev.preventDefault();
     closeRegressionDrilldown();
     if (typeof switchTab === 'function') switchTab('surflog');
-    setTimeout(() => {
-      const tbody = el('surflog-tbody');
-      if (!tbody) return;
-      // Match by inspecting Edit button data-id (rendered for own rows) — for
-      // community rows, fall back to scrolling to the table top.
-      const target = tbody.querySelector('button[data-id="' + entry.id + '"]');
-      const row = target ? target.closest('tr') : null;
-      (row || el('panel-surflog-entries'))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 80);
   });
 }
 
@@ -9543,73 +4836,32 @@ async function initApp() {
   STATE.buoys = buoys || [];
   STATE.tideStations = tideStations || [];
 
-  // Init maps. They're optional: if Leaflet didn't load, the forecast must
-  // still load, so a map failure never aborts initApp.
-  if (typeof L !== 'undefined') {
-    try {
-      initBuoyMap();
-      initTideMap();
-    } catch (e) {
-      console.warn('Map init failed:', e);
-    }
-  } else {
-    console.warn('Leaflet unavailable: maps disabled');
-  }
-
-  // Wire forecast-coords toggle (Choc only behaviour; the wrap is hidden for
-  // non-Choc selections via applyChocOnlyVisibility).
-  initForecastCoordsToggle();
-  initForecastModelDropdown();
-
-  // Populate the buoy <select> dropdown that mirrors the map for keyboard /
-  // accessibility users.
-  initBuoySelectDropdown();
-
-  // Default: if gate passed (not by boat), load Chocomount now, before the
-  // surf log (whose Firebase wait used to hold the forecast back by 2-15 s).
-  // Choc TV's boot watchdog may already have selected it: don't load twice.
-  if (STATE.boatGatePassed && !STATE.selectedBuoy) {
+  // Load Chocomount now, before the surf log (whose Firebase wait used to hold
+  // the forecast back by 2-15 s). Choc TV's boot watchdog, or the look's own
+  // boot recovery, may already have selected it: don't load twice.
+  if (!STATE.selectedBuoy) {
     const chocBuoy = STATE.buoys.find(b => b.home === 'chocomount');
-    if (chocBuoy) {
-      selectBuoy(chocBuoy);
-      STATE.buoyMap?.setView([chocBuoy.lat, chocBuoy.lon], 8);
-    }
+    if (chocBuoy) selectBuoy(chocBuoy);
   }
-  // If by boat, just show the map, no auto-select
 
-  // Wire surf log. It loads in the background: nothing on the forecast
-  // needs it, and Firebase auth + Firestore can take seconds (or hang).
-  initTabBar();
+  // The surf log loads in the background: nothing on the forecast needs it,
+  // and Firebase auth + Firestore can take seconds (or hang).
   initSurfLogForm();
-  initMatchModal();
-  initPanelInfoToggles();
   loadSurfLog().then(function() {
     slRetrain();
-    renderSurfLogTable();
+    surfLogChanged();
     // Re-attempt any photo uploads that failed on a prior session.
     retryFailedPhotoUploads().catch(function(e) { console.warn('Retry pass failed:', e); });
   }).catch(function(e) { console.warn('Surf log load failed:', e); });
+}
 
-  // Wire auth buttons
-  el('auth-signin-btn')?.addEventListener('click', function() {
-    if (typeof signInWithGoogle === 'function') signInWithGoogle();
-  });
-  el('auth-signout-btn')?.addEventListener('click', function() {
-    if (typeof signOutUser === 'function') signOutUser();
-  });
-  el('sl-auth-prompt-signin')?.addEventListener('click', function() {
-    if (typeof signInWithGoogle === 'function') signInWithGoogle();
-  });
-  el('sl-auth-prompt-dismiss')?.addEventListener('click', function() {
-    const authPrompt = el('sl-auth-prompt');
-    if (authPrompt) authPrompt.style.display = 'none';
-  });
-
-  // Tabs are always visible. For initial load with no buoy selected (the
-  // boat-yes path or the open buoy map view), still apply per-tab gating so
-  // Tab 1's lineup map and Tab 3's log form stay hidden.
-  updateTabBarVisibility();
+// The page starts straight into the app, once per page (the look and Choc TV
+// take the same path).
+function startApp() {
+  if (STATE.appStarted) return;
+  STATE.appStarted = true;
+  initApp();
 }
 
 // ── Start ────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', initGate);
+document.addEventListener('DOMContentLoaded', startApp);

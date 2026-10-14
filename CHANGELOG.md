@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased] — The old screens are gone
+
+The new look became the only one in the last few changes, but the old Windows-style screens were still in the site underneath it: about 4,700 lines of `app.js` drew the old Forecast, Tides, Regression and Log tabs into hidden boxes on every load, `kiosk.js` still built and drew the old Choc TV behind the new one, and `index.html`, `style.css` and three more style sheets carried their layout. `?classic=1` brought them back as an emergency fallback, and a look that failed to start handed the page back to them. Twenty browser tests still checked those old screens rather than the ones the crew use.
+
+Now the old screens are deleted, code and all. `app.js` (9,615 → 4,867 lines) loads the data, keeps the surf log and fits the ratings model; it draws nothing and starts itself (`startApp`), with no boat question. `kiosk.js` (1,429 → 596) is only Choc TV's appliance side: rotation, refresh, the Sources overlay and its self-healing. `index.html` (667 → 244) keeps only the hidden surf-log form and the rating panels My ratings borrows. Gone with them: `styles-web1.css`, `styles-web1-extensions.css`, `styles-retro.css`, the vendored Leaflet maps and the old fonts. `styles-kiosk.css` stays one deploy as an empty file, because a TV still running the old code checks it for updates; delete it after that. An old `?classic=1` link opens the new look.
+
+The old Log tab's tools moved to Settings → Surf log: Export CSV and Export JSON (when there are entries), and, signed in, Import JSON and Fetch conditions again. With no old look to fall back on, a page that can't start (its scripts didn't load, or the look threw) shows a plain card, "LetsCheckChoc didn't start", with a Reload button instead of a blank screen. On Choc TV the card says it will try again, and it does: a minute later, then every 5 minutes, through the same guards and site check as its other reloads, so a fixed deploy or a network that came back brings the TV at the house back with nobody touching it.
+
+Moving the tests over turned up a few bugs in the new look, fixed here:
+- Forecast: touching the week bar on a phone landed a step or two off (the bar's padding wasn't counted), and the headline above it changed height between hours, so the bar jumped under your finger. The headline now keeps the tallest height it needs for the run.
+- Choc TV: the radar's readout could run off the bottom of the screen on an iPad in landscape, and the Sources card could be wider than the screen.
+- Explore and Methods: a session saved with a malformed time showed a garbled time (it now shows none), and a photo's description and a session's notes in a ratings-chart tooltip weren't escaped, so a note with `<` in it broke the tooltip.
+- Log: the form's placeholder text was too faint to read in sunlight.
+
+Verified: `npm test` (the unit tests that drove the old screens are gone or rewritten to the data they check), `npm run test:py`, and the full browser suite. The twenty old-look scenarios are replaced by new-look ones covering the same ground: boot without Firebase, stale and failed data, the forecast touch, the frames, accessibility, phone widths, escaping, and Choc TV's boot blip, code updates, watchdog, fit on the iPad and outages. `look-default.js` now checks that nothing of the old look downloads on any address, that `?classic=1` opens the new look, and that a broken look shows the card (with Reload on a phone; on Choc TV with no button, and a reload by itself once the fix is up). No Firebase rules change.
+
 ## [Unreleased] — The research pages send visitors to the site
 
 The Sound Check pages (`research/index.html`, `research/map.html`) could be opened on their own at `/research/`, outside the site. They now send anyone who opens them that way to the site's front page. Inside the site (the Forecast tab's map, Explore and Methods frame them) nothing changes. The check sits at the top of `research/methods-theme.js`, the first script both pages load, so no page rebuild was needed.
