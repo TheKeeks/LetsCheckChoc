@@ -12,12 +12,13 @@ extends it rather than replacing it:
   days      daily: per Eastern day the peak, the best 3 hours of swell energy, the ratings model's best 3 hours,
             the day's wind and its share of clean hours
 
-The ratings model (what makes a good session, fitted to the surf log) is not refitted here: the log lives in the
-crew's Firestore. Its stored fit scores every hour; refitting it with a new log export is a separate, by-hand step.
+The ratings model (what makes a good session) is fitted to the surf log's sessions on this table of hours
+(ratings.py), when the update has the log; without it the stored fit is kept. Either way it scores every hour.
 """
 import bisect, collections, math, datetime as dt
 from zoneinfo import ZoneInfo
 import numpy as np
+import ratings
 
 ET = ZoneInfo('America/New_York'); UTC = dt.timezone.utc; FT = 3.28084
 OFFSHORE = 335
@@ -99,9 +100,11 @@ def tide_turns(hilo_docs):
     return turns
 
 
-def analyze(buoy, cspec, wind, turns, kavg, model):
+def analyze(buoy, cspec, wind, turns, kavg, model, sessions=None):
     """→ the results4.json document. buoy: buoy_hours(); cspec: {UTC hour: [buoy ft, Choc ft, ...]} (spectra.py);
-    wind: wind_hours(); turns: tide_turns(); kavg: the direction/period table; model: the stored ratings model."""
+    wind: wind_hours(); turns: tide_turns(); kavg: the direction/period table; model: the stored ratings model;
+    sessions: the surf log's (surflog.sessions()), to fit the model to (None: keep the stored one; it is kept too
+    when fewer than ratings.MIN_SESSIONS of them have conditions)."""
     kchoc = kchoc_fn(kavg)
     tt = [x[0] for x in turns]
     def tide(t):
@@ -202,14 +205,21 @@ def analyze(buoy, cspec, wind, turns, kavg, model):
 
     per_hist = collections.Counter(int(H[t]['per']) for t in times if big(H[t]))
 
-    # ── the ratings model's score for every hour (swell: best 3 h of energy at Choc within +/-3 h; wind; tide rate)
-    def feats_at(t):
+    # ── the ratings model, fitted to the sessions, and its score for every hour. Its inputs at an hour: the swell (the
+    # best 3 h of energy at Choc within +/-3 h), the offshore wind, the tide's rate; the scatter panels add the period,
+    # the wind speed and the tide's height
+    def scat_at(t):
         ns = [t + dt.timedelta(hours=k) for k in range(-3, 4) if t + dt.timedelta(hours=k) in H]
         r = H.get(t)
         if not ns or r is None or r['ws'] is None or r['th'] is None: return None
         best = max(ns, key=lambda x: H[x]['m3'] or 0)
         off = r['ws'] * math.cos(math.radians(gap(r['wdir'], OFFSHORE)))
-        return [math.log1p(H[best]['m3'] or 0), off, r['tr']]
+        return [math.log1p(H[best]['m3'] or 0), H[best]['per'], off, r['ws'], r['tr'], r['th']]
+    def feats_at(t):
+        f = scat_at(t)
+        return None if f is None else [f[0], f[2], f[4]]
+    if sessions is not None:
+        model = ratings.fit_model(sessions, feats_at, scat_at) or model
     fit = model['targets']['avg']['fit']
     def predict(f):
         z = (np.array(f) - np.array(fit['mu'])) / np.array(fit['sd'])

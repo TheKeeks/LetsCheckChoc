@@ -50,7 +50,7 @@ node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 | `style.css`, `styles-web1.css`, `styles-web1-extensions.css`, `styles-retro.css`, `styles-kiosk.css` | In that order. `style.css` loads on every page (the toasts and the charts My ratings borrows still use it). The three Win95 sheets are the old look's: only with `?classic=1`, or when the new look gives the page back (`lccLoadClassic` in `index.html`). `styles-kiosk.css` with `?kiosk=1` (the classic TV, Choc TV's fallback) or `?classic=1` |
 | `firestore.rules`, `storage.rules`, `firestore.indexes.json` | Repo copies only (see Invariants) |
 | `data/buoy.json`, `data/verification.json` | Written by the pipeline bot. Never edit them |
-| `scripts/history/` | Sound Check history bot (`.github/workflows/update-history.yml`, daily): CDIP 44097 spectra, NDBC readings, ERA5/ECMWF wind, CO-OPS tides → `data/history/*.json`, `research/hist.js` (via `scripts/sound-check/page/build_hist.py`) and the `44097` lane of `research/ocean/day/<year>.json`; rebuilds since 2016 each run; how-to in `scripts/history/README.md`, tests `scripts/test_history.py` |
+| `scripts/history/` | Sound Check history bot (`.github/workflows/update-history.yml`, daily): CDIP 44097 spectra, NDBC readings, ERA5/ECMWF wind, CO-OPS tides → `data/history/*.json`, `research/hist.js` (via `scripts/sound-check/page/build_hist.py`) and the `44097` lane of `research/ocean/day/<year>.json`; rebuilds since 2016 each run; it also fits the ratings model, `data/history/sess_pairs.json`, `data/history/sessions_all.json` and the forecast scorecard `research/fc/score.json` to the crew's surf log, read from Firestore with the read-only service-account key in the `SURFLOG_READ_KEY` secret (`scripts/history/surflog.py`, `scripts/history/ratings.py`; no notes or names in what it writes; without the key they stay as committed); how-to in `scripts/history/README.md`, tests `scripts/test_history.py` |
 | `data/buoys-east-coast.json`, `data/tide-stations.json` | Static catalogs read by `initApp` |
 | `scripts/fetch_buoy.py` | Pipeline: NDBC 44097 → `data/buoy.json`, plus model-vs-buoy rows |
 | `scripts/canary.py` | Upstream canary (`.github/workflows/canary.yml`, every 6 h): opens/closes one `data-canary` issue |
@@ -116,7 +116,7 @@ each one. Line numbers drift with every edit, so do not cite them in docs.
   writes `data/buoy.json` and appends to `data/verification.json`, and the bot commits both straight to `main`. If
   every NDBC file fails it exits 1 and writes nothing; a partial failure keeps the previous sections and lists them
   in `stale_sections`. Verification rows are hourly and back-fill the hours of dropped runs.
-- **Sound Check history:** `.github/workflows/update-history.yml` runs `scripts/history/update.py` daily: it rebuilds the history since 2016 through yesterday and commits what changed to `main`; it refuses to write a history shorter than the committed one.
+- **Sound Check history:** `.github/workflows/update-history.yml` runs `scripts/history/update.py` daily: it rebuilds the history since 2016 through yesterday and commits what changed to `main`; it refuses to write a history shorter than the committed one. With the `SURFLOG_READ_KEY` secret it reads the surf log and refits the ratings model (so the good days), the session statistics and the scorecard to it; a read that comes back with fewer than half the sessions keeps the committed model.
 - **Sound Check forecast:** `.github/workflows/update-forecast.yml` runs the pull every 3 h and force-pushes it to the `fc-data` branch (latest pull only); `research/`, the Forecast tab and Choc TV show the newer of it and `research/fc/` (Choc TV asks again every 30 min; e2e: `net.fcLive`).
 - **Firebase:** anonymous auth by default, Google sign-in optional. Surf logs
   live in Firestore `surf_logs`, photos in Storage `surf-photos/raw/<uid>/…`.
@@ -140,8 +140,8 @@ each one. Line numbers drift with every edit, so do not cite them in docs.
   `metric`) is documented at the top of `tests/e2e/run.js`. Uncaught page
   errors fail the scenario.
 - **Fixtures (`tests/fixtures/`).** Live recordings, with provenance in its
-  README. Tests serve `data/buoy.json` from `tests/fixtures/pipeline/` and `research/hist.js` from
-  `tests/fixtures/soundcheck/`, never the bot-updated files.
+  README. Tests serve `data/buoy.json` from `tests/fixtures/pipeline/` and `research/hist.js` and
+  `research/fc/score.json` from `tests/fixtures/soundcheck/`, never the bot-updated files.
 - **Python (`scripts/test_*.py`).** `load_fetch_buoy()` in `scripts/test_fetch_buoy.py`
   imports the pipeline with the network blocked and outputs in a temp dir.
 - Every fix gets a test that fails before the change and passes after it.
@@ -153,7 +153,7 @@ each one. Line numbers drift with every edit, so do not cite them in docs.
   read it before touching forecast or model logic.
 - Times are **America/New_York**. Fixtures, tests and the crew are all on
   Eastern time. Never assume the viewer's timezone is UTC.
-- `data/*.json`, `data/history/`, `research/hist.js` and the `44097` lanes of `research/ocean/day/` belong to the bots. Never hand-edit or commit changes to them; change how they're made in `scripts/history/` instead.
+- `data/*.json`, `data/history/`, `research/hist.js`, `research/fc/score.json` and the `44097` lanes of `research/ocean/day/` belong to the bots. Never hand-edit or commit changes to them; change how they're made in `scripts/history/` instead.
 - Classic scripts only: no ES modules, no bundler, no npm runtime deps.
   Functions and top-level `const`/`let` are shared globals across
   `firebase-config.js` → `app.js` → `kiosk.js`. kiosk.js reassigns some app.js

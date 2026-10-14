@@ -265,6 +265,165 @@ class TestReadings(unittest.TestCase):
                          'finished years, then months (a published month over its provisional file), then the last 45 days')
 
 
+class TestSurfLog(unittest.TestCase):
+    """the crew's log as the history update reads it (surflog.py): Firestore's documents or the app's exports →
+    the sessions the ratings model is fitted to"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.sl = load(os.path.join(HISTORY, 'surflog.py'), 'surflog')
+
+    def entry(self, ts, s, w, r, **extra):
+        e = dict(id=extra.pop('id', ts), timestamp=ts, ratings=dict(size=s, windQuality=w, rideQuality=r), notes='Glassy, crowd by 8',
+                 photos=[{'url': 'https://example.test/p.jpg'}], userId='u1', displayName='Test Surfer')
+        e.update(extra)
+        return e
+
+    def test_firestore_values(self):
+        """Firestore's REST values, nested, to plain values; what the log doesn't use comes out None"""
+        doc = {'name': 'projects/p/databases/(default)/documents/surf_logs/abc123', 'fields': {
+            'timestamp': {'stringValue': '2026-10-12T07:30'},
+            'ratings': {'mapValue': {'fields': {'size': {'integerValue': '7'}, 'windQuality': {'doubleValue': 8.5}, 'rideQuality': {'integerValue': '6'}}}},
+            'conditions': {'mapValue': {'fields': {'swell': {'mapValue': {'fields': {'height': {'doubleValue': 2.6}}}},
+                                                   'tide': {'mapValue': {'fields': {'height': {'nullValue': None}, 'rate': {'doubleValue': -0.4}}}}}}},
+            'photos': {'arrayValue': {'values': [{'mapValue': {'fields': {'url': {'stringValue': 'https://x'}}}}]}},
+            'createdAt': {'timestampValue': '2026-10-12T15:00:00Z'}, 'ref': {'referenceValue': 'x'}}}
+        e = self.sl.document(doc)
+        self.assertEqual(e['id'], 'abc123', 'the document id when the entry carries none')
+        self.assertEqual(e['ratings'], {'size': 7, 'windQuality': 8.5, 'rideQuality': 6})
+        self.assertEqual(e['conditions']['tide'], {'height': None, 'rate': -0.4})
+        self.assertEqual(e['photos'], [{'url': 'https://x'}])
+        self.assertIsNone(e['ref'])
+
+    def test_sessions_keep_what_the_model_needs_and_nothing_personal(self):
+        got = self.sl.sessions([
+            self.entry('2026-10-12T07:30', 7, 8, 6, conditions={'swell': {'height': 2.6}, 'tide': {'height': 0.8, 'rate': 0.5}}),
+            self.entry('2025-06-01T18:05', 1, 2, 2, id='b'),                              # no conditions saved
+            self.entry('2025-06-01T18:05', 3, 3, 3, id='a'),
+            self.entry('2024-08-01T10:00', 2.5, 2, 2.25, conditions={'swell': {'height': 0}, 'tide': {'height': 0, 'rate': None}}),
+            self.entry('not a time', 5, 5, 5), self.entry('2026-01-01T09:00', 5, None, 5), self.entry('2026-01-02T09:00', 11, 5, 5),
+            'junk'])
+        self.assertEqual([(x['date'], x['id']) for x in got], [('2024-08-01T10:00', '2024-08-01T10:00'), ('2025-06-01T18:05', 'a'),
+                                                                ('2025-06-01T18:05', 'b'), ('2026-10-12T07:30', '2026-10-12T07:30')],
+                         'oldest first (same minute: by id); no time, a missing rating or one over 10: left out')
+        self.assertEqual(got[3], dict(id='2026-10-12T07:30', date='2026-10-12T07:30', size=7, windQuality=8, rideQuality=6, avg=7.0,
+                                      swellH=2.6, tideH=0.8, tideRate=0.5))
+        self.assertEqual(got[2]['avg'], 1.7, 'the average rounded as the app writes it')
+        self.assertEqual(got[0]['avg'], 2.3, '6.75 / 3 = 2.25 rounds up, as JavaScript\'s toFixed(1) does (Python\'s round gives 2.2)')
+        self.assertEqual((got[0]['swellH'], got[0]['tideH'], got[0]['tideRate']), (0, 0, None), 'a 0 stays 0, a missing value stays None')
+        self.assertEqual((got[1]['swellH'], got[1]['tideH']), (None, None), 'no conditions: None, never 0')
+        for x in got:
+            self.assertEqual(set(x), {'id', 'date', 'size', 'windQuality', 'rideQuality', 'avg', 'swellH', 'tideH', 'tideRate'}, 'no notes, photos or names')
+
+    def test_csv_export(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, 'surflog-export.csv')
+            with open(p, 'w') as f:
+                f.write('id,date,size,windQuality,rideQuality,avg,notes,swellH,swellDir,swellPer,windSpd,windDir,tideH,tideRate,tideStage\n'
+                        'b,2023-08-29T17:52,6,6,7,6.3,"chest high, ""rippable""",2.8,165,11,5,40,1.9,0.74,rising\n'
+                        'a,2023-08-29T17:50,6,5,6,5.7,,2.8,165,11,5,40,,0.75,rising\n')
+            got, src = self.sl.load(p)
+        self.assertEqual(src, 'the export surflog-export.csv')
+        self.assertEqual([(x['id'], x['avg'], x['swellH'], x['tideH'], x['tideRate']) for x in got], [('a', 5.7, 2.8, None, 0.75), ('b', 6.3, 2.8, 1.9, 0.74)])
+
+    def test_firestore_pages_and_the_key(self):
+        pages = {None: {'documents': [{'name': '.../surf_logs/one', 'fields': {'timestamp': {'stringValue': '2026-10-12T07:30'},
+                 'ratings': {'mapValue': {'fields': {k: {'integerValue': '5'} for k in ('size', 'windQuality', 'rideQuality')}}}}}],
+                        'nextPageToken': 'p/2=='},
+                 'p/2==': {'documents': [{'name': '.../surf_logs/two', 'fields': {'timestamp': {'stringValue': '2021-09-10T11:00'},
+                           'ratings': {'mapValue': {'fields': {k: {'integerValue': '9'} for k in ('size', 'windQuality', 'rideQuality')}}}}}]}}
+        asked = []
+        def get(url, tok):
+            asked.append((url, tok)); tokn = url.split('pageToken=')[1] if 'pageToken=' in url else None
+            import urllib.parse
+            return pages[urllib.parse.unquote(tokn) if tokn else None]
+        key = {'type': 'service_account', 'project_id': 'letscheckchoc', 'client_email': 'history-bot@letscheckchoc.iam.gserviceaccount.com'}
+        got = self.sl.fetch(key, get=get, tok='test-token')
+        self.assertEqual([e['id'] for e in got], ['one', 'two'])
+        self.assertTrue(asked[0][0].startswith('https://firestore.googleapis.com/v1/projects/letscheckchoc/databases/(default)/documents/surf_logs?pageSize=300'))
+        self.assertTrue(asked[1][0].endswith('&pageToken=p%2F2%3D%3D'), 'the page token, escaped')
+        self.assertEqual({t for _, t in asked}, {'test-token'})
+        self.assertEqual(self.sl.load(env={}), (None, 'no SURFLOG_READ_KEY: the surf log is not read'))
+        self.assertIn('not a service account key', self.sl.load(env={'SURFLOG_READ_KEY': 'abc'})[1])
+        self.assertIn('not a service account key', self.sl.load(env={'SURFLOG_READ_KEY': '{"project_id": "x"}'})[1])
+
+
+@unittest.skipUnless(HAVE, 'needs numpy and scipy')
+class TestRatings(unittest.TestCase):
+    """the surf log's part of the history (ratings.py) on made-up sessions"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ra = load(os.path.join(HISTORY, 'ratings.py'), 'ratings')
+
+    def sess(self, n, start=dt.datetime(2026, 6, 1, 8)):
+        return [dict(id=str(i), date=(start + dt.timedelta(days=i, hours=i % 5)).strftime('%Y-%m-%dT%H:%M'), size=float(i % 9 + 1),
+                     windQuality=float((i * 3) % 10), rideQuality=float((i * 7) % 10), avg=round(((i % 9 + 1) + (i * 3) % 10 + (i * 7) % 10) / 3, 1),
+                     swellH=1.0 + i % 4, tideH=0.5, tideRate=0.1) for i in range(n)]
+
+    def test_model_needs_enough_sessions_with_conditions(self):
+        scat = lambda t: [math.log1p(t.day % 7 + 1), 8 + t.day % 3, 2.0 * math.sin(t.day), 6.0, 0.3 * math.cos(t.day), 1.2]
+        feats = lambda t: (lambda f: [f[0], f[2], f[4]])(scat(t))
+        m = self.ra.fit_model(self.sess(14), feats, scat)
+        self.assertEqual(list(m), ['feats', 'scat', 'labels', 'targets', 'sessions'])
+        self.assertEqual(list(m['targets']), ['avg', 'size', 'ride', 'wind_q'])
+        self.assertEqual(len(m['sessions']), 14)
+        self.assertEqual(set(m['sessions'][0]), {'date', 'x', 'size', 'ride', 'wind_q', 'avg'}, 'no notes')
+        self.assertEqual(m['sessions'][0]['date'], '2026-06-01 08:00')
+        self.assertEqual(len(m['targets']['avg']['preq']), 14 - 6, 'each session after the first 6 predicted from the ones before')
+        self.assertIsNone(self.ra.fit_model(self.sess(9), feats, scat), 'fewer than 10: keep the stored model')
+        self.assertIsNone(self.ra.fit_model(self.sess(14), lambda t: None, scat), 'no conditions: nothing to fit')
+        again = self.ra.fit_model(self.sess(14), feats, scat)
+        self.assertEqual(again, m, 'the same sessions, the same model (the bootstrap draws are seeded)')
+
+    def test_pairs_take_the_best_3_hours_of_the_sessions_day(self):
+        day = dt.datetime(2026, 6, 2, tzinfo=self.ra.ET)
+        cspec = {(day + dt.timedelta(hours=h)).astimezone(UTC).strftime('%Y-%m-%dT%H'): [1.0 + (h == 10) * 3 + (h == 11) * 2, 0.5 + (h == 11)] for h in range(24)}
+        s = self.sess(3)
+        got = self.ra.sess_pairs(s, cspec)
+        self.assertEqual(got, [['2026-06-02', 2, round((1 + 4 + 3) / 3, 4), round((0.5 + 0.5 + 1.5) / 3, 4)]], 'only the day the history covers')
+
+    def test_measures_rank_the_sessions(self):
+        s = self.sess(12)
+        B = {}
+        for x in s:
+            t0 = dt.datetime.fromisoformat(x['date'][:10]).replace(tzinfo=self.ra.ET)
+            for h in range(24): B[t0 + dt.timedelta(hours=h)] = (x['size'] * 0.8 + 0.1 * h, 9.0, 140.0)
+        got = self.ra.sessions_all(s, B)
+        self.assertEqual(got['res']['B day peak height, in window']['n'], 12)
+        self.assertEqual(got['res']['B day peak height, in window']['rho'], 1.0, 'the peak follows the rating exactly')
+        self.assertLessEqual(got['res']['B day peak height, in window']['lo'], 1.0)
+        s[0]['swellH'] = s[1]['swellH'] = None
+        self.assertEqual(self.ra.sessions_all(s, B)['res']['L swell height the app logged (forecast pin)']['n'], 10, 'sessions the app saved no swell with: left out')
+        self.assertNotIn('notes', got['sessions'][0])
+        self.assertNotIn('C day peak power, in window', self.ra.sessions_all(s[:2], B)['res'], 'fewer than 3 sessions: left out')
+
+    def test_scorecard_keeps_old_forecasts_and_asks_for_new_ones(self):
+        s = self.sess(5, start=dt.datetime(2025, 7, 1, 8))
+        cspec = {self.ra.session_time(x).astimezone(UTC).strftime('%Y-%m-%dT%H'): [3.0, 1.0 + i] for i, x in enumerate(s)}
+        prev = {'sessions': [{'date': s[0]['date'], 'd1': 1.1, 'd2': 1.2, 'd3': 1.3}, {'date': s[1]['date'], 'd1': 2.1, 'd2': None, 'd3': 2.3}]}
+        asked = []
+        def forecast(t, lead):
+            asked.append((t.strftime('%Y-%m-%dT%H'), lead))
+            if t.day == 4: raise self.ra.NotArchived('x')
+            return 1.0 + lead / 10
+        got = self.ra.scorecard(s, cspec, prev, forecast, budget=3)
+        d = {x['date']: x for x in got['sessions']}
+        self.assertEqual([d[s[0]['date']][k] for k in ('d1', 'd2', 'd3')], [1.1, 1.2, 1.3], 'scored before: kept, not asked again')
+        self.assertEqual([d[s[1]['date']][k] for k in ('d1', 'd2', 'd3')], [2.1, 1.2, 2.3], 'a lead missing before: asked again')
+        self.assertEqual([d[s[2]['date']][k] for k in ('d1', 'd2', 'd3')], [1.1, 1.2, 1.3])
+        self.assertEqual([d[s[3]['date']][k] for k in ('d1', 'd2', 'd3')], [None, None, None], 'not in the archive: left empty')
+        self.assertEqual([d[s[4]['date']][k] for k in ('d1', 'd2', 'd3')], [None, None, None], 'over the run\'s budget: next run')
+        self.assertEqual(len({t for t, _ in asked}), 3, 'three sessions asked for, at most')
+        self.assertEqual(d[s[2]['date']]['buoy_model'], 3.0, "Choc's modeled height at the session's hour")
+        self.assertEqual(got['summary']['buoy_model']['n'], 5)
+        self.assertEqual(got['summary']['d1']['n'], 3)
+        self.assertEqual(got['summary']['d1']['median_vs_arrived_ft'], round(float(np.median([1.1 - 1.0, 2.1 - 2.0, 1.1 - 3.0])), 2))
+        off = self.ra.scorecard(s, cspec, prev, None)
+        self.assertEqual([x['d1'] for x in off['sessions']], [1.1, 2.1, None, None, None], 'offline: only what was scored before')
+        self.assertNotIn('d1', self.ra.scorecard(s, cspec, None, None)['summary'], 'a lead with fewer than 3 sessions: no score')
+
+
 @unittest.skipUnless(HAVE, 'needs numpy and scipy')
 class TestUpdate(unittest.TestCase):
     """the whole update over a made-up cache: three days of spectra and readings, the tides, the wind"""
@@ -296,6 +455,12 @@ class TestUpdate(unittest.TestCase):
         dump([pt(40.75, -72 + i / 10, oct_days) for i in range(10)], os.path.join(c, 'wind', 'ifs1.json'))
         dump([pt(41.2, -72 + i / 10, oct_days) for i in range(10)], os.path.join(c, 'wind', 'ifs2.json'))
         dump([pt(41, -72, ['2016-01-01'])] * 20, os.path.join(c, 'wind', 'era16.json'))
+        # the log, as the app's Export JSON writes it: 14 sessions on the 10th and 11th, one before the history
+        log = [dict(id=f's{i}', timestamp=f'2026-10-{10 + i // 7}T{7 + 2 * (i % 7):02d}:15', notes='private',
+                    ratings=dict(size=1 + i % 8, windQuality=(3 * i) % 10, rideQuality=(5 * i) % 10),
+                    conditions=dict(swell=dict(height=1.5 + 0.2 * i), tide=dict(height=1.0, rate=0.3))) for i in range(14)]
+        log.append(dict(id='old', timestamp='2015-08-01T10:00', ratings=dict(size=5, windQuality=5, rideQuality=5)))
+        cls.log = os.path.join(cls.dir, 'surflog-export.json'); dump(log, cls.log)
 
     def run_update(self, *extra):
         out = tempfile.mkdtemp(dir=self.dir)
@@ -320,6 +485,7 @@ class TestUpdate(unittest.TestCase):
             self.assertEqual(sorted(H(n)), ['2026-10-10', '2026-10-11'], n)
         self.assertEqual(r4['ym']['all']['2026-10'][2], 48, 'the hours of the 10th and 11th, no more')
         self.assertEqual(r4['model'], jload(os.path.join(ROOT, 'data', 'history', 'results4.json'))['model'], 'the ratings model as fitted')
+        self.assertFalse(os.path.exists(os.path.join(out, 'research', 'fc', 'score.json')), 'without the log the scorecard is left alone')
         w = H('windgrid_out.json')
         self.assertEqual(len(w['base']), (dt.date(2026, 10, 11) - dt.date(2016, 1, 1)).days + 1)
         self.assertEqual(w['pts'][0]['uv'][-1], [int(round(2 * 10 * math.sin(math.radians(45)))), int(round(2 * 10 * math.cos(math.radians(45))))])
@@ -332,6 +498,41 @@ class TestUpdate(unittest.TestCase):
         self.assertEqual(day['wm'], committed['wm'], 'the model lane is left as it is')
         self.assertEqual(min(day['44097']), '2026-10-10T04')
         self.assertEqual(max(day['44097']), '2026-10-12T03', 'the last hour of the 11th, Eastern')
+
+
+    def test_fits_the_model_and_the_sessions_to_the_log(self):
+        """with the log: the ratings model is fitted to its sessions on these three days, which scores the hours;
+        the sessions' pairs, the buoy measures and the scorecard follow it (offline: no new forecasts); nothing a
+        crew member wrote goes into the files"""
+        end, out = self.run_update('--force', '--log', self.log)
+        H = lambda n: jload(os.path.join(out, 'data', 'history', n))
+        m = H('results4.json')['model']
+        self.assertEqual(len(m['sessions']), 14, 'the session before the history has no conditions')
+        self.assertEqual(m['sessions'][0]['date'], '2026-10-10 07:00')
+        self.assertNotEqual(m['targets'], jload(os.path.join(ROOT, 'data', 'history', 'results4.json'))['model']['targets'])
+        pairs = H('sess_pairs.json')
+        self.assertEqual(len(pairs), 14)
+        self.assertEqual(pairs[0][:2], ['2026-10-10', 1])
+        allm = H('sessions_all.json')
+        self.assertEqual(allm['res']['L swell height the app logged (forecast pin)']['n'], 14)
+        score = jload(os.path.join(out, 'research', 'fc', 'score.json'))
+        self.assertEqual(len(score['sessions']), 15)
+        self.assertTrue(all(x['d1'] is None for x in score['sessions']), 'offline: no forecasts fetched')
+        self.assertIsNotNone(score['sessions'][1]['buoy_model'])
+        self.assertIn('buoy_model', score['summary'])
+        for name in ('results4.json', 'sessions_all.json', 'sess_pairs.json'):
+            with open(os.path.join(out, 'data', 'history', name)) as f: self.assertNotIn('private', f.read(), name)
+        with open(os.path.join(out, 'research', 'hist.js')) as f: js = f.read()
+        self.assertEqual(js, load(os.path.join(PAGE, 'build_hist.py'), 'build_hist').build(os.path.join(out, 'data', 'history')))
+        self.assertIn('"2026-10-10 07:00"', js)
+
+    def test_a_log_cut_short_keeps_the_model(self):
+        """a read that comes back with fewer than half the sessions the model was fitted to must not replace it"""
+        short = os.path.join(self.dir, 'short.json')
+        dump(jload(self.log)[:3], short)
+        self.assertIsNone(self.up.read_log(short, {'sessions': [{}] * 28}))
+        self.assertEqual(len(self.up.read_log(self.log, {'sessions': [{}] * 28})), 15)
+        self.assertIsNone(self.up.read_log(None, {'sessions': []}), 'no key, no export: nothing to fit to')
 
 
 if __name__ == '__main__':

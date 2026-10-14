@@ -23,8 +23,11 @@ history or the charts; the Forecast tab frames it (`?view=map&fill=1&ui=forecast
 which `build_hist.py` writes from `data/history/` (`results4.json`: daily history, climatology, events, model;
 `days2.json`, `trains_days.json`, `bend_days.json`, `windgrid_out.json`, `wild_stats.json`, `sessions_all.json`,
 `sess_pairs.json`). The history bot rebuilds both every day (`scripts/history/`), so a page rebuild never rolls
-the history back, and the text's dates and counts are filled from `hist.js` when the page loads. The images, ray
-tables and tiles it loads at run time are already in `research/`.
+the history back, and the text's dates and counts are filled from `hist.js` when the page loads (`data-hist`
+spans). The same goes for what the text says about the surf log, which the bot fits the model, the session pairs
+and the scorecard (`research/fc/score.json`) to (`data-log` spans and the ids `v7_charts.js`'s `logText()` and
+`v13_lab.js`'s scorecard fill): the markup carries the values as of the page's build. The images, ray tables and
+tiles it loads at run time are already in `research/`.
 
 ## `asbuilt/`: the tools, as they were used
 

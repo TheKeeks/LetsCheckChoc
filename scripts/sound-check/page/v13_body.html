@@ -4,7 +4,7 @@
   <div class="eyebrow">Chocomount research · Block Island buoy 44097 · 2016 – <span data-hist="year">2026</span></div>
   <p class="lede">Hourly swell at Block Island buoy 44097 since 2016, carried to Chocomount and Wilderness with a refraction model built on NOAA's sea-floor survey and checked against the surf log.</p>
   <div class="qa-box">
-    <a class="qa" href="#q1-h"><span class="eyebrow">Question 1</span><b>What makes the surf good at Choc?</b><span>The swell that actually reaches the reef, not the buoy's number. The model's height at Choc picks the bigger of two of your sessions <span class="mono" id="qa1M">88%</span> of the time, the raw buoy <span class="mono" id="qa1B">77%</span>. After size comes offshore wind; the tide barely matters.</span></a>
+    <a class="qa" href="#q1-h"><span class="eyebrow">Question 1</span><b>What makes the surf good at Choc?</b><span>The swell that actually reaches the reef, not the buoy's number. The model's height at Choc picks the bigger of two of your sessions <span class="mono" id="qa1M">88%</span> of the time, the raw buoy <span class="mono" id="qa1B">77%</span>. <span id="qa1Order">After size comes offshore wind; the tide barely matters.</span></span></a>
     <a class="qa" href="#q2-h"><span class="eyebrow">Question 2</span><b>How real is the swell window?</b><span>Real, but soft-edged. On only <span class="mono" id="qa2In">40%</span> of Choc's 3 ft+ days does the swell come straight through the gap between Block Island and Montauk; on <span class="mono" id="qa2S">45%</span> it bends in from south of Montauk.</span></a>
   </div>
   <p class="qs-more">Explore <a href="#how-h">how the model works</a>, <a href="#dec-h">ten years, month by month</a>, <a href="#fcs-h">how far ahead to trust the forecast</a> and <a href="#wild-h">Wilderness</a>. The forecast itself, with its map and the storms, is on the Forecast tab; past days, the ten years month by month and the sea floor in 3D are on Explore.</p>
@@ -188,22 +188,22 @@
 <section aria-labelledby="q1-h">
   <div class="eyebrow">Question 1</div>
   <h2 id="q1-h">What makes the surf good at Choc?</h2>
-  <p>First, the swell that actually reaches the reef. The buoy's wave height counts every wave it feels: groundswell, local wind chop, and swell headed away from Fishers. The model keeps only what bends in to Choc. Checked against your 28 logged sessions, its height at Choc sorts them by size much better than the buoy does.</p>
+  <p>First, the swell that actually reaches the reef. The buoy's wave height counts every wave it feels: groundswell, local wind chop, and swell headed away from Fishers. The model keeps only what bends in to Choc. Checked against your <span data-log="pairs">28</span> logged sessions, its height at Choc sorts them by size <span id="q1Better">much better than</span> the buoy does.</p>
   <figure class="chart">
     <h3>Size at the reef beats size at the buoy</h3>
     <div id="q1Pair" class="q1-pair"></div>
     <figcaption>One dot per logged session: the size you rated against the best 3 hours of that day, at the Block Island buoy and modeled at Choc. Blue-green dots are days you rated 3 or less while the buoy read over 4 ft: the model puts them where they belong. "Picks the bigger" counts the pairs of sessions you rated differently in which the higher reading went with the higher rating; a coin flip gets 50%. More measures are compared under Behind the numbers.</figcaption>
   </figure>
   <div class="takeaways" id="q1Takes">
-    <div class="take"><b class="mono">0.85</b><span>How closely modeled Choc height ranks your 28 logged sessions the way you rated their size (1 would match exactly). The raw buoy scores 0.66.</span></div>
+    <div class="take"><b class="mono" id="q1RhoM">0.86</b><span>How closely modeled Choc height ranks your <span data-log="pairs">28</span> logged sessions the way you rated their size (1 would match exactly). The raw buoy scores <span id="q1RhoB">0.66</span>.</span></div>
     <div class="take"><b class="mono">2.2 ft</b><span>Modeled at Choc on the day you logged as "completely flat", when the buoy peaked at 4.6 ft.</span></div>
   </div>
   <p>Then wind and tide (the ratings model below), and when in the year it all comes together.</p>
 </section>
 <section aria-labelledby="model-h">
-  <div class="eyebrow">Question 1 · trained on your 28 logged sessions</div>
+  <div class="eyebrow">Question 1 · trained on your <span data-log="model">28</span> logged sessions</div>
   <h2 id="model-h">What makes a good day at Choc</h2>
-  <p>Each logged session gets the conditions at the hour you logged it, from the same sources as the map. A small regression then learns how your ratings respond to them. It gets three inputs: modeled swell at the Choc reef (from the model above), offshore wind and tide rate. With 28 sessions, every extra input made it worse at predicting sessions it hadn't seen. Pick which rating to model:</p>
+  <p>Each logged session gets the conditions at the hour you logged it, from the same sources as the map. A small regression then learns how your ratings respond to them. It gets three inputs: modeled swell at the Choc reef (from the model above), offshore wind and tide rate. When the inputs were chosen, on the 28 sessions logged through October 2025, every extra input made it worse at predicting sessions it hadn't seen. Pick which rating to model:</p>
   <div class="toggles">
     <div class="seg" role="group" aria-label="Rating to model" id="targetSeg">
       <button type="button" data-t="avg" aria-pressed="true">Overall</button>
@@ -235,7 +235,7 @@
   <figure class="chart">
     <h3>Run back over ten years: predicted 7+ days</h3>
     <div id="goodMonths"></div>
-    <figcaption>The model scored every hour from 2016 to <span data-hist="year">2026</span>. A day counts when its best 3 hours average 7/10 or better. Hatched months have no logged sessions (all 28 are June–October), so the model has never seen winter water, winter wind or winter crowds, and those bars are extrapolation. Your log also leans toward days you chose to go, so treat this as "days that look like your good days," not a forecast.</figcaption>
+    <figcaption>The model scored every hour from 2016 to <span data-hist="year">2026</span>. A day counts when its best 3 hours average 7/10 or better. <span id="goodMonthsNote">Hatched months have no logged sessions (all 28 are June–October), so the model has never seen winter water, winter wind or winter crowds, and those bars are extrapolation.</span> Your log also leans toward days you chose to go, so treat this as "days that look like your good days," not a forecast.</figcaption>
   </figure>
 </section>
 <section aria-labelledby="ans-h">
@@ -333,7 +333,7 @@
   <h2 id="fcs-h">How far ahead can you trust the forecast?</h2>
   <figure class="chart">
     <div class="scroll"><table id="fcScore" class="fcs"></table></div>
-    <figcaption>For each of your 28 logged sessions since 2021, the GFS-Wave forecasts made 1, 2 and 3 days before, read at buoy 44097 and run through the same model and checked against what the buoy then showed arrived. "Orders your sessions" is how well it ranks them against your size ratings (1 is perfect). On average it lands within a twentieth of a foot of what arrived at every lead, and typically misses by 0.3–0.4 ft one to three days out. ECMWF only keeps its last few days of forecasts open, so it can’t be scored back in time; its score builds up from now on.</figcaption>
+    <figcaption>For each of your <span data-log="score">28</span> logged sessions since 2021, the GFS-Wave forecasts made 1, 2 and 3 days before, read at buoy 44097 and run through the same model and checked against what the buoy then showed arrived. "Orders your sessions" is how well it ranks them against your size ratings (1 is perfect). On average it lands within <span id="fcsWithin">a twentieth of a foot</span> of what arrived at every lead, and typically misses by <span id="fcsMiss">0.3–0.4 ft</span> one to three days out. ECMWF only keeps its last few days of forecasts open, so it can’t be scored back in time; its score builds up from now on.</figcaption>
   </figure>
 </section>
 
@@ -401,7 +401,7 @@
         <tr><td>Swell the app saved with each log (forecast pin)</td><td class="num">0.70 (0.41–0.88)</td><td class="num">—</td></tr>
       </tbody>
     </table></div>
-    <figcaption>Rank correlation with your 28 logged sessions (best 3 hours of the session day; bootstrap range in brackets). Size is what a swell model should predict, and there the new default is clearly best. Your "completely flat" day (12 Sep 2022) comes out at 2.2 ft at Choc although the buoy peaked at 4.6 ft, and 14 Oct 2022 comes out at 6.9 ft (best 3 hours of each day). Feeding it into the ratings model lifts the share of your size rating explained to <span id="sizeR2">62%</span>. Still not modeled: wind-chop made inside the sound, tidal currents, tide level over the reef, friction, and proper diffraction.</figcaption>
+    <figcaption>Rank correlation with the 28 sessions logged through October 2025, when these versions were compared (best 3 hours of the session day; bootstrap range in brackets). Size is what a swell model should predict, and there the new default is clearly best. Your "completely flat" day (12 Sep 2022) comes out at 2.2 ft at Choc although the buoy peaked at 4.6 ft, and 14 Oct 2022 comes out at 6.9 ft (best 3 hours of each day). Feeding it into the ratings model lifts the share of your size rating explained to <span id="sizeR2">62%</span>. Still not modeled: wind-chop made inside the sound, tidal currents, tide level over the reef, friction, and proper diffraction.</figcaption>
   </figure>
 </details>
 <details class="more"><summary>Swell period of big hours</summary>
@@ -426,7 +426,7 @@
 </details>
 <details class="more"><summary>Peak reading or a sustained window?</summary>
 <section aria-labelledby="sess-h">
-  <div class="eyebrow">Tested on your 28 logged sessions</div>
+  <div class="eyebrow">Tested on your <span data-log="pairs">28</span> logged sessions</div>
   <h2 id="sess-h">Peak reading or a sustained window?</h2>
   <p>Each candidate daily measure was computed from the buoy for every logged session, using all hours, then ranked against the size you rated. The whiskers are 95% bootstrap ranges.</p>
   <figure class="chart">
@@ -473,7 +473,7 @@
   <div class="eyebrow">Research process</div>
   <h2 id="next-h">What's next</h2>
   <ol>
-    <li><strong>Keep logging, especially off-season, flat days and Wilderness.</strong> The ratings model has 28 Choc sessions, none from November to May, only two flat ones, and no logged Wilderness sessions. Wilderness numbers can't be checked against anything until there are some.</li>
+    <li><strong>Keep logging, especially off-season, flat days and Wilderness.</strong> <span id="logAdvice">The ratings model has 28 Choc sessions, none from November to May, only two flat ones, and no logged Wilderness sessions.</span> Wilderness numbers can't be checked against anything until there are some.</li>
     <li><strong>Read the logs live.</strong> The ten-year calendar now reads photos from the site's surf log. The ratings model still fits from a CSV export; reading the logs live would let it refit after every new session.</li>
     <li><strong>Sharper sea floor for Choc's number.</strong> Tracing the last kilometer and a half on the 8 m survey, with your reef sketch as the landing zone, puts rays on the reef itself instead of a 650 m circle. It would replace the ten-year numbers only if it ranks your logged sessions better than the current model.</li>
     <li><strong>Sharper wind.</strong> The 17-point wind grid uses the ECMWF 9 km model. NOAA's HRRR (3 km, archived since 2018) would resolve the wind over the reef better.</li>

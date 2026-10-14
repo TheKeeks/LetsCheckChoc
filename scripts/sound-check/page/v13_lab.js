@@ -125,12 +125,21 @@
     return 'new';
   };
   // how far ahead to trust it: archived GFS-Wave forecasts for each logged session (fcscore.py)
+  // (the history bot fits it again whenever a session is logged: research/fc/score.json)
   if (document.getElementById('fcScore')) fetch('fc/score.json').then(r => (r.ok ? r.json() : null)).catch(() => null).then(s => {
-    const tb = document.getElementById('fcScore'); if (!tb || !s) return; const m = s.summary;
-    const sg = v => (v == null ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)} ft`);
+    const tb = document.getElementById('fcScore'); if (!tb || !s || !s.summary) return; const m = s.summary;
+    const sg = v => (v == null ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)} ft`), f2 = v => (v == null ? '—' : v.toFixed(2));
     tb.innerHTML = '<thead><tr><th>Looking</th><th class="num">Orders your sessions by size</th><th class="num">Off from what arrived</th><th class="num">Typical miss</th></tr></thead><tbody>' +
-      `<tr><td>The buoy, that hour</td><td class="num">${m.buoy_model.rho_size.toFixed(2)}</td><td class="num">—</td><td class="num">—</td></tr>` +
-      [1, 2, 3].map(k => { const r = m['d' + k]; return `<tr><td>${k} day${k > 1 ? 's' : ''} ahead</td><td class="num">${r.rho_size.toFixed(2)}</td><td class="num">${sg(r.median_vs_arrived_ft)}</td><td class="num">${r.typical_miss_ft.toFixed(1)} ft</td></tr>`; }).join('') + '</tbody>';
+      `<tr><td>The buoy, that hour</td><td class="num">${f2((m.buoy_model || {}).rho_size)}</td><td class="num">—</td><td class="num">—</td></tr>` +
+      [1, 2, 3].map(k => { const r = m['d' + k] || {}; return `<tr><td>${k} day${k > 1 ? 's' : ''} ahead</td><td class="num">${f2(r.rho_size)}</td><td class="num">${sg(r.median_vs_arrived_ft)}</td><td class="num">${r.typical_miss_ft == null ? '—' : r.typical_miss_ft.toFixed(1) + ' ft'}</td></tr>`; }).join('') + '</tbody>';
+    // the caption's numbers, from the same file: the sessions scored, how close on average, the typical miss
+    const leads = ['d1', 'd2', 'd3'].map(k => m[k]).filter(r => r && r.median_vs_arrived_ft != null && r.typical_miss_ft != null);
+    if (!leads.length) return;
+    const set = (id, v) => { const n = document.getElementById(id); if (n) n.textContent = v; };
+    document.querySelectorAll('[data-log="score"]').forEach(n => { n.textContent = Math.max(...leads.map(r => r.n)); });
+    const w = Math.max(...leads.map(r => Math.abs(r.median_vs_arrived_ft))), lo = Math.min(...leads.map(r => r.typical_miss_ft)), hi = Math.max(...leads.map(r => r.typical_miss_ft));
+    set('fcsWithin', w <= 0.05 ? 'a twentieth of a foot' : w <= 0.1 ? 'a tenth of a foot' : w.toFixed(1) + ' ft');
+    set('fcsMiss', lo.toFixed(1) === hi.toFixed(1) ? lo.toFixed(1) + ' ft' : `${lo.toFixed(1)}–${hi.toFixed(1)} ft`);
   });
 
   // ── check any day (history)

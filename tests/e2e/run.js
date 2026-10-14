@@ -139,11 +139,13 @@ const DEFAULT_NET = {
 // Same-origin files pinned to fixtures: the bot rewrites data/buoy.json and
 // data/verification.json every 2 h, so live copies would drift from FIXTURE_NOW;
 // the history bot adds a day to the Sound Check history every day, which would
-// move every count the research scenarios check.
+// move every count the research scenarios check, and refits the surf log's
+// scorecard whenever a session is logged.
 const PINNED_FILES = {
   '/data/buoy.json': 'pipeline/buoy.json',
   '/data/verification.json': 'pipeline/verification.json',
-  '/research/hist.js': 'soundcheck/hist.js.gz'      // gzipped (fixtures stay small), unzipped when served
+  '/research/hist.js': 'soundcheck/hist.js.gz',     // gzipped (fixtures stay small), unzipped when served
+  '/research/fc/score.json': 'soundcheck/score.json'
 };
 
 function pinned(urlPath) {

@@ -105,7 +105,12 @@ Wilderness. It no longer carries a 7-day forecast of its own: the forecast
 is the Forecast tab's. Its historical-day links open Explore at that date.
 Its history (every day since May 2016, the ten years month by month, and
 the counts in its text) is rebuilt every day from buoy 44097's own data,
-through yesterday.
+through yesterday. On the same run the ratings model that decides a good
+day, how your sessions compare with the buoy, and the forecast scorecard are
+fitted again to the surf log, so a session you log counts from the next
+update, and the numbers the page quotes about your sessions follow. The bot
+reads the log with a read-only key the owner adds once
+(`scripts/history/README.md` says how), and keeps no notes or names.
 
 The old Windows-style look is retired: Settings no longer offers it, and the
 site no longer downloads its styles, fonts or maps. It still opens at
