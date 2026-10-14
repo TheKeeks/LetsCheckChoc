@@ -189,7 +189,7 @@
       ticks.forEach(([v, lab]) => { if (v < lo - pad || v > hi + pad) return; txt(svg, X(v), h - 5, Math.abs(lab) >= 10 || f === 'swell' ? Math.round(lab) : (+lab).toFixed(1), { 'text-anchor': 'middle', 'font-size': 10 }); });
       ss.forEach(s => {
         const c = el('circle', { cx: X(s.x[j]), cy: Y(s[target]), r: 4, fill: inModel ? C.swell : C.fg2, 'fill-opacity': 0.85, stroke: C.panel, 'stroke-width': 1.5 }, svg);
-        hover(c, `<b>${s.date}</b><br>${TNAME[target]}: ${s[target]}<br>${MODEL.labels[f]}: ${f === 'swell' ? Math.expm1(s.x[j]).toFixed(1) + ' kW/m' : s.x[j].toFixed(1)}<br><span style="color:${C.fg2}">${s.notes || ''}</span>`);
+        hover(c, `<b>${s.date}</b><br>${TNAME[target]}: ${s[target]}<br>${MODEL.labels[f]}: ${f === 'swell' ? Math.expm1(s.x[j]).toFixed(1) + ' kW/m' : s.x[j].toFixed(1)}<br><span style="color:${C.fg2}">${String(s.notes || '').replace(/[&<>"']/g, (ch) => '&#' + ch.charCodeAt(0) + ';')}</span>`);
       });
     });
   }

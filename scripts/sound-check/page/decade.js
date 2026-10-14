@@ -27,7 +27,8 @@
     const got = [o.size, o.wind, o.ride].filter((v) => v != null); o.avg = got.length === 3 ? (o.size + o.wind + o.ride) / 3 : null;
     return o;
   }
-  const hm = (when) => { const h = +when.slice(11, 13), mi = when.slice(14, 16); return isNaN(h) ? '' : `${h % 12 || 12}:${mi} ${h < 12 ? 'am' : 'pm'}`; };
+  // minutes only when they are two digits: the time is whatever string a session was saved with
+  const hm = (when) => { const h = +when.slice(11, 13), mi = when.slice(14, 16); return isNaN(h) || !/^\d\d$/.test(mi) ? '' : `${h % 12 || 12}:${mi} ${h < 12 ? 'am' : 'pm'}`; };
   const okUrl = (u) => typeof u === 'string' && /^https:\/\/[^"'<>\s]+$/.test(u);   // plain https links only: they go into src/href
   // the surf log: [{when: 'YYYY-MM-DDTHH:MM' (Eastern), ratings, notes, who, photos: [url]}], with or without photos
   function setLog(list) {
@@ -190,7 +191,7 @@
       <div class="dec-cal">${cal}</div>
       <div class="dec-key"><span><i class="g"></i>good day</span>${PH.logMonth[sel] ? `<span>${CAM} logged, with photos</span><span><s class="dec-dot"></s> logged</span>` : ''}<span>numbers: Choc's best 3 hours (ft), colored like the map</span></div>
       <div class="dec-day" id="decDay"></div>
-      ${PH.month[sel] ? `<div class="dec-ph"><div class="dec-ph-h">${CAM} ${PH.month[sel].length} photo${PH.month[sel].length > 1 ? 's' : ''} from the surf log this month</div><div class="dec-ph-row">${PH.month[sel].map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a" title="${esc(q.when.slice(0, 10) + (q.s && q.s.who ? ', ' + q.s.who : '') + (q.s && q.s.notes ? ': ' + q.s.notes : ''))}"><img src="${q.url}" alt="Surf log photo, ${q.when.slice(0, 10)}" loading="lazy"><span>${MON[+q.when.slice(5, 7) - 1]} ${+q.when.slice(8, 10)}${q.s && q.s.avg != null ? ` · rated ${q.s.avg.toFixed(1)}` : ''}</span></a>`).join('')}</div></div>` : ''}`;
+      ${PH.month[sel] ? `<div class="dec-ph"><div class="dec-ph-h">${CAM} ${PH.month[sel].length} photo${PH.month[sel].length > 1 ? 's' : ''} from the surf log this month</div><div class="dec-ph-row">${PH.month[sel].map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a" title="${esc(q.when.slice(0, 10) + (q.s && q.s.who ? ', ' + q.s.who : '') + (q.s && q.s.notes ? ': ' + q.s.notes : ''))}"><img src="${q.url}" alt="Surf log photo, ${esc(q.when.slice(0, 10))}" loading="lazy"><span>${MON[+q.when.slice(5, 7) - 1]} ${+q.when.slice(8, 10)}${q.s && q.s.avg != null ? ` · rated ${q.s.avg.toFixed(1)}` : ''}</span></a>`).join('')}</div></div>` : ''}`;
     out.querySelectorAll('.dec-d[data-i]').forEach((b) => b.addEventListener('click', () => { if (window.CHOC.pastStop) window.CHOC.pastStop(); window.CHOC.jump(+b.dataset.i); }));
     day();
   }
@@ -200,7 +201,7 @@
       const when = hm(se.when);
       const head = `<div class="dec-log-h">Logged${se.who ? ' by ' + esc(se.who) : ''}${when ? ' at ' + when : ''}: rated <b>${se.avg != null ? se.avg.toFixed(1) + '/10' : '–'}</b> (size ${n(se.size)}, wind ${n(se.wind)}, ride ${n(se.ride)})${model != null ? ` · ratings model for the day <b>${model.toFixed(1)}/10</b>` : ''}</div>`;
       const note = se.notes ? `<blockquote class="dec-log-n">${esc(se.notes)}</blockquote>` : '';
-      const pics = se.photos.length ? `<div class="dec-ph-row">${se.photos.map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a"><img src="${q.url}" alt="Surf log photo, ${q.when.slice(0, 10)}" loading="lazy"><span>${hm(q.when)}</span></a>`).join('')}</div>` : '';
+      const pics = se.photos.length ? `<div class="dec-ph-row">${se.photos.map((q) => `<a href="${q.url}" target="_blank" rel="noopener" class="dec-ph-a"><img src="${q.url}" alt="Surf log photo, ${esc(q.when.slice(0, 10))}" loading="lazy"><span>${hm(q.when)}</span></a>`).join('')}</div>` : '';
       return `<div class="dec-log">${head}${note}${pics}</div>`;
     }).join('');
   }
