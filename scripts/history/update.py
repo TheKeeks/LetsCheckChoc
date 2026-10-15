@@ -23,8 +23,8 @@ Writes (all owned by the history bot; never edit them by hand):
   research/ocean/day/<year>.json  the Past days panels' lanes the history makes: '44097' (Block Island's trains
                                   every hour), 'wind' (the over-water wind every hour) and 'tide' (each Eastern day's
                                   highs and lows); the other lanes in those files stay as they are
-  research/ocean/pressure/        sea-level pressure every 6 hours since 2016 for the Past days' storm view
-                                  (pressure.py): what's missing is filled each run, oldest first
+  research/ocean/pressure/        sea-level pressure every 6 hours since 2016 for the Past days' storm view, one
+                                  picture a month (pressure.py): what's missing is filled each run, oldest first
   research/fc/score.json          the forecast scorecard: GFS-Wave's forecasts for each session, 1-3 days ahead
 
 The ratings model (results4.json's model), the two session files and the scorecard are fitted to the crew's surf

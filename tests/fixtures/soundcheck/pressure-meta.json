@@ -1,5 +1,6 @@
-{"lat0": 70, "lat1": 10, "lon0": -100, "lon1": -5, "deg": 1, "hours": 6, "base": 940.0, "scale": 0.5, "missing": 255, "cols": 5856, "nlat": 61, "nlon": 96, "order": "row = (t - Jan 1 00Z) / 6 h; column = i * nlon + j, i from lat0 (north) south, j from lon0 (west) east",
- "years": {
-  "2026": {"rows": 1116, "first": "2026-01-01T00Z", "last": "2026-10-06T18Z", "missing": 1048, "source": "GFS analysis (NOAA, f000, 1°)"}
+{"lat0": 70, "lat1": 10, "lon0": -100, "lon1": -5, "deg": 1, "hours": 6, "base": 940.0, "scale": 0.5, "missing": 255, "cols": 5856, "nlat": 61, "nlon": 96, "order": "file <YYYY>-<MM>.png; row = (t - the 1st 00Z) / 6 h; column = i * nlon + j, i from lat0 (north) south, j from lon0 (west) east",
+ "months": {
+  "2026-09": {"rows": 120, "first": "2026-09-01T00Z", "last": "2026-09-30T18Z", "missing": 76, "source": "GFS analysis (NOAA, f000, 1°)"},
+  "2026-10": {"rows": 24, "first": "2026-10-01T00Z", "last": "2026-10-06T18Z", "missing": 0, "source": "GFS analysis (NOAA, f000, 1°)"}
  }
 }

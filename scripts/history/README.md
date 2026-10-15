@@ -54,7 +54,7 @@ Replace the forward-ray table with a new one and the next run rebuilds all ten y
 | `data/history/sessions_all.json` | how well each daily measure of the buoy ranks the sessions by size, with bootstrap ranges |
 | `research/hist.js` | all of these as the page's constants (`scripts/sound-check/page/build_hist.py`) |
 | `research/ocean/day/<year>.json` | three lanes of the Past days panels: `44097`, the trains every hour; `wind`, `{"YYYY-MM-DDTHH" (UTC hour): [kn, from deg]}` every hour; `tide`, `{"YYYY-MM-DD" (Eastern day): [["HH:MM" Eastern, ft, "H" or "L"], ...]}`. An hour or a day without data is left out, never 0. The file's other lanes stay as they are, in their places (a new lane goes last) |
-| `research/ocean/pressure/<year>.png`, `meta.json` | the sea-level pressure every 6 hours since 2016 (`pressure.py`, below) |
+| `research/ocean/pressure/<YYYY>-<MM>.png`, `meta.json` | the sea-level pressure every 6 hours since 2016, one picture a month (`pressure.py`, below) |
 | `research/fc/score.json` | the forecast scorecard: per session, GFS-Wave's forecast for Choc 1, 2 and 3 days before and what the buoy-based model says arrived |
 
 The other lanes of `research/ocean/day/` (Montauk, Long Island, the Copernicus model) and the model's ocean maps
@@ -69,19 +69,23 @@ off for the half of the year in the other season.)
 
 `pressure.py` keeps the sea-level pressure over the North Atlantic (10-70 N, 100-5 W, every 1°) every 6 hours since
 2016, so the Past days can draw the isobars, the lows and highs and the storms' tracks the way the Forecast tab does
-for the days ahead. One 8-bit grayscale picture per year, `research/ocean/pressure/<year>.png`: a row per step (00,
-06, 12, 18 UTC from 1 January 00Z, row = hours since then / 6), a column per cell (north to south, each row of the
-grid west to east, 61 x 96 = 5856 columns), value v = 940 + 0.5 v hPa (940-1067, clamped), 255 = no data.
-`meta.json` has the grid, the encoding and, per year, `rows`, `first`, `last`, `missing` (steps still 255) and
-`source`.
+for the days ahead. One 8-bit grayscale picture per month, `research/ocean/pressure/<YYYY>-<MM>.png` (UTC months):
+a row per step (00, 06, 12, 18 UTC from the 1st 00Z, row = hours since then / 6; 4 x days rows once the month is
+complete, fewer while it fills), a column per cell (north to south, each row of the grid west to east, 61 x 96 = 5856
+columns), value v = 940 + 0.5 v hPa (940-1067, clamped), 255 = no data. `meta.json` has the grid, the encoding and,
+under `months`, one line per month: `"2016-01": {"rows": 124, "first": "2016-01-01T00Z", "last": "2016-01-31T18Z",
+"missing": 0, "source": "ERA5 (WeatherBench2, 1°)"}` (`missing`: steps still 255).
 
 ERA5 for 2016-2022 (WeatherBench2's store ends on 10 Jan 2023), GFS's analyses from 1 Jan 2023 00Z (the 1° files on
-AWS start in 2021; ERA5 is kept through the overlap, so a year has one source). Each run fills what's missing, oldest
+AWS start in 2021; ERA5 is kept through the overlap, so a month has one source). Each run fills what's missing, oldest
 first, for 20 minutes at most (`PRESSURE_BUDGET`, seconds): the first run fills all ten years (measured: an ERA5 year
 is 366 downloads, 223 MB, about 30 s; a GFS year 2,920 range reads, 165 MB, about 2 minutes; all ten years 2.2 GB in about 15 minutes), then each day adds
-yesterday's four steps to this year's picture. A step whose source fails stays 255 and is asked for again on the next
-run; a year never gets shorter, and a filled step is never fetched again. It never stops the rest of the update. The
-pictures are about 2.6 MB a year (ERA5) and 2.9 MB (GFS, a little noisier).
+yesterday's four steps to this month's picture. A step whose source fails stays 255 and is asked for again on the
+next run; a month never gets shorter, a filled step is never fetched again, and a finished month's picture is never
+rewritten. It never stops the rest of the update. A month's picture is about 220 kB (ERA5) to 240 kB (GFS, a little
+noisier), 29 MB for the ten years. Pictures by month keep the repo small: a day's commit rewrites only the month so
+far (7 kB on the 1st, about 230 kB on the 30th), about 3.5 MB of new picture a month, some 42 MB a year, where one
+picture a year rewritten every day would have added about 1 GB a year.
 
     python3 scripts/history/pressure.py --end 2026-10-14 --out /tmp/p    # fill through a day, write somewhere else
     python3 -m unittest scripts/test_pressure.py

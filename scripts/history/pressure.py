@@ -1,12 +1,16 @@
 """Sea-level pressure over the North Atlantic every 6 hours since 2016, for the Past days' storm view (isobars,
 lows and highs, storm tracks), the way the Forecast tab draws GFS's pressure for the days ahead.
 
-  research/ocean/pressure/<year>.png   one 8-bit grayscale image per year. Each ROW is one 6-hourly step (00, 06,
-                                       12, 18 UTC; row = (t - Jan 1 00Z) / 6 h), each COLUMN one cell of a regular
-                                       1 deg grid, row-major: north to south, each row of the grid west to east.
-                                       Value v -> hPa = 940 + 0.5 v (940 ... 1067 hPa, clamped); 255 = no data.
-  research/ocean/pressure/meta.json    the grid, the encoding and, per year, its rows, first and last step, how many
-                                       are still missing, and the source.
+  research/ocean/pressure/<YYYY>-<MM>.png   one 8-bit grayscale image per month. Each ROW is one 6-hourly step
+                                       (00, 06, 12, 18 UTC; row = (t - the 1st of the month 00Z) / 6 h: 4 x days rows
+                                       once the month is complete, fewer while it fills), each COLUMN one cell of a
+                                       regular 1 deg grid, row-major: north to south, each row of the grid west to
+                                       east. Value v -> hPa = 940 + 0.5 v (940 ... 1067 hPa, clamped); 255 = no data.
+  research/ocean/pressure/meta.json    the grid, the encoding and, per month, its rows, first and last step, how
+                                       many are still missing, and the source (one line per month).
+
+One picture per month, not per year, so a day's update rewrites a picture of at most about 240 kB (the month so
+far) rather than the whole year's 3 MB: the repo grows by about 4 MB a month, not 1 GB a year.
 
 Sources (both public, no key):
   ERA5 (ECMWF's reanalysis), 2016-2022: WeatherBench2's 6-hourly copy on Google Cloud, already conservatively
@@ -16,11 +20,11 @@ Sources (both public, no key):
   GFS analyses, 2023 on: f000 of the 00/06/12/18Z cycles from NOAA's open data on AWS (noaa-gfs-bdp-pds), PRMSL
     range-read from the 1 deg file as scripts/forecast/fcpull.py does for the forecast (decoded with its decode());
     when a cycle's f000 is missing, the cycle before's f006. The bucket's 1 deg files start in 2021, after which
-    ERA5 and GFS overlap until 2023-01-10: ERA5 is kept through 2022 (one source per year), GFS from 2023-01-01 00Z.
+    ERA5 and GFS overlap until 2023-01-10: ERA5 is kept through 2022 (one source per month), GFS from 2023-01-01 00Z.
 
 Every run (update.py calls update()) fills what's missing, oldest first, up to a time budget: on the first run all
-the years since 2016, then each day yesterday's four steps. A step whose source fails stays 255 and is asked for
-again on the next run. A year that's written never gets shorter, and a filled step is never fetched again (the
+the months since 2016, then each day yesterday's four steps. A step whose source fails stays 255 and is asked for
+again on the next run. A month that's written never gets shorter, and a filled step is never fetched again (the
 pictures in the repo are the record: the cache only keeps the ERA5 store's description).
 """
 import io, json, os, sys, time, datetime as dt, concurrent.futures as cf
@@ -34,7 +38,7 @@ UTC = dt.timezone.utc
 DIR = os.path.join('research', 'ocean', 'pressure')
 FIRST_YEAR = 2016
 # the grid: what the past view's ocean map shows (research/ocean/ocean_meta.json: 110 W-5 W, 10-70 N), every 1 deg,
-# less 100-110 W (the Rockies and the Pacific), which keeps a year's picture under about 3 MB; the forecast's ocean
+# less 100-110 W (the Rockies and the Pacific), which keeps a month's picture under about 250 kB; the forecast's ocean
 # grid stops at 100 W too. The north stays at 70 N: the lows that matter for swell often pass 60-65 N.
 NORTH, SOUTH, WEST, EAST, DEG = 70, 10, -100, -5, 1
 NLAT, NLON = (NORTH - SOUTH) // DEG + 1, (EAST - WEST) // DEG + 1
@@ -70,24 +74,34 @@ def decode(v):
     return np.where(v == MISSING, np.nan, BASE + SCALE * v.astype(float))
 
 
-def year_start(y): return dt.datetime(y, 1, 1, tzinfo=UTC)
-def steps_in_year(y): return int((year_start(y + 1) - year_start(y)).total_seconds() // (HOURS * 3600))
-def time_of(y, row): return year_start(y) + dt.timedelta(hours=HOURS * row)
+# months are keyed 'YYYY-MM' (UTC), the pictures' names and meta.json's keys
+def month_key(t): return f'{t.year:04d}-{t.month:02d}'
+def month_start(key): return dt.datetime(int(key[:4]), int(key[5:7]), 1, tzinfo=UTC)
+def next_month(key): y, m = int(key[:4]), int(key[5:7]); return f'{y + m // 12:04d}-{m % 12 + 1:02d}'
+def steps_in_month(key): return int((month_start(next_month(key)) - month_start(key)).total_seconds() // (HOURS * 3600))
+def time_of(key, row): return month_start(key) + dt.timedelta(hours=HOURS * row)
 def stamp(t): return t.strftime('%Y-%m-%dT%HZ')
 
 
 def row_of(t):
-    """a 00/06/12/18Z time -> (year, row)"""
-    t = t.astimezone(UTC); h = (t - year_start(t.year)).total_seconds() / 3600
+    """a 00/06/12/18Z time -> ('YYYY-MM', row)"""
+    t = t.astimezone(UTC); key = month_key(t); h = (t - month_start(key)).total_seconds() / 3600
     if h % HOURS: raise ValueError(f'{t} is not a {HOURS}-hourly step')
-    return t.year, int(h // HOURS)
+    return key, int(h // HOURS)
 
 
-def rows_through(y, end):
-    """the rows of year y through the 18Z step of UTC day `end`"""
+def rows_through(key, end):
+    """the rows of month `key` through the 18Z step of UTC day `end`"""
     last = dt.datetime(end.year, end.month, end.day, 18, tzinfo=UTC)
-    if last < year_start(y): return 0
-    return min(steps_in_year(y), row_of(last)[1] + 1 if last.year == y else steps_in_year(y))
+    if last < month_start(key): return 0
+    return row_of(last)[1] + 1 if month_key(last) == key else steps_in_month(key)
+
+
+def months(first, end):
+    """'YYYY-MM' from January of year `first` to the month of day `end`"""
+    out, k = [], f'{first:04d}-01'
+    while k <= f'{end.year:04d}-{end.month:02d}': out.append(k); k = next_month(k)
+    return out
 
 
 def bilinear(f, lat, lon):
@@ -280,46 +294,46 @@ def png_bytes(arr):
     return b.getvalue()
 
 
-def year_meta(y, arr, names):
+def month_meta(key, arr, names):
     n = arr.shape[0]
-    used = sorted({names[source_for(time_of(y, r))] for r in range(n)})
-    return dict(rows=n, first=stamp(time_of(y, 0)), last=stamp(time_of(y, n - 1)),
+    used = sorted({names[source_for(time_of(key, r))] for r in range(n)})
+    return dict(rows=n, first=stamp(time_of(key, 0)), last=stamp(time_of(key, n - 1)),
                 missing=int((arr == MISSING).all(axis=1).sum()), source=' then '.join(used))
 
 
-def meta_doc(years):
+def meta_doc(by_month):
     return dict(lat0=NORTH, lat1=SOUTH, lon0=WEST, lon1=EAST, deg=DEG, hours=HOURS, base=BASE, scale=SCALE,
                 missing=MISSING, cols=COLS, nlat=NLAT, nlon=NLON,
-                order='row = (t - Jan 1 00Z) / 6 h; column = i * nlon + j, i from lat0 (north) south, j from lon0 (west) east',
-                years={str(y): years[y] for y in sorted(years)})
+                order='file <YYYY>-<MM>.png; row = (t - the 1st 00Z) / 6 h; column = i * nlon + j, i from lat0 (north) south, j from lon0 (west) east',
+                months={k: by_month[k] for k in sorted(by_month)})
 
 
 def update(end, root=sources.ROOT, out=None, cache=sources.CACHE, budget=BUDGET, era5=None, gfs=None, log=sources.log,
            first=FIRST_YEAR):
     """Fill research/ocean/pressure/ through the 18Z step of UTC day `end` (a date): every missing step since
     `first` (2016), oldest first, until `budget` seconds are spent. era5, gfs: the sources (made here when None: a source that
-    can't be set up leaves its steps missing). Writes into `out` (default root) only the years that changed, and
-    meta.json. Returns {year: year_meta}."""
+    can't be set up leaves its steps missing). Writes into `out` (default root) only the months that changed, and
+    meta.json. Returns {'YYYY-MM': month_meta}."""
     out = out or root
     old_meta = {}
-    try: old_meta = sources.jload(os.path.join(root, DIR, 'meta.json')).get('years', {})
+    try: old_meta = sources.jload(os.path.join(root, DIR, 'meta.json')).get('months', {})
     except (FileNotFoundError, ValueError): pass
     arrs, changed, todo = {}, set(), []
-    for y in range(first, end.year + 1):
-        n = rows_through(y, end)
+    for key in months(first, end):
+        n = rows_through(key, end)
         if not n: continue
-        path = os.path.join(root, DIR, f'{y}.png'); old = None
+        path = os.path.join(root, DIR, f'{key}.png'); old = None
         if os.path.exists(path):
             try: old = read_png(path)
-            except Exception as e: log(f'::warning::pressure {y}.png unreadable ({e}): left as it is'); continue
+            except Exception as e: log(f'::warning::pressure {key}.png unreadable ({e}): left as it is'); continue
             if old.shape[1] != COLS:
-                log(f'::warning::pressure {y}.png is {old.shape[1]} cells wide, the grid has {COLS}: left as it is'); continue
+                log(f'::warning::pressure {key}.png is {old.shape[1]} cells wide, the grid has {COLS}: left as it is'); continue
         rows = max(n, old.shape[0] if old is not None else 0)       # never shorter than what's written
         a = np.full((rows, COLS), MISSING, np.uint8)
         if old is not None: a[:old.shape[0]] = old
-        if old is None or old.shape[0] < rows: changed.add(y)
-        arrs[y] = a
-        todo += [time_of(y, r) for r in range(n) if (a[r] == MISSING).all()]
+        if old is None or old.shape[0] < rows: changed.add(key)
+        arrs[key] = a
+        todo += [time_of(key, r) for r in range(n) if (a[r] == MISSING).all()]
     log(f'pressure: {len(todo)} steps to fetch' + (f' ({stamp(todo[0])} ... {stamp(todo[-1])})' if todo else ''))
     names = {'era5': ERA5_STORES[0][1], 'gfs': GFS_NAME}
     srcs = {}
@@ -341,31 +355,31 @@ def update(end, root=sources.ROOT, out=None, cache=sources.CACHE, budget=BUDGET,
         if s is not None:
             for t, hpa in s.rows(todo[i:j]).items():
                 if hpa is None: continue
-                y, r = row_of(t); arrs[y][r] = encode(hpa); changed.add(y); filled += 1
+                key, r = row_of(t); arrs[key][r] = encode(hpa); changed.add(key); filled += 1
         i = j
         if time.time() - said > 60:
             said = time.time(); log(f'  pressure: through {stamp(todo[j - 1])}, {filled} steps filled in {said - start:.0f} s')
     for kind, s in srcs.items():
         if s is not None: log(f'pressure from {s.name}: {s.stats}')
-    years = {int(k): v for k, v in old_meta.items()}
+    by_month = dict(old_meta)
     os.makedirs(os.path.join(out, DIR), exist_ok=True)
     total = 0
-    for y, a in sorted(arrs.items()):
-        years[y] = year_meta(y, a, names) if (y in changed or str(y) not in old_meta) else old_meta[str(y)]
-        if y in changed or os.path.abspath(out) != os.path.abspath(root):
+    for key, a in sorted(arrs.items()):
+        by_month[key] = month_meta(key, a, names) if (key in changed or key not in old_meta) else old_meta[key]
+        if key in changed or os.path.abspath(out) != os.path.abspath(root):
             data = png_bytes(a); total += len(data)
-            with open(os.path.join(out, DIR, f'{y}.png'), 'wb') as f: f.write(data)
-    with open(os.path.join(out, DIR, 'meta.json'), 'w') as f: f.write(dump_meta(meta_doc(years)))
-    log(f'pressure: {filled} steps filled in {time.time() - start:.0f} s; {sum(v["missing"] for v in years.values())} still missing; '
-        f'{len(changed)} year(s) written ({total / 1e6:.1f} MB)')
-    return years
+            with open(os.path.join(out, DIR, f'{key}.png'), 'wb') as f: f.write(data)
+    with open(os.path.join(out, DIR, 'meta.json'), 'w') as f: f.write(dump_meta(meta_doc(by_month)))
+    log(f'pressure: {filled} steps filled in {time.time() - start:.0f} s; {sum(v["missing"] for v in by_month.values())} still missing; '
+        f'{len(changed)} month(s) written ({total / 1e6:.1f} MB)')
+    return by_month
 
 
 def dump_meta(doc):
-    """one line per year, so a day's update changes one line"""
-    head = {k: v for k, v in doc.items() if k != 'years'}
-    s = json.dumps(head, ensure_ascii=False)[:-1] + ',\n "years": {\n'
-    s += ',\n'.join(f'  "{y}": {json.dumps(v, ensure_ascii=False)}' for y, v in doc['years'].items())
+    """one line per month, so a day's update changes one line"""
+    head = {k: v for k, v in doc.items() if k != 'months'}
+    s = json.dumps(head, ensure_ascii=False)[:-1] + ',\n "months": {\n'
+    s += ',\n'.join(f'  "{k}": {json.dumps(v, ensure_ascii=False)}' for k, v in doc['months'].items())
     return s + '\n }\n}\n'
 
 
