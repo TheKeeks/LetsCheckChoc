@@ -101,6 +101,17 @@ module.exports = {
     assert.equal(i1.mode, 'pick');
     assert.ok(i1.step > i0.step + 5, `the drag moved the hour on (step ${i0.step} → ${i1.step})`);
     assert.equal(i1.full, true, 'still full screen');
+    // one finger on the map moves it (nothing scrolls in full screen): no "Use two fingers" hint
+    const fb = await ctx.state(() => { const r = document.querySelector('#cl-view-forecast .cl-f-frame').getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; });
+    const cam0 = await mf().evaluate(() => [window.CHOC.trip.state.cam.cx, window.CHOC.trip.state.cam.cy]);
+    const mx = fb.l + fb.w * 0.5, my = fb.t + fb.h * 0.42;
+    await touch('touchStart', [{ x: mx, y: my }]);
+    for (let k = 1; k <= 10; k++) { await touch('touchMove', [{ x: mx - 6 * k, y: my - 4 * k }]); await page.waitForTimeout(16); }
+    await touch('touchEnd', []);
+    await page.waitForTimeout(200);
+    const pan = await mf().evaluate((c0) => { const h = document.getElementById('fcHint'), c = window.CHOC.trip.state.cam; return { moved: Math.hypot(c.cx - c0[0], c.cy - c0[1]) > 0, hint: !!h && !h.hidden }; }, cam0);
+    log('one finger in full screen', JSON.stringify(pan));
+    assert.deepEqual(pan, { moved: true, hint: false }, 'one finger pans the map in full screen');
     await mapAt(i1.t);
     const card1 = (await R()).card;
     assert.doesNotMatch(card1, /now/, 'the card follows the hour');

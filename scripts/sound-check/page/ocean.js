@@ -729,8 +729,10 @@
     for (const g of ['gesturestart', 'gesturechange', 'gestureend']) el.addEventListener(g, (e) => e.preventDefault(), { passive: false });
   }
   // On the Forecast tab the map sits in a page that scrolls: there one finger scrolls the page and two move the map
-  // (and a mouse wheel scrolls; ctrl + wheel or a trackpad pinch zooms), as embedded maps do.
-  noPageZoom(stage, () => panMode() && !FCUI);
+  // (and a mouse wheel scrolls; ctrl + wheel or a trackpad pinch zooms), as embedded maps do. In the tab's full
+  // screen (methods-theme.js sets data-lcc-full) nothing scrolls, so one finger and the wheel move the map again.
+  const pageScrolls = () => FCUI && !document.documentElement.dataset.lccFull;
+  noPageZoom(stage, () => panMode() && !pageScrolls());
   let hintT = 0;
   function twoFingers() {
     let h = $('fcHint');
@@ -768,7 +770,7 @@
     const v = cam(), { sc, x0, y0 } = proj(v); const X = (lon) => (lon * KX - x0) * sc, Y = (lon, lat) => (-lat * KY - y0) * sc;
     if (drag.kind === 'aim') { S.th = (Math.atan2(px - X(S.start[0]), -(py - Y(...S.start))) / D2R + 360) % 360; S.note = ''; retrace(); }
     else if (drag.kind === 'move') { const ll = unproject(px, py); if ((depthAt(...ll) || 0) > 1) { S.start = ll; S.note = ''; retrace(); } }
-    else if (FCUI && e.pointerType === 'touch') { if (Math.hypot(px - drag.sx, py - drag.sy) > 12) twoFingers(); }
+    else if (pageScrolls() && e.pointerType === 'touch') { if (Math.hypot(px - drag.sx, py - drag.sy) > 12) twoFingers(); }
     else { const cx = drag.cx - (px - drag.sx) / sc, cy = drag.cy - (py - drag.sy) / sc; if (finite(cx, cy)) { S.cam.cx = cx; S.cam.cy = cy; S.moved = true; draw(); } }
   });
   const up = (e) => {
@@ -797,7 +799,7 @@
   };
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
   // (a Safari trackpad pinch already zooming the map through the gesture events is not zoomed twice)
-  cv.addEventListener('wheel', (e) => { if (!panMode() || (FCUI && !e.ctrlKey)) return; e.preventDefault(); if (gz && e.ctrlKey) return; const [px, py] = localXY(e); zoomAt(px, py, Math.exp(e.deltaY * 0.0015)); }, { passive: false });
+  cv.addEventListener('wheel', (e) => { if (!panMode() || (pageScrolls() && !e.ctrlKey)) return; e.preventDefault(); if (gz && e.ctrlKey) return; const [px, py] = localXY(e); zoomAt(px, py, Math.exp(e.deltaY * 0.0015)); }, { passive: false });
   cv.addEventListener('click', () => { if (S.phase !== 'play') return; S.playing = !S.playing; S.last = 0; if (S.playing) requestAnimationFrame(frame); });
 
   // ── animation
