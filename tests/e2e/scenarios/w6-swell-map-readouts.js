@@ -33,10 +33,11 @@ module.exports = {
     assert.ok(card.slice(0, 3).every(r => SWELL.test(r[1])), 'each swell in surf-report form');
     assert.ok(await shortLines('#decDay', 100), `no paragraph in the day card (${await longest('#decDay')} characters)`);
 
-    // The map's headline: one line per swell, then the wind.
+    // The map's headline: one line per swell, then the wind, and on a wide screen the tide at the hour once the
+    // history bot's tide lane has the day (research/ocean/day/<year>.json; the bot added it to every year in Oct 2026)
     const hud = await page.$eval('#tripLine', n => n.innerText.split('\n'));
     log('past headline: ' + hud.join(' | '));
-    assert.equal(hud.length, 3);
+    assert.ok(hud.length === 3 || (hud.length === 4 && /^Tide -?\d+\.\d ft [▲▼] (rising|falling)$/.test(hud[3])), `headline lines: ${hud.length}`);
     assert.ok(/^1° /.test(hud[0]) && SWELL.test(hud[0].slice(3)) && /^2° /.test(hud[1]) && /^Wind /.test(hud[2]), 'headline lines: 1°, 2°, wind');
 
     // Check a date: swell cards tagged 1°/2°/3°, then short Bent in and Buoy lines.
