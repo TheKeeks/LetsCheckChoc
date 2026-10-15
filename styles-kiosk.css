@@ -1,3 +1,0 @@
-/* Choc TV no longer loads this file (its styles are previews/clean/tv.css). It stays, empty,
-   for one deploy so the TV at the house still finds every file it checks for code changes
-   (kiosk.js KIOSK_CODE_FILES) and reloads into the new code; delete it after that. */

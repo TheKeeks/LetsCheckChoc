@@ -231,7 +231,7 @@
     var px = 0;
     for (var i = 0; i < fc.steps.length; i++) {
       probe.innerHTML = headHTML(i, i === nowStep());
-      px = Math.max(px, probe.offsetHeight);
+      px = Math.max(px, Math.ceil(probe.getBoundingClientRect().height));   // offsetHeight rounds a 326.6 px headline down
     }
     probe.parentNode.removeChild(probe);
     headMin = { key: key, px: px };

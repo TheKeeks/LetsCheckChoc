@@ -25,7 +25,7 @@ Parts must not edit `core.js`, `theme.js`, `theme.css`, `base.css`, this file,
 part needs a helper core does not have, it writes it locally in its own file
 (and says so in its result).
 
-`index.html` writes `previews/clean/theme.css` after `styles-kiosk.css` and
+`index.html` writes `previews/clean/theme.css` after `style.css` and
 `previews/clean/theme.js` after `kiosk.js`, so every app.js / kiosk.js /
 firebase-config.js global (`STATE`, `CONFIG`, `loadAllData`, `kioskDaySummary`,
 `signInWithGoogle`, …) already exists when the parts run. Classic scripts only:

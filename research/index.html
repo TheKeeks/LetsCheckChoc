@@ -281,7 +281,7 @@ html.hub-lock, html.hub-lock body { overflow: hidden; }
 .dec-ov-body > * { box-sizing: border-box; width: 100%; max-width: 760px; margin-inline: auto; }
 .dec-ov-lede { font-size: .92rem; }
 @media (max-width: 520px) { .dec-ov-body { padding-inline: 8px; } .dec-ov-body > figure { padding-inline: 10px; } .dec-ov-lede { padding-inline: 8px; } }   /* the twelve months fit a phone */
-.dec-month { display: grid; gap: 12px; border-top: 1px solid var(--rule); padding-top: 14px; }
+.dec-month { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; border-top: 1px solid var(--rule); padding-top: 14px; }
 .dec-mh { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
 .dec-mh span { font-size: .82rem; color: var(--fg-3); }
 .dec-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
@@ -299,7 +299,7 @@ html.hub-lock, html.hub-lock body { overflow: hidden; }
 .dec-d.on { outline: 2px solid var(--fg); outline-offset: 1px; }
 .dec-key { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .74rem; color: var(--fg-3); }
 .dec-key i.g { display: inline-block; width: 10px; height: 10px; border-radius: 3px; box-shadow: inset 0 0 0 2px var(--swell); margin-right: 5px; vertical-align: -1px; }
-.dec-day { display: grid; gap: 4px; font-size: .88rem; color: var(--fg-2); }
+.dec-day { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; font-size: .88rem; color: var(--fg-2); }
 .dec-day b { color: var(--fg); font-weight: 600; }
 .dec-day .ok { color: var(--offshore); }
 .dec-w { font-size: .82rem; }
@@ -317,7 +317,7 @@ svg.dec-cam, .chart svg.dec-cam { width: 12px; height: 9px; display: inline-bloc
 .dec-log { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
 .dec-log-h { font-size: .84rem; color: var(--fg-2); }
 .dec-log-h b { color: var(--fg); }
-.dec-log-n { margin: 6px 0 0; padding: 2px 0 2px 10px; border-left: 2px solid rgba(255,255,255,.25); font-size: .86rem; line-height: 1.45; white-space: pre-wrap; }
+.dec-log-n { margin: 6px 0 0; padding: 2px 0 2px 10px; border-left: 2px solid rgba(255,255,255,.25); font-size: .86rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .dec-ph-a img { display: block; width: 120px; height: 90px; object-fit: cover; border-radius: 4px; background: #121b24; }
 .cut { margin-top: 14px; }
 .cut-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 8px; }
@@ -390,8 +390,8 @@ body { margin: 0; }
         <div id="tripPow" class="trip-pow" hidden><span class="trip-pow-l">Energy along the crest</span><span class="trip-bar" title="The white tick is where it started (100%)"><i id="tripPowFill"></i><b></b></span><span id="tripPowV" class="trip-pow-v"></span><span id="tripPowH" class="trip-powh"></span></div></div>
       <div class="hub-tr" id="hubTr">
         <button type="button" class="hub-ib" id="hubLayers" aria-expanded="false" aria-controls="hubPanel" aria-label="Layers" title="Layers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 12.5 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg></button>
-        <button type="button" class="hub-ib" id="hubInfo" aria-expanded="false" aria-controls="hubInfoCard" aria-label="How to read this map" title="How to read this map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6" stroke-linecap="round"/><circle cx="12" cy="7.6" r="1.2" fill="currentColor" stroke="none"/></svg></button>
         <button type="button" class="hub-ib" id="hubFull" aria-pressed="false" aria-label="Full screen" title="Full screen"><svg class="i-max" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><svg class="i-min" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg></button>
+        <button type="button" class="hub-ib" id="hubInfo" aria-expanded="false" aria-controls="hubInfoCard" aria-label="How to read this map" title="How to read this map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6" stroke-linecap="round"/><circle cx="12" cy="7.6" r="1.2" fill="currentColor" stroke="none"/></svg></button>
       </div>
       <div class="hub-panel" id="hubPanel" hidden>
         <div class="hub-g hub-view"><div class="hub-h">View</div>

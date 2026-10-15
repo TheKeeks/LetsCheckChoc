@@ -11,7 +11,9 @@
 //     labels each swell like its row with its share, and pins Choc; the
 //     zoom (Ocean, Region, Fishers) is remembered;
 //   • the week scrubber moves the hour (keys, the day jump, a mouse drag)
-//     and Now brings it back; the headline, swells and the map's hour follow;
+//     and Now brings it back; the headline, swells and the map's hour follow,
+//     and through every hour of the run the map and the chart stay put (an
+//     hour with one more swell must not push them down under a finger);
 //   • Wilderness switches every reading and is remembered;
 //   • the wind and tide for the hour; the buoy check: 44097's 8:30 AM reading
 //     (2 ft, stale) against Open-Meteo's forecast for 9 AM made 1, 2 and 3
@@ -128,6 +130,25 @@ module.exports = {
     assert.equal(sp((await read()).when), 'Tue 8 AM', 'day » four times');
     await page.locator('#cl-view-forecast .cl-f-jb[data-j="day"]').click();
     assert.equal(sp((await read()).when), 'Wed 8 AM', 'day » where the steps are 6 h apart');
+    await page.locator('#cl-view-forecast .cl-f-jb[data-j="now"]').click();
+
+    // ── Every hour of the run: the map and the week chart never move, however many swells the hour has ──
+    const where = () => ctx.state(() => {
+      const top = q => Math.round((document.querySelector('#cl-view-forecast ' + q).getBoundingClientRect().top + scrollY) * 10) / 10;
+      return { map: top('.cl-f-map'), chart: top('.cl-f-cx'), rows: document.querySelectorAll('#cl-view-forecast .cl-f-tr li').length };
+    });
+    await page.locator('#cl-view-forecast .cl-f-cx').focus();
+    await page.keyboard.press('Home');
+    const w0 = await where(), rowCounts = new Set(), moved = [];
+    for (let k = 0, n = await ctx.state(() => CLEAN.model.state.steps.length); k < n; k++) {
+      const w = await where();
+      rowCounts.add(w.rows);
+      if (w.map !== w0.map || w.chart !== w0.chart) moved.push(`step ${k} (${w.rows} swells): map ${w.map}, chart ${w.chart}`);
+      await page.keyboard.press('ArrowRight');
+    }
+    log('every hour', JSON.stringify(w0), 'swell counts', [...rowCounts].join(','));
+    assert.ok(rowCounts.size > 1, 'the run has hours with different numbers of swells');
+    assert.deepEqual(moved, [], `the map at ${w0.map} and the chart at ${w0.chart} stay put`);
     await page.locator('#cl-view-forecast .cl-f-jb[data-j="now"]').click();
 
     // ── Wilderness: every reading switches, and it is remembered ──

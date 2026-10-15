@@ -90,10 +90,12 @@
 .fc-hint { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6; padding: 8px 14px; border-radius: 16px; background: rgba(7, 11, 16, .86); color: #e7edf2; font: 600 13px/1.3 "Instrument Sans", system-ui, sans-serif; pointer-events: none; }
 /* The Explore tab's map (?ui=explore): past days and Drop a wave (the forecast is the Forecast tab's), with the ten
    years, the month's days, the day's details and the ocean that day out beside the map on a wide screen and under it
-   on a phone (decade.js moves them into .ex-dock); a day picked there shows on the map straight away. */
+   on a phone (decade.js moves them into .ex-dock); a day picked there shows on the map straight away. Its one column
+   is minmax(0, 1fr): a month's photo strip or a long link in a session's notes scrolls or wraps inside it instead of
+   widening the whole column past the screen. */
 [data-research-ui="explore"] #tripModeSeg button[data-v="week"],
 [data-research-ui="explore"] #decShow { display: none; }
-[data-research-ui="explore"] .ex-dock { box-sizing: border-box; min-width: 0; padding: 16px 16px 32px; display: grid; gap: 14px; align-content: start; background: var(--ink); }
+[data-research-ui="explore"] .ex-dock { box-sizing: border-box; min-width: 0; padding: 16px 16px 32px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-content: start; background: var(--ink); }
 [data-research-ui="explore"][data-hub-mode="drop"] .ex-dock { display: none; }
 .ex-h { margin: 0; font-size: 1.25rem; }
 .ex-lede { margin: 0; font-size: .92rem; color: var(--fg-2); }
