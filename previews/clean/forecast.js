@@ -422,18 +422,21 @@
   // bottom): the map lifts its colour key and drops its layers panel clear of them (research/methods-theme.js).
   function sendInset() {
     if (map.status !== 'ready') return;
-    var lay = layout(), top = 0, bot = 0;
+    var lay = layout(), top = 0, bot = 0, left = 0;
     if (lay !== 'phone') {
       var fr = E.frame.getBoundingClientRect();
       if (!fr.height) return;                // the tab isn't on screen: sent when it shows
       if (lay === 'wide') top = Math.max(0, Math.round(E.mbar.getBoundingClientRect().bottom - fr.top));
       var wb = E.wk.getBoundingClientRect();
       if (!E.wk.hidden && wb.height) bot = Math.max(0, Math.round(fr.bottom - wb.top));
+      // the hour's card over the top-left (wide): the map centres its view to the right of it, so Choc isn't under it
+      var hb = E.head.getBoundingClientRect();
+      if (lay === 'wide' && hb.width && hb.right < fr.left + fr.width * 0.6) left = Math.max(0, Math.round(hb.right - fr.left));
     }
-    var key = top + '|' + bot;
+    var key = top + '|' + bot + '|' + left;
     if (map.inset === key) return;
     map.inset = key;
-    post({ type: 'lcc-fc-inset', top: top, bottom: bot });
+    post({ type: 'lcc-fc-inset', top: top, bottom: bot, left: left });
   }
 
   // ════════════════════════════════════════════════════════════════════

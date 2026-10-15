@@ -1448,7 +1448,12 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     const bot = [...stage.querySelectorAll('.hub-bot')].find((e) => !e.hidden), tr = $('hubTr'), pn = $('hubPanel');
     let right = tr ? Wd - tr.offsetLeft + 6 : 0;
     if (pn && !pn.hidden && stage.classList.contains('hub-wide')) right = Wd - pn.offsetLeft + 8;
-    return { top: hud ? hud.offsetTop + hud.offsetHeight + 12 : 80, bottom: bot ? H - bot.offsetTop + 8 : 0, right };
+    const out = { top: hud ? hud.offsetTop + hud.offsetHeight + 12 : 80, bottom: bot ? H - bot.offsetTop + 8 : 0, right, left: 0 };
+    if (FCUI) {                                              // what the Forecast tab lays over the map (methods-theme.js): its card, its week
+      const cs = getComputedStyle(document.documentElement), v = (n) => parseFloat(cs.getPropertyValue(n)) || 0;
+      out.top = Math.max(out.top, v('--lcc-fc-top')); out.bottom = Math.max(out.bottom, v('--lcc-fc-bot')); out.left = v('--lcc-fc-left');
+    }
+    return out;
   }
   let RECTS = [], INS = { top: 80, bottom: 0, right: 0 };
   function overlayRects() {                                  // boxes of the visible controls, in canvas px
@@ -2404,34 +2409,45 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   }
 
   // ── PRESSURE ON PAST DAYS: the same map from the history bot's ten years of sea-level pressure (ERA5, then GFS
-  // analyses), every 6 hours at 1°: ocean/pressure/<year>.png, one row per step from Jan 1 00Z, one gray pixel per
-  // cell (north to south, west to east), hPa = base + scale·v, 255 where there is none; ocean/pressure/meta.json says
-  // the grid. The step nearest the hour on show is drawn; lows are followed over three days either side of it.
-  const PP = { meta: undefined, years: {}, win: null };
+  // analyses), every 6 hours at 1°: ocean/pressure/<YYYY-MM>.png, one row per step from the 1st 00Z, one gray pixel
+  // per cell (north to south, then west to east), hPa = base + scale·v, 255 where there is none; ocean/pressure/
+  // meta.json says the grid and which months are in. The step nearest the hour on show is drawn; lows are followed
+  // over three days either side of it (the months either side load too when that window crosses into them).
+  const PP = { meta: undefined, months: {}, win: null };
+  const H6 = 216e5;
+  function ppMonth(key) {                                    // the month's rows, null while loading, false when missing
+    const m = PP.meta, info = m && m.months && m.months[key];
+    if (!info) return false;
+    if (PP.months[key] === undefined) {
+      PP.months[key] = null;
+      const keys = Object.keys(PP.months); if (keys.length > 6) delete PP.months[keys[0]];   // memory: a few months at a time
+      img(`ocean/pressure/${key}.png`).then((im) => {
+        PP.months[key] = im && im.width === m.cols ? { a: window.CHOC.pixels(im), n: im.height, t0: Date.parse(info.first.replace('Z', ':00Z')) } : false;
+        PP.win = null; if (S.phase === 'past') draw();
+      });
+    }
+    return PP.months[key];
+  }
+  function ppRow(t) {                                        // Float32Array of hPa at the 6-hour step t, else null
+    const m = PP.meta, d = new Date(t), key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`, M = ppMonth(key);
+    if (!M) return null;
+    const r = Math.round((t - M.t0) / H6); if (r < 0 || r >= M.n) return null;
+    const row = new Float32Array(m.cols); let any = false;
+    for (let q = 0; q < m.cols; q++) { const v = M.a[4 * (r * m.cols + q)]; if (v === m.missing) row[q] = NaN; else { row[q] = m.base + m.scale * v; any = true; } }
+    return any ? row : null;
+  }
   function pastPressure() {
-    if (PP.meta === undefined) { PP.meta = null; json('ocean/pressure/meta.json').then((m) => { PP.meta = m || false; if (S.phase === 'past') draw(); }); }
+    if (PP.meta === undefined) { PP.meta = null; json('ocean/pressure/meta.json').then((m) => { PP.meta = m && m.months ? m : false; if (S.phase === 'past') draw(); }); }
     const m = PP.meta, x = DAYS[CST.idx]; if (!m || !x || CST.hour == null) return null;
-    const t = hourAt(x.iso, CST.hour) + 18e5, y = new Date(t).getUTCFullYear(), Y0 = Date.UTC(y, 0, 1), info = m.years && m.years[y];
-    if (!info) return null;
-    if (PP.years[y] === undefined) {
-      PP.years[y] = null;
-      for (const k of Object.keys(PP.years)) if (+k !== y && Math.abs(+k - y) > 1) delete PP.years[k];   // memory: a year or two at a time
-      img(`ocean/pressure/${y}.png`).then((im) => { PP.years[y] = im && im.width === m.cols ? { a: window.CHOC.pixels(im), n: im.height } : false; if (S.phase === 'past') draw(); });
+    const tc = Math.round((hourAt(x.iso, CST.hour) + 18e5) / H6) * H6;
+    if (!PP.win || PP.win.tc !== tc) {
+      const hpa = [], ts = [];
+      for (let r = -12; r <= 12; r++) { hpa.push(ppRow(tc + r * H6)); ts.push(tc + r * H6); }
+      if (!hpa[12]) return null;                             // the step itself isn't in (yet): try again when its month loads
+      const g = { hpa, ts, nla: m.nlat, nlo: m.nlon, lat0: Math.max(m.lat0, m.lat1), lon0: Math.min(m.lon0, m.lon1), dg: m.deg };
+      PP.win = Object.assign({ tc, g }, trackLows(g));
     }
-    const Yr = PP.years[y]; if (!Yr) return null;
-    const step = m.hours * 36e5, k = Math.round((t - Y0) / step); if (k < 0 || k >= Yr.n) return null;
-    const k0 = Math.max(0, k - 12), k1 = Math.min(Yr.n - 1, k + 12), key = y + '|' + k0 + '|' + k1;
-    if (!PP.win || PP.win.key !== key) {
-      const nla = Math.round((m.lat1 - m.lat0) / m.deg) + 1, nlo = Math.round((m.lon1 - m.lon0) / m.deg) + 1, hpa = [], ts = [];
-      for (let r = k0; r <= k1; r++) {
-        const row = new Float32Array(m.cols);
-        for (let q = 0; q < m.cols; q++) { const v = Yr.a[4 * (r * m.cols + q)]; row[q] = v === m.missing ? NaN : m.base + m.scale * v; }
-        hpa.push(row.some((v) => v === v) ? row : null); ts.push(Y0 + r * step);
-      }
-      const g = { hpa, ts, nla, nlo, lat0: m.lat1, lon0: m.lon0, dg: m.deg };
-      PP.win = Object.assign({ key, g, k0 }, trackLows(g));
-    }
-    return PP.win.g.hpa[k - k0] ? { w: PP.win, k: k - k0, t: Y0 + k * step } : null;
+    return { w: PP.win, k: 12, t: tc };
   }
   function drawPastStorms(X, Y, v) {
     const al = stormAlpha(v.W); PP.drawn = null;
@@ -2594,12 +2610,13 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     const Z = ZOOMS[z], p = P(...Z.c); S.moved = false;       // the past covers the same ocean as the forecast, so both use the same views
     if (cw && chh) {
       // the same area of map on any screen: a wide iPad sees further east and west, a phone further north and south
-      const ins = insets(), aw = Math.max(60, cw - ins.right - 16), ah = Math.max(60, chh - ins.top - ins.bottom - 8), m = Math.min(cw, chh);
+      const ins = insets(), aw = Math.max(60, cw - ins.left - ins.right - 16), ah = Math.max(60, chh - ins.top - ins.bottom - 8), m = Math.min(cw, chh);
       const wv = Math.sqrt(Z.span[0] * KX * Z.span[1] * KY * aw / ah), W = wv * m / aw, sc = m / W;
-      S.cam = { cx: p[0] - (8 + aw / 2 - cw / 2) / sc, cy: p[1] - (ins.top + ah / 2 - chh / 2) / sc, W };
+      S.cam = { cx: p[0] - (ins.left + 8 + aw / 2 - cw / 2) / sc, cy: p[1] - (ins.top + ah / 2 - chh / 2) / sc, W };
     } else S.cam = { cx: p[0], cy: p[1], W: Z.span[0] * KX };
     draw();
   }
+  window.CHOC.reframe = () => { if (!S.moved && MAPV() && S.phase !== 'drop') fcZoom(FC.zoom); };
   function fcTap(px, py) {                                   // tap a point: what's there (tap it again, or land, to clear)
     let ll = unproject(px, py); const v = cam(), { sc, x0, y0 } = proj(v);
     const same = FC.pick && Math.hypot((FC.pick[0] * KX - x0) * sc - px, (-FC.pick[1] * KY - y0) * sc - py) < 16;
@@ -3701,7 +3718,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
       return { min: Math.round(Math.min(...tr.pts.map((x) => x.p))), hours: Math.round((ts(b.k) - ts(a.k)) / 36e5), from: [r1(a.lat), r1(a.lon)], to: [r1(b.lat), r1(b.lon)], k: [a.k, b.k] };
     }) : null }),
     // the same on a past day: the pressure step drawn (its UTC time) and the storms followed around it
-    _pastStorm: () => ({ meta: PP.meta ? { cols: PP.meta.cols, years: Object.keys(PP.meta.years || {}) } : PP.meta, drawn: PP.drawn ? JSON.parse(JSON.stringify(PP.drawn)) : null,
+    _pastStorm: () => ({ meta: PP.meta ? { cols: PP.meta.cols, months: Object.keys(PP.meta.months || {}).length } : PP.meta, drawn: PP.drawn ? JSON.parse(JSON.stringify(PP.drawn)) : null,
       tracks: PP.win ? PP.win.tracks.map((tr) => ({ min: Math.round(Math.min(...tr.pts.map((x) => x.p))), hours: Math.round((PP.win.g.ts[tr.pts[tr.pts.length - 1].k] - PP.win.g.ts[tr.pts[0].k]) / 36e5) })) : null }),
     _screen: (lon, lat) => { const { sc, x0, y0 } = proj(cam()); return [(lon * KX - x0) * sc, (-lat * KY - y0) * sc]; } };
 

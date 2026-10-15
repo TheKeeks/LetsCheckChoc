@@ -57,6 +57,8 @@
         var px = function (v) { return Math.max(0, Math.min(2000, Number(v) || 0)) + 'px'; };
         root.style.setProperty('--lcc-fc-top', px(data.top));
         root.style.setProperty('--lcc-fc-bot', px(data.bottom));
+        root.style.setProperty('--lcc-fc-left', px(data.left));
+        if (window.CHOC && window.CHOC.reframe) window.CHOC.reframe();   // the map re-centres in what's left uncovered
       }
     }
   });

@@ -235,6 +235,17 @@ module.exports = {
     assert.ok(await ctx.state(() => document.querySelectorAll('#cl-view-forecast .cl-f-gfs').length > 0));
     await page.waitForTimeout(300);
     await ctx.state(() => scrollTo(0, 0));
+    // the map frames its view in what the card and the docked week leave uncovered: Choc isn't under the card
+    await ctx.waitFor(() => { const f = document.querySelector('#cl-view-forecast .cl-f-frame'); return f && f.contentWindow.getComputedStyle(f.contentDocument.documentElement).getPropertyValue('--lcc-fc-left').trim() !== ''; }, { label: 'the card\'s width sent to the map' });
+    await page.locator('#cl-view-forecast .cl-f-zseg button[data-zoom="reg"]').click();
+    await page.waitForTimeout(400);
+    const choc = await ctx.state(() => {
+      const f = document.querySelector('#cl-view-forecast .cl-f-frame'), fb = f.getBoundingClientRect(), hb = document.querySelector('#cl-view-forecast .cl-f-head').getBoundingClientRect();
+      const [x, y] = f.contentWindow.CHOC.trip._screen(-71.96, 41.276);
+      return { x: Math.round(fb.left + x), y: Math.round(fb.top + y), cardRight: Math.round(hb.right), cardBottom: Math.round(hb.bottom), right: Math.round(fb.right) };
+    });
+    log('Choc at Region zoom', JSON.stringify(choc));
+    assert.ok((choc.x > choc.cardRight + 20 || choc.y > choc.cardBottom + 20) && choc.x < choc.right - 20, `Choc (${choc.x}, ${choc.y}) is clear of the card (right ${choc.cardRight}, bottom ${choc.cardBottom})`);
     await ctx.screenshot('layout-wide', { fullPage: true });
 
     // ── Wide full screen: same mode; a mouse drag in the dock, then Back ──
