@@ -19,8 +19,8 @@
 //     (2 ft, stale) against Open-Meteo's forecast for 9 AM made 1, 2 and 3
 //     days before (2.4 ft each: on track), and its sub-page with the last
 //     two days and how each lead did on average;
-//   • on a wide screen the tabs run across the top and the map sits left of
-//     the readout.
+//   • on a wide screen the tabs run across the top and the map takes the
+//     width, the readout a card over it and the week docked along its bottom.
 'use strict';
 
 const sp = s => (s || '').replace(/[  ]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -204,17 +204,20 @@ module.exports = {
     await ctx.state(() => CLEAN.setThemeMode('light'));
     await ctx.waitFor(() => CLEAN.theme() === 'day', { label: 'light again' });
 
-    // ── Wide screen: tabs on top, map left of the readout; a mouse drag scrubs ──
+    // ── Wide screen: tabs on top, the timeline on the map (the readout a card over its top left, the week docked
+    //    along its bottom; preview-clean-forecast-layout.js checks it closely); a mouse drag scrubs ──
     await page.setViewportSize({ width: 1280, height: 860 });
     await page.waitForTimeout(400);
     const lay = await ctx.state(() => {
       const R = s => document.querySelector(s).getBoundingClientRect();
-      return { tabs: R('#cl-app .cl-tabs').top, tabsH: R('#cl-app .cl-tabs').height, map: R('#cl-view-forecast .cl-f-map'), head: R('#cl-view-forecast .cl-f-head'), wk: R('#cl-view-forecast .cl-f-wk') };
+      return { tabs: R('#cl-app .cl-tabs').top, tabsH: R('#cl-app .cl-tabs').height, map: R('#cl-view-forecast .cl-f-map'), head: R('#cl-view-forecast .cl-f-head'), wk: R('#cl-view-forecast .cl-f-wk'), side: R('#cl-view-forecast .cl-f-side') };
     });
     log('wide', JSON.stringify(lay));
     assert.equal(Math.round(lay.tabs), 0, 'the tab bar runs across the top');
-    assert.ok(lay.map.right <= lay.head.left, 'the map sits left of the readout');
-    assert.ok(lay.wk.top >= lay.map.bottom - 1 && lay.wk.width > 1000, 'the week runs underneath, full width');
+    assert.ok(lay.map.width > 1100, 'the map takes the content width');
+    assert.ok(lay.head.left > lay.map.left && lay.head.top > lay.map.top && lay.head.right < lay.map.right && lay.head.bottom < lay.wk.top, 'the readout is a card over the map\'s top left');
+    assert.ok(Math.abs(lay.wk.bottom - lay.map.bottom) < 1 && lay.wk.width > 1100, 'the week is docked inside the map\'s bottom edge, across it');
+    assert.ok(lay.side.top >= lay.map.bottom, 'wind, tide and the buoy check below');
     await ctx.screenshot('forecast-wide');
     const box = await page.locator('#cl-view-forecast .cl-f-cx').boundingBox();
     await page.mouse.move(box.x + box.width * 0.6, box.y + 60);
