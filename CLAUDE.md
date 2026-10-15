@@ -43,11 +43,11 @@ node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 
 | Path | What |
 |---|---|
-| `index.html` | The single page. Loads the Firebase 9.23.0 compat SDK (gstatic), then `firebase-config.js`, `app.js`, `kiosk.js` in that order, then the look (`previews/clean/theme.js`). Only the old look (`?classic=1`) also loads Google Fonts (non-blocking) and Leaflet 1.9.4 (vendored in `vendor/leaflet/`) |
-| `app.js` | About 8.8k-line global-scope monolith with all forecast, chart, surf-log and regression logic |
-| `kiosk.js` | Choc TV. A no-op unless `?kiosk=1`. Wraps some app.js globals at load time |
+| `index.html` | The single page: the app's hidden engine room (`#app-window`: the surf-log form Log drives, the Tab 2 panels My ratings borrows), the "didn't start" card (`lccDown`), then the Firebase 9.23.0 compat SDK (gstatic), `firebase-config.js`, `app.js`, `kiosk.js` (keep that file name: Choc TV's reload probe looks for it) and the look (`previews/clean/theme.js`) |
+| `app.js` | About 4.9k-line global-scope script: forecast, tides and buoy data with their saved copies and ages, the surf log, the ratings models and the Tab 2 panels. Draws no screens; the look hooks `renderForecastSet`, `recordDataHealth`, `updateAuthUI`, `surfLogChanged`, `slRetrain` by name |
+| `kiosk.js` | Choc TV's machinery under `previews/clean/tv.js`: rotation, 15-min refresh, deploy pickup, nightly and watchdog reloads, the down-card retry, `kioskDaySummary`. A no-op unless `?kiosk=1` |
 | `firebase-config.js` | Firebase init and auth. Globals: `fbAuth`, `fbFirestore`, `fbStorage`, `window._fbUserId`, `window._fbAuthReady` |
-| `style.css`, `styles-web1.css`, `styles-web1-extensions.css`, `styles-retro.css`, `styles-kiosk.css` | In that order. `style.css` loads on every page (the toasts and the charts My ratings borrows still use it). The three Win95 sheets are the old look's: only with `?classic=1`, or when the new look gives the page back (`lccLoadClassic` in `index.html`). `styles-kiosk.css` with `?kiosk=1` (the classic TV, Choc TV's fallback) or `?classic=1` |
+| `style.css` | The tokens, toasts and Tab 2 panel styles My ratings borrows; the look's own are `previews/clean/*.css`. `styles-kiosk.css` is an empty stub kept for one deploy (see its comment) |
 | `firestore.rules`, `storage.rules`, `firestore.indexes.json` | Repo copies only (see Invariants) |
 | `data/buoy.json`, `data/verification.json` | Written by the pipeline bot. Never edit them |
 | `scripts/history/` | Sound Check history bot (`.github/workflows/update-history.yml`, daily): CDIP 44097 spectra, NDBC readings, ERA5/ECMWF wind, CO-OPS tides → `data/history/*.json`, `research/hist.js` (via `scripts/sound-check/page/build_hist.py`) and the `44097` lane of `research/ocean/day/<year>.json`; rebuilds since 2016 each run; it also fits the ratings model, `data/history/sess_pairs.json`, `data/history/sessions_all.json` and the forecast scorecard `research/fc/score.json` to the crew's surf log, read from Firestore with the read-only service-account key in the `SURFLOG_READ_KEY` secret (`scripts/history/surflog.py`, `scripts/history/ratings.py`; no notes or names in what it writes; without the key they stay as committed); how-to in `scripts/history/README.md`, tests `scripts/test_history.py` |
@@ -59,9 +59,9 @@ node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 | `scripts/smoke_regression.js`, `scripts/leak_deg_sensitivity.js`, `scripts/generate_icons.js`, `scripts/bracelet_plans.js` | Dev-only tools, never loaded by the page |
 | `test-gate.js` | Legacy tests, still run by `npm test` |
 | `tests/` | `tests/helpers/` (vm loader, DOM stub, fixture map), `tests/unit/`, `tests/e2e/`, `tests/fixtures/` |
-| `project/` | React prototype. `project/assets/lineup.jpg` is used by the live page |
-| `research/` | Sound Check tab (was "Swell Map"): a self-contained research page (`research/index.html` plus its tiles, ray tables and the forecast copy that ships with it, `research/fc/`; the page shows the newer of that and the `fc-data` branch), framed by `#view-research` and loaded on first open. `research/map.html` is the same map alone (its code without the history or the charts): the Forecast tab's map (`?view=map&fill=1&ui=forecast`). Generated: edit its parts in `scripts/sound-check/page/` and rebuild (`scripts/sound-check/README.md`); its history, `research/hist.js`, is the history bot's |
-| `previews/` | The look layered over the live app by the inline loaders in `index.html`: `previews/clean/`, the site's only look (no parameter; `?preview=clean` names it; the candidate looks are retired and their names open it too). The old look is retired too: `?classic=1` still opens it, with no look files but its own styles, fonts and Leaflet, as an emergency fallback (e2e `tests/e2e/scenarios/look-default.js`). The e2e runner's `ctx.open()` adds `classic=1` to any path that names no look, so the older scenarios test the app underneath. `previews/clean/` is the approved "A refined" design: `previews/clean/core.js` (shell, data, Settings) plus one js/css pair per screen (forecast, map = Explore, methods, log, model = My ratings, tv), API in `previews/clean/CONTRACT.md`, e2e `tests/e2e/scenarios/preview-clean.js` plus `preview-clean-{core,forecast,forecast-fallback,forecast-storms,explore,log,tv}.js`. Forecast and Choc TV show the Sound Check model (`research/fc/`, loaded once per page by core's `CLEAN.model`); the Forecast tab's map is `research/map.html` in a frame (`ui=forecast`, driven by the tab's hour, spot and zoom): Ocean shows the storms (the engine's "Pressure & storms" layer: `field_gfs_mslp.png`), Fishers the landing rays (`research/fr/land.json` from `scripts/rays/land_rays.py`). The Forecast tab's header ↻ (`CLEAN.refresh`) asks for the newest run past GitHub's cache (the map too, message `lcc-fc-refresh`) and reloads the wind, tides and buoy; e2e `tests/e2e/scenarios/preview-clean-forecast-refresh.js`. Explore and Methods post `lcc-log` to their frames when a session is saved, edited or deleted (`CLEAN.logRev()` changed), and the research page's ten years read the log again through the site's Firebase connection; e2e `tests/e2e/scenarios/preview-clean-log-follows.js` |
+| `project/` | React prototype (not loaded by the site) |
+| `research/` | Sound Check tab (was "Swell Map"): a self-contained research page (`research/index.html` plus its tiles, ray tables and the forecast copy that ships with it, `research/fc/`; the page shows the newer of that and the `fc-data` branch), framed by the Methods and Explore tabs and loaded on first open; opened on its own it sends the visitor to the site (`research/methods-theme.js`). `research/map.html` is the same map alone (its code without the history or the charts): the Forecast tab's map (`?view=map&fill=1&ui=forecast`). Generated: edit its parts in `scripts/sound-check/page/` and rebuild (`scripts/sound-check/README.md`); its history, `research/hist.js`, is the history bot's |
+| `previews/` | The look layered over the live app by the inline loaders in `index.html`: `previews/clean/`, the site's only look (no parameter; `?preview=clean` names it; the candidate looks are retired and their names open it too). The old look and its code are gone (e2e `tests/e2e/scenarios/look-default.js`); a look that fails to start shows `index.html`'s card, and Choc TV retries by itself. `previews/clean/` is the approved "A refined" design: `previews/clean/core.js` (shell, data, Settings) plus one js/css pair per screen (forecast, map = Explore, methods, log, model = My ratings, tv), API in `previews/clean/CONTRACT.md`, e2e `tests/e2e/scenarios/preview-clean.js` plus `preview-clean-{core,forecast,forecast-fallback,forecast-storms,explore,log,tv}.js`. Forecast and Choc TV show the Sound Check model (`research/fc/`, loaded once per page by core's `CLEAN.model`); the Forecast tab's map is `research/map.html` in a frame (`ui=forecast`, driven by the tab's hour, spot and zoom): Ocean shows the storms (the engine's "Pressure & storms" layer: `field_gfs_mslp.png`), Fishers the landing rays (`research/fr/land.json` from `scripts/rays/land_rays.py`). The Forecast tab's header ↻ (`CLEAN.refresh`) asks for the newest run past GitHub's cache (the map too, message `lcc-fc-refresh`) and reloads the wind, tides and buoy; e2e `tests/e2e/scenarios/preview-clean-forecast-refresh.js`. Explore and Methods post `lcc-log` to their frames when a session is saved, edited or deleted (`CLEAN.logRev()` changed), and the research page's ten years read the log again through the site's Firebase connection; e2e `tests/e2e/scenarios/preview-clean-log-follows.js` |
 | `map/` | Map page, the Explore tab: one map. It opens on the Sound Check map's past days (`research/index.html?view=map&fill=1&ui=explore`: the ten years month by month beside the map, Drop a wave; no forecast, that's the Forecast tab's); its "3D" button (added by `research/methods-theme.js`, message `lcc-open-3d`) opens the sea floor in 3D, "← Map" goes back; `?show=3d` starts in 3D. MapLibre GL 5.24.0 vendored in `vendor/maplibre/` with one local patch (`vendor/maplibre/PATCHES.md`), loaded with `map/map.js` (the 3D map) the first time 3D is opened. `map/page.js` (page, `window.ChocMap` test API, postMessage `lcc-map` from the parent, and `lcc-log`, the surf log changed, passed on to the research page), `map/bathy-worker.js` (draws sea-floor color and terrain tiles for the `lccbathy://` protocol from the separate repo `TheKeeks/LetsCheckChoc-data`, which GitHub Pages serves at `/LetsCheckChoc-data/` next to the site (e2e and CI read a checkout in `map-data/`, git-ignored; `E2E_MAP_DATA` points elsewhere): the Fishers Island viewer's 4 m overview and 0.8 m detail chunks, int16 cm row deltas, gzip; plus `research/ocean/fine16` and `research/depth144`), `map/height-worker.js` (the Sound Check K model, ported from `research/index.html`), `map/swell-worker.js` (wave-ray tracing for swell motion), `map/geometry.js` (pure maths, unit `tests/unit/map-geometry.test.js`). e2e `tests/e2e/scenarios/map-one-map.js`, `tests/e2e/scenarios/map-terrain.js` and `tests/e2e/scenarios/preview-clean-explore.js`. `research/ocean/fine16.png` stores DEPTH (positive down), not height |
 | `bracelet/` | Fishers Bracelet, a side project not linked from the forecast: a 3D designer for a one-wire gold bracelet that traces the island, closes it at the East End in one end-on joint and ends in a ball clasp on North Hill. `bracelet/index.html` (page), `bracelet/geometry.js` (pure route and shape maths), `bracelet/plans.js` (the jeweller's 1:1 flat drawing, Spanish how-to, SVG and PDF), `bracelet/jeweler.html` (plans page), `bracelet/plans/` (PDF + SVG of the standard design, regenerate with `scripts/bracelet_plans.js`), `bracelet/fishers-outline.js` (OSM coastline), three.js r128 and jsPDF 2.5.1 vendored in `bracelet/vendor/`. Unit `tests/unit/bracelet-geometry.test.js`, `tests/unit/bracelet-plans.test.js`; e2e `tests/e2e/scenarios/bracelet-designer.js` (open `/bracelet/index.html`: the runner's server has no folder index) |
 
@@ -75,41 +75,32 @@ each one. Line numbers drift with every edit, so do not cite them in docs.
 | `// ── Configuration` | `CONFIG`: spot coords, swell window, API URLs, NDBC proxy list |
 | `// ── State` | `STATE`, the single mutable app state |
 | `// ── Daylight calculator (solar position)` | `calcDaylight` |
-| `// ── Gate logic` | `initGate`, the boat gate (`sessionStorage lcc-gate`) |
 | `// ── Data fetching helpers` | `fetchJSON` (10 s abort) |
 | `// ── Forecast cache (TTL-backed localStorage)` | `readCache` / `writeCache`, `lcc-cache-*` keys |
 | `// ── API: Open-Meteo Marine` | `FORECAST_MODELS`, `fetchMarineForecast` |
 | `// ── API: CO-OPS tides` | hi/lo and 6-min predictions, water temp |
-| `// ── API: NDBC via CORS proxy` | `fetchNDBCStdmet`, `fetchNDBCSpectral` |
 | `// ── API: Pipeline fallback for Chocomount` | `fetchPipelineBuoy` (`data/buoy.json`) |
-| `// ── Parse NDBC stdmet text` | `parseNDBCStdmet`, plus the spectral parsers below it |
 | `// ── Load concurrency guard` | `loadAllData` / `_loadAllDataImpl`: the whole forecast load path |
-| `// ── Per-panel drawers` | forecast chart panels (`_drawForecastChartFull`, scrubber) |
-| `// TIDE CHART (Canvas 2D)` | Tides panel chart |
-| `// SPECTRAL SUMMARY TABLE` | `.spec` strip, `parseSpecRows`, trends |
-| `// COMPASS ROSE (Canvas 2D)` | Directional spectrum rose |
+| `// DATA LOADING` | `renderForecastSet` (writes `STATE.forecastData`, a hook for the look) |
 | `// SURF LOG — Storage` | `loadSurfLog`, `addLogEntry`, local mirror `lcc_surfLog` |
 | `// SURF LOG — Firebase persistence helpers` | `saveLogEntryToFirebase`, `loadLogsFromFirebase` |
 | `// SURF LOG — Historical Condition Lookup` | `lookupHistoricalConditions`, `parseTideAtTime` (training inputs) |
 | `// SURF LOG — Linear Regression (Normal Equation)` | features, `normalEquation`, `slRetrain` |
-| `// SURF LOG — Forecast Matching` | match lights on the forecast chart |
-| `// SECONDARY SWELL CARD (Tab 1)` | `updateSecondarySwellCard` |
-| `// REGRESSION TAB (Tab 2)` | Tab 2 renderers (`window[name]` dispatch in `_regUpdateSubmodelSurfaces`) |
+| `// SURF LOG — Export / Import` | `exportCSV`, `exportJSON`, `importJSON` (Settings › Surf log) |
+| `// MY RATINGS' DETAILS` | `renderRegressionTab`, the borrowed Tab 2 panels (`window[name]` dispatch in `_regUpdateSubmodelSurfaces`) |
 | `// MODEL vs BUOY — nowcast verification (Tab 2)` | `verifStats`, `drawVerifChart` |
-| `// INITIALIZATION` | `initApp` (catalogs, maps, surf log, auto-select Choc) |
-| `// DAY SUMMARIES` | kiosk.js: `kioskDaySummary` (cards from incoming-tide windows) |
-| `// NIGHT RADAR` | kiosk.js: radar scope and hourly playback |
+| `// INITIALIZATION` | `initApp` (catalogs, auto-select Choc, surf log), `startApp` on DOMContentLoaded |
+| `// DAY SUMMARIES` | kiosk.js: `kioskDaySummary` (the TV's day cards, from incoming-tide windows) |
+| `// ── Self-heal and code refresh` | kiosk.js: `KIOSK_CODE_FILES`, reload guards, watchdog, the down-card retry |
 
 ## Data flow
 
-- **Browser (every load):** `initGate` → `initApp` → `selectBuoy` → `loadAllData`
-  (the default clean look skips the boat question and drives the same path).
+- **Browser (every load):** `startApp` → `initApp` → `selectBuoy` → `loadAllData`.
   It paints from `lcc-cache-*` first (stale-while-revalidate), then fetches
   Open-Meteo marine (Choc forecast point 41.089152, -71.72105), Open-Meteo wind
-  (beach point), CO-OPS 8510719 hi/lo (240 h) and 6-min (168 h), and CO-OPS
-  8510560 water temp. Chocomount's buoy and spectra come from `data/buoy.json`.
-  `CONFIG.api.ndbcProxies` is empty because the free relays are dead, so other
-  buoys show "no live data". A failed fetch falls back to the last good saved
+  (beach point), and CO-OPS 8510719 hi/lo (240 h) and 6-min (168 h).
+  Chocomount's buoy and spectra come from `data/buoy.json` (`CONFIG.api.ndbcProxies`
+  is empty: browsers can't read NDBC). A failed fetch falls back to the last good saved
   copy (forecast up to 24 h old, tides up to 4 days). `STATE.dataAsOf` and
   `STATE.dataHealth` record the real age of the data, and kiosk.js reads them.
 - **Pipeline:** `.github/workflows/update-buoy.yml` runs every 2 h (GitHub drops many runs). `scripts/fetch_buoy.py`

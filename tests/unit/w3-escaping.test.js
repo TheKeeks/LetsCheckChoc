@@ -6,7 +6,7 @@
 // and the hostile text survives as visible text.
 //
 // The vm DOM stores innerHTML without parsing it, so scanHtml() below is a
-// small tag/attribute tokenizer; tests/e2e/scenarios/w3-xss-surflog.js
+// small tag/attribute tokenizer; tests/e2e/scenarios/preview-clean-xss.js
 // repeats the check with Chromium's real parser.
 'use strict';
 
@@ -85,38 +85,6 @@ function appWith(entries) {
   return app;
 }
 
-test('surf log table: notes, displayName, photo URLs and ids render as text, not markup', () => {
-  const app = appWith([HOSTILE_COMMUNITY, HOSTILE_OWN]);
-  app.call('renderSurfLogTable');
-  const rows = app.dom.byId('surflog-tbody').children;
-  assert.equal(rows.length, 2);
-  const allowed = ['td', 'br', 'span', 'div', 'img', 'button'];
-  for (const tr of rows) {
-    const { tags, text } = assertOnlyAppMarkup(tr.innerHTML, allowed, 'table row');
-    const imgs = tags.filter(t => t.tag === 'img');
-    // The https photo keeps its exact URL (quote and all) inside src; the
-    // javascript: one is dropped.
-    assert.deepEqual(imgs.map(i => i.attrs.src), ['https://h.example/a" onerror="window.__xss=3']);
-    assert.ok(text.includes('<svg onload=window.__xss=2>'), 'notes shown as literal text');
-    const ids = tags.filter(t => t.attrs['data-id'] != null).map(t => t.attrs['data-id']);
-    if (ids.length) assert.deepEqual(ids, [HOSTILE_OWN.id, HOSTILE_OWN.id]);
-  }
-  const community = scanHtml(rows.find(r => r.innerHTML.includes('community')).innerHTML);
-  assert.ok(community.text.includes('<img src=x onerror="window.__xss=1">Bob'), 'displayName shown as literal text');
-});
-
-test('row detail (conditions) escapes every stored value', () => {
-  const app = appWith([HOSTILE_COMMUNITY]);
-  let detail = null;
-  const fakeTr = { nextElementSibling: null, after(n) { detail = n; } };
-  app.call('toggleEntryDetail', app.run('STATE.surfLog[0]'), fakeTr);
-  assert.ok(detail, 'detail row rendered');
-  const { text } = assertOnlyAppMarkup(detail.innerHTML, ['td', 'div', 'span', 'br'], 'detail row');
-  for (const s of ['<u>3</u>', '<i>10</i>', '<b>1</b>', '<i>5</i>', '<s>200</s>', '<s>rising</s>', '<b>2</b>']) {
-    assert.ok(text.includes(s), 'shown as text: ' + s);
-  }
-});
-
 test('regression drill-down escapes displayName, notes, photo URL and tide strings', () => {
   const app = appWith([DRILL]);
   app.call('openRegressionDrilldown', app.run('STATE.surfLog[0]'), 'wave');
@@ -148,13 +116,6 @@ test('log form conditions readout escapes a stored/imported entry', () => {
   app.call('renderConditionsDisplay', app.run(`(${JSON.stringify(HOSTILE_COMMUNITY.conditions)})`));
   const { text } = assertOnlyAppMarkup(app.dom.byId('sl-conditions-display').innerHTML, ['div', 'span'], 'conditions readout');
   assert.ok(text.includes('<b>note</b>') && text.includes('<s>rising</s>'));
-});
-
-test('match modal (kept for Tab 2 reuse) escapes condition values', () => {
-  const app = appWith([HOSTILE_COMMUNITY]);
-  app.call('openMatchModal', app.run('STATE.surfLog[0]'), '2026-10-01', 0);
-  const { text } = assertOnlyAppMarkup(app.dom.byId('modal-conditions').innerHTML, ['span'], 'match modal');
-  assert.ok(text.includes('<s>rising</s>'));
 });
 
 test('escHtml / safeUrl', () => {

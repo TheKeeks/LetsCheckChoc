@@ -5,6 +5,7 @@
 //     is a fresh form again (no "Editing …" bar, Save reads "Save", not
 //     "Save changes"), with the first surfer's session untouched on this
 //     device (STATE and the lcc_surfLog copy) and in the cloud;
+//   • Settings › Surf log (the old Log tab's tools) downloads the log as CSV and JSON;
 //   • an edit of someone else's session left open in the app's own form
 //     (a stale handler) keeps Save off and says why, and a tap on Save ends
 //     the edit instead of writing over that session.
@@ -28,7 +29,6 @@ const LOGS = [
 module.exports = {
   name: 'clean preview log: an open edit ends when the account changes; Save never writes over another surfer\'s session',
   options: {
-    gate: null,                                   // the preview skips the boat question itself
     viewport: PHONE,
     contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 },
     firebase: { mode: 'google', logs: LOGS }      // signed in as google-1 ("Test Surfer")
@@ -62,6 +62,25 @@ module.exports = {
     await ctx.waitForChart();
     await ctx.waitForLoad();
     await ctx.waitFor(() => window._fbUserId === 'google-1' && STATE.surfLog.some(e => e.id === 'own-1'), { label: 'seeded log (google-1)' });
+
+    // ── Settings › Surf log: the old Log tab's export and import, signed in with sessions ──
+    await page.locator('#cl-settings-btn').click();
+    await ctx.waitFor(() => document.querySelector('#cl-sub-settings #cl-set-log'), { label: 'Settings: Surf log' });
+    const tools = await ctx.state(() => [...document.querySelectorAll('#cl-sub-settings [data-act^="log-"]')].map(b => b.dataset.act));
+    assert.deepEqual(tools, ['log-csv', 'log-json', 'log-import', 'log-refetch']);
+    const fs = require('fs');
+    const grab = async (act) => {
+      const [dl] = await Promise.all([page.waitForEvent('download'), page.locator(`#cl-sub-settings [data-act="${act}"]`).click()]);
+      return { name: dl.suggestedFilename(), text: fs.readFileSync(await dl.path(), 'utf8') };
+    };
+    const csv = await grab('log-csv');
+    assert.equal(csv.name, 'surflog-export.csv');
+    assert.match(csv.text.split('\n')[0], /^id,date,size,windQuality,rideQuality,avg,notes/);
+    assert.ok(csv.text.includes('own-1,2026-09-27T07:30,6,7,5,6.0,"Glassy early, crowd by 8"'), 'the CSV has your session: ' + csv.text);
+    const json = await grab('log-json');
+    assert.deepEqual(JSON.parse(json.text).map(e => e.id).sort(), ['bob-1', 'own-1'], 'the JSON has the whole log');
+    await page.keyboard.press('Escape');
+    await ctx.waitFor(() => !document.querySelector('#cl-sub-settings'), { label: 'Settings closed' });
 
     // ── Edit your own session ──
     await page.locator('#cl-app .cl-tabs .cl-tab[data-tab="log"]').click();

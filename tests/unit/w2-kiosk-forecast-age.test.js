@@ -1,15 +1,13 @@
-// Choc TV's status strip runs the REAL load path here (fixtures, 15-min
-// refreshes on the fake clock). Its age is the age of the swell + wind
-// forecast on the cards, the one definition app.js publishes as
-// STATE.dataAsOf. Review of the audit branch found two holes:
-//  - a NOAA CO-OPS outage aged the strip by the SAVED tide predictions, so
-//    "FORECAST 3 H OLD — NOT UPDATING" went up over a forecast refreshed
-//    minutes earlier (tide predictions are astronomical: a saved copy is
-//    right for days, and the SOURCES card still lists it);
-//  - once a marine outage passed the 24 h fallback cap the strip flipped
-//    back to "updated just now" (from the live wind / tide fetch) while
-//    the cards kept the day-old forecast, and a boot with marine down said
-//    the same over empty cards instead of NO DATA.
+// Choc TV's load path, run for real here (fixtures, 15-min refreshes on the
+// fake clock). The TV and the look tell the age of what is on screen from
+// what app.js publishes after every load: STATE.dataAsOf, the age of the
+// swell + wind forecast, and STATE.dataHealth per source (core.js
+// freshness() / sources(), tv.js Sources). Two holes this guards:
+//  - a NOAA CO-OPS outage must not age the data by the SAVED tide
+//    predictions (they are astronomical: a saved copy is right for days);
+//  - once a marine outage passes the 24 h fallback cap, the age must keep
+//    counting from the old forecast still on screen, not reset to the live
+//    wind fetch; a boot with marine down and nothing saved has no age.
 'use strict';
 
 const test = require('node:test');
@@ -39,7 +37,6 @@ function kioskScene(opts = {}) {
   const STATE = app.get('STATE');
   STATE.isChocomount = true;
   STATE.selectedBuoy = choc;
-  app.call('kioskBuildChrome');
   const load = () => runLoad(app, 'loadAllData', choc);
   // A refresh at FIXTURE_NOW + ms (Choc TV's 15-min tick; the loads in
   // between change nothing while the same API stays down).
@@ -47,56 +44,36 @@ function kioskScene(opts = {}) {
     app.clock.set(FIXTURE_NOW_MS + ms);
     return load();
   };
-  // What the status tick paints: level, strip text and the banner.
-  const strip = () => {
-    app.call('kioskShowFreshness', app.call('kioskFreshness', app.clock.now(), STATE.lastLoadCompletedAt,
-      app.call('kioskDataAsOf'), app.run('KIOSK.refreshMs')));
-    const s = app.dom.byId('kiosk-status');
-    const banner = app.dom.byId('kiosk-stale-banner');
-    return {
-      text: app.dom.byId('kiosk-status-updated').textContent,
-      stale: s.classList.contains('np-stale'),
-      dead: s.classList.contains('np-dead'),
-      banner: banner.style.display === 'none' ? '' : banner.textContent
-    };
-  };
-  return { app, choc, down, STATE, load, refreshAt, strip };
+  return { app, choc, down, STATE, load, refreshAt };
 }
 
 for (const [label, coopsDown] of [
   ['NOAA "No Predictions" (HTTP 200)', () => ERRORS.coopsNoPredictions()],
   ['503', () => ERRORS.serviceUnavailable()]
 ]) {
-  test(`CO-OPS ${label} for 4 h while Open-Meteo answers: the strip stays fresh over the saved tides`, async () => {
-    const { app, down, STATE, load, refreshAt, strip } = kioskScene();
+  test(`CO-OPS ${label} for 4 h while Open-Meteo answers: the data stays fresh over the saved tides`, async () => {
+    const { app, down, STATE, load, refreshAt } = kioskScene();
     await load();
     down.coops = coopsDown;
     for (let h = 1; h <= 4; h++) {
       await refreshAt(h * HOUR);
-      assert.deepEqual(strip(), { text: 'updated just now', stale: false, dead: false, banner: '' }, `${h} h in`);
+      assert.equal(STATE.dataAsOf, FIXTURE_NOW_MS + h * HOUR, `${h} h in: the forecast is as fresh as the refresh`);
     }
     assert.equal(STATE.dataHealth.marine.origin, 'live');
     assert.equal(STATE.dataHealth.wind.origin, 'live');
     assert.deepEqual(app.clone(STATE.dataHealth.tides), { asOf: FIXTURE_NOW_MS, origin: 'stale-cache' });
     assert.ok(STATE.forecastData.tideHiLo.length > 0, 'the day cards keep their lows');
     assert.equal(STATE.dataAsOf, FIXTURE_NOW_MS + 4 * HOUR, 'forecast age, not the saved tides');
-    // The SOURCES card still says where the tides came from.
-    assert.match(app.call('kioskInfoStatusHTML'), /Tides: stale-cache \(4h ago\)/);
-    // The web header: a fresh forecast, quietly noting the saved tides.
-    assert.equal(app.dom.byId('header-update-time').textContent, 'Updated 3:00 PM · saved tides');
-    assert.equal(app.dom.byId('header-update-time').classList.contains('is-stale'), false);
   });
 }
 
-test('marine down past the 24 h fallback cap: the alarm keeps climbing while the old forecast is on the cards', async () => {
-  const { app, down, STATE, load, refreshAt, strip } = kioskScene();
+test('marine down past the 24 h fallback cap: the age keeps climbing while the old forecast is on the cards', async () => {
+  const { app, down, STATE, load, refreshAt } = kioskScene();
   await load();
   down.marine = () => ERRORS.serviceUnavailable();   // wind and CO-OPS keep answering
   await refreshAt(23 * HOUR + 45 * MIN);
   assert.equal(STATE.dataHealth.marine.origin, 'stale-cache');
-  assert.deepEqual(strip(), {
-    text: 'updated 23h 45m ago', stale: false, dead: true, banner: 'FORECAST 23 H OLD — NOT UPDATING'
-  });
+  assert.equal(STATE.dataAsOf, FIXTURE_NOW_MS, 'the saved 11:00 forecast');
 
   // 24 h 15 min: the saved copy is past the cap, marine settles 'failed',
   // but the cards still show the 11:00 forecast from memory.
@@ -106,25 +83,23 @@ test('marine down past the 24 h fallback cap: the alarm keeps climbing while the
   assert.ok(STATE.forecastData && STATE.forecastData.marine, 'old forecast still drawn');
   assert.ok(app.call('kioskDaySummary', 0), 'and the TODAY card is built from it');
   assert.equal(STATE.dataAsOf, FIXTURE_NOW_MS, 'its real age, not the live wind fetch');
-  assert.deepEqual(strip(), {
-    text: 'updated 24h 15m ago', stale: false, dead: true, banner: 'FORECAST 24 H OLD — NOT UPDATING'
-  });
 
   await refreshAt(36 * HOUR + 15 * MIN);
-  assert.equal(strip().banner, 'FORECAST 36 H OLD — NOT UPDATING');
+  assert.equal(STATE.dataAsOf, FIXTURE_NOW_MS);
 
-  // Marine back: everything clears.
+  // Marine back: fresh again.
   delete down.marine;
   await refreshAt(36 * HOUR + 30 * MIN);
-  assert.deepEqual(strip(), { text: 'updated just now', stale: false, dead: false, banner: '' });
+  assert.equal(STATE.dataHealth.marine.origin, 'live');
+  assert.equal(STATE.dataAsOf, FIXTURE_NOW_MS + 36 * HOUR + 30 * MIN);
 });
 
-test('boot (or the nightly reload) with marine down and no usable saved forecast: NO DATA, not "updated just now"', async () => {
+test('boot (or the nightly reload) with marine down and no usable saved forecast: no forecast and no age', async () => {
   // Day 1: a good load, then the page is reopened 25 h later with the same
   // storage (the saved forecast is past its 24 h cap) and marine down.
   const first = kioskScene();
   await first.load();
-  const { STATE, down, load, strip } = kioskScene({
+  const { STATE, down, load } = kioskScene({
     now: FIXTURE_NOW_MS + 25 * HOUR,
     storage: { local: first.app.localStorage.dump() }
   });
@@ -134,5 +109,4 @@ test('boot (or the nightly reload) with marine down and no usable saved forecast
   assert.equal(STATE.dataHealth.wind.origin, 'live');
   assert.ok(!(STATE.forecastData && STATE.forecastData.marine), 'no forecast on the cards');
   assert.equal(STATE.dataAsOf, null);
-  assert.deepEqual(strip(), { text: 'NO DATA', stale: false, dead: true, banner: 'NO FORECAST DATA — RETRYING' });
 });

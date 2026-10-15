@@ -28,7 +28,6 @@ const BUOYS = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'data', 'bu
 module.exports = {
   name: 'clean preview core: number style, wind and tides without the wave forecast, reach-first now and week, boot recovery, focus ring',
   options: {
-    gate: null,                                   // the preview skips the boat question itself
     viewport: PHONE,
     contextOptions: { hasTouch: true, isMobile: true, deviceScaleFactor: 2 }
   },

@@ -5,7 +5,6 @@
 module.exports = {
   name: 'navigation auth: four public tabs, Google login feedback, protected My ratings and shared light/dark settings',
   options: {
-    gate: null,
     viewport: { width: 390, height: 844 },
     firebase: { mode: 'returning_anon' }
   },

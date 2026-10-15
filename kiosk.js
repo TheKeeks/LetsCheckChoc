@@ -1,18 +1,19 @@
 // ════════════════════════════════════════════════════════════════════
 // CHOC TV — iPad kiosk mode (?kiosk=1)
 // ────────────────────────────────────────────────────────────────────
-// Loaded as a classic script AFTER app.js, so every app function used
-// here (loadAllData, calcDaylight, formatAgo, resetScrubberToNow,
-// invalidateCanvasDPR, drawForecastChart, drawCompassRose, el, STATE,
-// CONFIG) is already a global. Strict no-op unless the URL carries
-// ?kiosk=1. Never loaded by the Node test harnesses.
+// The machinery Choc TV runs on; the screen itself is previews/clean/
+// tv.js. Loaded as a classic script AFTER app.js, so every app function
+// used here (loadAllData, selectBuoy, fetchJSON, calcDaylight, formatAgo,
+// el, STATE, CONFIG) is already a global. Strict no-op unless the URL
+// carries ?kiosk=1.
 //
-// Behavior: skips the boat gate, boots straight into Chocomount (the
-// existing initGate 'no' branch does both once sessionStorage is
-// seeded), rotates four full-screen panels (day summaries ×2, radar
-// loop with the swell chart, spectra), auto-refreshes data every
-// 15 minutes, holds a screen wake lock, and reloads itself (behind
-// guards) when a deploy lands, nightly at 03:30, or when boot stalls.
+// It rotates the TV's panels (tv.js wraps kioskShowPanel,
+// kioskScheduleNext and kioskPause by name, so they stay function
+// declarations), pauses on a touch, refreshes the data every 15 minutes,
+// holds a screen wake lock, and reloads itself (behind guards) when a
+// deploy lands, nightly at 03:30, when boot stalls, or when the TV
+// screen didn't start. kioskDaySummary feeds the TV's day cards through
+// the look's CLEAN.data.week().
 // ════════════════════════════════════════════════════════════════════
 'use strict';
 
@@ -26,18 +27,16 @@ function isKioskMode() {
 }
 
 const KIOSK = {
-  panels: ['days1', 'days2', 'radar', 'spectral'],
+  panels: ['cl-days1', 'cl-days2', 'cl-radar'],   // tv.js's panels
   idx: 0,
-  rotateMs: 20 * 1000,      // panel dwell time
+  rotateMs: 20 * 1000,      // panel dwell time (tv.js sets its own per panel)
   pauseMs: 60 * 1000,       // interaction pause before rotation resumes
   refreshMs: 15 * 60 * 1000, // data auto-refresh cadence
-  radarStepMs: 1000,        // radar playback: 1 second = 1 forecast hour
-  radarTimer: null,
+  radarStepMs: 1000,        // tv.js's radar playback step (?kioskRadarStep)
   state: 'rotating',        // 'rotating' | 'paused'
   rotateTimer: null,
   resumeTimer: null,
   wakeLock: null,
-  lastDaysRender: 0,        // lastLoadCompletedAt value the day panels reflect
   nightlyHour: 3,           // nightly code/memory refresh, local time (03:30)
   nightlyMinute: 30,
   bootAt: 0,                // kioskInit time (self-heal clocks start here)
@@ -50,58 +49,8 @@ const KIOSK = {
   codeBusy: false,
   reloadBusy: false,
   lastReloadAt: null,       // in-memory twin of the persisted reload stamp
-  asOfMemo: { at: -1, asOf: null }
+  downNextTry: 0            // next reload attempt while the TV screen is down
 };
-
-// ── "Night Passage" chart palette ────────────────
-// The chart drawers read every color from FC_RETRO / ROSE_THEME (app.js),
-// so re-theming the canvases for the kiosk is a palette swap — glow
-// hierarchy per the design spec: blue = primary live data, green =
-// legends/secondary, red = alerts (now-marker, pulse), dark smoked glass
-// everywhere.
-function kioskApplyNightPalette() {
-  Object.assign(FC_RETRO, {
-    plotBg:        '#020604',
-    grid:          'rgba(69, 255, 154, 0.14)',
-    ink:           '#45ff9a',
-    ink2:          'rgba(69, 255, 154, 0.55)',
-    frame:         '#143526',
-    swellFill:     'rgba(69, 255, 154, 0.16)',
-    swellStroke:   '#45ff9a',
-    secSwellFill:  'rgba(69, 255, 154, 0.07)',
-    period:        '#b9ffd9',
-    periodHalo:    'rgba(0, 0, 0, 0.85)',
-    dirPrimary:    '#45ff9a',
-    dirSecondary:  '#45ff9a',
-    windOn:        'rgba(255, 82, 82, 0.70)',
-    windCross:     'rgba(216, 166, 54, 0.50)',
-    windOff:       'rgba(69, 255, 154, 0.35)',
-    windNull:      'rgba(120, 150, 130, 0.3)',
-    windStroke:    'rgba(230, 255, 240, 0.40)',
-    windBand:      'rgba(69, 255, 154, 0.06)',
-    tide:          '#45ff9a',
-    tideMarkFaint: 'rgba(69, 255, 154, 0.45)',
-    tideMark:      'rgba(69, 255, 154, 0.95)',
-    tideConn:      'rgba(69, 255, 154, 0.6)',
-    scrubDot:      '#eafff2',
-    nowLine:       'rgba(255, 82, 82, 0.65)',
-    daySep:        'rgba(230, 255, 240, 0.09)',
-    nightShade:    'rgba(0, 0, 0, 0.38)',
-    pastDim:       'rgba(0, 0, 0, 0.30)',
-    obsFill:       '#020604',
-    obsStroke:     '#45ff9a',
-    pulseCore:     '#ff5252',
-    pulseRing:     '255, 82, 82'
-  });
-  Object.assign(ROSE_THEME, {
-    bg:       '#020604',
-    ring:     'rgba(69, 255, 154, 0.25)',
-    cardinal: '#45ff9a',
-    window:   '#45ff9a',
-    hs:       '#45ff9a',
-    hsSub:    'rgba(69, 255, 154, 0.6)'
-  });
-}
 
 // Debug overrides (seconds): ?kiosk=1&kioskRotate=2&kioskPause=3&kioskRefresh=5
 function kioskReadOverrides() {
@@ -265,180 +214,9 @@ function kioskDaySummary(dayOffset) {
   };
 }
 
-// ── Day panel rendering ──────────────────────────
-
-function kioskFmtClock(t) {
-  const d = t instanceof Date ? t : new Date(t);
-  const h = d.getHours() % 12 || 12;
-  return { seg: `${h}:${String(d.getMinutes()).padStart(2, '0')}`, ampm: d.getHours() >= 12 ? 'PM' : 'AM' };
-}
-
-// The arrow, per the sketch: a big filled glyph rotated to the TRAVEL
-// direction (FROM label semantics preserved in the printed text), with
-// the reading printed ON the arrow. The SVG rotates; the overlay text
-// stays upright.
-function kioskArrowHTML(fromDeg, overlayHTML, cls) {
-  if (fromDeg == null) return '';
-  const travel = Math.round((fromDeg + 180) % 360);
-  return `<span class="np-bigarrow ${cls || ''}">` +
-    `<svg viewBox="0 0 100 140" style="transform:rotate(${travel}deg)" aria-hidden="true">` +
-      `<path d="M50 2 L98 62 L74 62 L74 138 L26 138 L26 62 L2 62 Z"/>` +
-    `</svg>` +
-    (overlayHTML ? `<span class="np-arrow-overlay">${overlayHTML}</span>` : '') +
-    `</span>`;
-}
-
-// Crisp 14-segment readout — no ghost segments, no bloom.
-function kioskSegHTML(text, extraClass, _noGhost) {
-  return `<span class="np-seg ${extraClass || ''}">${text}</span>`;
-}
-
-// Wind on the day cards: a heading dial (owner's pick) — compass ring
-// with a rim pointer at the travel direction; the reading never
-// rotates. Swell keeps the big filled arrows; the radar keeps its
-// vector arrows.
-function kioskDialHTML(fromDeg, numHTML, capHTML) {
-  const travel = fromDeg != null ? Math.round((fromDeg + 180) % 360) : null;
-  let ticks = '';
-  for (let a = 0; a < 360; a += 30) {
-    ticks += `<line transform="rotate(${a} 50 50)" x1="50" y1="6" x2="50" y2="11"/>`;
-  }
-  return `<span class="np-dial">` +
-    `<svg viewBox="0 0 100 100" aria-hidden="true">` +
-      `<circle cx="50" cy="50" r="44" class="np-dial-ring"/>` +
-      `<g class="np-dial-ticks">${ticks}</g>` +
-      (travel != null
-        ? `<path class="np-dial-ptr" transform="rotate(${travel} 50 50)" d="M50 1 L57 16 L43 16 Z"/>`
-        : '') +
-    `</svg>` +
-    `<span class="np-dial-overlay">` +
-      `<span class="np-dial-num">${numHTML}</span>` +
-      `<span class="np-dial-cap">${capHTML}</span>` +
-    `</span>` +
-    `</span>`;
-}
-
-function kioskWindHTML(wind) {
-  if (!wind) return '<span class="np-legend np-dim">NO DATA</span>';
-  const cap = 'mph' + (wind.dir != null ? ' ' + directionLabel(wind.dir) : '');
-  return `<span class="np-windline">` +
-    kioskDialHTML(wind.dir, Math.round(wind.mph), cap) +
-    `</span>`;
-}
-
-// One inline phrase — "3-5 FT @ 13 S" — with the direction arrow
-// (reading printed on it) riding to the right as the co-hero. A train
-// arriving from outside the swell window is dimmed and tagged OUT OF
-// WINDOW: Montauk or Block Island blocks it before it reaches the reef.
-function kioskSwellRowHTML(sw, cls) {
-  if (!sw) return '';
-  const range = sw.min === sw.max ? String(sw.max) : `${sw.min}-${sw.max}`;
-  const primary = cls === 'np-primary';
-  const out = sw.cls === 'dir-out';
-  return `<div class="np-swell ${cls}${out ? ' np-out' : ''}">` +
-    (out ? '<span class="np-out-tag">OUT OF WINDOW</span>' : '') +
-    `<div class="np-swell-line">` +
-      kioskSegHTML(range, primary ? 'np-seg-lg' : 'np-seg-md') +
-      `<span class="np-unit">FT</span>` +
-      (sw.period != null
-        ? `<span class="np-at">@</span>${kioskSegHTML(sw.period, primary ? 'np-seg-md' : 'np-seg-sm')}<span class="np-unit np-unit-tight">s</span>`
-        : '') +
-    `</div>` +
-    `<div class="np-swell-dir">${kioskArrowHTML(sw.dir,
-      sw.dir != null
-        ? `<span class="np-ao-num">${directionLabel(sw.dir)}</span><span class="np-ao-cap">${Math.round(sw.dir)}°</span>`
-        : '')}</div>` +
-    `</div>`;
-}
-
-function kioskDayCardHTML(s) {
-  // Every card renders the SAME fixed slots (primary, secondary, low 1,
-  // low 2, sun row, moon) so corresponding readings sit at identical
-  // heights across the three cards; missing readings leave a quiet gap.
-  const lowSlot = lo => {
-    if (!lo) return '<div class="np-low np-slot-empty"></div>';
-    const c = kioskFmtClock(lo.t);
-    return `<div class="np-low">` +
-      `<div class="np-low-when"><span class="np-legend">LOW @</span> ` +
-        kioskSegHTML(c.seg, 'np-seg-md') + `<span class="np-unit">${c.ampm}</span></div>` +
-      `<div class="np-low-wind">${kioskWindHTML(lo.wind)}</div>` +
-      `</div>`;
-  };
-  // Tide-service outage: the first low slot carries the honest note
-  // (the swell range above is the full daylight span in that case).
-  const lowsHTML = s.tidesDown
-    ? '<div class="np-low"><span class="np-legend np-dim">NO TIDE DATA — ALL-DAY SWELL</span></div>' +
-      lowSlot(null)
-    : lowSlot(s.lows[0]) + lowSlot(s.lows[1]);
-
-  const sunCell = (key, label) => {
-    const e = s.sun[key];
-    if (!e) return `<div class="np-sun-cell"><span class="np-legend np-dim">${label} —</span></div>`;
-    const c = kioskFmtClock(e.t);
-    return `<div class="np-sun-cell">` +
-      `<span class="np-legend">${label}</span>` +
-      `<div class="np-sun-time">${kioskSegHTML(c.seg, 'np-seg-sm')}<span class="np-unit-sm">${c.ampm}</span></div>` +
-      `<div class="np-sun-wind">${kioskWindHTML(e.wind)}</div>` +
-      `</div>`;
-  };
-
-  const secondaryHTML = s.secondary
-    ? kioskSwellRowHTML(s.secondary, 'np-secondary')
-    : '<div class="np-swell np-secondary np-slot-empty"></div>';
-
-  return `<div class="np-day">` +
-    `<div class="np-day-title">${s.label}</div>` +
-    (s.primary
-      ? kioskSwellRowHTML(s.primary, 'np-primary')
-      : '<div class="np-swell np-primary"><span class="np-legend np-dim">NO SWELL DATA</span></div>') +
-    secondaryHTML +
-    lowsHTML +
-    `<div class="np-sunrow">${sunCell('sunrise', 'SUNRISE')}${sunCell('noon', 'NOON')}${sunCell('sunset', 'SUNSET')}</div>` +
-    `<div class="np-moonrow"><span class="np-moon-icon">${s.moon.icon}</span><span class="np-legend">${s.moon.pct}% FULL</span></div>` +
-    `</div>`;
-}
-
-// Digit size is UNIFORM across a panel's three cards (like real LED
-// gear) but steps down when the widest range string that panel must
-// show wouldn't fit the card ("12-15" needs smaller segments than "5").
-function kioskSizeTier(summaries) {
-  const len = Math.max(...summaries.map(s => {
-    if (!s.primary) return 1;
-    const r = s.primary.min === s.primary.max
-      ? String(s.primary.max)
-      : `${s.primary.min}-${s.primary.max}`;
-    return r.length;
-  }));
-  return len <= 2 ? '' : len <= 4 ? 'np-t1' : 'np-t2';
-}
-
-function kioskRenderDays() {
-  const p1 = el('kiosk-days-1');
-  const p2 = el('kiosk-days-2');
-  if (!p1 || !p2) return;
-  try {
-    const s1 = [0, 1, 2].map(kioskDaySummary);
-    const s2 = [3, 4, 5].map(kioskDaySummary);
-    p1.className = ('np-days ' + kioskSizeTier(s1)).trim();
-    p2.className = ('np-days ' + kioskSizeTier(s2)).trim();
-    p1.innerHTML = s1.map(kioskDayCardHTML).join('');
-    p2.innerHTML = s2.map(kioskDayCardHTML).join('');
-    KIOSK.lastDaysRender = STATE.lastLoadCompletedAt || 0;
-  } catch (err) {
-    console.warn('kiosk day render failed:', err);
-  }
-}
-
 // ════════════════════════════════════════════════
-// NIGHT RADAR — animated swell/wind arrows over the Fishers coastline
+// COASTLINE (tv.js draws the radar's land from it)
 // ════════════════════════════════════════════════
-//
-// A radar-scope rendering of the same frame as the satellite lineup
-// image: coastline outline, range rings, a rotating sweep, and the
-// hour's primary swell / secondary swell / wind arrows converging on
-// the lineup. Playback advances the forecast scrubber one hour per
-// second (KIOSK.radarStepMs) through the full forecast, looping, with
-// the live swell chart + its moving dots visible below the scope.
 
 // COASTLINE — hand-traced from project/assets/lineup.jpg (1992×949).
 // Points are normalized 0..1 [x, y] over that image frame, listed
@@ -466,431 +244,26 @@ const KIOSK_COAST = {
   ]]
 };
 
-const KIOSK_RADAR = { idx: -1, sweep: 0, raf: null, lastT: 0 };
+// ── Rotation and the Sources card ────────────────
+// tv.js draws the panels and fills the Sources card; this runs the
+// rotation under them. tv.js wraps kioskShowPanel, kioskScheduleNext and
+// kioskPause by name, so they stay function declarations.
 
-// External entry point: set the displayed forecast hour and repaint.
-function kioskDrawRadar(idx) {
-  if (typeof idx === 'number') KIOSK_RADAR.idx = idx;
-  kioskRadarPaint();
-}
-
-function kioskRadarArrow(ctx, lx, ly, fromDeg, len, o) {
-  const th = fromDeg * Math.PI / 180;
-  const ux = Math.sin(th), uy = -Math.cos(th); // unit vector lineup → source
-  const gap = 30;
-  const hx = lx + ux * gap, hy = ly + uy * gap;             // head tip
-  const tx = lx + ux * (gap + len), ty = ly + uy * (gap + len); // tail
-  const headLen = 10 + o.width * 2.2;
-  const headW = 5 + o.width * 1.6;
-
-  ctx.strokeStyle = o.color;
-  ctx.fillStyle = o.color;
-  ctx.lineWidth = o.width;
-  ctx.setLineDash(o.dashed ? [10, 7] : []);
-  ctx.beginPath();
-  ctx.moveTo(tx, ty);
-  ctx.lineTo(hx + ux * headLen, hy + uy * headLen);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  // Head: triangle pointing at the lineup (travel direction).
-  const bx = hx + ux * headLen, by = hy + uy * headLen;
-  ctx.beginPath();
-  ctx.moveTo(hx, hy);
-  ctx.lineTo(bx - uy * headW, by + ux * headW);
-  ctx.lineTo(bx + uy * headW, by - ux * headW);
-  ctx.closePath();
-  if (o.dashed) { ctx.lineWidth = Math.max(1.5, o.width - 0.5); ctx.stroke(); }
-  else ctx.fill();
-
-  if (o.label) {
-    const off = 18 + (o.labelPush || 0);
-    let px = tx + ux * off, py = ty + uy * off;
-    // Horizontal arrows run parallel to their (horizontal) label — float
-    // the text up off the shaft in proportion to how horizontal it is.
-    py -= 16 * Math.abs(ux);
-    ctx.font = '700 16px "Orbitron", Tahoma, Geneva, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const tw = ctx.measureText(o.label).width;
-    px = Math.max(10 + tw / 2, Math.min(ctx.canvas.clientWidth - 10 - tw / 2, px));
-    py = Math.max(14, Math.min(ctx.canvas.clientHeight - 12, py));
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 5;
-    ctx.strokeText(o.label, px, py);
-    ctx.fillStyle = o.color;
-    ctx.fillText(o.label, px, py);
-  }
-}
-
-function kioskRadarPaint() {
-  const cv = el('kiosk-radar-canvas');
-  if (!cv || !cv.clientWidth) return;
-  const ctx = cv.getContext('2d');
-  const dims = ensureCanvasCssDims(cv, ctx);
-  const w = dims.cssW, h = dims.cssH;
-  if (!w || !h) return;
-
-  const G = '#45ff9a';
-  // The canvas fills the screen; the coastline trace keeps its true
-  // proportions filled to the canvas height with the top 15% of the
-  // frame cropped away (all land) — the water gets the pixels. The
-  // shore's right end extends straight to the canvas edge so the coast
-  // never stops mid-air.
-  const FRAME_ASPECT = KIOSK_COAST.aspect;
-  const CROP = 0.15; // top slice of the frame hidden off-canvas
-  const fh = h / (1 - CROP);
-  const fw = fh * FRAME_ASPECT;
-  const fx = (w - fw) / 2, fy = -CROP * fh;
-  const lx = fx + KIOSK_COAST.lineup[0] * fw, ly = fy + KIOSK_COAST.lineup[1] * fh;
-  const rMax = h * 0.62;
-  const px = p => [fx + p[0] * fw, fy + p[1] * fh];
-  const trace = pts => {
-    const [x0, y0] = px(pts[0]);
-    ctx.moveTo(x0, y0);
-    for (let i = 1; i < pts.length; i++) { const [x, y] = px(pts[i]); ctx.lineTo(x, y); }
-  };
-  const shore = KIOSK_COAST.shore;
-  const shoreEndY = fy + shore[shore.length - 1][1] * fh;
-
-  // Faceplate + land mass (everything above/left of the shore line).
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, w, h);
-  ctx.beginPath();
-  trace(shore);
-  ctx.lineTo(w, shoreEndY);
-  ctx.lineTo(w, 0); ctx.lineTo(0, 0); ctx.lineTo(0, h);
-  ctx.closePath();
-  ctx.fillStyle = 'rgba(69, 255, 154, 0.06)';
-  ctx.fill();
-
-  // Range rings + crosshair ticks around the lineup.
-  ctx.strokeStyle = 'rgba(69, 255, 154, 0.11)';
-  ctx.lineWidth = 1;
-  for (let k = 1; k <= 3; k++) {
-    ctx.beginPath();
-    ctx.arc(lx, ly, rMax * k / 3, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  ctx.beginPath();
-  ctx.moveTo(lx - rMax, ly); ctx.lineTo(lx + rMax, ly);
-  ctx.moveTo(lx, ly - rMax); ctx.lineTo(lx, ly + rMax);
-  ctx.strokeStyle = 'rgba(69, 255, 154, 0.06)';
-  ctx.stroke();
-
-  // Rotating sweep with a fading trail, clipped to the outer ring.
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(lx, ly, rMax, 0, Math.PI * 2);
-  ctx.clip();
-  const a0 = (KIOSK_RADAR.sweep - 90) * Math.PI / 180;
-  for (let i = 0; i < 30; i++) {
-    const a = a0 - i * 0.022;
-    ctx.strokeStyle = 'rgba(69, 255, 154, ' + (0.15 * (1 - i / 30)).toFixed(3) + ')';
-    ctx.lineWidth = i === 0 ? 1.5 : 2.5;
-    ctx.beginPath();
-    ctx.moveTo(lx, ly);
-    ctx.lineTo(lx + rMax * Math.cos(a), ly + rMax * Math.sin(a));
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  // Coastline stroke + ponds on top of the sweep.
-  ctx.beginPath();
-  trace(shore);
-  ctx.lineTo(w, shoreEndY);
-  ctx.strokeStyle = 'rgba(69, 255, 154, 0.9)';
-  ctx.lineWidth = 1.5;
-  ctx.lineJoin = 'round';
-  ctx.stroke();
-  for (const pond of KIOSK_COAST.ponds) {
-    ctx.beginPath();
-    trace(pond);
-    ctx.closePath();
-    ctx.fillStyle = '#000';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(69, 255, 154, 0.35)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
-
-  // Swell window cone (compass bearing θ → canvas angle θ − 90°).
-  const c1 = CONFIG.chocomount.swellWindowMin * Math.PI / 180 - Math.PI / 2;
-  const c2 = CONFIG.chocomount.swellWindowMax * Math.PI / 180 - Math.PI / 2;
-  ctx.beginPath();
-  ctx.moveTo(lx, ly);
-  ctx.arc(lx, ly, rMax * 0.92, c1, c2);
-  ctx.closePath();
-  ctx.fillStyle = 'rgba(69, 255, 154, 0.045)';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(69, 255, 154, 0.16)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // The window's real-world frame: its southern edge points at Montauk
-  // Point, its eastern edge at Block Island's Southwest Point.
-  ctx.font = '500 11px "Orbitron", Tahoma, Geneva, sans-serif';
-  ctx.fillStyle = 'rgba(69, 255, 154, 0.55)';
-  const coneEdge = deg => {
-    const r = rMax * 0.92 + 8;
-    const th = deg * Math.PI / 180;
-    return [lx + r * Math.sin(th), ly - r * Math.cos(th)];
-  };
-  const [mtkX, mtkY] = coneEdge(CONFIG.chocomount.swellWindowMax);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillText('MONTAUK PT', mtkX, Math.min(mtkY, h - 16));
-  const [blkX, blkY] = coneEdge(CONFIG.chocomount.swellWindowMin);
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('SOUTHWEST PT (BLOCK)', blkX + 4, blkY);
-
-  // ── The hour's arrows, converging on the lineup ──
-  const fd = STATE.forecastData;
-  const hr = fd && fd.marine && fd.marine.hourly;
-  const wh = fd && fd.wind && fd.wind.hourly;
-  const i = KIOSK_RADAR.idx;
-  const clampLen = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-
-  if (hr && hr.time && i >= 0 && i < hr.time.length) {
-    const pH = (hr.swell_wave_height || hr.wave_height || [])[i];
-    const pP = (hr.swell_wave_period || hr.wave_period || [])[i];
-    const pD = (hr.swell_wave_direction || [])[i];
-    const sH = (hr.secondary_swell_wave_height || [])[i];
-    const sP = (hr.secondary_swell_wave_period || [])[i];
-    const sD = (hr.secondary_swell_wave_direction || [])[i];
-    const wS = wh && wh.wind_speed_10m ? wh.wind_speed_10m[i] : null;
-    const wD = wh && wh.wind_direction_10m ? wh.wind_direction_10m[i] : null;
-
-    // Secondary first so the primary draws on top. Owner call: it shows
-    // whenever the model reports one, no matter how small.
-    const closeDirs = sD != null && pD != null &&
-      Math.abs(((sD - pD + 540) % 360) - 180) < 16; // bearings within ~16°
-    // No compass words in the labels — the arrow's own bearing against
-    // the swell-window cone carries the direction.
-    if (sH != null && sD != null) {
-      const len = clampLen(Math.sqrt(sH * sH * (sP || 1)) * 16, 70, rMax * 0.85);
-      kioskRadarArrow(ctx, lx, ly, sD, len, {
-        color: 'rgba(69, 255, 154, 0.55)', width: 3.5,
-        label: sH.toFixed(1) + 'ft @ ' + (sP != null ? sP.toFixed(0) : '–') + 's',
-        labelPush: closeDirs ? 30 : 10
-      });
-    }
-    if (pH != null && pD != null) {
-      const len = clampLen(Math.sqrt(pH * pH * (pP || 1)) * 16, 84, rMax * 0.9);
-      kioskRadarArrow(ctx, lx, ly, pD, len, {
-        color: G, width: 5.5,
-        label: pH.toFixed(1) + 'ft @ ' + (pP != null ? pP.toFixed(0) : '–') + 's'
-      });
-    }
-    if (wD != null) {
-      const len = clampLen((wS || 0) * 8, 62, rMax * 0.8);
-      kioskRadarArrow(ctx, lx, ly, wD, len, {
-        color: 'rgba(69, 255, 154, 0.8)', width: 3.5, dashed: true,
-        label: (wS != null ? Math.round(wS) : '–') + 'mph'
-      });
-    }
-
-    // Time block, top-right: date / big clock / offset from now.
-    const t = new Date(hr.time[i]);
-    const c = kioskFmtClock(t);
-    const dh = Math.round((t.getTime() - Date.now()) / 3600e3);
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'alphabetic';
-    ctx.font = '500 13px "Orbitron", Tahoma, Geneva, sans-serif';
-    ctx.fillStyle = 'rgba(69, 255, 154, 0.6)';
-    ctx.fillText(t.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase(), w - 18, 30);
-    ctx.font = '34px "DSEG14", "Courier New", monospace';
-    ctx.fillStyle = G;
-    ctx.fillText(c.seg + ' ' + c.ampm, w - 18, 72);
-    ctx.font = '700 13px "Orbitron", Tahoma, Geneva, sans-serif';
-    if (Math.abs(dh) < 1) {
-      ctx.fillStyle = '#ff5252';
-      ctx.fillText('● NOW', w - 18, 96);
-    } else {
-      ctx.fillStyle = dh > 0 ? 'rgba(69, 255, 154, 0.6)' : 'rgba(69, 255, 154, 0.35)';
-      ctx.fillText((dh > 0 ? '+' : '−') + Math.abs(dh) + ' H', w - 18, 96);
-    }
-  } else {
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = '500 16px "Orbitron", Tahoma, Geneva, sans-serif';
-    ctx.fillStyle = 'rgba(69, 255, 154, 0.5)';
-    ctx.fillText('AWAITING FORECAST DATA', w / 2, h / 2 + rMax / 2);
-  }
-
-  // Lineup marker.
-  ctx.beginPath();
-  ctx.arc(lx, ly, 5, 0, Math.PI * 2);
-  ctx.fillStyle = G;
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(lx, ly, 11, 0, Math.PI * 2);
-  ctx.strokeStyle = 'rgba(69, 255, 154, 0.45)';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-}
-
-// Continuous sweep animation — runs only while the radar panel is up
-// (mirrors the chart's always-on now-pulse rAF loop; the browser parks
-// rAF automatically when the display sleeps or the tab hides). Each paint
-// redraws the whole full-screen scope, and the radar is up ~74% of the
-// time, so frames are capped at ~20 fps (one paint per >= 48 ms): the
-// sweep still moves under 2° a frame, at a third of the 60 fps cost.
-const KIOSK_RADAR_FRAME_MS = 48;
-function kioskRadarLoop(ts) {
-  if (document.body.dataset.kioskPanel !== 'radar') { KIOSK_RADAR.raf = null; return; }
-  if (KIOSK_RADAR.lastT && ts - KIOSK_RADAR.lastT < KIOSK_RADAR_FRAME_MS) {
-    KIOSK_RADAR.raf = requestAnimationFrame(kioskRadarLoop);
-    return;
-  }
-  const dt = KIOSK_RADAR.lastT ? Math.min(200, ts - KIOSK_RADAR.lastT) : 16;
-  KIOSK_RADAR.lastT = ts;
-  KIOSK_RADAR.sweep = (KIOSK_RADAR.sweep + dt * 0.036) % 360; // 10 s / rev
-  kioskRadarPaint();
-  KIOSK_RADAR.raf = requestAnimationFrame(kioskRadarLoop);
-}
-
-// Playback: drive the app's own scrubber one forecast hour per step —
-// applyScrubberToHour repaints the swell chart dots, detail bar, and
-// (via the kiosk wrapper) this radar, so everything moves in lockstep.
-function kioskRadarStart() {
-  if (KIOSK.radarTimer) { clearInterval(KIOSK.radarTimer); KIOSK.radarTimer = null; }
-  const cs = STATE.forecastChart;
-  if (cs && cs.times.length) {
-    const nowIdx = findHourIndexForTime(Date.now(), cs);
-    KIOSK_RADAR.idx = nowIdx >= 0 ? nowIdx : 0;
-    STATE.scrubberIdx = KIOSK_RADAR.idx;
-    applyScrubberToHour(KIOSK_RADAR.idx);
-    KIOSK.radarTimer = setInterval(kioskRadarTick, KIOSK.radarStepMs);
-  } else {
-    KIOSK_RADAR.idx = -1; // scope + "awaiting data" until the load lands
-  }
-  if (!KIOSK_RADAR.raf) {
-    KIOSK_RADAR.lastT = 0;
-    KIOSK_RADAR.raf = requestAnimationFrame(kioskRadarLoop);
-  }
-}
-
-function kioskRadarTick() {
-  const cs = STATE.forecastChart;
-  if (!cs || !cs.times.length) return;
-  if (KIOSK.state === 'paused') return; // a touch hands the dial to the user
-  KIOSK_RADAR.idx = (KIOSK_RADAR.idx + 1) % cs.times.length;
-  STATE.scrubberIdx = KIOSK_RADAR.idx;
-  applyScrubberToHour(KIOSK_RADAR.idx);
-}
-
-// Stop playback when the rotation leaves the radar; snap the shared
-// scrubber back to "now" so the forecast panel isn't left time-traveled.
-function kioskRadarStop() {
-  if (!KIOSK.radarTimer) return;
-  clearInterval(KIOSK.radarTimer);
-  KIOSK.radarTimer = null;
-  if (STATE.forecastChart) resetScrubberToNow();
-}
-
-// ── Sources & methodology card ───────────────────
-// One ⓘ button in the status strip opens a per-panel card explaining
-// what the readings mean and where the data comes from. Plain text, no
-// links — a tapped link would navigate the appliance away.
-function kioskInfoHTML(panel) {
-  const live = id => {
-    const f = el(id);
-    const t = f && f.textContent ? f.textContent.trim() : '';
-    return t ? '<p class="np-info-live">' + t + '</p>' : '';
-  };
-  if (panel === 'radar') {
-    return '<h3>Radar loop</h3>' +
-      '<p>The scope replays the forecast at 1 second per hour and loops. Arrows show primary swell, secondary swell (dimmer), and wind (dashed), each pointing the way it travels and converging on the Chocomount lineup; arrow length scales with energy. The shaded cone is the 115–158° swell window, and the chart below tracks the same hour. Tap to pause, tap again to resume; dragging the chart scrubs by hand. The coastline is traced from the satellite lineup image; the window’s edges point at Montauk Point and Block Island’s Southwest Point.</p>' +
-      '<h3>Sources</h3>' +
-      '<p>Swell &amp; wind: Open-Meteo Marine and Weather forecast (best_match model) at the offshore forecast point. Tide: NOAA CO-OPS predictions, Silver Eel Pond station 8510719.</p>';
-  }
-  if (panel === 'spectral') {
-    return '<h3>Wave spectra</h3>' +
-      '<p>The table decomposes the buoy’s raw wave spectrum into primary swell, wind waves, and total significant height (Hs — the mean of the highest third of waves). The rose bins spectral energy by arrival direction: petal length is that band’s height contribution, color is its period, and the outlined wedge is the 115–158° swell window.</p>' +
-      '<h3>Sources</h3>' +
-      '<p>NDBC buoy 44097 (Block Island) raw and directional spectra, fetched live via CORS proxy, with the repository’s two-hour pipeline (data/buoy.json) as fallback.</p>' +
-      live('footer-spectral-summary') + live('footer-compass');
-  }
-  return '<h3>Day summaries</h3>' +
-    '<p>Swell is the min–max over the incoming-tide windows (each low to the next high at Silver Eel) clipped to daylight, sampled from the offshore forecast point with a 1 h swell-travel lag (2 h when the buoy-coords toggle is on). Period is the window mean rounded up. The big reading is whichever of the model’s two swell trains carries more energy inside the 115–158° window that day, so a train Montauk or Block Island blocks only headlines when nothing reaches the window; a train arriving from outside the window is dimmed and marked OUT OF WINDOW. Swell arrows point where the swell is going, with the FROM compass label printed on them; wind shows as a heading dial whose rim pointer marks where the wind is blowing toward, with speed and FROM label in the middle. Winds are read at each low tide and at sunrise / noon / sunset; the moon is percent of full. If NOAA’s tide predictions are unavailable, the swell range falls back to all daylight hours and the card says so.</p>' +
-    '<h3>Sources</h3>' +
-    '<p>Swell &amp; wind: Open-Meteo Marine and Weather (best_match model). Tides and lows: NOAA CO-OPS predictions, Silver Eel Pond station 8510719. Sunrise and sunset: computed solar position. Moon: computed from the synodic month.</p>';
-}
-
-// Footer on every card: per-source data health (when app.js publishes
-// STATE.dataHealth) and the code signature this kiosk booted with, so the
-// owner can tell from a photo of the screen whether a deploy has landed.
-function kioskInfoStatusHTML() {
-  const h = STATE.dataHealth;
-  const parts = [];
-  if (h && typeof h === 'object') {
-    const src = (label, s, key) => {
-      if (!s || typeof s !== 'object') return;
-      const origin = /^[a-z-]+$/.test(String(s.origin)) ? s.origin : '?';
-      const t = s[key];
-      parts.push(`${label} ${origin}${Number.isFinite(t) ? ' (' + formatAgo(new Date(t)) + ')' : ''}`);
-    };
-    src('Swell:', h.marine, 'asOf');
-    src('Wind:', h.wind, 'asOf');
-    src('Tides:', h.tides, 'asOf');
-    src('Buoy:', h.buoy, 'obsMs');
-  }
-  const health = parts.length ? '<p class="np-info-live">Data: ' + parts.join(' · ') + '</p>' : '';
-  const build = KIOSK.codeSig ? KIOSK.codeSig.slice(0, 7) : '—';
-  const since = KIOSK.bootAt ? ' · running since ' + formatTime(new Date(KIOSK.bootAt)) : '';
-  return health + `<p class="np-info-live">Choc TV build ${build}${since}</p>`;
-}
-
+// The Sources card is open (tv.js adopts the overlay into its screen): no
+// self-heal reload fires under a reader.
 function kioskInfoOpen() {
   const ov = el('kiosk-info-overlay');
   return !!ov && ov.style.display !== 'none';
 }
 
-function kioskToggleInfo(force) {
+function kioskCloseInfo() {
   const ov = el('kiosk-info-overlay');
-  if (!ov) return;
-  const show = force != null ? force : ov.style.display === 'none';
-  if (show) {
-    el('kiosk-info-card').innerHTML = kioskInfoHTML(document.body.dataset.kioskPanel) + kioskInfoStatusHTML();
-    ov.style.display = '';
-  } else {
-    ov.style.display = 'none';
-  }
+  if (ov) ov.style.display = 'none';
 }
 
 function kioskShowPanel(name) {
   document.body.dataset.kioskPanel = name;
-  kioskToggleInfo(false); // a stale card must not outlive its panel
-  if (name === 'days1' || name === 'days2') kioskRenderDays();
-  if (name !== 'radar') kioskRadarStop();
-  // Redraw after the browser has laid out the newly-visible container —
-  // canvases drawn while display:none cache 0-width dims.
-  requestAnimationFrame(() => kioskRedrawPanel(name));
-}
-
-function kioskRedrawPanel(name) {
-  try {
-    if (name === 'radar') {
-      // The swell chart rides below the scope at radar-mode sizes, so it
-      // must be laid out fresh at those dims before playback starts.
-      if (STATE.forecastData && STATE.forecastData.marine) {
-        invalidateCanvasDPR(el('forecast-canvas-swell'));
-        invalidateCanvasDPR(el('forecast-canvas-wind'));
-        invalidateCanvasDPR(el('forecast-canvas-tide'));
-        const d = STATE.forecastData;
-        drawForecastChart(d.marine, d.wind, d.daylight, d.tideHiLo, d.tidePred, d.buoyParsed);
-      }
-      invalidateCanvasDPR(el('kiosk-radar-canvas'));
-      kioskRadarStart();
-    } else if (name === 'spectral' && STATE.lastSpectral) {
-      invalidateCanvasDPR(el('compass-canvas'));
-      drawCompassRose(STATE.lastSpectral, STATE.lastBuoyParsed);
-    }
-    // days panels are plain DOM — rendered by kioskShowPanel.
-  } catch (err) {
-    console.warn('kiosk redraw failed:', err);
-  }
+  kioskCloseInfo(); // a stale card must not outlive its panel
 }
 
 function kioskAdvance() {
@@ -902,57 +275,30 @@ function kioskAdvance() {
 function kioskScheduleNext() {
   clearTimeout(KIOSK.rotateTimer);
   if (KIOSK.state !== 'rotating') return;
-  let ms = KIOSK.rotateMs;
-  // The radar panel dwells long enough for one full pass through the
-  // forecast at the playback rate (~168 s at 1 s/hr), plus a beat.
-  if (KIOSK.panels[KIOSK.idx] === 'radar') {
-    const cs = STATE.forecastChart;
-    if (cs && cs.times.length) ms = cs.times.length * KIOSK.radarStepMs + 2000;
-  }
-  KIOSK.rotateTimer = setTimeout(kioskAdvance, ms);
+  KIOSK.rotateTimer = setTimeout(kioskAdvance, KIOSK.rotateMs);
 }
 
-// Any touch pauses rotation so the scrubber / rose hover can be used.
-// On the radar a tap is a toggle: tap pauses the loop, re-tap resumes
-// it in place (touches on the chart below are scrubbing, so they only
-// re-arm the pause instead of resuming). Touches on the NEXT button
-// are exempt — advancing shouldn't also freeze the rotation.
-function kioskPause(ev) {
-  const t = ev && ev.target && ev.target.closest ? ev.target : null;
-  if (t && t.closest('#kiosk-next')) return;
-  // Info-card touches pause and re-arm but never resume — closing the
-  // card shouldn't restart the radar under the reader.
-  const onInfo = t && (t.closest('#kiosk-info') || t.closest('#kiosk-info-overlay'));
-  const onRadar = document.body.dataset.kioskPanel === 'radar';
-  if (onRadar && KIOSK.state === 'paused' && !onInfo) {
-    const onChart = t && t.closest('#panel-forecast');
-    if (!onChart) { kioskResumeInPlace(); return; }
-  }
+// Any touch pauses the rotation, so a reader can look; a backstop resumes
+// it, so an accidental tap can't freeze an unattended TV. tv.js wraps
+// this: its Next skips without pausing, and on its radar a tap pauses and
+// the next one plays on in place.
+function kioskPause() {
   KIOSK.state = 'paused';
   clearTimeout(KIOSK.rotateTimer);
-  const cue = el('kiosk-paused');
-  if (cue) {
-    cue.textContent = onRadar ? '⏸ PAUSED — TAP TO RESUME' : '⏸ PAUSED — RESUMES SHORTLY';
-    cue.style.display = '';
-  }
   clearTimeout(KIOSK.resumeTimer);
-  // Backstop so an accidental tap can't freeze an unattended kiosk.
-  KIOSK.resumeTimer = setTimeout(onRadar ? kioskResumeInPlace : kioskResume, KIOSK.pauseMs);
+  KIOSK.resumeTimer = setTimeout(kioskResume, KIOSK.pauseMs);
 }
 
-// Resume the radar loop where it left off — no panel change.
+// Resume where it left off: no panel change (tv.js's radar).
 function kioskResumeInPlace() {
   KIOSK.state = 'rotating';
   clearTimeout(KIOSK.resumeTimer);
-  const cue = el('kiosk-paused');
-  if (cue) cue.style.display = 'none';
-  kioskScheduleNext(); // re-arm the dwell; playback ticks pick back up
+  kioskScheduleNext();
 }
 
 function kioskResume() {
   KIOSK.state = 'rotating';
-  const cue = el('kiosk-paused');
-  if (cue) cue.style.display = 'none';
+  clearTimeout(KIOSK.resumeTimer);
   kioskAdvance(); // advancing immediately signals the resume
 }
 
@@ -960,8 +306,8 @@ function kioskRefreshTick() {
   if (document.hidden) return;
   kioskCheckCode(); // a deploy landed? (reloads only behind the guards)
   if (typeof isDataLoadInFlight === 'function' && isDataLoadInFlight()) return;
-  // loadAllData, not selectBuoy — no map/header churn, and its SWR cache
-  // path + the load-generation guard handle everything else.
+  // loadAllData, not selectBuoy: its saved-copy path and the
+  // load-generation guard handle everything else.
   if (STATE.selectedBuoy) loadAllData(STATE.selectedBuoy);
 }
 
@@ -976,90 +322,6 @@ async function kioskAcquireWakeLock() {
   }
 }
 
-// ── Data freshness (status strip) ────────────────
-// lastLoadCompletedAt only says a load FINISHED: fetchJSON swallows
-// errors, so a refresh where every fetch failed still stamped it and the
-// strip read "updated just now" over hours-old cards. The strip shows the
-// age of the data itself and turns stale / dead when refreshes fail.
-const KIOSK_DEAD_MS = 3 * 3600e3;
-
-// Pure status decision. loadDoneAt = STATE.lastLoadCompletedAt (a load has
-// finished, good or bad); asOf = epoch ms of the oldest forecast input on
-// screen, or null when a finished load left nothing to show.
-//   stale: older than two missed refreshes plus 10 min of slack
-//   dead:  older than 3 h (or no data at all: level 'nodata')
-// → { level: 'loading'|'fresh'|'stale'|'dead'|'nodata', ageMs, text, banner }
-function kioskFreshness(nowMs, loadDoneAt, asOf, refreshMs) {
-  if (!loadDoneAt) return { level: 'loading', ageMs: null, text: 'loading…', banner: '' };
-  if (asOf == null || !Number.isFinite(asOf)) {
-    return { level: 'nodata', ageMs: null, text: 'NO DATA', banner: 'NO FORECAST DATA — RETRYING' };
-  }
-  const ageMs = Math.max(0, nowMs - asOf);
-  const level = ageMs > KIOSK_DEAD_MS ? 'dead'
-    : ageMs > 2 * refreshMs + 10 * 60e3 ? 'stale' : 'fresh';
-  const h = Math.floor(ageMs / 3600e3);
-  return {
-    level,
-    ageMs,
-    text: `updated ${formatAgo(new Date(Date.now() - ageMs))}`,
-    banner: level !== 'dead' ? ''
-      : `FORECAST ${h >= 48 ? Math.floor(h / 24) + ' DAYS' : h + ' H'} OLD — NOT UPDATING`
-  };
-}
-
-// How old the swell + wind forecast on the cards is. app.js publishes it
-// as STATE.dataAsOf after every load (recordDataHealth: null when no
-// forecast is on screen; saved tide predictions, astronomical and valid
-// for days, never age it). Builds without it get the same answer from the
-// marine / wind cache timestamps, which hold the true fetch time and which
-// a failed refresh leaves untouched; only with no readable cache does this
-// fall back to lastLoadCompletedAt.
-function kioskDataAsOf() {
-  if (STATE.dataAsOf !== undefined) return STATE.dataAsOf;
-  const done = STATE.lastLoadCompletedAt || 0;
-  // Cache timestamps only move during a load: derive once per load.
-  if (KIOSK.asOfMemo.at === done) return KIOSK.asOfMemo.asOf;
-  const fd = STATE.forecastData;
-  const b = STATE.selectedBuoy;
-  let asOf = null;
-  if (fd && fd.marine) {
-    let ts = [];
-    if (b) {
-      // Same coordinates _loadAllDataImpl keys its caches by.
-      const choc = b.home === 'chocomount';
-      const useBuoy = choc && typeof getForecastUseBuoyCoords === 'function' && getForecastUseBuoyCoords();
-      const fLat = choc && !useBuoy ? CONFIG.chocomount.forecastLat : b.lat;
-      const fLon = choc && !useBuoy ? CONFIG.chocomount.forecastLon : b.lon;
-      const dLat = choc ? CONFIG.chocomount.lat : b.lat;
-      const dLon = choc ? CONFIG.chocomount.lon : b.lon;
-      ts = [
-        readCacheTs(marineCacheKey(fLat, fLon, getForecastModel())),
-        fd.wind ? readCacheTs(windCacheKey(dLat, dLon)) : null
-      ].filter(Number.isFinite);
-    }
-    asOf = ts.length ? Math.min(...ts) : (done || null);
-  }
-  KIOSK.asOfMemo = { at: done, asOf };
-  return asOf;
-}
-
-// Paint a kioskFreshness() result: strip text, stale/dead classes (pilot
-// light + text), and the full-width banner readable across the room.
-function kioskShowFreshness(f) {
-  const upd = el('kiosk-status-updated');
-  if (upd) upd.textContent = f.text;
-  const strip = el('kiosk-status');
-  if (strip) {
-    strip.classList.toggle('np-stale', f.level === 'stale');
-    strip.classList.toggle('np-dead', f.level === 'dead' || f.level === 'nodata');
-  }
-  const banner = el('kiosk-stale-banner');
-  if (banner) {
-    banner.textContent = f.banner;
-    banner.style.display = f.banner ? '' : 'none';
-  }
-}
-
 // ── Self-heal and code refresh ───────────────────
 // Choc TV runs for weeks under Guided Access, out of reach of the reload
 // button. Three things reload the page by themselves: a boot that never
@@ -1070,7 +332,13 @@ const KIOSK_STATIC_RETRY_MS = 15 * 1000;
 const KIOSK_BOOT_WATCHDOG_MS = 10 * 60 * 1000;
 const KIOSK_RELOAD_MIN_GAP_MS = 30 * 60 * 1000;
 const KIOSK_RELOAD_KEY = 'lcc-kiosk-last-reload';
-const KIOSK_CODE_FILES = ['index.html', 'app.js', 'kiosk.js', 'styles-kiosk.css'];
+const KIOSK_DOWN_FIRST_MS = 60 * 1000;      // the TV screen didn't start: first retry
+const KIOSK_DOWN_RETRY_MS = 5 * 60 * 1000;  // then (the 30-min reload gap still applies)
+// The files that make up Choc TV, the look's own included, so a fix to the
+// TV screen reaches the iPad even when the running tv.js failed to start.
+const KIOSK_CODE_FILES = ['index.html', 'app.js', 'kiosk.js',
+  'previews/clean/theme.js', 'previews/clean/core.js', 'previews/clean/tv.js',
+  'previews/clean/theme.css', 'previews/clean/base.css', 'previews/clean/tv.css'];
 
 // initApp fetches the two static catalogs once, with no retry: a Wi-Fi
 // blip during boot left Choc TV on "loading…" forever (no buoy list) or
@@ -1262,95 +530,35 @@ function kioskSelfHealTick() {
     KIOSK.nightlyAt = now + 15 * 60 * 1000;
     kioskTryReload('nightly');
   }
-}
-
-function kioskStatusTick() {
-  // First, so a throw below (e.g. selectBuoy with Leaflet missing) can
-  // never starve the watchdog that exists to mend exactly that.
-  kioskSelfHealTick();
-  kioskEnsureSelected();
-  const clock = el('kiosk-status-clock');
-  if (clock) {
-    const now = new Date();
-    const c = kioskFmtClock(now);
-    // Only digits get the seven-segment face; letters render as legends.
-    clock.innerHTML =
-      `<span class="np-clock-txt">${formatDayShort(now).toUpperCase()}</span> ` +
-      `${c.seg} <span class="np-clock-txt">${c.ampm}</span>`;
-  }
-  const buoyEl = el('kiosk-status-buoy');
-  if (buoyEl && STATE.selectedBuoy) {
-    const b = STATE.selectedBuoy;
-    buoyEl.textContent = b.home === 'chocomount' ? `Choc · ndbc ${b.id}` : `${b.name} · ndbc ${b.id}`;
-  }
-  const done = STATE.lastLoadCompletedAt;
-  kioskShowFreshness(kioskFreshness(Date.now(), done, done ? kioskDataAsOf() : null, KIOSK.refreshMs));
-  // Fresh data while a day panel is up → re-render its readings.
-  if (STATE.lastLoadCompletedAt && STATE.lastLoadCompletedAt !== KIOSK.lastDaysRender) {
-    kioskRenderDays();
-    // If the radar came up before the first load finished, its playback
-    // never started — kick it now that there's a forecast to sweep.
-    if (document.body.dataset.kioskPanel === 'radar' && !KIOSK.radarTimer) {
-      requestAnimationFrame(() => kioskRedrawPanel('radar'));
+  // The TV screen didn't start (index.html lccDown: the look's scripts
+  // failed to load or to mount). Its card says so; try again a minute
+  // later, then every 5 min, through the same guards, so a fixed deploy or
+  // a network that came back brings the TV back without a hand.
+  if (document.documentElement.classList.contains('lcc-down')) {
+    if (!KIOSK.downNextTry) KIOSK.downNextTry = now + KIOSK_DOWN_FIRST_MS;
+    else if (now >= KIOSK.downNextTry) {
+      KIOSK.downNextTry = now + KIOSK_DOWN_RETRY_MS;
+      kioskTryReload('the TV screen didn\'t start');
     }
   }
 }
 
-// Builds the kiosk-only DOM (day panels, status strip, night-dim overlay,
-// paused cue, NEXT button) so index.html carries no kiosk markup.
+function kioskStatusTick() {
+  // First, so a throw below can never starve the watchdog that exists to
+  // mend exactly that.
+  kioskSelfHealTick();
+  kioskEnsureSelected();
+}
+
+// The Sources card's overlay: tv.js adopts it into its screen and fills it,
+// and kioskInfoOpen() keeps reading it. A tap on it closes it.
 function kioskBuildChrome() {
-  const app = el('app') || document.body;
-  // Radar scope sits ABOVE the app window so the swell chart (inside
-  // #panel-forecast) renders beneath it on the radar panel.
-  const radar = document.createElement('div');
-  radar.id = 'kiosk-radar';
-  radar.innerHTML = '<canvas id="kiosk-radar-canvas"></canvas>';
-  app.insertBefore(radar, app.firstChild);
-
-  const days1 = document.createElement('div');
-  days1.id = 'kiosk-days-1';
-  days1.className = 'np-days';
-  const days2 = document.createElement('div');
-  days2.id = 'kiosk-days-2';
-  days2.className = 'np-days';
-  app.appendChild(days1);
-  app.appendChild(days2);
-
-  const strip = document.createElement('div');
-  strip.id = 'kiosk-status';
-  strip.innerHTML =
-    '<span id="kiosk-pilot" title="power"></span>' +
-    '<span id="kiosk-status-buoy">CHOC TV</span>' +
-    '<span id="kiosk-status-updated">loading…</span>' +
-    '<span id="kiosk-paused" style="display:none">⏸ PAUSED — RESUMES SHORTLY</span>' +
-    '<span class="kiosk-status-spacer"></span>' +
-    '<button type="button" id="kiosk-info" aria-label="Sources and methodology">ⓘ SOURCES</button>' +
-    '<button type="button" id="kiosk-next">NEXT ▸</button>' +
-    '<span id="kiosk-status-clock"></span>';
-  document.body.appendChild(strip);
-
-  // Full-width alert above the strip when the readings are hours old or
-  // missing (kioskShowFreshness), sized to read from across the room.
-  const banner = document.createElement('div');
-  banner.id = 'kiosk-stale-banner';
-  banner.setAttribute('role', 'alert');
-  banner.style.display = 'none';
-  document.body.appendChild(banner);
-
-  // NEXT skips straight to the following panel without pausing rotation.
-  el('kiosk-next').addEventListener('click', () => {
-    if (KIOSK.state === 'paused') kioskResume();
-    else kioskAdvance();
-  });
-
-  // Sources & methodology card (content filled per panel on open).
   const info = document.createElement('div');
   info.id = 'kiosk-info-overlay';
   info.style.display = 'none';
   info.innerHTML = '<div id="kiosk-info-card"></div>';
   document.body.appendChild(info);
-  el('kiosk-info').addEventListener('click', () => kioskToggleInfo());
-  info.addEventListener('click', () => kioskToggleInfo(false));
+  info.addEventListener('click', kioskCloseInfo);
 }
 
 function kioskInit() {
@@ -1383,47 +591,6 @@ function kioskInit() {
 }
 
 if (isKioskMode()) {
-  // Seed the gate answer BEFORE DOMContentLoaded: app.js's initGate then
-  // takes its existing 'no' branch — gate hidden, app shown, Chocomount
-  // auto-selected — with zero app.js boot changes.
-  try { sessionStorage.setItem('lcc-gate', 'no'); } catch (_) { /* private mode */ }
-  // Night Passage: swap the canvas palettes before any chart ever draws.
-  kioskApplyNightPalette();
-  // Instrument face type: chart canvases label in Orbitron too (axis
-  // ticks, day labels). Segment digits stay DSEG14.
-  FC_CHART_FONT = '"Orbitron", Tahoma, Geneva, sans-serif';
-  // The radar shadows every scrubber repaint — including manual scrubs
-  // while paused — by wrapping the app's applier (classic-script function
-  // declarations are writable globals; app.js has already executed).
-  const kioskAppApplyScrubber = applyScrubberToHour;
-  applyScrubberToHour = function (idx) {
-    kioskAppApplyScrubber(idx);
-    if (document.body.dataset.kioskPanel === 'radar') kioskDrawRadar(idx);
-  };
-  // A full chart redraw (15-min data refresh, resize) resets the
-  // scrubber to "now" — mid-loop or mid-pause that would yank the radar
-  // off its hour. Hold the displayed hour across the redraw and re-apply
-  // it synchronously, so the loop carries on where it was.
-  const kioskAppDrawForecast = drawForecastChart;
-  drawForecastChart = function () {
-    const cs = STATE.forecastChart;
-    const holdMs = document.body.dataset.kioskPanel === 'radar' && KIOSK.radarTimer &&
-      cs && KIOSK_RADAR.idx >= 0 && KIOSK_RADAR.idx < cs.times.length
-      ? cs.times[KIOSK_RADAR.idx].getTime() : null;
-    kioskAppDrawForecast.apply(null, arguments);
-    if (holdMs != null && STATE.forecastChart) {
-      const hi = findHourIndexForTime(holdMs, STATE.forecastChart);
-      if (hi >= 0) {
-        STATE.scrubberIdx = hi;
-        KIOSK_RADAR.idx = hi;
-        applyScrubberToHour(hi);
-      }
-    }
-  };
-  // This script sits at the end of <body>, so body exists at parse time:
-  // flag it immediately so kiosk CSS applies before first paint.
-  document.body.classList.add('kiosk');
-  document.body.dataset.kioskPanel = 'days1';
-  // kioskInit after app.js's initGate (its listener registered first).
+  // kioskInit after app.js's startApp (its listener registered first).
   document.addEventListener('DOMContentLoaded', kioskInit);
 }

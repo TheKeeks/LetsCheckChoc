@@ -189,11 +189,12 @@
 /* ── Radar (A2-TV-Radar) ───────────────────────────────────────────── */
 #cl-tv .cl-tv-radar { padding: calc(28 * var(--u)) calc(40 * var(--u)) 0; }
 /* Fixed height: the readout changes shape hour to hour (a blocked hour
-   has no "@ 9 s" line), and the strip below must never jump. */
+   has no "@ 9 s" line), and the strip below must never jump. Tall enough
+   for the fullest hour: three swells, the wind and the playing line. */
 #cl-tv .cl-tv-rtop {
   display: flex;
   gap: calc(56 * var(--u));
-  height: calc(472 * var(--u));
+  height: calc(506 * var(--u));
   flex: none;
 }
 #cl-tv .cl-tv-scope {
@@ -306,6 +307,9 @@
   #cl-tv .cl-tv-strip, #cl-tv .cl-tv-btn, #cl-tv .cl-tv-clk { transition: none; }
 }
 
+/* The TV page never scrolls (no rubber-banding under a finger). */
+html.cl-on.cl-tv, html.cl-on.cl-tv body { overflow: hidden; overscroll-behavior: none; }
+
 /* ── Sources: kiosk.js's own card (#kiosk-info-overlay), adopted into
    #cl-tv and restyled. Shown exactly while kiosk.js has it open (its
    inline display), so its reload guard and tap-to-close still hold. */
@@ -320,7 +324,7 @@ html.cl-on.cl-tv #cl-tv #kiosk-info-overlay {
   background: rgba(13, 18, 23, .55);
 }
 html.cl-on.cl-tv #cl-tv #kiosk-info-card {
-  width: min(100%, 820px);
+  width: min(100%, 780px);
   max-height: 86%;
   overflow-y: auto;
   padding: 32px 40px 28px;

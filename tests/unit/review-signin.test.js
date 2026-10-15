@@ -196,7 +196,7 @@ test('a restored Google session runs the log query once, though the auth handler
         return q;
       };
     })(fbFirestore.collection);
-    (function (orig) { renderSurfLogTable = function () { __renders.push(Date.now()); return orig.apply(this, arguments); }; })(renderSurfLogTable);`);
+    (function (orig) { surfLogChanged = function () { __renders.push(Date.now()); return orig.apply(this, arguments); }; })(surfLogChanged);`);
   await app.clock.tick(50);                  // first auth event (30 ms): the handler's query is in flight
   assert.equal(app.run('__gets'), 1);
   await settle(app, app.call('loadSurfLog'), 10);   // what initApp does once the forecast is under way

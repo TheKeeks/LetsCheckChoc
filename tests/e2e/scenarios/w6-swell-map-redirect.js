@@ -9,7 +9,7 @@ const sp = (s) => String(s).replace(/ /g, ' ');
 
 module.exports = {
   name: 'Sound Check: opened on its own, it sends the visitor to the site; framed in the tabs, it stays',
-  options: { viewport: { width: 1180, height: 900 }, gate: null, timeoutMs: 120000 },
+  options: { viewport: { width: 1180, height: 900 }, timeoutMs: 120000 },
   async run({ page, ctx, assert, log }) {
     await ctx.context.addInitScript(() => {
       Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => false, configurable: true });

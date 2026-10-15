@@ -16,7 +16,7 @@ const sp = s => (s || '').replace(/[  ]/g, ' ').replace(/\s+/g, ' ').trim();
 
 module.exports = {
   name: 'clean Explore: past days with the ten years beside the map (wide) or under it (phone), days in step both ways',
-  options: { gate: null, viewport: { width: 1180, height: 820 }, timeoutMs: 120000, contextOptions: { reducedMotion: 'reduce' } },
+  options: { viewport: { width: 1180, height: 820 }, timeoutMs: 120000, contextOptions: { reducedMotion: 'reduce' } },
   async run({ page, ctx, assert, log }) {
     const fr = () => page.frames().find(f => /research\/index\.html\?view=map/.test(f.url()));
     const boot = async () => {

@@ -41,39 +41,3 @@ test('obs time is parsed once and tagged with its buoy and source', async () => 
   assert.equal(parsed.buoyId, '44097');
   assert.equal(parsed.src, 'pipeline');
 });
-
-test('swell card at 11:00 (obs 2h 30m old): amber, obs time + age, arrival from the obs', async () => {
-  const app = await chocAt(FIXTURE_NOW_MS);
-  const card = app.dom.byId('card-swell');
-  assert.ok(card.classList.contains('is-stale'));
-  assert.ok(!card.classList.contains('is-old'));
-  const extra = app.dom.byId('val-swell-arrival');
-  assert.equal(extra.style.display, '');
-  // 8.7 s band peak → ~3 hr 18 min from 50 mi out, counted from 8:30.
-  assert.equal(extra.textContent, 'Buoy obs 8:30 AM (2h 30m ago) · reaches Choc ~11:48 AM');
-  assert.match(app.dom.byId('footer-swell').innerHTML, /^ndbc 44097 · Block Island, RI · obs 8:30 AM · /);
-});
-
-test('swell card at 4:00 PM (obs 7h 30m old): red, and the swell has already "reached" Choc', async () => {
-  const app = await chocAt(FIXTURE_NOW_MS + 5 * HOUR);
-  assert.ok(app.dom.byId('card-swell').classList.contains('is-old'));
-  assert.equal(app.dom.byId('val-swell-arrival').textContent, 'Buoy obs 8:30 AM (7h 30m ago) · reached Choc ~11:48 AM');
-});
-
-test('chart: the obs diamond sits at the observation time, not on the now line', async () => {
-  const app = await chocAt(FIXTURE_NOW_MS);
-  const { common } = app.get('STATE')._forecastPanelPayloads;
-  const plotW = 800 - 44 - 40;   // vm canvas clientWidth − FC_PAD.left − FC_PAD.right
-  const xAt = ms => 44 + ((ms - common.t0) / common.tRange) * plotW;
-  const obsLabel = app.dom.byId('forecast-canvas-swell').getContext('2d').__calls
-    .filter(c => c.fn === 'fillText' && c.args[0] === 'obs').pop();
-  assert.ok(obsLabel, 'obs marker drawn');
-  assert.ok(Math.abs(obsLabel.args[1] - (xAt(OBS_MS) + 7)) < 0.5, `obs at x=${obsLabel.args[1]}, want ${xAt(OBS_MS) + 7}`);
-  assert.ok(Math.abs(obsLabel.args[1] - (xAt(FIXTURE_NOW_MS) + 7)) > 5, 'not on the now line');
-});
-
-test('chart: an obs older than 6 h is not drawn at all', async () => {
-  const app = await chocAt(FIXTURE_NOW_MS + 5 * HOUR);
-  const calls = app.dom.byId('forecast-canvas-swell').getContext('2d').__calls;
-  assert.deepEqual(calls.filter(c => c.fn === 'fillText' && c.args[0] === 'obs'), []);
-});

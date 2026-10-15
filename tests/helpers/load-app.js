@@ -95,8 +95,8 @@ const { FakeEvent, FakeEventTarget, FakeDocument, createStorage } = require('./d
 // top-level const would be stuck in its temporal dead zone.
 const APP_SENTINELS = [
   "typeof STATE === 'object' && typeof CONFIG === 'object'",
-  "typeof REG_THRESHOLD_KEYS === 'object'",            // Tab 2 §5, near the end of app.js
-  "document.listeners('DOMContentLoaded').some(f => f === initGate)"  // app.js's last statement
+  "typeof _regLOOCache === 'object'",                  // Tab 2 sub-model registry, near the end of app.js
+  "document.listeners('DOMContentLoaded').some(f => f === startApp)"  // app.js's last statement
 ];
 const KIOSK_SENTINELS = [
   "typeof KIOSK === 'object' && typeof kioskDaySummary === 'function'",

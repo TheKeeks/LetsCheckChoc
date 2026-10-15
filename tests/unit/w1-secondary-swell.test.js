@@ -24,16 +24,6 @@ test('marineNowIndex finds the current local hour and clamps at the ends', () =>
   assert.equal(app.call('marineNowIndex', null, at('2026-10-01T08:10:00-04:00')), -1);
 });
 
-test('the card shows the 08:00 secondary swell at 08:10, not midnight\'s', () => {
-  // Slot 0 (midnight) is 0.2 ft, so the card used to hide; at 08:00 it is
-  // 1.1 ft @ 9 s from 136° (SE), in the window.
-  const app = loadApp({ now: '2026-10-01T08:10:00-04:00' });
-  app.call('updateSecondarySwellCard', MARINE, true, 41.089152, -71.72105);
-  assert.equal(app.dom.byId('card-secondary-swell').style.display, '');
-  assert.equal(app.dom.byId('val-sec-swell-height').textContent, '1.1 ft');
-  assert.equal(app.dom.byId('val-sec-swell-detail').textContent, '9s · SE (136°)');
-});
-
 test('the current hour does not depend on the device time zone', () => {
   const script = `
     const { loadApp, readFixtureJSON } = require(${JSON.stringify(path.join(__dirname, '../helpers/load-app'))});

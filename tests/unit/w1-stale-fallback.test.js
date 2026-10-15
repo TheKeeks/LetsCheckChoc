@@ -47,10 +47,9 @@ test('readCache: fresh within the TTL; { allowStale } returns any copy with its 
   assert.equal(app.call('readCache', 'lcc-cache-missing', 1, { allowStale: true }), null);
 });
 
-test('all live: header "Updated", dataAsOf = fetch time, dataHealth per the shared contract', async () => {
-  const { app, choc, STATE, text } = scene();
+test('all live: dataAsOf = fetch time, dataHealth per the shared contract', async () => {
+  const { app, choc, STATE } = scene();
   await runLoad(app, 'loadAllData', choc);
-  assert.equal(text('header-update-time'), 'Updated 11:00 AM');
   assert.equal(STATE.dataAsOf, FIXTURE_NOW_MS);
   assert.deepEqual(app.clone(STATE.dataHealth), {
     marine: { asOf: FIXTURE_NOW_MS, origin: 'live' },
@@ -62,17 +61,16 @@ test('all live: header "Updated", dataAsOf = fetch time, dataHealth per the shar
 });
 
 test('marine/wind/tides all fail 2 h later: the saved copies are drawn and flagged stale', async () => {
-  const { app, choc, down, STATE, text } = scene();
+  const { app, choc, down, STATE } = scene();
   await runLoad(app, 'loadAllData', choc);
   app.clock.set(FIXTURE_NOW_MS + 2 * HOUR);   // past every 30-min forecast TTL
   down.marine = unavailable;
   down.wind = unavailable;
   down.coops = noAnswer;
   STATE.forecastData = null;
-  STATE.forecastChart = null;
   await runLoad(app, 'loadAllData', choc);
 
-  assert.equal(STATE.forecastChart && STATE.forecastChart.times.length, 168, 'chart redrawn from the saved forecast');
+  assert.equal(STATE.forecastData.marine.hourly.time.length, 168, 'the saved forecast is back on screen');
   assert.ok(STATE.forecastData.wind && STATE.forecastData.wind.hourly, 'saved wind');
   assert.ok(STATE.forecastData.tideHiLo.length > 0 && STATE.forecastData.tidePred.length > 0, 'saved tides');
   for (const k of ['marine', 'wind', 'tides']) {
@@ -80,16 +78,10 @@ test('marine/wind/tides all fail 2 h later: the saved copies are drawn and flagg
   }
   assert.equal(STATE.dataAsOf, FIXTURE_NOW_MS, 'as-of keeps the original fetch time');
   assert.ok(STATE.lastLoadCompletedAt >= FIXTURE_NOW_MS + 2 * HOUR, 'the load itself did finish');
-  assert.equal(text('header-update-time'), 'Refresh failed · data from 11:00 AM');
-  assert.ok(app.dom.byId('header-update-time').classList.contains('is-stale'));
-  const ind = app.dom.byId('forecast-cache-indicator');
-  assert.equal(ind.style.display, '');
-  assert.equal(ind.textContent, 'Saved forecast from 11:00 AM · refresh failed');
-  assert.match(app.dom.byId('footer-forecast').innerHTML, /updated 11:00 AM \(2h ago\)/);
 });
 
 test('CO-OPS "No Predictions" (HTTP 200) neither overwrites the saved tides nor blanks them', async () => {
-  const { app, choc, down, STATE, text } = scene();
+  const { app, choc, down, STATE } = scene();
   await runLoad(app, 'loadAllData', choc);
   app.clock.set(FIXTURE_NOW_MS + 7 * HOUR);   // past the 6 h tide TTL
   down.coops = () => ERRORS.coopsNoPredictions();
@@ -103,12 +95,10 @@ test('CO-OPS "No Predictions" (HTTP 200) neither overwrites the saved tides nor 
   // Tide predictions are astronomical: a saved copy inside its 4-day cap
   // neither ages the (live) forecast nor says the refresh failed.
   assert.equal(STATE.dataAsOf, FIXTURE_NOW_MS + 7 * HOUR, 'the forecast\'s age, not the saved tides\'');
-  assert.equal(text('header-update-time'), 'Updated 6:00 PM · saved tides');
-  assert.equal(app.dom.byId('header-update-time').classList.contains('is-stale'), false);
 });
 
-test('saved copies past the cap are not used; a cold marine failure says so plainly', async () => {
-  const { app, choc, down, STATE, text } = scene();
+test('saved copies past the cap are not used; a cold marine failure leaves no forecast', async () => {
+  const { app, choc, down, STATE } = scene();
   await runLoad(app, 'loadAllData', choc);
   app.clock.set(FIXTURE_NOW_MS + 25 * HOUR);   // forecast cap is 24 h
   down.marine = unavailable;
@@ -117,17 +107,12 @@ test('saved copies past the cap are not used; a cold marine failure says so plai
   assert.equal(STATE.forecastData, null, 'no day-old forecast passed off as usable');
   assert.deepEqual(app.clone(STATE.dataHealth.marine), { asOf: null, origin: 'failed' });
   assert.equal(STATE.dataAsOf, null, 'no forecast on screen: the live wind + tides are not its age');
-  assert.equal(text('header-update-time'), 'Forecast unavailable');
-  const note = app.dom.byId('forecast-unavailable-msg');
-  assert.match(note.textContent, /^Forecast unavailable: Open-Meteo didn't respond/);
-  assert.equal(note.style.display, '');
-  assert.ok(app.dom.byId('forecast-chart-container').classList.contains('is-unavailable'));
 
-  // Next good refresh clears the message.
+  // The next good refresh brings it back.
   delete down.marine;
   await runLoad(app, 'loadAllData', choc);
-  assert.equal(note.style.display, 'none');
-  assert.equal(text('header-update-time'), 'Updated 12:00 PM');
+  assert.equal(STATE.dataHealth.marine.origin, 'live');
+  assert.ok(STATE.dataAsOf >= FIXTURE_NOW_MS + 25 * HOUR, 'aged from the new fetch');
 });
 
 test('Open-Meteo unreachable with a chosen model: the choice survives the blip', async () => {
@@ -138,7 +123,7 @@ test('Open-Meteo unreachable with a chosen model: the choice survives the blip',
   assert.equal(app.get('STATE').dataHealth.marine.origin, 'failed');
 });
 
-test('blip on the chosen model, best_match answers: choice kept, footer names best_match', async () => {
+test('blip on the chosen model, best_match answers: choice kept, best_match used this time', async () => {
   const marine = readFixtureJSON('open-meteo/marine.json');
   const app = loadApp({
     storage: { local: { 'lcc-forecast-model': 'dwd_gwam' } },
@@ -147,7 +132,6 @@ test('blip on the chosen model, best_match answers: choice kept, footer names be
   const choc = prepareScene(app);
   await runLoad(app, 'loadAllData', choc);
   assert.equal(app.localStorage.getItem('lcc-forecast-model'), 'dwd_gwam', 'choice kept');
-  assert.match(app.dom.byId('footer-forecast').innerHTML, /^Open-Meteo Marine · Auto \(Open-Meteo best_match/);
   assert.equal(app.get('STATE').dataHealth.marine.origin, 'live');
 });
 
@@ -164,57 +148,5 @@ test('a model that answers with no data for the spot is forgotten', async () => 
   assert.equal(app.localStorage.getItem('lcc-forecast-model'), null);
   assert.equal(app.localStorage.getItem(app.call('marineCacheKey', 41.089152, -71.72105, 'dwd_gwam')), null,
     'the empty answer is not saved as a fallback copy');
-  assert.equal(app.get('STATE').forecastChart.times.length, 168);
-});
-
-// Review: a saved copy's `current` block is Open-Meteo's nowcast from when
-// it was fetched (up to 24 h ago), yet the cards label it "Current". They
-// now show the saved copy's own forecast for this hour.
-test('a saved Open-Meteo copy fills the "Current" cards from its forecast for this hour, not its old nowcast', async () => {
-  const { app, down, STATE, text } = scene();
-  const marine = readFixtureJSON('open-meteo/marine.json');
-  const wind = readFixtureJSON('open-meteo/wind.json');
-  await runLoad(app, 'loadPinData', 41.2757, -71.9633);
-  assert.equal(text('val-wind-speed'), `${Math.round(wind.current.wind_speed_10m)} mph`, 'live: the nowcast');
-
-  app.clock.set(FIXTURE_NOW_MS + 20 * HOUR);   // 7:00 AM tomorrow
-  down.marine = unavailable;
-  down.wind = unavailable;
-  await runLoad(app, 'loadPinData', 41.2757, -71.9633);
-  assert.equal(STATE.dataHealth.marine.origin, 'stale-cache');
-  assert.equal(STATE.dataHealth.wind.origin, 'stale-cache');
-  const mi = marine.hourly.time.indexOf('2026-10-02T07:00');
-  const wi = wind.hourly.time.indexOf('2026-10-02T07:00');
-  assert.ok(mi > 0 && wi > 0);
-  const dir = d => app.call('directionLabel', d);
-
-  // Wind: 16 mph SSW gusting 21 that hour, not the 7 mph SW of 11:00 AM.
-  const ws = wind.hourly.wind_speed_10m[wi], wd = wind.hourly.wind_direction_10m[wi], wg = wind.hourly.wind_gusts_10m[wi];
-  assert.notEqual(Math.round(ws), Math.round(wind.current.wind_speed_10m));
-  assert.equal(text('val-wind-speed'), `${Math.round(ws)} mph`);
-  assert.ok(app.dom.byId('val-wind-detail').innerHTML.endsWith(` ${dir(wd)} (${Math.round(wd)}°) · gusts ${Math.round(wg)} mph`));
-
-  // Swell (a pin has no buoy): that hour's 4 s S, not the 8 s ESE nowcast.
-  const sp = marine.hourly.swell_wave_period[mi], sd = marine.hourly.swell_wave_direction[mi];
-  assert.notEqual(sp.toFixed(0), marine.current.swell_wave_period.toFixed(0));
-  assert.equal(text('val-swell-height'), `${marine.hourly.swell_wave_height[mi].toFixed(1)} ft`);
-  assert.equal(text('val-swell-detail'), `${sp.toFixed(0)}s · ${dir(sd)}`);
-
-  // The saved copy itself is untouched: still the 11:00 nowcast on disk.
-  const saved = JSON.parse(app.localStorage.getItem(app.call('windCacheKey', 41.2757, -71.9633)));
-  assert.equal(saved.data.current.wind_speed_10m, wind.current.wind_speed_10m);
-});
-
-test('pin loads fall back the same way and set the contract (no buoy)', async () => {
-  const { app, down, STATE, text } = scene();
-  await runLoad(app, 'loadPinData', 41.2757, -71.9633);
-  assert.equal(text('header-update-time'), 'Updated 11:00 AM');
-  assert.deepEqual(app.clone(STATE.dataHealth.buoy), { obsMs: null, origin: 'failed' });
-  app.clock.set(FIXTURE_NOW_MS + 3 * HOUR);
-  down.marine = unavailable;
-  STATE.forecastChart = null;
-  await runLoad(app, 'loadPinData', 41.2757, -71.9633);
-  assert.equal(STATE.forecastChart.times.length, 168);
-  assert.deepEqual(app.clone(STATE.dataHealth.marine), { asOf: FIXTURE_NOW_MS, origin: 'stale-cache' });
-  assert.equal(text('header-update-time'), 'Refresh failed · data from 11:00 AM');
+  assert.equal(app.get('STATE').forecastData.marine.hourly.time.length, 168);
 });

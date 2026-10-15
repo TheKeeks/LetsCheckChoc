@@ -83,9 +83,7 @@ if (fbAuth) fbAuth.onAuthStateChanged(function(user) {
       migrateAnonDataToUser(prevAnonUid); // This already calls loadLogsFromFirebase() at the end
     } else if (!user.isAnonymous && typeof loadLogsFromFirebase === 'function') {
       // Non-anonymous user on page load (not a transition) — load their data
-      loadLogsFromFirebase().then(function() {
-        if (typeof updateStorageNote === 'function') updateStorageNote();
-      }).catch(function(e) {
+      loadLogsFromFirebase().catch(function(e) {
         console.warn('Log reload after auth failed:', e);
       });
     }

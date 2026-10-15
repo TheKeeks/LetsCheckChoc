@@ -154,24 +154,6 @@ test('a forecast hour past the end of the saved 6-min tide copy is not given a f
   assert.equal(typeof app.clone(app.call('buildForecastConditions', MARINE, WIND, HILO, PRED, hi)).tide.height, 'number');
 });
 
-test('Tab 2 and the log say which swell they show: on the reef (read earlier offshore), not the chart\'s hour', async () => {
-  const app = loadApp({ fetch: fixtureFetch({ overrides: [ARCHIVE_WIND_OK] }) });
-  app.get('STATE').isChocomount = true;
-  const hi = hourIndex('2026-10-02T19:00');
-  const fc = app.call('buildForecastConditions', MARINE, WIND, HILO, PRED, hi);
-  assert.ok(fc.swellLagHours > 0);
-  const line = app.call('_regForecastSummaryLine', fc);
-  assert.match(line, /^On the reef: \d+\.\dft @ /);
-  assert.match(line, new RegExp('offshore ~' + fc.swellLagHours + 'h earlier'));
-
-  const cond = await lookup(app, '2026-10-02T09:30');
-  app.call('renderConditionsDisplay', app.run(`(${JSON.stringify(cond)})`));
-  const shown = app.dom.byId('sl-conditions-display').innerHTML;
-  assert.match(shown, /at the offshore forecast point/);
-  assert.doesNotMatch(shown, /at buoy|buoy lag/, 'archive swell is not a buoy reading');
-  assert.match(shown, new RegExp('\\(' + Math.round(cond.swell.lagHours * 10) / 10 + 'h travel\\)'));
-});
-
 test('another buoy\'s forecast is not given Choc\'s swell lag', () => {
   const app = loadApp();
   app.get('STATE').isChocomount = false;

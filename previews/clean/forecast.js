@@ -200,17 +200,8 @@
   // ════════════════════════════════════════════════════════════════════
   // HEADLINE AND SWELLS
   // ════════════════════════════════════════════════════════════════════
-  function renderHead() {
-    var sp = SPOTS[spot], i = curStep();
-    if (i < 0) {
-      var msg = fc.status === 'loading' ? 'Loading the Sound Check forecast…'
-        : fc.status === 'failed' ? 'The Sound Check forecast didn’t load.'
-        : 'The Sound Check forecast doesn’t reach now: its newest run is from ' + F.when(new Date(Date.parse(fc.made))) + '.';
-      setHTML(E.head, '<p class="cl-f-msg">' + esc(msg) + '</p>');
-      return;
-    }
-    var s = fc.steps[i], v = s[sp.k], at = new Date(s.t);
-    var now = cur.mode === 'now' || i === nowStep();
+  function headHTML(i, now) {
+    var sp = SPOTS[spot], s = fc.steps[i], v = s[sp.k], at = new Date(s.t);
     var h = '<p class="cl-f-when"><span class="cl-serif">' + esc(hourLabel(at)) + '</span>' + (now ? '<span class="cl-f-now">now</span>' : '') + '</p>';
     h += '<p class="cl-f-big"><span class="cl-f-num">' + (isNum(v.m) ? F.num(v.m) : DASH) + '</span><span class="cl-f-unit">ft at ' + esc(sp.name) + '</span></p>';
     h += '<p class="cl-f-models">GFS-Wave ' + (isNum(v.g) ? F.num(v.g) : DASH) + ' · ECMWF ' + (isNum(v.e) ? F.num(v.e) : DASH) + NB + 'ft</p>';
@@ -224,8 +215,41 @@
         '<span class="cl-f-bar" aria-hidden="true"><i style="width:' + Math.max(2, pct) + '%;background:' + rgb(c) + '"></i></span></li>';
     });
     if (!ps.length) h += '<li class="cl-f-none">No swell reaches ' + esc(sp.name) + ' this hour</li>';
-    h += '</ul>';
-    setHTML(E.head, h);
+    return h + '</ul>';
+  }
+  // The headline is as tall as the run's tallest hour (more swells, longer
+  // lines), so the week chart below doesn't jump under a finger dragging
+  // through the hours. Measured once per run, spot and width, off screen.
+  var headMin = { key: '', px: 0 };
+  function holdHeadHeight() {
+    var w = E.head.clientWidth, key = fc.made + '|' + spot + '|' + w;
+    if (!w || headMin.key === key) return;
+    var probe = document.createElement('div');
+    probe.className = E.head.className;
+    probe.style.cssText = 'position:absolute;visibility:hidden;left:-9999px;top:0;min-height:0;width:' + w + 'px';
+    E.head.parentNode.appendChild(probe);
+    var px = 0;
+    for (var i = 0; i < fc.steps.length; i++) {
+      probe.innerHTML = headHTML(i, i === nowStep());
+      px = Math.max(px, probe.offsetHeight);
+    }
+    probe.parentNode.removeChild(probe);
+    headMin = { key: key, px: px };
+    E.head.style.minHeight = px ? px + 'px' : '';
+  }
+  function renderHead() {
+    var i = curStep();
+    if (i < 0) {
+      var msg = fc.status === 'loading' ? 'Loading the Sound Check forecast…'
+        : fc.status === 'failed' ? 'The Sound Check forecast didn’t load.'
+        : 'The Sound Check forecast doesn’t reach now: its newest run is from ' + F.when(new Date(Date.parse(fc.made))) + '.';
+      E.head.style.minHeight = '';
+      headMin.key = '';
+      setHTML(E.head, '<p class="cl-f-msg">' + esc(msg) + '</p>');
+      return;
+    }
+    setHTML(E.head, headHTML(i, cur.mode === 'now' || i === nowStep()));
+    holdHeadHeight();
     E.seg.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-spot') === spot)); });
   }
 
@@ -288,7 +312,9 @@
   function renderChart() {
     if (!fc.steps) { setHTML(E.cx, ''); E.wk.hidden = true; return; }
     E.wk.hidden = false;
-    var S = fc.steps, W = E.cx.clientWidth || 358, wide = W >= 560, sp = SPOTS[spot];
+    // The chart's own width: inside the box's side padding, where the finger is read too.
+    var cs = getComputedStyle(E.cx);
+    var S = fc.steps, W = (E.cx.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) || 358, wide = W >= 560, sp = SPOTS[spot];
     var PL = 30, PR = 8, PT = 10, CH = wide ? 170 : 140, LT = 20, LW = 16;
     var t0 = S[0].t, t1 = S[S.length - 1].t;
     var yT = PT + CH + 18, yW = yT + LT + 12, HH = yW + LW / 2 + 6;
@@ -378,7 +404,8 @@
     run('head', renderHead); run('cursor', drawCursor); run('map', syncMap); run('cond', renderCond);
   }
   function stepAtX(clientX) {
-    var r = E.cx.getBoundingClientRect();
+    // Measured from the chart itself, not its padded box.
+    var r = (E.cx.querySelector('svg') || E.cx).getBoundingClientRect();
     var t = geom.t0 + (clientX - r.left - geom.PL) / (geom.W - geom.PL - geom.PR) * (geom.t1 - geom.t0), b = 0;
     fc.steps.forEach(function (s, k) { if (Math.abs(s.t - t) < Math.abs(fc.steps[b].t - t)) b = k; });
     return b;

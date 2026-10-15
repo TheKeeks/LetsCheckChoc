@@ -5,12 +5,11 @@
 // file owns window.CLEAN, the shared API the four parts build on
 // (forecast.js, log.js, model.js, tv.js); previews/clean/CONTRACT.md
 // documents every call. It:
-//   • mounts the shell: phone = header, three tab views, tab bar and
+//   • mounts the shell: phone = header, the tab views, tab bar and
 //     the Settings sub-page; Choc TV (?kiosk=1) = one empty root that
-//     tv.js owns. Legacy nodes stay in the DOM (parts drive them), the
-//     legacy chrome is hidden by theme.css under html.cl-on;
-//   • skips the boat gate (the app's own "No, continue" path, minus the
-//     sessionStorage write, so the plain URL keeps asking);
+//     tv.js owns. The app's hidden engine room (index.html #app-window:
+//     the surf-log form Log drives, the panels My ratings borrows) stays
+//     in the DOM;
 //   • runs day/night: night from sunset to sunrise at the spot (the
 //     app's NOAA calcDaylight), or the viewer's pick in Settings;
 //   • adapts the app's data into small null-safe readings (now, week,
@@ -20,7 +19,8 @@
 //     'model' and 'hour' events. app.js, kiosk.js and firebase-config.js
 //     are never edited.
 // Every render and every hook runs inside try/catch: a failing part
-// never blanks the app, and a failing core leaves the classic app.
+// never blanks the app, and a failing core puts up index.html's "didn't
+// start" card (lccDown), which Choc TV retries by itself.
 // Times are America/New_York, the spot's (and the crew's) time zone.
 // ════════════════════════════════════════════════════════════════════
 (function () {
@@ -45,7 +45,9 @@
     buoyLat: 40.969, buoyLon: -71.124, buoyDistanceMiles: 50
   };
   var IS_TV = false;
-  try { IS_TV = typeof isKioskMode === 'function' && isKioskMode(); } catch (_) { IS_TV = false; }
+  // kiosk.js decides; without it (a failed load) index.html's own reading of
+  // ?kiosk=1 still keeps the phone layout off the TV.
+  try { IS_TV = typeof isKioskMode === 'function' ? isKioskMode() : window.LCC_KIOSK === true; } catch (_) { IS_TV = false; }
   CLEAN.isTV = IS_TV;
 
   // ── Errors ─────────────────────────────────────────────────────────
@@ -81,7 +83,7 @@
       try { fn(arg); } catch (e) { err('on:' + evt, e); }
     });
   }
-  // Coalesce bursts (renderSurfLogTable runs several times per action).
+  // Coalesce bursts (surfLogChanged runs several times per action).
   var soonTimers = {};
   function emitSoon(evt, arg) {
     if (soonTimers[evt]) return;
@@ -547,7 +549,7 @@
   function timeAt(idx) {
     var m = M();
     if (!m || !isNum(idx) || idx < 0 || idx >= m.hourly.time.length) return null;
-    // Parsed exactly as the app parses it (STATE.forecastChart.times).
+    // Parsed the way app.js parses its forecast times.
     return toDate(m.hourly.time[idx]);
   }
   function nowIndex() {
@@ -1103,27 +1105,6 @@
     };
   }
 
-  // The shared forecast cursor (the app's scrubber hour). Choc TV's radar
-  // moves it; Model and TV may read it (the Forecast tab keeps its own hour
-  // on the Sound Check run). Setting it repaints the app's own (hidden)
-  // chart and raises 'hour'.
-  CLEAN.cursor = {
-    get: function () {
-      var i = typeof STATE !== 'undefined' ? STATE.scrubberIdx : -1;
-      return isNum(i) && i >= 0 ? i : nowIndex();
-    },
-    set: function (idx) {
-      var m = M();
-      if (!m || !isNum(idx)) return;
-      idx = clamp(Math.round(idx), 0, m.hourly.time.length - 1);
-      STATE.scrubberIdx = idx;
-      try { if (typeof applyScrubberToHour === 'function' && STATE.forecastChart) applyScrubberToHour(idx); else emit('hour', idx); }
-      catch (e) { err('cursor.set', e); emit('hour', idx); }
-    },
-    reset: function () { CLEAN.cursor.set(nowIndex()); },
-    atNow: function () { return CLEAN.cursor.get() === nowIndex(); }
-  };
-
   // ═══════════════════════════════════════════════════════════════════
   // THE SOUND CHECK MODEL — the wave forecast Forecast and Choc TV show
   // ═══════════════════════════════════════════════════════════════════
@@ -1344,7 +1325,7 @@
   ];
   var appEl = null, tvEl = null, titleEl = null, subtitleEl = null, rfBtn = null, tabBtns = {}, views = {};
   var curTab = 'forecast', scrollMem = {}, titleOverride = {};
-  var shellReady = false, savedEra = null;
+  var shellReady = false;
 
   function buildPhone() {
     appEl = h('div', { id: 'cl-app', class: 'cl', 'data-tab': curTab });
@@ -1489,8 +1470,8 @@
     });
     updateHeader();
     window.scrollTo(0, scrollMem[id] || 0);
-    // Keep the app's own tab state in step: Tab 2 / Tab 3 renderers and
-    // STATE.activeTab checks run as they would on the classic page.
+    // Keep the app's own tab in step (app.js switchTab): My ratings' borrowed
+    // panels redraw while it shows, and the Log list hook fires.
     var legacy = TABS.filter(function (t) { return t.id === id; })[0].legacy;
     try { if (legacy && typeof switchTab === 'function') switchTab(legacy); } catch (e) { err('switchTab', e); }
     var p = parts[id];
@@ -1656,7 +1637,29 @@
       '<h2 class="cl-h2" id="cl-set-spot">Spot</h2>' +
       '<div class="cl-list">' +
         '<button type="button" class="cl-sr" data-act="spot"><span>Spot and buoy</span><span class="cl-v">' + icon.chevronRight() + '</span></button>' +
-      '</div>';
+      '</div>' +
+      logToolsHTML(a);
+  }
+  // The surf log's own tools (app.js): copies of the whole log, an import of
+  // your own sessions, and fetching the past conditions of your sessions again.
+  function logToolsHTML(a) {
+    var n = (typeof STATE !== 'undefined' && Array.isArray(STATE.surfLog)) ? STATE.surfLog.length : 0;
+    var tool = function (act, label, sub) {
+      return '<button type="button" class="cl-sr" data-act="' + act + '"><span>' + label + '<small>' + sub + '</small></span></button>';
+    };
+    var rows = (n ? tool('log-csv', 'Export CSV', 'Every session in the log, for a spreadsheet') +
+      tool('log-json', 'Export JSON', 'Every session in the log, as saved') : '') +
+      (a.signedIn ? tool('log-import', 'Import JSON', 'Adds your own sessions from an export') +
+        tool('log-refetch', 'Fetch conditions again', 'Your sessions’ swell, wind and tide, from the archives. Ratings stay') : '');
+    return rows ? '<div class="cl-gap"></div><h2 class="cl-h2" id="cl-set-log">Surf log</h2><div class="cl-list">' + rows + '</div>' : '';
+  }
+  function importLog() {
+    if (typeof importJSON !== 'function') return;
+    var f = document.createElement('input');
+    f.type = 'file';
+    f.accept = '.json,application/json';
+    f.addEventListener('change', function (ev) { try { importJSON(ev); } catch (e) { err('log.import', e); } });
+    f.click();
   }
   function renderSettings(body) {
     var focusKey = null, ae = document.activeElement;
@@ -1674,6 +1677,10 @@
     else if (act === 'signout') CLEAN.signOut();
     else if (act === 'model') openModelPicker();
     else if (act === 'spot') openSpot();
+    else if (act === 'log-csv' && typeof exportCSV === 'function') exportCSV();
+    else if (act === 'log-json' && typeof exportJSON === 'function') exportJSON();
+    else if (act === 'log-import') importLog();
+    else if (act === 'log-refetch' && typeof backfillAllSessionsFromArchive === 'function') backfillAllSessionsFromArchive();
   }
   function refreshSettings() {
     if (settingsBody && settingsBody.isConnected) { try { renderSettings(settingsBody); } catch (e) { err('settings.render', e); } }
@@ -1814,7 +1821,9 @@
     else renderAll(reason || 'request');
   };
   function showFallback(root) {
-    root.innerHTML = '<div class="cl-empty">This screen didn’t load.<br><a href="' + esc(location.pathname + (IS_TV ? '?kiosk=1&classic=1' : '?classic=1')) + '">Open the classic view</a></div>';
+    root.innerHTML = '<div class="cl-empty">This screen didn’t load.<br><button type="button" class="cl-btn" data-act="reload">Reload</button></div>';
+    var b = root.querySelector('[data-act="reload"]');
+    if (b) b.addEventListener('click', function () { location.reload(); });
   }
 
   // Data arrived (cache paint, fresh load, failed refresh): one render pass.
@@ -1834,7 +1843,6 @@
   // ════════════════════════════════════════════════════════════════════
   // APP HOOKS (wrap, never edit)
   // ════════════════════════════════════════════════════════════════════
-  var origNowPulse = null;
   function after(name, fn) {
     var orig = window[name];
     if (typeof orig !== 'function') { err('hook', name + ' is not a function'); return false; }
@@ -1852,54 +1860,20 @@
     // passes through renderForecastSet with the full context; keep it for
     // the buoy's spectral band.
     after('renderForecastSet', function (r, ctx) { CLEAN._ctx = ctx || null; scheduleData('forecast'); });
-    after('renderPinForecastSet', function () { CLEAN._ctx = null; scheduleData('forecast'); });
     // End of every load: STATE.dataAsOf / dataHealth are now true.
     after('recordDataHealth', function () { scheduleData('health'); });
     after('updateAuthUI', refreshAuth);
-    after('renderSurfLogTable', function () { emitSoon('log'); });
+    after('surfLogChanged', function () { emitSoon('log'); });
     after('slRetrain', function () { bump(); renderAll('model'); emitSoon('model'); });
-    after('applyScrubberToHour', function (r, idx) { emit('hour', idx); });
-    // The legacy chart is hidden: its 10 fps "now" pulse has nothing to draw.
-    if (typeof startNowPulse === 'function') {
-      origNowPulse = { start: window.startNowPulse };
-      window.startNowPulse = function () { /* clean preview: legacy chart hidden */ };
-    }
   }
 
-  // ── Boat gate: skip it, as its "continue" (No) branch does ─────────
-  // initGate runs on DOMContentLoaded (registered first); this listener
-  // runs right after it. kiosk.js already seeds the gate for Choc TV.
-  function passGate() {
-    if (typeof STATE === 'undefined' || STATE.boatGatePassed) return;
-    STATE.boatGatePassed = true;
-    var ov = document.getElementById('gate-overlay');
-    if (ov) ov.classList.add('hidden');
-    var app = document.getElementById('app');
-    if (app) app.classList.remove('hidden');
-    var win = document.getElementById('app-window');
-    if (win) win.classList.remove('hidden');
-    if (typeof initApp === 'function') {
-      var p = initApp();
-      if (p && typeof p.catch === 'function') p.catch(function (e) { err('initApp', e); });
-    }
-  }
-
-  // ── Unmount: give the page back to the classic app ─────────────────
-  // (with the old look's styles and fonts, which the page skips under the
-  // new look: index.html lccLoadClassic)
-  function unmount(why) {
-    err('unmount', why || 'core failed');
-    try { if (typeof lccLoadClassic === 'function') lccLoadClassic(); } catch (e) { err('unmount.styles', e); }
-    var root = document.documentElement;
-    root.classList.remove('cl-on', 'cl-tv', 'cl-fade');
-    root.removeAttribute('data-clean-theme');
-    if (savedEra != null && document.body) document.body.setAttribute('data-era', savedEra);
-    if (appEl && appEl.parentNode) appEl.parentNode.removeChild(appEl);
-    if (tvEl && tvEl.parentNode) tvEl.parentNode.removeChild(tvEl);
-    subStack.forEach(function (e) { if (e.el.parentNode) e.el.parentNode.removeChild(e.el); });
-    subStack = [];
-    if (origNowPulse) window.startNowPulse = origNowPulse.start;
-    CLEAN.ready = false;
+  // ── Down: the page couldn't start ──────────────────────────────────
+  // index.html's own card (lccDown, styled inline, so it shows even when
+  // this look's stylesheets failed): Reload on a phone; Choc TV retries by
+  // itself (kiosk.js).
+  function down(why) {
+    err('down', why);
+    try { if (typeof window.lccDown === 'function') window.lccDown(why); } catch (e) { err('down.card', e); }
   }
 
   // ── Timers ─────────────────────────────────────────────────────────
@@ -1949,7 +1923,7 @@
   }
   function ensureSelected() {
     if (STATE.selectedBuoy || (STATE.pinLat != null && STATE.pinLon != null)) return;
-    if (!STATE.boatGatePassed || !STATE.buoys || !STATE.buoys.length || typeof selectBuoy !== 'function') return;
+    if (!STATE.appStarted || !STATE.buoys || !STATE.buoys.length || typeof selectBuoy !== 'function') return;
     if (Date.now() < BOOT_AT + STATIC_FIRST_MS) return;   // initApp is still on it
     var home = STATE.buoys.filter(function (b) { return b && b.home === 'chocomount'; })[0];
     if (home) { staticKick = false; selectBuoy(home); }
@@ -1973,7 +1947,6 @@
   // BOOT
   // ════════════════════════════════════════════════════════════════════
   function onReady() {
-    try { passGate(); } catch (e) { err('gate', e); }
     if (!CLEAN.ready) return;
     if (!IS_TV) {
       TABS.forEach(function (tb) { if (!parts[tb.id] || parts[tb.id].failed) showFallback(views[tb.id]); });
@@ -1986,12 +1959,12 @@
     }
   }
   function onLoad() {
-    // Choc TV must never sit blank: without a working tv.js, give the
-    // screen back to the classic Choc TV.
+    // Choc TV must never sit blank: without a working tv.js, put up the
+    // "didn't start" card, which kiosk.js retries.
     if (IS_TV && CLEAN.ready) {
       setTimeout(function () {
         var p = parts.tv;
-        if (!p || !p.mounted || p.failed) unmount('tv.js did not mount');
+        if (!p || !p.mounted || p.failed) down('the TV screen didn’t load (tv.js)');
       }, 1500);
     }
   }
@@ -2009,8 +1982,6 @@
     } catch (_) { mqDark = null; }
     applyTheme(true);
     try { if (history.state && history.state.clSub) history.replaceState(null, ''); } catch (_) { /* fine */ }
-    savedEra = body.getAttribute('data-era');
-    body.removeAttribute('data-era');   // the Win95 era styles hang off it
     if (IS_TV) buildTV(); else buildPhone();
     root.classList.add('cl-on');
     if (IS_TV) root.classList.add('cl-tv');
@@ -2038,7 +2009,6 @@
     boot();
   } catch (e) {
     err('boot', e);
-    // The classic page, exactly as without ?preview (boat gate included).
-    try { unmount('boot failed: ' + (e && e.message)); } catch (_) { /* nothing left to do */ }
+    down('the page couldn’t start: ' + (e && e.message));
   }
 })();
