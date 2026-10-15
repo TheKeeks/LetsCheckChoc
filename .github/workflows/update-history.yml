@@ -3,9 +3,14 @@ name: Update Sound Check history
 # The Sound Check's history since 2016 (scripts/history/update.py): every day it fetches buoy 44097's spectra
 # (CDIP) and readings (NDBC), the over-water wind (ERA5, ECMWF) and the tides, rebuilds the whole history through
 # yesterday, and commits what changed to main: data/history/, research/hist.js and the Block Island lane of
-# research/ocean/day/. Rebuilding everything (about 5 minutes) means late or corrected readings anywhere in the
-# ten years land too. A run that fails commits nothing, so the site keeps the last good history, and GitHub
-# emails the owner.
+# research/ocean/day/ (with the hourly wind and each day's tides). Rebuilding everything (about 5 minutes) means late
+# or corrected readings anywhere in the ten years land too.
+# It also keeps research/ocean/pressure/, the sea-level pressure every 6 hours since 2016 for the Past days' storm view
+# (scripts/history/pressure.py: ERA5 through 2022, GFS analyses since): each run fills what's missing, oldest first,
+# within a 20-minute budget (the first run after it landed fills all ten years: about 2.2 GB of downloads, some 15
+# minutes), then yesterday's four steps a day. A pressure step that fails stays missing and is asked for again on the
+# next run; it never stops the history's commit.
+# A run that fails commits nothing, so the site keeps the last good history, and GitHub emails the owner.
 # It also reads the crew's surf log (Firestore surf_logs) with the read-only key in the SURFLOG_READ_KEY secret and
 # fits the ratings model, the sessions' statistics and the forecast scorecard (research/fc/score.json) to it, so a
 # logged session counts from the next run. Without the secret, or when the log can't be read, those stay as they
@@ -50,9 +55,10 @@ jobs:
           python-version: '3.12'
 
       # google-auth and requests: the service account's token for Firestore. Pillow and eccodes: the scorecard reads
-      # GFS-Wave's archived forecasts for new sessions as the forecast bot does (same versions as update-forecast.yml)
+      # GFS-Wave's archived forecasts for new sessions as the forecast bot does (same versions as update-forecast.yml),
+      # and the pressure maps read GFS's sea-level pressure the same way. numcodecs: ERA5's zarr chunks (blosc)
       - name: Install dependencies
-        run: pip install numpy==2.4.6 scipy==1.17.1 pillow==12.3.0 eccodes==2.49.0 google-auth==2.58.1 requests==2.34.2
+        run: pip install numpy==2.4.6 scipy==1.17.1 pillow==12.3.0 eccodes==2.49.0 google-auth==2.58.1 requests==2.34.2 numcodecs==0.16.5
 
       # CDIP's spectra archive (about 750 MB) changes every month or two: keep it between runs, keyed by its
       # date, so it is downloaded only when CDIP updates it.
@@ -83,6 +89,7 @@ jobs:
             history-cache/ndbc17
             history-cache/tides
             history-cache/wind
+            history-cache/pressure
           key: history-inputs-${{ steps.month.outputs.month }}
           restore-keys: history-inputs-
 
@@ -102,6 +109,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/history research/hist.js research/ocean/day research/fc/score.json
+          # (the pressure maps' folder exists once a run has written them)
+          if [ -d research/ocean/pressure ]; then git add research/ocean/pressure; fi
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
