@@ -247,6 +247,8 @@ html.hub-lock, html.hub-lock body { overflow: hidden; }
 .hub-note { flex: 1 1 auto; min-width: 0; margin: 0; max-width: none; font-size: .8rem; color: var(--fg-2); }
 .fc-tl { width: 100%; min-height: 70px; touch-action: pan-y; cursor: ew-resize; user-select: none; -webkit-user-select: none; }
 .fc-tl svg { display: block; }
+.fc-tl.hrs { min-height: 46px; margin-top: 2px; border-radius: 4px; }
+.fc-tl.hrs:focus-visible { outline: 2px solid var(--fg-2); outline-offset: 1px; }
 .fc-tl .tl-t { fill: var(--fg-3); font: 10px var(--mono); }
 .fc-tl .tl-k { fill: var(--fg-2); font: 10px var(--mono); }
 .fcs td, .fcs th { padding: 5px 10px; } .fcs td.num, .fcs th.num { text-align: right; }
@@ -479,7 +481,8 @@ body { margin: 0; }
         <div class="hub-over"><button type="button" id="pastBest" class="hub-chip" hidden></button><div class="hub-key" role="img" aria-label="Wave height colors, 0 to 20 feet and up"><i></i><span><b>0</b><b style="left:22.4%">1</b><b style="left:50%">5</b><b>20+ ft</b></span></div></div>
         <div class="hub-bar"><button type="button" id="pastPlay" class="hub-play" aria-label="Play day by day">▶</button><div class="hub-tlw">
           <div class="hub-mrow"><button type="button" id="pastPrev" class="hub-mb" aria-label="Previous month">‹</button><button type="button" id="pastDec" class="hub-dec" aria-haspopup="dialog" aria-controls="decOv" title="Ten years, month by month"><b id="pastMonth" class="mono"></b><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h3v3H2zM6.5 2h3v3h-3zM11 2h3v3h-3zM2 6.5h3v3H2zM6.5 6.5h3v3h-3zM11 6.5h3v3h-3zM2 11h3v3H2zM6.5 11h3v3h-3zM11 11h3v3h-3z" fill="currentColor"/></svg><span class="hub-dec-t">Ten years</span></button><button type="button" id="pastNext" class="hub-mb" aria-label="Next month">›</button><input id="pastDate" type="date" aria-label="Pick a day"></div>
-          <div id="pastTl" class="fc-tl" aria-label="Tap a day of the month"></div></div></div>
+          <div id="pastTl" class="fc-tl" aria-label="Tap a day of the month"></div>
+          <div id="pastHours" class="fc-tl hrs" role="slider" tabindex="0" aria-label="Hour of the day. Tap or drag, or use the arrow keys" aria-valuemin="0" aria-valuemax="23" aria-valuenow="0"></div></div></div>
       </div>
       <div class="hub-bot" id="tripDropCtl" data-mode="drop" hidden>
         <div class="hub-bar"><button type="button" id="tripPlay" class="hub-go">Play</button><p id="tripOut" class="hub-note" aria-live="polite"></p></div>
@@ -610,8 +613,10 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
 
   // ── shared state: the day picked anywhere on the page (map, calendar, date pickers) and whether
   // counts use all hours or daylight only
-  const st = { daylight: 0, playing: false, idx: 0 };
-  const listeners = [], dayListeners = [];
+  // hour: the Eastern hour of the day on show in the map's Past view (ocean.js sets it with the day: the hour
+  // you logged, else Choc's biggest hour), hourIso the day it belongs to
+  const st = { daylight: 0, playing: false, idx: 0, hour: null, hourIso: '' };
+  const listeners = [], dayListeners = [], hourListeners = [];
   function jump(i) {
     st.idx = Math.max(0, Math.min(D.length - 1, i));
     dayListeners.forEach(f => f(st.idx));
@@ -631,6 +636,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   const daylight = (ms) => { const [a, b] = sunWin(ms); return ms >= a + 18e5 && ms <= b - 18e5; };
   window.CHOC = { st, D, MON, C, css, perColor, wSoft, BIG_E, OFF, HST, hCol, sunWin, daylight, windArrow,
     onChange: f => listeners.push(f), onDay: f => dayListeners.push(f), jump,
+    onHour: f => hourListeners.push(f), hourChanged: () => hourListeners.forEach(f => f(st.hour)),
     dayIndex: iso => (byIso.has(iso) ? byIso.get(iso) : -1),
     setDaylight: v => { st.daylight = v ? 1 : 0; listeners.forEach(f => f(st)); } };
 
@@ -2863,9 +2869,9 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     }
     return w > 0.4 ? [T / w, Math.atan2(sx, sy) / D2R] : null;
   }
-  function pastFt(spot) {                                    // best 3 hours at the spot that day (the ray model on the buoy)
+  function pastFt(spot) {                                    // Choc at the hour on show; else the spot's best 3 hours that day (the ray model on the buoy)
     const x = DAYS[CST.idx]; if (!x) return null;
-    if (spot === 'choc') return x.mh[CST.daylight];
+    if (spot === 'choc') return PS.hs !== undefined && PS.iso === x.iso ? (PS.hs ? PS.hs.ft : null) : x.mh[CST.daylight];
     const v = DAYS2[x.iso]; return v && v[4] != null ? v[4] : null;
   }
   function pastWind(i, spot) {                               // [kn, from] at the spot's best hours (Part 3's rule decides clean)
@@ -2873,36 +2879,106 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     if (w && w[1] != null) return [w[1], w[0]];
     return x && x.wspd != null ? [x.wspd, x.wdir] : null;
   }
+  // ── the hour of a past day. A day opens at the hour you logged (your first session that day), else at
+  // Choc's biggest hour; the hour strip under the month moves through the other hours, and the map (the
+  // offshore color, the swells' rays near Fishers), the headline and the day's details follow. The hour's
+  // swells are the buoy's, hour by hour, from ocean/day/<year>.json (loaded a year at a time); until that
+  // file is in, the day's biggest hour stands in. Wind and tide come from the same file when it has them.
+  const LANE = {};
+  function laneYear(y) {
+    if (!(y in LANE)) { LANE[y] = null; json(`ocean/day/${y}.json`).then((d) => { LANE[y] = d || false; if (S.phase === 'past') setPast(CST.idx); }); }
+    return LANE[y] || null;
+  }
+  const hourAt = (iso, h) => etMidnight(Date.parse(iso + 'T16:00:00Z')) + h * 36e5;
+  const utcKey = (ms) => new Date(ms).toISOString().slice(0, 13);
+  function laneAt(iso, h, lane) {                            // that hour's row of a lane, undefined while the year loads
+    const k = utcKey(hourAt(iso, h)), L = laneYear(k.slice(0, 4));
+    return L ? ((L[lane] || {})[k] || null) : undefined;
+  }
+  function hourSwell(iso, h) {                               // {ft at Choc, trains with their shares} that hour; null: no reading
+    const r = laneAt(iso, h, '44097'); if (r === undefined) return undefined; if (!r || !r.length) return null;
+    const list = r.map((q) => ({ ft: q[0], T: q[1], D: q[2], at: q[3] }));
+    return { hr: h, ft: Math.sqrt(list.reduce((a, q) => a + q.at * q.at, 0)), trains: window.CHOC.swell.shares(list) };
+  }
+  function defaultHour(iso) {
+    const lg = window.CHOC.logHours ? window.CHOC.logHours(iso) : []; if (lg.length) return lg[0];
+    const t = TRAINS[iso]; if (t && t[0] != null) return t[0];
+    return PS.bestH != null ? (PS.bestH + 1) % 24 : 12;
+  }
+  window.CHOC.hourOf = (iso) => (CST.hourIso === iso && CST.hour != null ? CST.hour : defaultHour(iso));
+  window.CHOC.swell.hour = (iso, h) => hourSwell(iso, h) || null;
+  window.CHOC.logChanged = () => {                           // the log came in after the day opened: go to the hour you logged
+    if (CST.hourPicked || !CST.hourIso) return;
+    const h = defaultHour(CST.hourIso); if (h === CST.hour) return;
+    CST.hour = h; if (S.phase === 'past') setPast(CST.idx); window.CHOC.hourChanged();
+  };
+  function setHour(h, picked) {
+    h = Math.max(0, Math.min(23, h)); if (h === CST.hour) return;
+    CST.hour = h; if (picked) CST.hourPicked = true;
+    setPast(CST.idx); window.CHOC.hourChanged();
+  }
   function setPast(i) {
     const x = DAYS[i]; if (!x) return;
     PS.iso = x.iso; const v2 = DAYS2[x.iso];
     PS.bestH = v2 ? v2[FC.spot === 'wild' ? 8 : 7] : null;
-    // the offshore field at the middle of the spot's best 3 hours (noon if there is no buoy that day)
-    const t = etMidnight(Date.parse(x.iso + 'T16:00:00Z')) + (PS.bestH != null ? PS.bestH + 1.5 : 12) * 36e5;
+    if (CST.hourIso !== x.iso) { CST.hourIso = x.iso; CST.hourPicked = false; CST.hour = defaultHour(x.iso); }
+    const h = CST.hour;
+    // the offshore field at the hour on show
+    const t = hourAt(x.iso, h) + 18e5;
     const F = pastYear(String(x.y)); PS.f = null;
     if (F) { const k = Math.round((t - F.start) / 108e5); if (k >= 0 && k < F.n) PS.f = { F, row: k }; }
     const O = pastOceanYear(String(x.y)); PS.o = null;
     if (O) { const k = Math.round((t - O.start) / 216e5); if (k >= 0 && k < O.n) PS.o = { F: O, row: k }; }
-    // the buoy's swell trains at Choc's biggest hour that day; a day without them uses the day's peak
-    const tr = TRAINS[x.iso];
-    PS.trains = tr && tr[1].length ? tr[1].map((q) => ({ ft: q[0], T: q[1], D: q[2] })) : x.hs ? [{ ft: x.hs, T: x.per, D: x.dir }] : [];
+    // the buoy's swell trains that hour; until the hourly file is in, those at Choc's biggest hour (or the day's peak)
+    const hs = hourSwell(x.iso, h), tr = TRAINS[x.iso];
+    PS.hs = hs;
+    PS.trains = hs ? hs.trains.map((q) => ({ ft: q.ft, T: q.T, D: q.D }))
+      : hs === null ? []
+      : tr && tr[1].length ? tr[1].map((q) => ({ ft: q[0], T: q[1], D: q[2] })) : x.hs ? [{ ft: x.hs, T: x.per, D: x.dir }] : [];
     if (S.phase !== 'past') return;
     FC.cur = PS.trains.filter((q) => q.T >= 5 && q.ft >= 0.3).map((q) => Object.assign({}, q));   // their rays: raysFor, once they show
     $('pastDate').value = x.iso;
-    pastHud(); pastStrip(); pastBest(); draw();
+    pastHud(); pastStrip(); pastHours(); pastBest(); draw();
   }
   const dateLong = (x) => new Date(Date.UTC(x.y, x.m - 1, x.d, 12)).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
   function pastHud() {
-    const x = DAYS[CST.idx], sp = FC.spot, ft = pastFt(sp), w = pastWind(CST.idx, sp);
-    $('tripPhase').textContent = `${dateLong(x)} · ${SPOT[sp].name} ${ft == null ? '–' : ft.toFixed(1) + ' ft'}`;
-    const mx = window.CHOC.swell && window.CHOC.swell.day(x.iso, sp);   // the buoy's height is all its swells together: say what each brought
-    const SW = window.CHOC.swell, nar = cw < 560;            // a phone gets the primary swell only, so the headline stays two lines
+    const x = DAYS[CST.idx], sp = FC.spot, h = CST.hour, hs = PS.hs, SW = window.CHOC.swell, nar = cw < 560;
+    // Choc that hour (the buoy's swells carried in); Wilderness keeps its best 3 hours (the hourly file has Choc only)
+    const ft = pastFt(sp);
+    $('tripPhase').textContent = `${dateLong(x)} · ${h12(h)} · ${SPOT[sp].name} ${ft == null ? '–' : ft.toFixed(1) + ' ft'}${sp === 'wild' ? ' best 3 h' : ''}`;
+    const mx = sp === 'choc' ? hs || (hs === undefined && SW && SW.day(x.iso, sp)) : SW && SW.day(x.iso, sp);
     const buoy = x.hs != null ? `Buoy ${x.hs.toFixed(1)} ft, all swells` : 'No buoy reading';
-    const lines = mx ? SW.rows(mx.trains, nar ? 1 : 2, nar ? null : SPOT[sp].name).map(([t, v]) => `${t} ${v}`) : [buoy];
+    const lines = mx ? SW.rows(mx.trains, nar ? 1 : 2, nar ? null : SPOT[sp].name).map(([tg, v]) => `${tg} ${v}`) : [hs === null ? 'No buoy reading this hour' : buoy];
+    const wr = laneAt(x.iso, h, 'wind'), w = wr ? [wr[0], wr[1]] : pastWind(CST.idx, sp);
+    const lg = window.CHOC.logHours ? window.CHOC.logHours(x.iso) : [];
     lines.push([w ? `Wind ${window.CHOC.windArrow(w[1])}${Math.round(w[0])} kn ${compass(w[1])}, ${windWord(windKind(w, sp))}` : '',
-      PS.bestH != null ? `best ~${h12((PS.bestH + 1) % 24)}` : '', mx && !nar ? buoy : ''].filter(Boolean).join(' · '));
+      lg.includes(h) ? 'you logged this hour' : '', PS.bestH != null ? `best ~${h12((PS.bestH + 1) % 24)}` : '', mx && !nar ? buoy : ''].filter(Boolean).join(' · '));
     $('tripLine').innerHTML = lines.filter(Boolean).join('<br>');
     $('tripPow').hidden = true;
+  }
+  // the day hour by hour under the month: Choc's height each hour, night shaded, your sessions marked, the hour
+  // on show lit; tap or drag to move through the day, or the arrow keys
+  function pastHours() {
+    const host = $('pastHours'); if (!host || host.offsetParent === null) return;
+    const x = DAYS[CST.idx], W = Math.max(200, Math.round(host.clientWidth)), H = 46, T0 = 10, B0 = 32, cell = (W - 4) / 24;
+    const hs = []; for (let h = 0; h < 24; h++) hs.push(hourSwell(x.iso, h));
+    const vals = hs.map((q) => (q ? q.ft : null)), loading = hs.every((q) => q === undefined);
+    const top = Math.max(2, Math.ceil(Math.max(0, ...vals.filter((v) => v != null)) + 0.3)), yy = (v) => B0 - v / top * (B0 - T0);
+    const [rise, set] = sunWin(hourAt(x.iso, 12)), lg = window.CHOC.logHours ? window.CHOC.logHours(x.iso) : [], peak = TRAINS[x.iso] && TRAINS[x.iso][0];
+    let s = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" aria-hidden="true">`;   // follows the bar's width as the screen turns
+    for (let h = 0; h < 24; h++) {
+      const cx = 2 + h * cell, t = hourAt(x.iso, h) + 18e5, v = vals[h];
+      if (t < rise || t > set) s += `<rect x="${cx.toFixed(1)}" y="${T0 - 4}" width="${cell.toFixed(1)}" height="${B0 - T0 + 6}" fill="rgba(0,0,0,.28)"/>`;
+      if (h === CST.hour) s += `<rect x="${cx.toFixed(1)}" y="${T0 - 6}" width="${cell.toFixed(1)}" height="${B0 - T0 + 8}" rx="3" fill="rgba(231,237,242,.16)" stroke="rgba(231,237,242,.7)"/>`;
+      if (v != null && v > 0) s += `<rect x="${(cx + cell * 0.18).toFixed(1)}" y="${yy(v).toFixed(1)}" width="${(cell * 0.64).toFixed(1)}" height="${(yy(0) - yy(v)).toFixed(1)}" rx="1.2" fill="${h === CST.hour ? '#f08a4b' : 'rgba(231,237,242,.42)'}"/>`;
+      if (lg.includes(h)) s += `<path d="M${(cx + cell / 2 - 3.5).toFixed(1)},${T0 - 8} h7 l-3.5,4.5z" fill="#f08a4b"/>`;
+      if (h % 6 === 0) s += `<text x="${(cx + 1).toFixed(1)}" y="${H - 2}" class="tl-t">${h12(h)}</text>`;
+    }
+    if (loading) s += `<text x="${W / 2}" y="${(B0 + T0) / 2 + 3}" text-anchor="middle" class="tl-k">Loading the hours…</text>`;
+    s += '</svg>'; host.innerHTML = s; PS.hstrip = { cell };
+    const v = vals[CST.hour];
+    host.setAttribute('aria-valuenow', String(CST.hour));
+    host.setAttribute('aria-valuetext', `${h12(CST.hour)}${v != null ? `, Choc ${v.toFixed(1)} ft` : ''}${lg.includes(CST.hour) ? ', you logged this hour' : ''}${CST.hour === peak ? ", Choc's biggest hour" : ''}`);
   }
   // a good day: Choc's ratings model at 7/10 or better (your log's scale); Wilderness has no ratings,
   // so there it means 3 ft or more with clean wind
@@ -3006,6 +3082,21 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     host.addEventListener('pointermove', (e) => { if (down) pick(e); });
     const end = () => { down = false; }; host.addEventListener('pointerup', end); host.addEventListener('pointercancel', end);
     new ResizeObserver(() => { if (S.phase === 'past') pastStrip(); }).observe(host);
+  }
+  {
+    const host = $('pastHours'); let down = false;
+    if (host) {
+      const pick = (e) => { const r = host.getBoundingClientRect(); setHour(Math.floor((e.clientX - r.left - 2) / (r.width - 4) * 24), true); };
+      host.addEventListener('pointerdown', (e) => { down = true; pastStop(); host.setPointerCapture(e.pointerId); pick(e); });
+      host.addEventListener('pointermove', (e) => { if (down) pick(e); });
+      const end = () => { down = false; }; host.addEventListener('pointerup', end); host.addEventListener('pointercancel', end);
+      host.addEventListener('keydown', (e) => {
+        const k = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[e.key];
+        if (k) { e.preventDefault(); setHour(CST.hour + k, true); }
+        else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); setHour(e.key === 'Home' ? 0 : 23, true); }
+      });
+      new ResizeObserver(() => { if (S.phase === 'past') pastHours(); }).observe(host);
+    }
   }
   // first day shown in the past view: your October 2025 Wilderness day; on the Explore tab, the newest day there is
   if (EXUI && DAYS.length) CST.idx = DAYS.length - 1;

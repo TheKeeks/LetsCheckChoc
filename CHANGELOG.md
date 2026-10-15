@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased] — Explore's past days, hour by hour
+
+A past day on Explore showed one moment: the swells at Choc's biggest hour, which could be 1 am, and the offshore colour at the middle of the day's best three hours. You couldn't see what the ocean was doing when you actually surfed.
+
+A strip of the day's 24 hours now sits under the month in the Past bar. It shows Choc's height each hour from the buoy's swells, shades the night, and marks your sessions with a small orange tick. Tap it, drag along it, or use the arrow keys to move through the hours. A day you logged opens at the hour of your first session. Any other day opens at Choc's biggest hour.
+
+At the hour you pick:
+- the map's headline, its Choc label and the swells' rays near Fishers all follow;
+- the offshore colour moves to the nearest 3-hour step (6-hour on the ocean-wide map);
+- the day's details in the ten-years column say "Swells at 7am, when you logged · Choc 2.0 ft".
+
+The hour's swells come from the buoy's hourly file, `research/ocean/day/<year>.json`, which the page now loads a year at a time. Choc's height for the hour combines each swell's height at Choc the way their energy adds. Wilderness keeps its best three hours, because the hourly file only carries Choc.
+
+Verified with a new browser test, `preview-clean-explore-hours.js`, on the pinned history and a session logged at 7:30 am on Mon 28 Sep 2026. It checks that:
+- the day opens at 7am, at 2.0 ft (1.7 and 1.1 ft at Choc);
+- its primary swell is "1° 3.4 ft @ 6 s SE 132° → 70% of Choc";
+- the arrow keys and a drag move the hour, and the column follows;
+- an unlogged day opens at its biggest hour;
+- the strip fits a phone.
+
+The research map's existing readout, swell-share, ten-years, photos, history, phone and zoom scenarios pass unchanged, as do the Explore ones.
+
 ## [Unreleased] — Explore's ten years fit the screen; the map's (i) comes last; the Forecast chart holds still
 
 Explore's ten years column scrolled sideways on a computer and on a phone once a month had a logged session: its photo strip and a long link in the notes set the column's width, so the grid, the month's tiles and its calendar ran past the edge behind a sideways scroll bar. The column is now one track that never grows past its width (`research/methods-theme.css`, and the month and day in `scripts/sound-check/page/v13_head.html`): the photos scroll inside it and a link wraps.

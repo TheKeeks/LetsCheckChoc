@@ -46,7 +46,10 @@
     for (const k in PH.month) PH.month[k].sort((a, b) => (a.when < b.when ? -1 : 1));
     for (const k in PH.log) PH.log[k].sort((a, b) => (a.when < b.when ? -1 : 1));
     draw(); month();
+    if (window.CHOC.logChanged) window.CHOC.logChanged();   // the map's Past view opens a day at the hour you logged
   }
+  // the Eastern hours of a day's sessions, earliest first (a time that isn't HH:MM is left out)
+  window.CHOC.logHours = (iso) => (PH.log[iso] || []).map((se) => (/^\d\d:\d\d$/.test(se.when.slice(11, 16)) ? +se.when.slice(11, 13) : NaN)).filter((h) => h >= 0 && h < 24);
   function setPhotos(list) {                               // [{when, url, log?: {ratings, notes, who}}]: one session per log entry
     const by = new Map();
     for (const q of list || []) { if (!q || typeof q.when !== 'string') continue; const k = q.log || q.when; if (!by.has(k)) by.set(k, Object.assign({ when: q.when, photos: [] }, q.log || {})); by.get(k).photos.push(q.url); }
@@ -210,12 +213,19 @@
   function day() {                                         // the chosen day, if it falls in the month on show
     const box = document.getElementById('decDay'); if (!box) return;
     const x = D[st.idx]; if (!x || key(x.y, x.m) !== sel) { box.innerHTML = '<p>Tap a day for its details.</p>'; return; }
-    const dl = st.daylight, v = DAYS2[x.iso], w = v && v[5], ww = v && v[6], SW = window.CHOC.swell, mx = SW && SW.day(x.iso, 'choc');
+    const dl = st.daylight, v = DAYS2[x.iso], w = v && v[5], ww = v && v[6], SW = window.CHOC.swell;
+    // the swells at the hour the map shows (the hour you logged, else Choc's biggest hour); the biggest hour's
+    // until the hourly file is in, and on the Methods page, which has no map hour
+    const hr = window.CHOC.hourOf ? window.CHOC.hourOf(x.iso) : null, hx = hr != null && SW && SW.hour ? SW.hour(x.iso, hr) : null;
+    const dx = SW && SW.day(x.iso, 'choc'), lg = window.CHOC.logHours ? window.CHOC.logHours(x.iso) : [];
+    const mx = hx ? Object.assign(hx, { bent: dx && dx.hr === hx.hr ? dx.bent : null }) : dx;   // "Bent in" is measured at the biggest hour
+    const why = mx && lg.includes(mx.hr) ? ', when you logged' : mx && TRAINS[x.iso] && TRAINS[x.iso][0] === mx.hr ? ", Choc's biggest hour" : '';
+    const hd = mx ? `Swells at ${mx.hr % 12 || 12}${mx.hr < 12 ? 'am' : 'pm'}${why}${hx ? ` · Choc ${hx.ft.toFixed(1)} ft` : ''}` : null;
     const wind = (q, nm) => (q && q[1] != null ? `${nm} ${window.CHOC.windArrow(q[0])}${q[1]} kn ${compass(q[0])}, <span class="${q[2] ? 'ok' : ''}">${q[2] ? 'clean' : 'not clean'}</span>` : '');
     const winds = [wind(w, 'Choc'), wind(ww, 'Wilderness')].filter(Boolean).join(' · ');
     box.innerHTML = `<div><b>${new Date(Date.UTC(x.y, x.m - 1, x.d, 12)).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</b></div>
       <div>Choc <b>${x.mh[dl].toFixed(1)} ft</b>${v && v[4] != null ? ` · Wilderness <b>${v[4].toFixed(1)} ft</b>` : ''}${x.s[dl] != null ? ` · ratings model <b>${x.s[dl].toFixed(1)}/10</b>` : ''}</div>
-      ${window.CHOC.kv([mx ? [`Swells at ${mx.hr % 12 || 12}${mx.hr < 12 ? 'am' : 'pm'}, Choc's biggest hour`, null] : null, ...(mx ? SW.rows(mx.trains, 3, 'Choc') : []),
+      ${window.CHOC.kv([hd ? [hd, null] : null, ...(mx ? SW.rows(mx.trains, 3, 'Choc') : []),
         mx && mx.bent != null ? SW.bentRow(mx.bent) : null, winds ? ['Wind', `<span class="dec-w">${winds}</span>`] : null,
         ['Buoy', `${x.hs.toFixed(1)} ft at its peak, all swells`]], 'dec-kv')}
       <button type="button" id="decShow" class="dec-go">Open this day on the map</button>
@@ -229,6 +239,7 @@
     document.querySelectorAll('#decHours button').forEach((q) => q.setAttribute('aria-pressed', String(q === b))); window.CHOC.setDaylight(+b.dataset.v);
   }));
   window.CHOC.onChange(() => { draw(); month(); });
+  if (window.CHOC.onHour) window.CHOC.onHour(() => day());   // the map's hour moved: the day's swells follow
   window.CHOC.onDay((i) => {                               // a day picked anywhere moves the calendar to its month
     const x = D[i]; if (!x) return; const k = key(x.y, x.m);
     if (k !== sel) { sel = k; draw(); month(); } else { document.querySelectorAll('#decMonth .dec-d').forEach((b) => b.classList.toggle('on', +b.dataset.i === i)); day(); }
