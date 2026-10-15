@@ -45,8 +45,9 @@ jobs:
           python-version: '3.12'
       # the Sound Check forecast pull (scripts/forecast/fcpull.py, tested in scripts/test_fcpull.py) reads GRIB with
       # eccodes; same versions as .github/workflows/update-forecast.yml. The history update (scripts/history/,
-      # tested in scripts/test_history.py) reads CDIP's NetCDF with scipy, as .github/workflows/update-history.yml
-      - run: pip install numpy==2.4.6 pillow==12.3.0 eccodes==2.49.0 scipy==1.17.1
+      # tested in scripts/test_history.py) reads CDIP's NetCDF with scipy, as .github/workflows/update-history.yml,
+      # and its pressure maps (scripts/test_pressure.py) ERA5's blosc chunks with numcodecs
+      - run: pip install numpy==2.4.6 pillow==12.3.0 eccodes==2.49.0 scipy==1.17.1 numcodecs==0.16.5
       - run: npm run test:py
 
   e2e:

@@ -14,6 +14,7 @@ python3 scripts/history/update.py --offline              # rebuild from what's a
 python3 scripts/history/update.py --end 2026-10-05 --out /tmp/h   # stop at that day, write somewhere else
 python3 scripts/history/update.py --log surflog-export.json   # fit to an export of the log (the Log's Export JSON or CSV)
 python3 -m unittest scripts/test_history.py               # tests (numpy and scipy)
+python3 -m unittest scripts/test_pressure.py              # the pressure maps' tests (numpy, Pillow; numcodecs)
 ```
 
 The cache (`history-cache/` at the repo root, git-ignored, or `HISTORY_CACHE`) holds the downloads, about 800 MB,
@@ -26,11 +27,13 @@ most of it CDIP's spectra archive. The workflow keeps the cache between runs, so
 |---|---|---|
 | CDIP 154 (= NDBC 44097, Block Island) spectra: the archive plus the recent file | energy by frequency and direction, every half hour | Choc's and Wilderness's height every hour, the swell trains, the bent-in share |
 | NDBC 44097 readings: finished years, then months, then the last 45 days | height, period, direction every hour | the buoy columns, big-swell hours, storms; Montauk 44017 fills gaps until 2023 |
-| ERA5 at the over-water cell 41.25 N 72.00 W (Open-Meteo) | hourly wind | clean hours, good-day scores, Wilderness's wind; it lags about 6 days, so the newest days fill in their wind on later runs |
+| ERA5 at the over-water cell 41.25 N 72.00 W (Open-Meteo) | hourly wind | clean hours, good-day scores, Wilderness's wind, the Past days' wind lane; it lags about 6 days, so the newest days fill in their wind on later runs |
 | ECMWF IFS at a 4 x 5 grid over the sound (Open-Meteo), ERA5 for 2016 | daily wind | the map's wind arrows |
-| CO-OPS 8510719 (Silver Eel Pond) | highs and lows | the tide's rate (incoming or not) |
+| CO-OPS 8510719 (Silver Eel Pond) | highs and lows | the tide's rate (incoming or not), the Past days' tide lane |
 | The crew's surf log (Firestore `surf_logs`), with the read-only key in the `SURFLOG_READ_KEY` secret | each session's time, its three ratings, the swell and tide the app saved | the ratings model and the sessions' statistics |
 | GFS-Wave's archived runs on AWS (NOAA's open data), for new sessions only | the forecast 1, 2 and 3 days before each session | the forecast scorecard |
+| ERA5's sea-level pressure, 2016-2022: WeatherBench2's 6-hourly 1° copy on Google Cloud (a zarr store, no key) | the pressure over the North Atlantic every 6 hours | the Past days' storm view |
+| GFS analyses since 2023 (f000 of each 00/06/12/18Z run, NOAA's open data on AWS) | the same | the same |
 
 Two tables in `tables/` turn the buoy into the spots: `fwd_table.json`, the forward-ray table (share of the buoy's
 energy reaching Choc and Wilderness by period and direction, from `scripts/rays/build_tables.py`), and
@@ -50,11 +53,38 @@ Replace the forward-ray table with a new one and the next run rebuilds all ten y
 | `data/history/sess_pairs.json` | per session: the size you rated, the best 3 hours of its day at the buoy and modeled at Choc |
 | `data/history/sessions_all.json` | how well each daily measure of the buoy ranks the sessions by size, with bootstrap ranges |
 | `research/hist.js` | all of these as the page's constants (`scripts/sound-check/page/build_hist.py`) |
-| `research/ocean/day/<year>.json` | the `44097` lane only: the trains every hour, for the Past days panels |
+| `research/ocean/day/<year>.json` | three lanes of the Past days panels: `44097`, the trains every hour; `wind`, `{"YYYY-MM-DDTHH" (UTC hour): [kn, from deg]}` every hour; `tide`, `{"YYYY-MM-DD" (Eastern day): [["HH:MM" Eastern, ft, "H" or "L"], ...]}`. An hour or a day without data is left out, never 0. The file's other lanes stay as they are, in their places (a new lane goes last) |
+| `research/ocean/pressure/<year>.png`, `meta.json` | the sea-level pressure every 6 hours since 2016 (`pressure.py`, below) |
 | `research/fc/score.json` | the forecast scorecard: per session, GFS-Wave's forecast for Choc 1, 2 and 3 days before and what the buoy-based model says arrived |
 
 The other lanes of `research/ocean/day/` (Montauk, Long Island, the Copernicus model) and the model's ocean maps
 in `research/ocean/field/` aren't part of this update yet.
+
+The wind lane's hours: Open-Meteo labels the whole series with one UTC offset, the one in force on the day it's asked
+(`utc_offset_seconds`: -4 h when fetched in summer, -5 h in winter, for all ten years), so the lane takes each label
+less that offset. (The history's own wind tables read the labels as Eastern clock time; that puts their wind an hour
+off for the half of the year in the other season.)
+
+## The pressure maps
+
+`pressure.py` keeps the sea-level pressure over the North Atlantic (10-70 N, 100-5 W, every 1°) every 6 hours since
+2016, so the Past days can draw the isobars, the lows and highs and the storms' tracks the way the Forecast tab does
+for the days ahead. One 8-bit grayscale picture per year, `research/ocean/pressure/<year>.png`: a row per step (00,
+06, 12, 18 UTC from 1 January 00Z, row = hours since then / 6), a column per cell (north to south, each row of the
+grid west to east, 61 x 96 = 5856 columns), value v = 940 + 0.5 v hPa (940-1067, clamped), 255 = no data.
+`meta.json` has the grid, the encoding and, per year, `rows`, `first`, `last`, `missing` (steps still 255) and
+`source`.
+
+ERA5 for 2016-2022 (WeatherBench2's store ends on 10 Jan 2023), GFS's analyses from 1 Jan 2023 00Z (the 1° files on
+AWS start in 2021; ERA5 is kept through the overlap, so a year has one source). Each run fills what's missing, oldest
+first, for 20 minutes at most (`PRESSURE_BUDGET`, seconds): the first run fills all ten years (measured: an ERA5 year
+is 366 downloads, 223 MB, about 30 s; a GFS year 2,920 range reads, 165 MB, about 2 minutes; all ten years 2.2 GB in about 15 minutes), then each day adds
+yesterday's four steps to this year's picture. A step whose source fails stays 255 and is asked for again on the next
+run; a year never gets shorter, and a filled step is never fetched again. It never stops the rest of the update. The
+pictures are about 2.6 MB a year (ERA5) and 2.9 MB (GFS, a little noisier).
+
+    python3 scripts/history/pressure.py --end 2026-10-14 --out /tmp/p    # fill through a day, write somewhere else
+    python3 -m unittest scripts/test_pressure.py
 
 ## The surf log
 

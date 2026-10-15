@@ -8,6 +8,8 @@ over-water wind and the buoy's own readings. The same arithmetic as the scripts 
               the days it worked when Choc didn't, and the peel read
   windgrid    the daily wind at 17 over-water points (ECMWF IFS since 2017, ERA5 for 2016) for the map's arrows,
               the over-water cell's daily mean where a point has no value
+  wind_lane   research/ocean/day/<year>.json's 'wind' lane: the over-water wind every hour, keyed by UTC hour
+  tide_lane   and its 'tide' lane: the day's highs and lows, keyed by Eastern date
 """
 import collections, math, datetime as dt
 from zoneinfo import ZoneInfo
@@ -183,3 +185,49 @@ def windgrid(hourly, ifs, era16, end, start=dt.date(2016, 1, 1)):
                 if 0 <= k < N: arr[k] = enc(s * math.sin(math.radians(d)), s * math.cos(math.radians(d)))
         P.append(dict(lat=p['latitude'], lon=p['longitude'], elev=p['elevation'], uv=[x if x is not None else base[i] for i, x in enumerate(arr)]))
     return dict(start=start.isoformat(), base=base, pts=P)
+
+
+# ── the Past days' hour-by-hour lanes (research/ocean/day/<year>.json, beside the buoy's '44097' lane)
+def sea_utc(times, offset=None):
+    """Open-Meteo's local time labels -> UTC datetimes (None for a label that can't be placed). Open-Meteo gives a
+    series one UTC offset (utc_offset_seconds) and evenly spaced labels: label - offset. A series whose labels repeat
+    or skip an hour (a DST-aware one), or one with no offset recorded, is read as Eastern wall-clock time, walking it
+    in order so a repeated 1 AM in November is the second 1 AM the second time."""
+    lab = [dt.datetime.fromisoformat(t) for t in times]
+    even = all((b - a) == dt.timedelta(hours=1) for a, b in zip(lab, lab[1:]))
+    if offset is not None and even:
+        return [(t - dt.timedelta(seconds=offset)).replace(tzinfo=UTC) for t in lab]
+    out, prev = [], None
+    for t in lab:
+        c = sorted({t.replace(tzinfo=ET, fold=f).astimezone(UTC) for f in (0, 1)})
+        c = [u for u in c if prev is None or u > prev]
+        out.append(c[0] if c else None)
+        if c: prev = c[0]
+    return out
+
+
+def wind_lane(hourly, end, offset=None, start=dt.date(2016, 1, 1)):
+    """{UTC year: {'YYYY-MM-DDTHH' UTC: [kn (1 decimal), from deg (int)]}} for the hours of Eastern days start..end;
+    an hour without a speed or a direction is left out (never 0)"""
+    by = {}
+    for u, s, d in zip(sea_utc(hourly['time'], offset), hourly['wind_speed_10m'], hourly['wind_direction_10m']):
+        if u is None or s is None or d is None: continue
+        if not start <= u.astimezone(ET).date() <= end: continue
+        by.setdefault(u.year, {})[u.strftime('%Y-%m-%dT%H')] = [round(float(s), 1), int(round(float(d))) % 360]
+    return {y: dict(sorted(v.items())) for y, v in by.items()}
+
+
+def tide_lane(hilo_docs, end, start=dt.date(2016, 1, 1)):
+    """{Eastern year: {'YYYY-MM-DD' Eastern: [['HH:MM' Eastern, ft (2 decimals), 'H'|'L'], ...]}} from CO-OPS's
+    high/low predictions (local time, as fetched); a day without predictions is left out"""
+    days = {}
+    for doc in hilo_docs:
+        for r in doc.get('predictions') or []:
+            try: day, hm, v, kind = r['t'][:10], r['t'][11:16], float(r['v']), (r.get('type') or '')[:1].upper()
+            except (KeyError, TypeError, ValueError): continue
+            if kind not in ('H', 'L') or not start.isoformat() <= day <= end.isoformat(): continue
+            e = [hm, round(v, 2), kind]
+            if e not in days.setdefault(day, []): days[day].append(e)
+    by = {}
+    for day in sorted(days): by.setdefault(int(day[:4]), {})[day] = sorted(days[day])
+    return by

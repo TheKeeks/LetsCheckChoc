@@ -20,8 +20,11 @@ Writes (all owned by the history bot; never edit them by hand):
   data/history/sess_pairs.json    the surf log's sessions: size rating against the buoy and Choc
   data/history/sessions_all.json  how each daily measure of the buoy ranks the sessions
   research/hist.js                all of the above as the page's constants (build_hist.py)
-  research/ocean/day/<year>.json  the Block Island lane of the Past days panels: the trains every hour (the
-                                  other lanes in those files stay as they are)
+  research/ocean/day/<year>.json  the Past days panels' lanes the history makes: '44097' (Block Island's trains
+                                  every hour), 'wind' (the over-water wind every hour) and 'tide' (each Eastern day's
+                                  highs and lows); the other lanes in those files stay as they are
+  research/ocean/pressure/        sea-level pressure every 6 hours since 2016 for the Past days' storm view
+                                  (pressure.py): what's missing is filled each run, oldest first
   research/fc/score.json          the forecast scorecard: GFS-Wave's forecasts for each session, 1-3 days ahead
 
 The ratings model (results4.json's model), the two session files and the scorecard are fitted to the crew's surf
@@ -35,7 +38,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, '..', 'sound-check', 'page'))
 sys.path.insert(0, os.path.join(HERE, '..', 'forecast'))             # fcpull, for the scorecard's forecasts
-import spectra, analyze, derive, sources, surflog, ratings   # noqa: E402
+import spectra, analyze, derive, sources, surflog, ratings, pressure   # noqa: E402
 import build_hist                          # noqa: E402
 
 ROOT = sources.ROOT
@@ -72,6 +75,8 @@ def rebuild(inp, sp, buoy, end, model, kavg, sessions=None):
         'wild_stats.json': derive.wild_stats(C, W, H['wild'], wh),
         'windgrid_out.json': derive.windgrid(inp['sea'], inp['ifs'], inp['era16'], end),
         'lane': spectra.day_lane(trains),
+        'wind': derive.wind_lane(inp['sea'], end, inp.get('sea_offset')),
+        'tide': derive.tide_lane(inp['hilo'], end),
     }
 
 
@@ -97,10 +102,25 @@ def losses(out, root=ROOT):
         if o and len(out[n]) < len(o) - SLACK: lost.append(f'{n}: {len(o)} days -> {len(out[n])}')
     if os.path.isdir(os.path.join(root, DAY)):
         for f in sorted(os.listdir(os.path.join(root, DAY))):
-            o = (old(DAY, f) or {}).get('44097')
-            n = out['lane'].get(int(f[:4]), {}) if f[:4].isdigit() else {}
-            if o and len(n) < len(o) - SLACK * 24: lost.append(f'{DAY}/{f}: {len(o)} buoy hours -> {len(n)}')
+            doc = old(DAY, f) or {}
+            for name, key, slack, what in (('44097', 'lane', SLACK * 24, 'buoy hours'), ('wind', 'wind', SLACK * 24, 'wind hours'),
+                                           ('tide', 'tide', SLACK, 'tide days')):
+                o = doc.get(name)
+                n = out[key].get(int(f[:4]), {}) if f[:4].isdigit() else {}
+                if o and len(n) < len(o) - slack: lost.append(f'{DAY}/{f}: {len(o)} {what} -> {len(n)}')
     return lost
+
+
+def write_lanes(out, root, dest):
+    """research/ocean/day/<year>.json: the history's lanes ('44097', 'wind', 'tide') replaced in place, so a file
+    keeps its order of lanes (a new lane goes last), and every other lane (44025, 44017, wm) as committed in `root`"""
+    os.makedirs(os.path.join(dest, DAY), exist_ok=True)
+    for y in sorted(set(out['lane']) | set(out['wind']) | set(out['tide'])):
+        src = os.path.join(root, DAY, f'{y}.json')
+        doc = sources.jload(src) if os.path.exists(src) else {}
+        for name, key in (('44097', 'lane'), ('wind', 'wind'), ('tide', 'tide')):
+            if out[key].get(y): doc[name] = out[key][y]
+        with open(os.path.join(dest, DAY, f'{y}.json'), 'w') as f: json.dump(doc, f, separators=(',', ':'))
 
 
 def dump(name, obj):
@@ -208,14 +228,16 @@ def main(argv=None):
         with open(os.path.join(a.out, SCORE), 'w') as f: f.write(dump('score.json', score))
     os.makedirs(os.path.join(a.out, 'research'), exist_ok=True)
     with open(os.path.join(a.out, 'research', 'hist.js'), 'w') as f: f.write(build_hist.build(os.path.join(a.out, HIST)))
-    os.makedirs(os.path.join(a.out, DAY), exist_ok=True)
-    for y, lane in sorted(out['lane'].items()):
-        src = os.path.join(ROOT, DAY, f'{y}.json')
-        doc = sources.jload(src) if os.path.exists(src) else {}
-        doc['44097'] = lane                   # replaced in place, so the file keeps its order of lanes
-        with open(os.path.join(a.out, DAY, f'{y}.json'), 'w') as f: json.dump(doc, f, separators=(',', ':'))
+    write_lanes(out, ROOT, a.out)
     sources.log(f'history through {end}: {len(out["results4.json"]["daily"])} days, {len(sp["t"])} spectra, '
                 f'{len(buoy)} buoy hours ({filled} from 44017)')
+    # the pressure maps, through yesterday (they don't wait for the buoy). Never fatal: a step that fails stays
+    # missing and is asked for again on the next run, and the history above is committed either way
+    if not a.offline:
+        try:
+            pressure.update(a.end or (now.date() - dt.timedelta(days=1)), root=ROOT, out=a.out, cache=a.cache)
+        except Exception as e:
+            sources.log(f'::warning::pressure maps not updated ({type(e).__name__}: {e})')
     return end
 
 
