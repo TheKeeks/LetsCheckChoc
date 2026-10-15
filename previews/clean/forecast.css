@@ -3,8 +3,9 @@
    The Sound Check Forecast tab: headline and swells, the Sound Check map
    (research/map.html in a frame: ocean, region or Fishers), week scrubber,
    wind and tide, buoy check. One column on a phone; on a wide screen the
-   map sits left of the readout and the week runs underneath. The map is
-   a dark ocean in both themes.
+   map takes the width with the readout as a card over it and the week
+   docked along its bottom; the map's ⤢ opens the tab's full screen (map,
+   card and a dock with the week). The map is a dark ocean in both themes.
    ════════════════════════════════════════════════════════════════════ */
 .cl-f {
   display: grid;
@@ -69,6 +70,26 @@
 }
 
 /* ── Week scrubber ────────────────────────────────────────────────── */
+.cl-f-wk { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "wkh" "cx" "lgd" "ctl" "dz"; }
+.cl-f-wkh { grid-area: wkh; display: flex; align-items: flex-start; justify-content: flex-end; padding: 0 var(--gut) 6px; }
+.cl-f-cx { grid-area: cx; }
+.cl-f-lgd { grid-area: lgd; }
+.cl-f-ctl { grid-area: ctl; }
+.cl-f-dz { grid-area: dz; }
+.cl-f-dz[hidden] { display: none; }
+/* Models | Swells: the chart's two views */
+.cl-f-vseg { display: inline-flex; border: 1px solid var(--hair); border-radius: 22px; overflow: hidden; }
+.cl-f-vseg button { min-height: 44px; min-width: 44px; padding: 0 12px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.cl-f-vseg button[aria-pressed="true"] { color: var(--bg); background: var(--ink); border-radius: 22px; }
+/* the chart's key, under it */
+.cl-f-lgd { display: flex; flex-wrap: wrap; column-gap: 12px; row-gap: 2px; padding: 2px var(--gut) 0 calc(var(--gut) + 30px); font-size: 12px; color: var(--muted); }
+.cl-f-lgd span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.cl-f-sw { display: inline-block; flex: none; width: 14px; }
+.cl-f-sw-a { height: 9px; border-radius: 2px; }
+.cl-f-sw-g { height: 0; border-top: 1.5px solid rgb(240, 138, 75); }
+.cl-f-sw-e { height: 0; border-top: 1.5px dashed rgb(64, 160, 198); }
+.cl-f-sw-m { height: 0; border-top: 2.5px solid var(--ink); border-radius: 2px; }
+.cl-f-sb { opacity: .88; }
 .cl-f-cx { position: relative; padding: 0 4px; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: ew-resize; }
 .cl-f-cx svg { display: block; overflow: visible; }
 .cl-f-cx:focus-visible { outline-offset: -2px; }
@@ -129,18 +150,121 @@
 .cl-f-k3 { color: rgb(150, 108, 216); }
 .cl-f-sn { margin-top: 12px; }
 
-/* ── Wide screen: map left, readout right, the week underneath ────── */
+/* ── Over the map: the hour's card and the week's dark band ─────────
+   On a wide screen and in full screen the readout and the week sit on the
+   map, which is a dark ocean in both themes: they take the night tokens
+   (the chart's lines, cursor, tide and wind words turn light). */
+@media (min-width: 900px) {
+  .cl-f-head, .cl-f-wk { --ink: #EDF2EE; --muted: #A9B6C1; --hair: rgba(255, 255, 255, .16); --shade: rgba(255, 255, 255, .06); --bg: #0b1219;
+    --in: #4FB386; --off: #6FB2F0; --crs: #A9B6C1; --on: #F29B5C; --tide: #C3CCD5; --amber: #E8B04B; --red: #FF6B6B; }
+}
+.cl-f-full .cl-f-head, .cl-f-full .cl-f-wk { --ink: #EDF2EE; --muted: #A9B6C1; --hair: rgba(255, 255, 255, .16); --shade: rgba(255, 255, 255, .06); --bg: #0b1219;
+  --in: #4FB386; --off: #6FB2F0; --crs: #A9B6C1; --on: #F29B5C; --tide: #C3CCD5; --amber: #E8B04B; --red: #FF6B6B; }
+
+/* ── Wide screen: the timeline on the map ────────────────────────────
+   The map takes the content width and most of the window; the readout is a
+   card over its top-left (as tall as the run's tallest hour, so it never
+   changes size between hours), the zoom and spot top-right beside the map's
+   own buttons, the week docked in a dark band along its bottom (buttons on
+   the left, the chart on the right). Wind and tide, the buoy check and the
+   source run below. */
 @media (min-width: 900px) {
   .cl-f {
-    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
-    grid-template-areas: "map head" "map side" "wk wk";
-    column-gap: 24px;
-    align-items: start;
+    grid-template-areas: "map" "side";
+    row-gap: 18px;
     padding-top: 6px;
   }
-  .cl-f-map { border-radius: var(--r); margin-left: var(--gut); grid-row: 1 / span 2; }
-  .cl-f-frame { height: clamp(420px, 64vh, 680px); }
-  .cl-f-head, .cl-f-side { padding-left: 0; }
-  .cl-f-wk { padding: 0 var(--gut); }
-  .cl-f-num { font-size: 72px; }
+  .cl-f-map { position: relative; margin: 0 var(--gut); border-radius: var(--r); }
+  .cl-f-frame { height: min(78vh, 760px); min-height: 560px; }
+  .cl-f-mbar { position: absolute; z-index: 3; top: 10px; right: 60px; padding: 0; gap: 8px; }
+  .cl-f-head {
+    grid-area: map; align-self: start; justify-self: start; z-index: 2; position: relative;
+    width: min(400px, 44%); margin: 12px 0 0 calc(var(--gut) + 12px); padding: 12px 16px 10px;
+    color: var(--ink); background: rgba(10, 15, 21, .86); border: 1px solid rgba(255, 255, 255, .12); border-radius: var(--r);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  }
+  .cl-f-num { font-size: 56px; }
+  .cl-f-tr { margin-top: 8px; }
+  .cl-f-tr li { font-size: 13px; padding: 4px 0; }
+  .cl-f-wk {
+    grid-area: map; align-self: end; z-index: 2; position: relative;
+    margin: 0 var(--gut); padding: 10px 12px 8px;
+    display: grid; grid-template-columns: 214px minmax(0, 1fr);
+    grid-template-areas: "ctl cx" "wkh cx" "dz lgd";
+    grid-template-rows: auto 1fr auto;
+    column-gap: 10px;
+    color: var(--ink); background: rgba(10, 15, 21, .82); border-top: 1px solid rgba(255, 255, 255, .1);
+    border-radius: 0 0 var(--r) var(--r);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  }
+  .cl-f-wk .cl-f-ctl { flex-wrap: wrap; justify-content: flex-start; align-content: flex-start; padding: 0; }
+  .cl-f-wk .cl-f-wkh { justify-content: flex-start; padding: 6px 0 0; }
+  .cl-f-wk .cl-f-lgd { padding: 2px 0 0 30px; justify-content: flex-start; }
+  .cl-f-side {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 24px; align-items: start;
+  }
+  .cl-f-side .cl-f-cond { padding-top: 10px; }
+  .cl-f-side .cl-f-bc { margin-top: 0; }
+  .cl-f-side .cl-f-src { grid-column: 1 / -1; }
+}
+
+/* ── Full screen (the map's ⤢ button, any width) ──────────────────────
+   The map fills the window inside the safe area; a small card with the
+   hour, the height and the models top-left; the week, its buttons, the
+   chart switch and the zoom in a dark dock along the bottom (rounded top
+   corners). The swells are the map's own labels. */
+html.cl-f-lock, html.cl-f-lock body { overflow: hidden; }
+.cl-f.cl-f-full .cl-f-map {
+  position: fixed; inset: 0; z-index: 60; margin: 0; border-radius: 0; background: #0b1219;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
+}
+.cl-f.cl-f-full .cl-f-stage, .cl-f.cl-f-full .cl-f-frame { height: 100%; min-height: 0; }
+.cl-f.cl-f-full .cl-f-mbar { display: none; }
+.cl-f.cl-f-full .cl-f-head {
+  position: fixed; z-index: 61; margin: 0; width: auto; min-height: 0 !important;
+  top: calc(env(safe-area-inset-top, 0px) + 10px); left: calc(env(safe-area-inset-left, 0px) + 10px);
+  max-width: calc(100% - 80px); padding: 8px 12px 9px;
+  color: var(--ink); background: rgba(10, 15, 21, .86); border: 1px solid rgba(255, 255, 255, .12); border-radius: var(--r);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.cl-f.cl-f-full .cl-f-when .cl-serif { font-size: 17px; }
+.cl-f.cl-f-full .cl-f-now { font-size: 10px; }
+.cl-f.cl-f-full .cl-f-num { font-size: 38px; }
+.cl-f.cl-f-full .cl-f-unit { font-size: 15px; }
+.cl-f.cl-f-full .cl-f-models { margin-top: 2px; font-size: 13px; }
+.cl-f.cl-f-full .cl-f-wk {
+  position: fixed; z-index: 61; left: 0; right: 0; bottom: 0; margin: 0;
+  padding: 8px calc(env(safe-area-inset-right, 0px) + 10px) calc(env(safe-area-inset-bottom, 0px) + 8px) calc(env(safe-area-inset-left, 0px) + 10px);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "cx cx" "lgd lgd" "ctl ctl" "dz wkh";
+  grid-template-rows: none;
+  row-gap: 4px; column-gap: 8px; align-items: center;
+  color: var(--ink); background: rgba(10, 15, 21, .84); border: 0; border-radius: 16px 16px 0 0;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.cl-f.cl-f-full .cl-f-ctl { padding: 0; justify-content: center; flex-wrap: nowrap; }
+.cl-f.cl-f-full .cl-f-wkh { padding: 0; }
+.cl-f.cl-f-full .cl-f-lgd { padding: 0 0 0 30px; }
+.cl-f.cl-f-full .cl-f-dz { display: flex; min-width: 0; }
+.cl-f.cl-f-full .cl-f-dz[hidden] { display: none; }
+.cl-f-dzseg button { padding: 0 10px; }
+@media (max-width: 380px) { .cl-f-dzseg button { padding: 0 7px; } }
+/* a phone held sideways: the buttons, zoom and switch on one row under a lower chart, no key */
+@media (max-width: 899px) and (max-height: 500px) {
+  .cl-f.cl-f-full .cl-f-wk { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "cx cx cx" "ctl dz wkh"; padding-top: 4px; }
+  .cl-f.cl-f-full .cl-f-lgd { display: none; }
+  .cl-f.cl-f-full .cl-f-dz { justify-content: center; }
+}
+/* a wide window in full screen: the week's band keeps the wide layout, buttons on the left */
+@media (min-width: 900px) {
+  .cl-f.cl-f-full .cl-f-wk {
+    grid-template-columns: 214px minmax(0, 1fr);
+    grid-template-areas: "ctl cx" "wkh cx" "dz cx" ". lgd";
+    grid-template-rows: auto auto 1fr auto;
+    align-items: start; column-gap: 10px; row-gap: 0;
+    padding-left: calc(env(safe-area-inset-left, 0px) + 16px); padding-right: calc(env(safe-area-inset-right, 0px) + 16px);
+  }
+  .cl-f.cl-f-full .cl-f-ctl { flex-wrap: wrap; justify-content: flex-start; }
+  .cl-f.cl-f-full .cl-f-dz { padding-top: 6px; }
+  .cl-f.cl-f-full .cl-f-head { max-width: 360px; }
 }

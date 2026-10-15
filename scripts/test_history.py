@@ -425,6 +425,53 @@ class TestRatings(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE, 'needs numpy and scipy')
+class TestLanes(unittest.TestCase):
+    """the Past days' hour-by-hour lanes: the wind (UTC hours, like the buoy's) and the tides (Eastern days)"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.d = load(os.path.join(HISTORY, 'derive.py'), 'derive_lanes')
+
+    def test_wind_hours_are_utc_and_missing_hours_stay_out(self):
+        """Open-Meteo's series with its one UTC offset (EST all year, as asked from Jan 2016): label + 5 h, even in
+        July; an hour without a speed or a direction is left out, never 0"""
+        times = ['2026-07-01T00:00', '2026-07-01T01:00', '2026-07-01T02:00', '2026-07-01T03:00']
+        h = dict(time=times, wind_speed_10m=[8.04, None, 12.0, 0.0], wind_direction_10m=[359.6, 200, None, 90])
+        lane = self.d.wind_lane(h, dt.date(2026, 7, 1), offset=-18000)
+        self.assertEqual(lane, {2026: {'2026-07-01T05': [8.0, 0], '2026-07-01T08': [0.0, 90]}})
+
+    def test_wind_lane_by_utc_year_and_eastern_days(self):
+        """the last hours of an Eastern 31 December are in the next UTC year's file; hours of Eastern days past the
+        history's last day are left out"""
+        times = ['2025-12-31T%02d:00' % h for h in range(18, 24)] + ['2026-01-01T%02d:00' % h for h in range(24)]
+        h = dict(time=times, wind_speed_10m=[5.0] * len(times), wind_direction_10m=[270] * len(times))
+        lane = self.d.wind_lane(h, dt.date(2025, 12, 31), offset=-18000)
+        self.assertEqual(sorted(lane), [2025, 2026])
+        self.assertEqual(max(lane[2025]), '2025-12-31T23')
+        self.assertEqual(sorted(lane[2026]), ['2026-01-01T00', '2026-01-01T01', '2026-01-01T02', '2026-01-01T03', '2026-01-01T04'])
+
+    def test_wind_labels_that_follow_daylight_saving(self):
+        """a series whose labels repeat 1 AM in November and skip 2 AM in March (or one with no offset recorded) is
+        read as Eastern wall-clock time"""
+        u = self.d.sea_utc(['2025-11-02T00:00', '2025-11-02T01:00', '2025-11-02T01:00', '2025-11-02T02:00'], -14400)
+        self.assertEqual([x.strftime('%dT%H') for x in u], ['02T04', '02T05', '02T06', '02T07'])
+        u = self.d.sea_utc(['2026-03-08T01:00', '2026-03-08T03:00', '2026-03-08T04:00'], -18000)
+        self.assertEqual([x.strftime('%dT%H') for x in u], ['08T06', '08T07', '08T08'])
+        u = self.d.sea_utc(['2026-10-10T00:00', '2026-10-10T01:00'])
+        self.assertEqual([x.strftime('%dT%H') for x in u], ['10T04', '10T05'])
+
+    def test_tides_by_eastern_day(self):
+        """CO-OPS's local times as they are, heights to the hundredth, H or L; a turn late on an Eastern 31 December
+        stays in that year's file; a day without predictions (or a bad value) is left out"""
+        docs = [dict(predictions=[
+            dict(t='2016-12-31 23:10', v='2.946', type='H'), dict(t='2016-12-31 16:58', v='-0.304', type='L'),
+            dict(t='2017-01-01 05:12', v='0.127', type='L'), dict(t='2017-01-03 06:00', v='', type='L'),
+            dict(t='2017-01-04 06:00', v='1.0', type='H')])]
+        lane = self.d.tide_lane(docs, dt.date(2017, 1, 3))
+        self.assertEqual(lane, {2016: {'2016-12-31': [['16:58', -0.3, 'L'], ['23:10', 2.95, 'H']]},
+                                2017: {'2017-01-01': [['05:12', 0.13, 'L']]}})
+
+
 class TestUpdate(unittest.TestCase):
     """the whole update over a made-up cache: three days of spectra and readings, the tides, the wind"""
 
@@ -494,10 +541,50 @@ class TestUpdate(unittest.TestCase):
         self.assertEqual(js, load(os.path.join(PAGE, 'build_hist.py'), 'build_hist').build(os.path.join(out, 'data', 'history')))
         day = jload(os.path.join(out, 'research', 'ocean', 'day', '2026.json'))
         committed = jload(os.path.join(ROOT, 'research', 'ocean', 'day', '2026.json'))
-        self.assertEqual(list(day), list(committed), 'the lanes keep their order')
+        self.assertEqual(list(day)[:len(committed)], list(committed), 'the lanes keep their order')
+        self.assertEqual([k for k in day if k not in committed], [k for k in ('wind', 'tide') if k not in committed], 'new lanes go last')
         self.assertEqual(day['wm'], committed['wm'], 'the model lane is left as it is')
         self.assertEqual(min(day['44097']), '2026-10-10T04')
         self.assertEqual(max(day['44097']), '2026-10-12T03', 'the last hour of the 11th, Eastern')
+        # the wind every hour (UTC, like the buoy's), from midnight on the 10th to the end of the 11th, Eastern
+        self.assertEqual(min(day['wind']), '2026-10-10T04')
+        self.assertEqual(max(day['wind']), '2026-10-12T03')
+        self.assertEqual(len(day['wind']), 48)
+        self.assertEqual(day['wind']['2026-10-11T12'], [8.0, 330])
+        # the highs and lows of each Eastern day the tide tables have, through the 11th
+        self.assertEqual(sorted(day['tide']), ['2026-10-09', '2026-10-10', '2026-10-11'])
+        self.assertEqual(day['tide']['2026-10-09'][0], ['03:10', 2.9, 'H'])
+        with open(os.path.join(out, 'research', 'ocean', 'day', '2026.json')) as f: text = f.read()
+        self.assertEqual(text, json.dumps(day, separators=(',', ':')), 'compact JSON, as before')
+        self.assertFalse(os.path.exists(os.path.join(out, 'research', 'ocean', 'pressure')), 'offline: no pressure maps')
+
+    def test_lanes_keep_the_other_lanes(self):
+        """the buoy, wind and tide lanes are replaced; Long Island (44025), Montauk (44017) and the model (wm) stay
+        as committed, in their places"""
+        root, dest = tempfile.mkdtemp(dir=self.dir), tempfile.mkdtemp(dir=self.dir)
+        os.makedirs(os.path.join(root, 'research', 'ocean', 'day'))
+        old = {'44025': {'2016-01-01T00': [1]}, '44097': {'2016-01-01T00': [[1.0, 8.0, 150, 0.5]]}, '44017': {'x': 1},
+               'tide': {'2016-01-01': [['01:00', 1.0, 'H']]}, 'wm': {'2016-01-01T00': [2]}}
+        dump(old, os.path.join(root, 'research', 'ocean', 'day', '2016.json'))
+        new = dict(lane={2016: {'2016-01-02T00': [[2.0, 9.0, 160, 0.7]]}}, wind={2016: {'2016-01-02T00': [5.0, 270]}, 2017: {'2017-01-01T00': [6.0, 180]}},
+                   tide={2016: {'2016-01-02': [['02:00', 2.0, 'H']]}})
+        self.up.write_lanes(new, root, dest)
+        doc = jload(os.path.join(dest, 'research', 'ocean', 'day', '2016.json'))
+        self.assertEqual(list(doc), ['44025', '44097', '44017', 'tide', 'wm', 'wind'])
+        for k in ('44025', '44017', 'wm'): self.assertEqual(doc[k], old[k], k)
+        self.assertEqual(doc['44097'], new['lane'][2016]); self.assertEqual(doc['tide'], new['tide'][2016]); self.assertEqual(doc['wind'], new['wind'][2016])
+        self.assertEqual(jload(os.path.join(dest, 'research', 'ocean', 'day', '2017.json')), {'wind': new['wind'][2017]})
+
+    def test_lanes_that_shrink_stop_the_update(self):
+        """a wind or tide download cut short must not replace the committed lanes either"""
+        root = tempfile.mkdtemp(dir=self.dir); os.makedirs(os.path.join(root, 'research', 'ocean', 'day'))
+        dump({'wind': {'2016-01-%02dT%02d' % (d, h): [5.0, 1] for d in range(1, 21) for h in range(24)},
+              'tide': {'2016-01-%02d' % d: [] for d in range(1, 21)}}, os.path.join(root, 'research', 'ocean', 'day', '2016.json'))
+        out = {'results4.json': {'daily': []}, 'days2.json': {}, 'trains_days.json': {}, 'bend_days.json': {}, 'lane': {},
+               'wind': {2016: {'2016-01-01T00': [5.0, 1]}}, 'tide': {2016: {'2016-01-01': []}}}
+        lost = self.up.losses(out, root)
+        self.assertEqual(len(lost), 2, lost)
+        self.assertIn('480 wind hours -> 1', lost[0]); self.assertIn('20 tide days -> 1', lost[1])
 
 
     def test_fits_the_model_and_the_sessions_to_the_log(self):

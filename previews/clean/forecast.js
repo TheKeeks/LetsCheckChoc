@@ -23,6 +23,19 @@
 //     mean, the GFS-to-ECMWF band, each model), nights shaded, the tide
 //     and the wind (blue when offshore at Choc) underneath. Drag, arrow
 //     keys, the jump buttons or play; "Now" follows the clock.
+//     The chart has two views (Models | Swells, remembered per device in
+//     lcc-f-chart): the two models as lines, or the same week as a stack
+//     of where the swell comes from (each family's share of the energy
+//     times the mean height, coloured like the swell rows).
+//   • Layout: one column on a phone. From 900 px the map takes the full
+//     width with the readout as a card over its top-left, the zoom and
+//     spot top-right and the week docked in a dark band along its bottom
+//     ("timeline on the map"). The map's full-screen button (inside the
+//     frame, message lcc-fc-full) opens the tab's own full screen on any
+//     width: the map fills the window, a small card with the hour and
+//     height top-left, the week, its buttons and the zoom in a dock along
+//     the bottom. Back, Escape or the map's button closes it, at the same
+//     hour (one history entry, like CLEAN.sub).
 //   • Wind and tide at that hour, then the buoy check: buoy 44097's
 //     latest reading against the forecasts made 1, 2 and 3 days before
 //     for that hour (Open-Meteo's earlier runs at the buoy); tap for the
@@ -62,11 +75,22 @@
   var sheet = null;                       // the open buoy-check sub-page
   // the map in its frame: 'idle' until the tab is first shown, 'loading', then 'ready' once its forecast is in
   // ('failed' when it couldn't load one)
-  var map = { status: 'idle', zoom: 'reg', sent: null, raf: 0 };
+  var map = { status: 'idle', zoom: 'reg', sent: null, raf: 0, inset: null };
   var play = { timer: 0 };
+  // the chart's view: 'models' (each model as a line) or 'swells' (the mean split by where the swell comes from)
+  var VIEWS = { models: 'Models', swells: 'Swells' };
+  var view = 'models';
+  // the tab's own full screen (the map's ⤢ button): { on, pushed (a history entry is ours), scroll (to go back to) }
+  var full = { on: false, pushed: false, scroll: 0 };
+  var wideMQ = window.matchMedia ? window.matchMedia('(min-width: 900px)') : null;
+  // Swell families bottom to top in the Swells view: SE (Choc's own swell window) at the bottom, then E, S, other,
+  // in the same order every step so each band runs on unbroken.
+  var STACK = [1, 0, 2, 3];
+  var STACK_NAME = ['E swell', 'SE swell', 'S swell', 'other'];
 
   try { if (localStorage.getItem('lcc-f-spot') === 'wild') spot = 'wild'; } catch (_) { /* private mode */ }
   try { var z0 = localStorage.getItem('lcc-f-zoom'); if (ZOOMS[z0]) map.zoom = z0; } catch (_) { /* private mode */ }
+  try { if (localStorage.getItem('lcc-f-chart') === 'swells') view = 'swells'; } catch (_) { /* private mode */ }
 
   function err(where, e) { C.err('forecast.' + where, e); }
   function run(where, fn) { try { fn(); } catch (e) { err(where, e); } }
@@ -119,7 +143,14 @@
           '</div>' +
         '</div>' +
         '<div class="cl-f-wk">' +
-          '<div class="cl-f-cx" tabindex="0" role="slider" aria-label="Forecast hour. Drag, or use the arrow keys" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></div>' +
+          '<div class="cl-f-wkh">' +
+            '<div class="cl-f-vseg" role="group" aria-label="Chart">' +
+              Object.keys(VIEWS).map(function (v) { return '<button type="button" data-view="' + v + '" aria-pressed="false">' + VIEWS[v] + '</button>'; }).join('') +
+            '</div>' +
+          '</div>' +
+          '<div class="cl-f-cx" tabindex="0" role="slider" aria-label="Forecast hour. Drag, or use the arrow keys" aria-describedby="cl-f-cxd" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></div>' +
+          '<p class="cl-sr-only" id="cl-f-cxd"></p>' +
+          '<div class="cl-f-lgd" aria-hidden="true"></div>' +
           '<div class="cl-f-ctl">' +
             '<button type="button" class="cl-f-jb cl-f-play" data-j="play" aria-label="Play the week" aria-pressed="false"><span aria-hidden="true">▶</span></button>' +
             '<button type="button" class="cl-f-jb" data-j="-day" aria-label="A day earlier">' + I.jumpsLeft(14) + '<span>day</span></button>' +
@@ -127,6 +158,12 @@
             '<button type="button" class="cl-f-jb" data-j="now" aria-label="Back to now"><span>Now</span></button>' +
             '<button type="button" class="cl-f-jb" data-j="1" aria-label="Next forecast step">' + I.jumpRight(14) + '</button>' +
             '<button type="button" class="cl-f-jb" data-j="day" aria-label="A day later"><span>day</span>' + I.jumpsRight(14) + '</button>' +
+          '</div>' +
+          // full screen: the map's zoom moves down here, by the week
+          '<div class="cl-f-dz" hidden>' +
+            '<div class="cl-f-seg cl-f-dzseg" role="group" aria-label="Map view">' +
+              Object.keys(ZOOMS).map(function (z) { return '<button type="button" data-zoom="' + z + '" aria-pressed="false">' + ZOOMS[z] + '</button>'; }).join('') +
+            '</div>' +
           '</div>' +
         '</div>' +
         '<div class="cl-f-side">' +
@@ -147,6 +184,12 @@
     E.cond = el.querySelector('.cl-f-cond');
     E.bc = el.querySelector('.cl-f-bc');
     E.src = el.querySelector('.cl-f-src');
+    E.f = el.querySelector('.cl-f');
+    E.mbar = el.querySelector('.cl-f-mbar');
+    E.vseg = el.querySelector('.cl-f-vseg');
+    E.cxd = el.querySelector('#cl-f-cxd');
+    E.lgd = el.querySelector('.cl-f-lgd');
+    E.dz = el.querySelector('.cl-f-dz');
 
     E.seg.addEventListener('click', C.guard('forecast.spot', function (ev) {
       var b = ev.target.closest('button[data-spot]'); if (!b) return;
@@ -154,10 +197,30 @@
       try { localStorage.setItem('lcc-f-spot', spot); } catch (_) { /* private mode */ }
       render('spot');
     }));
-    E.zseg.addEventListener('click', C.guard('forecast.zoom', function (ev) {
+    var onZoom = C.guard('forecast.zoom', function (ev) {
       var b = ev.target.closest('button[data-zoom]'); if (!b) return;
       setZoom(b.getAttribute('data-zoom'));
+    });
+    E.zseg.addEventListener('click', onZoom);
+    E.dz.addEventListener('click', onZoom);
+    E.vseg.addEventListener('click', C.guard('forecast.view', function (ev) {
+      var b = ev.target.closest('button[data-view]'); if (!b) return;
+      setView(b.getAttribute('data-view'));
     }));
+    // full screen: Back (the iPhone's back swipe) and Escape close it
+    window.addEventListener('popstate', C.guard('forecast.fullpop', function (ev) {
+      if (full.on && !(ev.state && ev.state.clFull)) { full.pushed = false; setFull(false); }
+    }));
+    document.addEventListener('keydown', C.guard('forecast.fullkey', function (ev) {
+      if (ev.key === 'Escape' && full.on && !C.sub.depth()) exitFull();
+    }));
+    C.on('tab', function (t) { if (full.on && t !== 'forecast') { full.pushed = false; setFull(false); } });
+    if (wideMQ) {
+      var onMQ = C.guard('forecast.layout', function () { headMin.key = ''; render('layout'); });
+      if (wideMQ.addEventListener) wideMQ.addEventListener('change', onMQ); else if (wideMQ.addListener) wideMQ.addListener(onMQ);
+    }
+    // a reload while full screen was open lands on its history entry: the tab opens in its normal layout
+    try { if (history.state && history.state.clFull) history.replaceState(null, ''); } catch (_) { /* fine */ }
     window.addEventListener('message', C.guard('forecast.frame', onFrameMessage));
     E.ctl.addEventListener('click', C.guard('forecast.jump', onJump));
     E.cx.addEventListener('pointerdown', C.guard('forecast.down', onDown));
@@ -168,10 +231,11 @@
     E.bc.addEventListener('click', C.guard('forecast.buoycheck', openBuoyCheck));
     window.addEventListener('resize', function () {
       clearTimeout(rz);
-      rz = setTimeout(C.guard('forecast.resize', renderChart), 120);
+      rz = setTimeout(C.guard('forecast.resize', function () { run('head', renderHead); run('chart', renderChart); run('inset', sendInset); }), 120);
     });
     C.on('tick', function () { render('tick'); });
     renderZoom();
+    renderView();
     C.on('soundcheck', function () { render('fc'); });
     // ↻ in the header (core's CLEAN.refresh fetches the run, the wind, tides and buoy): the map's own copy of the
     // run, and the buoy check's earlier forecasts and readings, too
@@ -195,15 +259,18 @@
     run('buoy', renderBuoyLine);
     run('src', renderSource);
     if (sheet) run('sheet', function () { renderSheet(sheet.body); });
+    run('inset', sendInset);
   }
 
   // ════════════════════════════════════════════════════════════════════
   // HEADLINE AND SWELLS
   // ════════════════════════════════════════════════════════════════════
-  function headHTML(i, now) {
+  // compact: full screen's small card (the hour, the height, one line for the models; the swells are the map's labels)
+  function headHTML(i, now, compact) {
     var sp = SPOTS[spot], s = fc.steps[i], v = s[sp.k], at = new Date(s.t);
     var h = '<p class="cl-f-when"><span class="cl-serif">' + esc(hourLabel(at)) + '</span>' + (now ? '<span class="cl-f-now">now</span>' : '') + '</p>';
     h += '<p class="cl-f-big"><span class="cl-f-num">' + (isNum(v.m) ? F.num(v.m) : DASH) + '</span><span class="cl-f-unit">ft at ' + esc(sp.name) + '</span></p>';
+    if (compact) return h + '<p class="cl-f-models">GFS ' + (isNum(v.g) ? F.num(v.g) : DASH) + ' · ECMWF ' + (isNum(v.e) ? F.num(v.e) : DASH) + '</p>';
     h += '<p class="cl-f-models">GFS-Wave ' + (isNum(v.g) ? F.num(v.g) : DASH) + ' · ECMWF ' + (isNum(v.e) ? F.num(v.e) : DASH) + NB + 'ft</p>';
     var ps = parts(s, spot);
     h += '<ul class="cl-f-tr" aria-label="Swells at buoy 44097 and their share of ' + esc(sp.name) + '">';
@@ -219,10 +286,12 @@
   }
   // The headline is as tall as the run's tallest hour (more swells, longer
   // lines), so the week chart below doesn't jump under a finger dragging
-  // through the hours. Measured once per run, spot and width, off screen.
+  // through the hours (and on a wide screen the card over the map keeps its
+  // size). Measured once per run, spot and width, off screen.
   var headMin = { key: '', px: 0 };
   function holdHeadHeight() {
-    var w = E.head.clientWidth, key = fc.made + '|' + spot + '|' + w;
+    // the border box's width (the wide screen's card has a border; the probe is border-box too)
+    var w = Math.round(E.head.getBoundingClientRect().width * 100) / 100, key = fc.made + '|' + spot + '|' + w + '|' + layout();
     if (!w || headMin.key === key) return;
     var probe = document.createElement('div');
     probe.className = E.head.className;
@@ -248,8 +317,14 @@
       setHTML(E.head, '<p class="cl-f-msg">' + esc(msg) + '</p>');
       return;
     }
-    setHTML(E.head, headHTML(i, cur.mode === 'now' || i === nowStep()));
-    holdHeadHeight();
+    if (full.on) {
+      E.head.style.minHeight = '';
+      headMin.key = '';
+      setHTML(E.head, headHTML(i, cur.mode === 'now' || i === nowStep(), true));
+    } else {
+      setHTML(E.head, headHTML(i, cur.mode === 'now' || i === nowStep()));
+      holdHeadHeight();
+    }
     E.seg.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-spot') === spot)); });
   }
 
@@ -289,15 +364,22 @@
     if (map.status === 'ready') post({ type: 'lcc-fc', zoom: z });
   }
   function renderZoom() {
-    E.zseg.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-zoom') === map.zoom)); });
+    [E.zseg, E.dz].forEach(function (el) {
+      el.querySelectorAll('button[data-zoom]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-zoom') === map.zoom)); });
+    });
   }
   function onFrameMessage(ev) {
     if (ev.origin !== location.origin || !E.frame || ev.source !== E.frame.contentWindow || !ev.data) return;
     var d = ev.data;
     if (d.type === 'lcc-fc-ready') {
-      map.status = 'ready'; map.sent = null;
+      map.status = 'ready'; map.sent = null; map.inset = null;
       post({ type: 'lcc-fc', zoom: map.zoom });
+      post({ type: 'lcc-fc-fullstate', on: full.on });
       syncMap();
+      run('inset', sendInset);
+    } else if (d.type === 'lcc-fc-full') {
+      // the map's full-screen button (or Escape inside the map, on: false): the tab's own full screen
+      if (full.on || d.on === false) exitFull(); else setFull(true);
     } else if (d.type === 'lcc-fc-failed') {
       map.status = 'failed';
     } else if (d.type === 'lcc-open-3d') {
@@ -307,15 +389,124 @@
   }
 
   // ════════════════════════════════════════════════════════════════════
+  // LAYOUT: phone, wide (timeline on the map), full screen
+  // ════════════════════════════════════════════════════════════════════
+  function layout() { return full.on ? 'full' : wideMQ && wideMQ.matches ? 'wide' : 'phone'; }
+  // The map's ⤢ button opens the tab's own full screen: the map fills the window, the hour's card over its top-left,
+  // the week docked along the bottom. One history entry, so Back and the iPhone's back swipe close it, as a sub-page.
+  function setFull(on) {
+    on = !!on;
+    if (on === full.on || !E.f) return;
+    full.on = on;
+    if (on) {
+      full.scroll = window.scrollY || 0;
+      try { history.pushState({ clFull: 1 }, ''); full.pushed = true; } catch (_) { full.pushed = false; }
+    }
+    E.f.classList.toggle('cl-f-full', on);
+    document.documentElement.classList.toggle('cl-f-lock', on);
+    E.dz.hidden = !on;
+    headMin.key = '';
+    if (!on) window.scrollTo(0, full.scroll);
+    post({ type: 'lcc-fc-fullstate', on: on });
+    render('full');
+  }
+  function exitFull() {
+    if (!full.on) return;
+    var st = null;
+    try { st = history.state; } catch (_) { st = null; }
+    if (full.pushed && st && st.clFull) { try { history.back(); return; } catch (_) { /* fall through */ } }
+    full.pushed = false;
+    setFull(false);
+  }
+  // What covers the map's edges (the zoom and spot over its top on a wide screen, the week docked along its
+  // bottom): the map lifts its colour key and drops its layers panel clear of them (research/methods-theme.js).
+  function sendInset() {
+    if (map.status !== 'ready') return;
+    var lay = layout(), top = 0, bot = 0, left = 0;
+    if (lay !== 'phone') {
+      var fr = E.frame.getBoundingClientRect();
+      if (!fr.height) return;                // the tab isn't on screen: sent when it shows
+      if (lay === 'wide') top = Math.max(0, Math.round(E.mbar.getBoundingClientRect().bottom - fr.top));
+      var wb = E.wk.getBoundingClientRect();
+      if (!E.wk.hidden && wb.height) bot = Math.max(0, Math.round(fr.bottom - wb.top));
+      // the hour's card over the top-left (wide): the map centres its view to the right of it, so Choc isn't under it
+      var hb = E.head.getBoundingClientRect();
+      if (lay === 'wide' && hb.width && hb.right < fr.left + fr.width * 0.6) left = Math.max(0, Math.round(hb.right - fr.left));
+    }
+    var key = top + '|' + bot + '|' + left;
+    if (map.inset === key) return;
+    map.inset = key;
+    post({ type: 'lcc-fc-inset', top: top, bottom: bot, left: left });
+  }
+
+  // ════════════════════════════════════════════════════════════════════
   // WEEK SCRUBBER
   // ════════════════════════════════════════════════════════════════════
+  function setView(v) {
+    if (!VIEWS[v] || v === view) return;
+    view = v;
+    try { localStorage.setItem('lcc-f-chart', v); } catch (_) { /* private mode */ }
+    renderView();
+    run('chart', renderChart);
+    run('inset', sendInset);
+  }
+  function renderView() {
+    E.vseg.querySelectorAll('button[data-view]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === view)); });
+  }
+  // The Swells view at one step: the spot's height (the models' mean) split by where its swell comes from, each
+  // family's share of the energy reaching the spot times the mean, so the stack's top is the mean. An hour whose
+  // swells reach nothing (or that has none) is all "other"; no mean, no stack (null).
+  function stackAt(s) {
+    var m = s[SPOTS[spot].k].m;
+    if (!isNum(m)) return null;
+    var v = [0, 0, 0, 0], ps = parts(s, spot), tot = ps.reduce(function (a, p) { return a + p.share; }, 0);
+    if (!ps.length || !(tot > 0)) v[3] = m;
+    else ps.forEach(function (p) { v[fam(p.t.D)] += p.share / tot * m; });
+    return v;
+  }
+  function stackPaths(S, x, y) {
+    var o = '', segs = [], seg = [];
+    S.forEach(function (s) { var v = stackAt(s); if (v) seg.push({ t: s.t, v: v }); else if (seg.length) { segs.push(seg); seg = []; } });
+    if (seg.length) segs.push(seg);
+    segs.forEach(function (q) {
+      if (q.length < 2) return;
+      var below = q.map(function () { return 0; });
+      STACK.forEach(function (f) {
+        var top = q.map(function (p, k) { return below[k] + p.v[f]; });
+        if (q.some(function (p) { return p.v[f] > 0; })) {
+          var lo = below;
+          o += '<path class="cl-f-sb" data-fam="' + FAM[f].name + '" style="fill:' + rgb(FAM[f].rgb) + '" d="M' +
+            q.map(function (p, k) { return x(p.t).toFixed(1) + ',' + y(top[k]).toFixed(1); }).join('L') + 'L' +
+            q.map(function (p, k) { return x(p.t).toFixed(1) + ',' + y(lo[k]).toFixed(1); }).reverse().join('L') + 'Z"/>';
+        }
+        below = top;
+      });
+    });
+    return o;
+  }
+  function legendHTML() {
+    var sw = function (cls, style) { return '<i class="cl-f-sw ' + cls + '"' + (style ? ' style="' + style + '"' : '') + '></i>'; };
+    if (view === 'swells') {
+      return STACK.map(function (f) { return '<span>' + sw('cl-f-sw-a', 'background:' + rgb(FAM[f].rgb)) + esc(STACK_NAME[f]) + '</span>'; }).join('') +
+        '<span>' + sw('cl-f-sw-m') + 'mean</span>';
+    }
+    return '<span>' + sw('cl-f-sw-g') + 'GFS-Wave</span><span>' + sw('cl-f-sw-e') + 'ECMWF</span><span>' + sw('cl-f-sw-m') + 'mean</span>';
+  }
   function renderChart() {
     if (!fc.steps) { setHTML(E.cx, ''); E.wk.hidden = true; return; }
     E.wk.hidden = false;
     // The chart's own width: inside the box's side padding, where the finger is read too.
-    var cs = getComputedStyle(E.cx);
-    var S = fc.steps, W = (E.cx.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) || 358, wide = W >= 560, sp = SPOTS[spot];
-    var PL = 30, PR = 8, PT = 10, CH = wide ? 170 : 140, LT = 20, LW = 16;
+    var cs = getComputedStyle(E.cx), lay = layout();
+    // (a hidden tab measures 0, less its padding: a phone's width until it shows)
+    var S = fc.steps, W = E.cx.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), sp = SPOTS[spot];
+    if (!(W > 0)) W = 358;
+    var wide = W >= 560;
+    // On the phone the week has room; docked over the map (wide) and in full screen it stays low over the map.
+    var wideScr = !!(wideMQ && wideMQ.matches);
+    var PL = 30, PR = 8, PT = 10;
+    // (a phone held sideways in full screen: lower still, so the map keeps most of the window)
+    var CH = lay === 'phone' ? (wide ? 170 : 140) : lay === 'wide' ? 104 : wideScr ? 112 : window.innerHeight < 500 ? 46 : 70;
+    var LT = lay === 'phone' ? 20 : wideScr ? 14 : 12, LW = lay === 'phone' ? 16 : 13;
     var t0 = S[0].t, t1 = S[S.length - 1].t;
     var yT = PT + CH + 18, yW = yT + LT + 12, HH = yW + LW / 2 + 6;
     var x = function (t) { return PL + (t - t0) / (t1 - t0) * (W - PL - PR); };
@@ -333,25 +524,32 @@
     }
     var nowT = Date.now();
     if (nowT > t0) o += '<rect class="cl-f-past" x="' + PL + '" y="' + PT + '" width="' + (Math.min(x(nowT), W - PR) - PL).toFixed(1) + '" height="' + CH + '"/>';
-    for (var v = stepFt; v < ymax; v += stepFt) {
+    // a low chart (full screen, sideways) labels every other line, and "ft" only where it has room
+    var labEvery = Math.max(1, Math.ceil(13 / (CH * stepFt / ymax)));
+    for (var v = stepFt, n = 1; v < ymax; v += stepFt, n++) {
       o += '<line class="cl-f-grid" x1="' + PL + '" x2="' + (W - PR) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/>' +
-        '<text class="cl-f-ax" x="' + (PL - 6) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + v + '</text>';
+        (n % labEvery ? '' : '<text class="cl-f-ax" x="' + (PL - 6) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + v + '</text>');
     }
-    o += '<text class="cl-f-ax" x="' + (PL - 6) + '" y="' + (PT + 7) + '" text-anchor="end">ft</text>';
+    if (CH >= 60) o += '<text class="cl-f-ax" x="' + (PL - 6) + '" y="' + (PT + 7) + '" text-anchor="end">ft</text>';
     // days
     for (d = U.startOfDay(new Date(t0)).getTime(); d <= t1; d += DAY) {
       if (d > t0) o += '<line class="cl-f-day" x1="' + x(d).toFixed(1) + '" x2="' + x(d).toFixed(1) + '" y1="' + PT + '" y2="' + (PT + CH) + '"/>';
       var mid = Math.max(t0, d) + (Math.min(t1, d + DAY) - Math.max(t0, d)) / 2;
       if (Math.min(t1, d + DAY) - Math.max(t0, d) >= 8 * HOUR) o += '<text class="cl-f-dl" x="' + x(mid).toFixed(1) + '" y="' + (PT + CH + 13) + '" text-anchor="middle">' + esc(F.day(new Date(mid))) + '</text>';
     }
-    // the two models: band between them, their mean bold, each thin
-    var both = S.filter(function (s) { return isNum(s[sp.k].g) && isNum(s[sp.k].e); });
-    if (both.length > 1) {
-      o += '<path class="cl-f-band" d="M' + both.map(function (s) { return x(s.t).toFixed(1) + ',' + y(Math.max(s[sp.k].g, s[sp.k].e)).toFixed(1); }).join('L') +
-        'L' + both.slice().reverse().map(function (s) { return x(s.t).toFixed(1) + ',' + y(Math.min(s[sp.k].g, s[sp.k].e)).toFixed(1); }).join('L') + 'Z"/>';
+    if (view === 'swells') {
+      // where the swell comes from, stacked; the mean on top
+      o += stackPaths(S, x, y);
+    } else {
+      // the two models: band between them, their mean bold, each thin
+      var both = S.filter(function (s) { return isNum(s[sp.k].g) && isNum(s[sp.k].e); });
+      if (both.length > 1) {
+        o += '<path class="cl-f-band" d="M' + both.map(function (s) { return x(s.t).toFixed(1) + ',' + y(Math.max(s[sp.k].g, s[sp.k].e)).toFixed(1); }).join('L') +
+          'L' + both.slice().reverse().map(function (s) { return x(s.t).toFixed(1) + ',' + y(Math.min(s[sp.k].g, s[sp.k].e)).toFixed(1); }).join('L') + 'Z"/>';
+      }
+      o += line(S, function (s) { return s[sp.k].g; }, 'cl-f-gfs', x, y);
+      o += line(S, function (s) { return s[sp.k].e; }, 'cl-f-ec', x, y);
     }
-    o += line(S, function (s) { return s[sp.k].g; }, 'cl-f-gfs', x, y);
-    o += line(S, function (s) { return s[sp.k].e; }, 'cl-f-ec', x, y);
     o += line(S, function (s) { return s[sp.k].m; }, 'cl-f-mean', x, y);
     if (nowT >= t0 && nowT <= t1) o += '<line class="cl-f-nowl" x1="' + x(nowT).toFixed(1) + '" x2="' + x(nowT).toFixed(1) + '" y1="' + PT + '" y2="' + (PT + CH) + '"/>';
     // tide lane
@@ -378,6 +576,11 @@
     var key = o;
     if (E.cx.__key !== key) { E.cx.innerHTML = o; E.cx.__key = key; }
     E.cx.setAttribute('aria-valuemax', String(S.length - 1));
+    setHTML(E.lgd, legendHTML());
+    E.cxd.textContent = view === 'swells'
+      ? 'Chart: ' + sp.name + '’s height over the week (the two models’ mean), split by where its swell comes from: southeast, east, south and other, stacked, each as thick as its share of the energy. Tide and wind underneath.'
+      : 'Chart: ' + sp.name + '’s height over the week, GFS-Wave solid orange, ECMWF dashed blue, the band between them, their mean in bold. Tide and wind underneath.';
+    E.wk.setAttribute('data-view', view);
     drawCursor();
   }
   function line(S, f, cls, x, y) {
@@ -622,7 +825,8 @@
   C.forecastInfo = function () {
     var i = curStep();
     return { fc: fc.status, made: fc.made, step: i, t: i >= 0 ? fc.steps[i].t : null, mode: cur.mode, spot: spot,
-      prev: prev.status, verif: verif.status, playing: !!play.timer, map: { status: map.status, zoom: map.zoom } };
+      prev: prev.status, verif: verif.status, playing: !!play.timer, map: { status: map.status, zoom: map.zoom },
+      view: view, full: full.on, layout: layout() };
   };
 
   C.register('forecast', {

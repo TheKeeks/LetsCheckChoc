@@ -247,6 +247,8 @@ html.hub-lock, html.hub-lock body { overflow: hidden; }
 .hub-note { flex: 1 1 auto; min-width: 0; margin: 0; max-width: none; font-size: .8rem; color: var(--fg-2); }
 .fc-tl { width: 100%; min-height: 70px; touch-action: pan-y; cursor: ew-resize; user-select: none; -webkit-user-select: none; }
 .fc-tl svg { display: block; }
+.fc-tl.hrs { min-height: 46px; margin-top: 2px; border-radius: 4px; }
+.fc-tl.hrs:focus-visible { outline: 2px solid var(--fg-2); outline-offset: 1px; }
 .fc-tl .tl-t { fill: var(--fg-3); font: 10px var(--mono); }
 .fc-tl .tl-k { fill: var(--fg-2); font: 10px var(--mono); }
 .fcs td, .fcs th { padding: 5px 10px; } .fcs td.num, .fcs th.num { text-align: right; }
@@ -396,7 +398,7 @@ body { margin: 0; }
             <button type="button" class="hub-tg" data-l="aim" data-mode="week" aria-pressed="true"><i class="ck"></i>Swell headed our way</button>
             <button type="button" class="hub-tg" data-l="wnd" data-mode="past" aria-pressed="false" hidden><i class="ck"></i>Wind arrows</button>
             <button type="button" class="hub-tg" data-l="rays" aria-pressed="true"><i class="ck"></i>Rays near Fishers</button>
-            <button type="button" class="hub-tg" data-l="storm" data-mode="week" aria-pressed="true"><i class="ck"></i>Pressure &amp; storms</button>
+            <button type="button" class="hub-tg" data-l="storm" data-mode="week past" aria-pressed="true"><i class="ck"></i>Pressure &amp; storms</button>
           </div></div>
         <div class="hub-g hub-goto" data-mode="week past"><div class="hub-h">Go to</div>
           <div class="seg hub-seg" role="group" aria-label="Go to" id="fcZoom"><button type="button" data-v="ocean" aria-pressed="false">Ocean</button><button type="button" data-v="reg" aria-pressed="true">Region</button><button type="button" data-v="fi" aria-pressed="false">Fishers</button></div></div>
@@ -432,14 +434,17 @@ body { margin: 0; }
           <h3>Reading a past day</h3>
           <ul>
             <li><b>Pick a day:</b> the bars at the bottom, the arrows, the date box, or the calendar further down. Play steps day by day.</li>
-            <li><b>Offshore color:</b> Copernicus reanalysis 1° swell over the spot's best 3 hours (every 0.4° near the coast, 2° across the North Atlantic). Streaks show which way it traveled.</li>
+            <li><b>Pick an hour:</b> the strip under the days, one bar per hour (Choc's height then, night shaded). A day you logged opens at your session's hour (orange tick), any other day at Choc's biggest hour.</li>
+            <li><b>Offshore color:</b> Copernicus reanalysis 1° swell at that hour (every 3 hours and 0.4° near the coast, every 6 hours and 2° across the North Atlantic). Streaks show which way it traveled.</li>
             <li><b>Survey map:</b> this page's ray model on what buoy 44097 measured. Tap the water for the height.</li>
-            <li><b>Rays near Fishers:</b> the buoy's swells at Choc's biggest hour. <b>Wind arrows</b> (under Show): that day's wind at 17 points.</li>
+            <li><b>Rays near Fishers:</b> the buoy's swells that hour. <b>Wind arrows</b> (under Show): that day's wind at 17 points.</li>
+            <li><b>Pressure &amp; storms</b> (zoomed out): sea-level pressure every 4 hPa at the nearest 6-hour step, <b>L</b> lows and <b>H</b> highs, and each storm's track over three days either side, brighter for the hours still to come.</li>
             <li><b>Bars:</b> the spot's best 3 hours each day. Orange is a good day: Choc's ratings model 7/10+, or Wilderness 3 ft+ with clean wind. Dots: the wind then.</li>
           </ul>
           <ul class="hub-fine">
             <li>Forecast and past share the camera, colors and layers.</li>
             <li>Buoy 44097 gaps filled from Montauk 44017 (until Feb 2023). Wind: ECMWF at 17 over-water points (ERA5 for 2016).</li>
+            <li>Pressure: ERA5 reanalysis, then GFS analyses, 1° every 6 hours.</li>
             <li>Contains modified Copernicus Marine Service information.</li>
           </ul>
         </div>
@@ -479,7 +484,8 @@ body { margin: 0; }
         <div class="hub-over"><button type="button" id="pastBest" class="hub-chip" hidden></button><div class="hub-key" role="img" aria-label="Wave height colors, 0 to 20 feet and up"><i></i><span><b>0</b><b style="left:22.4%">1</b><b style="left:50%">5</b><b>20+ ft</b></span></div></div>
         <div class="hub-bar"><button type="button" id="pastPlay" class="hub-play" aria-label="Play day by day">▶</button><div class="hub-tlw">
           <div class="hub-mrow"><button type="button" id="pastPrev" class="hub-mb" aria-label="Previous month">‹</button><button type="button" id="pastDec" class="hub-dec" aria-haspopup="dialog" aria-controls="decOv" title="Ten years, month by month"><b id="pastMonth" class="mono"></b><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h3v3H2zM6.5 2h3v3h-3zM11 2h3v3h-3zM2 6.5h3v3H2zM6.5 6.5h3v3h-3zM11 6.5h3v3h-3zM2 11h3v3H2zM6.5 11h3v3h-3zM11 11h3v3h-3z" fill="currentColor"/></svg><span class="hub-dec-t">Ten years</span></button><button type="button" id="pastNext" class="hub-mb" aria-label="Next month">›</button><input id="pastDate" type="date" aria-label="Pick a day"></div>
-          <div id="pastTl" class="fc-tl" aria-label="Tap a day of the month"></div></div></div>
+          <div id="pastTl" class="fc-tl" aria-label="Tap a day of the month"></div>
+          <div id="pastHours" class="fc-tl hrs" role="slider" tabindex="0" aria-label="Hour of the day. Tap or drag, or use the arrow keys" aria-valuemin="0" aria-valuemax="23" aria-valuenow="0"></div></div></div>
       </div>
       <div class="hub-bot" id="tripDropCtl" data-mode="drop" hidden>
         <div class="hub-bar"><button type="button" id="tripPlay" class="hub-go">Play</button><p id="tripOut" class="hub-note" aria-live="polite"></p></div>
@@ -610,8 +616,10 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
 
   // ── shared state: the day picked anywhere on the page (map, calendar, date pickers) and whether
   // counts use all hours or daylight only
-  const st = { daylight: 0, playing: false, idx: 0 };
-  const listeners = [], dayListeners = [];
+  // hour: the Eastern hour of the day on show in the map's Past view (ocean.js sets it with the day: the hour
+  // you logged, else Choc's biggest hour), hourIso the day it belongs to
+  const st = { daylight: 0, playing: false, idx: 0, hour: null, hourIso: '' };
+  const listeners = [], dayListeners = [], hourListeners = [];
   function jump(i) {
     st.idx = Math.max(0, Math.min(D.length - 1, i));
     dayListeners.forEach(f => f(st.idx));
@@ -631,6 +639,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   const daylight = (ms) => { const [a, b] = sunWin(ms); return ms >= a + 18e5 && ms <= b - 18e5; };
   window.CHOC = { st, D, MON, C, css, perColor, wSoft, BIG_E, OFF, HST, hCol, sunWin, daylight, windArrow,
     onChange: f => listeners.push(f), onDay: f => dayListeners.push(f), jump,
+    onHour: f => hourListeners.push(f), hourChanged: () => hourListeners.forEach(f => f(st.hour)),
     dayIndex: iso => (byIso.has(iso) ? byIso.get(iso) : -1),
     setDaylight: v => { st.daylight = v ? 1 : 0; listeners.forEach(f => f(st)); } };
 
@@ -1439,7 +1448,12 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     const bot = [...stage.querySelectorAll('.hub-bot')].find((e) => !e.hidden), tr = $('hubTr'), pn = $('hubPanel');
     let right = tr ? Wd - tr.offsetLeft + 6 : 0;
     if (pn && !pn.hidden && stage.classList.contains('hub-wide')) right = Wd - pn.offsetLeft + 8;
-    return { top: hud ? hud.offsetTop + hud.offsetHeight + 12 : 80, bottom: bot ? H - bot.offsetTop + 8 : 0, right };
+    const out = { top: hud ? hud.offsetTop + hud.offsetHeight + 12 : 80, bottom: bot ? H - bot.offsetTop + 8 : 0, right, left: 0 };
+    if (FCUI) {                                              // what the Forecast tab lays over the map (methods-theme.js): its card, its week
+      const cs = getComputedStyle(document.documentElement), v = (n) => parseFloat(cs.getPropertyValue(n)) || 0;
+      out.top = Math.max(out.top, v('--lcc-fc-top')); out.bottom = Math.max(out.bottom, v('--lcc-fc-bot')); out.left = v('--lcc-fc-left');
+    }
+    return out;
   }
   let RECTS = [], INS = { top: 80, bottom: 0, right: 0 };
   function overlayRects() {                                  // boxes of the visible controls, in canvas px
@@ -1509,6 +1523,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     const NOFC = FCUI && S.phase === 'week' && (FC.out || FC.failed);   // the Forecast tab's map with no forecast for its hour
     if (WEEK && !NOFC) fcField(x0, y0, sc, v);
     if (WEEK && S.phase === 'week' && !NOFC) drawStorms(X, Y, v);
+    else if (WEEK && S.phase === 'past') drawPastStorms(X, Y, v);
     const ca = 0.55 * (1 - ramp(v.W, 120, 40)) * (WEEK ? 1 - Math.min(1, fieldAlpha(v.W) * 2) : 1);
     if (L.meta && ca > 0.01) {
       ctx.lineWidth = 1;
@@ -1742,8 +1757,10 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     for (const g of ['gesturestart', 'gesturechange', 'gestureend']) el.addEventListener(g, (e) => e.preventDefault(), { passive: false });
   }
   // On the Forecast tab the map sits in a page that scrolls: there one finger scrolls the page and two move the map
-  // (and a mouse wheel scrolls; ctrl + wheel or a trackpad pinch zooms), as embedded maps do.
-  noPageZoom(stage, () => panMode() && !FCUI);
+  // (and a mouse wheel scrolls; ctrl + wheel or a trackpad pinch zooms), as embedded maps do. In the tab's full
+  // screen (methods-theme.js sets data-lcc-full) nothing scrolls, so one finger and the wheel move the map again.
+  const pageScrolls = () => FCUI && !document.documentElement.dataset.lccFull;
+  noPageZoom(stage, () => panMode() && !pageScrolls());
   let hintT = 0;
   function twoFingers() {
     let h = $('fcHint');
@@ -1781,7 +1798,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     const v = cam(), { sc, x0, y0 } = proj(v); const X = (lon) => (lon * KX - x0) * sc, Y = (lon, lat) => (-lat * KY - y0) * sc;
     if (drag.kind === 'aim') { S.th = (Math.atan2(px - X(S.start[0]), -(py - Y(...S.start))) / D2R + 360) % 360; S.note = ''; retrace(); }
     else if (drag.kind === 'move') { const ll = unproject(px, py); if ((depthAt(...ll) || 0) > 1) { S.start = ll; S.note = ''; retrace(); } }
-    else if (FCUI && e.pointerType === 'touch') { if (Math.hypot(px - drag.sx, py - drag.sy) > 12) twoFingers(); }
+    else if (pageScrolls() && e.pointerType === 'touch') { if (Math.hypot(px - drag.sx, py - drag.sy) > 12) twoFingers(); }
     else { const cx = drag.cx - (px - drag.sx) / sc, cy = drag.cy - (py - drag.sy) / sc; if (finite(cx, cy)) { S.cam.cx = cx; S.cam.cy = cy; S.moved = true; draw(); } }
   });
   const up = (e) => {
@@ -1810,7 +1827,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   };
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
   // (a Safari trackpad pinch already zooming the map through the gesture events is not zoomed twice)
-  cv.addEventListener('wheel', (e) => { if (!panMode() || (FCUI && !e.ctrlKey)) return; e.preventDefault(); if (gz && e.ctrlKey) return; const [px, py] = localXY(e); zoomAt(px, py, Math.exp(e.deltaY * 0.0015)); }, { passive: false });
+  cv.addEventListener('wheel', (e) => { if (!panMode() || (pageScrolls() && !e.ctrlKey)) return; e.preventDefault(); if (gz && e.ctrlKey) return; const [px, py] = localXY(e); zoomAt(px, py, Math.exp(e.deltaY * 0.0015)); }, { passive: false });
   cv.addEventListener('click', () => { if (S.phase !== 'play') return; S.playing = !S.playing; S.last = 0; if (S.playing) requestAnimationFrame(frame); });
 
   // ── animation
@@ -2266,14 +2283,14 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   // and highs (H), and each storm's track over the run, brighter for the hours still to come. From fcpull.py's
   // field_gfs_mslp.png: one row per GFS step, one pixel per cell of the ocean grid, tenths of a hPa above 800 in red
   // (high byte) and green (low byte), 65535 where there is none. Fades in from region zoom and is gone near Fishers.
-  const ST = { key: null, status: 'idle', hpa: null, lows: null, tracks: null, drawn: null };
+  const ST = { key: null, status: 'idle', hpa: null, g: null, lows: null, tracks: null, drawn: null };
   const stormAlpha = (W) => (FC.show.storm ? ramp(W, 400, 1200) : 0);
   function stormLoad() {
     const d = FC.d, G = d && d.grids && d.grids.ocean;
     if (!d || !G || !d.mslp || !d.mslp.file) { ST.status = d ? 'none' : 'idle'; return; }
     const base = d._base || 'fc/', key = base + '|' + d.made;
     if (ST.key === key) return;
-    ST.key = key; ST.status = 'loading'; ST.hpa = ST.lows = ST.tracks = null;
+    ST.key = key; ST.status = 'loading'; ST.hpa = ST.g = ST.lows = ST.tracks = null;
     img(`${base}${d.mslp.file}${/^https?:/.test(base) ? '?m=' + encodeURIComponent(d.made) : ''}`).then((im) => {
       if (ST.key !== key) return;                            // a newer pull arrived meanwhile
       const n = G.lat[3] * G.lon[3];
@@ -2284,7 +2301,8 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
         for (let q = 0; q < n; q++) { const o = 4 * (k * n + q), v = a[o] << 8 | a[o + 1]; row[q] = v === 65535 ? NaN : v / 10 + 800; }
         hpa.push(row);
       }
-      ST.hpa = hpa; trackLows(d, G); ST.status = 'ok';
+      ST.hpa = hpa; ST.g = { hpa, ts: d.gfs.map((r) => Date.parse(r.t)), nla: G.lat[3], nlo: G.lon[3], lat0: G.lat[0], lon0: G.lon[0], dg: G.lat[2] };
+      Object.assign(ST, trackLows(ST.g)); ST.status = 'ok';
       if (S.phase === 'week') draw();
     });
   }
@@ -2292,14 +2310,15 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   // the ring 4° out, under 1008 hPa (over 1022), its centre refined between cells. Then each low is followed from step
   // to step (nearest low within what a storm can travel, 110 km/h) into tracks; a storm is a track that lasts a day or
   // more and gets to 1000 hPa or lower (shorter ones are mostly lows that form and fill again, and clutter the map).
-  function trackLows(d, G) {
-    const nla = G.lat[3], nlo = G.lon[3], dg = G.lat[2], ts = d.gfs.map((r) => Date.parse(r.t));
-    const lows = ST.hpa.map((P) => {
+  function trackLows(g) {                                    // g: {hpa: [rows], ts: [ms], nla, nlo, lat0 (north edge), lon0 (west edge), dg}
+    const { nla, nlo, dg, ts } = g;
+    const lows = g.hpa.map((P) => {
       const out = [];
+      if (!P) return out;
       for (let i = 4; i < nla - 4; i++) {
-        const lat = G.lat[0] - i * dg; if (lat < 8 || lat > 68) continue;
+        const lat = g.lat0 - i * dg; if (lat < 8 || lat > 68) continue;
         for (let j = 4; j < nlo - 4; j++) {
-          const lon = G.lon[0] + j * dg; if (lon < -100 || lon > 5) continue;
+          const lon = g.lon0 + j * dg; if (lon < -100 || lon > 5) continue;
           const p = P[i * nlo + j]; if (!(p <= 1008 || p >= 1022)) continue;
           const low = p <= 1008; let ok = true;
           for (let a = -3; a <= 3 && ok; a++) for (let b = -3; b <= 3; b++) {
@@ -2327,16 +2346,17 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
       Lk.forEach((x, xi) => { if (x.low && !taken[xi]) { const tr = { pts: [Object.assign({ k }, x)] }; tracks.push(tr); next.push(tr); } });
       open = next;
     });
-    ST.lows = lows;
-    ST.tracks = tracks.filter((tr) => ts[tr.pts[tr.pts.length - 1].k] - ts[tr.pts[0].k] >= 864e5 && tr.pts.some((x) => x.p <= 1000));
+    return { lows, tracks: tracks.filter((tr) => ts[tr.pts[tr.pts.length - 1].k] - ts[tr.pts[0].k] >= 864e5 && tr.pts.some((x) => x.p <= 1000)) };
   }
   function drawStorms(X, Y, v) {
     const al = stormAlpha(v.W); ST.drawn = null;
     if (al <= 0.02 || !FC.d) return;
     stormLoad();
-    const G = FC.d.grids && FC.d.grids.ocean, k = FC.i, P = ST.hpa && ST.hpa[k];
-    if (!G || !P) return;
-    const nla = G.lat[3], nlo = G.lon[3], dg = G.lat[2], ts = FC.d.gfs.map((r) => Date.parse(r.t));
+    if (ST.g && ST.g.hpa[FC.i]) ST.drawn = drawPressure(X, Y, al, ST.g, FC.i, ST.lows, ST.tracks);
+  }
+  // isobars, tracks and the lows and highs of one step k of a pressure grid (the forecast's or a past day's)
+  function drawPressure(X, Y, al, g, k, lowsAll, tracksAll) {
+    const P = g.hpa[k], nla = g.nla, nlo = g.nlo, dg = g.dg, ts = g.ts, G = { lat: [g.lat0], lon: [g.lon0] };
     const a = unproject(0, 0), b = unproject(cw, chh), Lw = Math.min(a[0], b[0]), Rw = Math.max(a[0], b[0]), Bw = Math.min(a[1], b[1]), Tw = Math.max(a[1], b[1]);
     const info = { lows: [], highs: 0, tracks: 0, isobars: 0 };
     ctx.save(); ctx.globalAlpha = al; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -2362,7 +2382,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(255,255,255,0.72)'; ctx.stroke(bold);
     // tracks: the whole run faint, the hours still to come brighter, a dot every 6 h
     const inView = (x) => x.lon >= Lw && x.lon <= Rw && x.lat >= Bw && x.lat <= Tw;
-    for (const tr of ST.tracks || []) {
+    for (const tr of tracksAll || []) {
       const pts = tr.pts; if (!pts.some(inView)) continue;
       info.tracks++; ctx.lineWidth = 1.6;
       for (let q = 1; q < pts.length; q++) {
@@ -2376,7 +2396,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     }
     // the lows and highs at the hour, labelled with their pressure
     ctx.font = '700 12px "Instrument Sans", system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-    for (const x of (ST.lows && ST.lows[k]) || []) {
+    for (const x of (lowsAll && lowsAll[k]) || []) {
       if (!inView(x)) continue;
       const t = (x.low ? 'L ' : 'H ') + Math.round(x.p), tw = ctx.measureText(t).width + 12;
       const px = Math.max(tw / 2 + 2, Math.min(cw - tw / 2 - 2, X(x.lon))), py = Math.max(12, Math.min(chh - 12, Y(x.lon, x.lat)));
@@ -2385,7 +2405,55 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
       ctx.fillStyle = x.low ? '#ff8a8a' : '#8ac4ff'; ctx.fillText(t, px, py);
     }
     ctx.restore();
-    ST.drawn = info;
+    return info;
+  }
+
+  // ── PRESSURE ON PAST DAYS: the same map from the history bot's ten years of sea-level pressure (ERA5, then GFS
+  // analyses), every 6 hours at 1°: ocean/pressure/<YYYY-MM>.png, one row per step from the 1st 00Z, one gray pixel
+  // per cell (north to south, then west to east), hPa = base + scale·v, 255 where there is none; ocean/pressure/
+  // meta.json says the grid and which months are in. The step nearest the hour on show is drawn; lows are followed
+  // over three days either side of it (the months either side load too when that window crosses into them).
+  const PP = { meta: undefined, months: {}, win: null };
+  const H6 = 216e5;
+  function ppMonth(key) {                                    // the month's rows, null while loading, false when missing
+    const m = PP.meta, info = m && m.months && m.months[key];
+    if (!info) return false;
+    if (PP.months[key] === undefined) {
+      PP.months[key] = null;
+      const keys = Object.keys(PP.months); if (keys.length > 6) delete PP.months[keys[0]];   // memory: a few months at a time
+      img(`ocean/pressure/${key}.png`).then((im) => {
+        PP.months[key] = im && im.width === m.cols ? { a: window.CHOC.pixels(im), n: im.height, t0: Date.parse(info.first.replace('Z', ':00Z')) } : false;
+        PP.win = null; if (S.phase === 'past') draw();
+      });
+    }
+    return PP.months[key];
+  }
+  function ppRow(t) {                                        // Float32Array of hPa at the 6-hour step t, else null
+    const m = PP.meta, d = new Date(t), key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`, M = ppMonth(key);
+    if (!M) return null;
+    const r = Math.round((t - M.t0) / H6); if (r < 0 || r >= M.n) return null;
+    const row = new Float32Array(m.cols); let any = false;
+    for (let q = 0; q < m.cols; q++) { const v = M.a[4 * (r * m.cols + q)]; if (v === m.missing) row[q] = NaN; else { row[q] = m.base + m.scale * v; any = true; } }
+    return any ? row : null;
+  }
+  function pastPressure() {
+    if (PP.meta === undefined) { PP.meta = null; json('ocean/pressure/meta.json').then((m) => { PP.meta = m && m.months ? m : false; if (S.phase === 'past') draw(); }); }
+    const m = PP.meta, x = DAYS[CST.idx]; if (!m || !x || CST.hour == null) return null;
+    const tc = Math.round((hourAt(x.iso, CST.hour) + 18e5) / H6) * H6;
+    if (!PP.win || PP.win.tc !== tc) {
+      const hpa = [], ts = [];
+      for (let r = -12; r <= 12; r++) { hpa.push(ppRow(tc + r * H6)); ts.push(tc + r * H6); }
+      if (!hpa[12]) return null;                             // the step itself isn't in (yet): try again when its month loads
+      const g = { hpa, ts, nla: m.nlat, nlo: m.nlon, lat0: Math.max(m.lat0, m.lat1), lon0: Math.min(m.lon0, m.lon1), dg: m.deg };
+      PP.win = Object.assign({ tc, g }, trackLows(g));
+    }
+    return { w: PP.win, k: 12, t: tc };
+  }
+  function drawPastStorms(X, Y, v) {
+    const al = stormAlpha(v.W); PP.drawn = null;
+    if (al <= 0.02) return;
+    const q = pastPressure(); if (!q) return;
+    PP.drawn = Object.assign(drawPressure(X, Y, al, q.w.g, q.k, q.w.lows, q.w.tracks), { t: new Date(q.t).toISOString().slice(0, 13) + 'Z' });
   }
 
   // ── moving streaks over the field (Windy-style): drift along the travel direction, faster for longer period
@@ -2542,12 +2610,13 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     const Z = ZOOMS[z], p = P(...Z.c); S.moved = false;       // the past covers the same ocean as the forecast, so both use the same views
     if (cw && chh) {
       // the same area of map on any screen: a wide iPad sees further east and west, a phone further north and south
-      const ins = insets(), aw = Math.max(60, cw - ins.right - 16), ah = Math.max(60, chh - ins.top - ins.bottom - 8), m = Math.min(cw, chh);
+      const ins = insets(), aw = Math.max(60, cw - ins.left - ins.right - 16), ah = Math.max(60, chh - ins.top - ins.bottom - 8), m = Math.min(cw, chh);
       const wv = Math.sqrt(Z.span[0] * KX * Z.span[1] * KY * aw / ah), W = wv * m / aw, sc = m / W;
-      S.cam = { cx: p[0] - (8 + aw / 2 - cw / 2) / sc, cy: p[1] - (ins.top + ah / 2 - chh / 2) / sc, W };
+      S.cam = { cx: p[0] - (ins.left + 8 + aw / 2 - cw / 2) / sc, cy: p[1] - (ins.top + ah / 2 - chh / 2) / sc, W };
     } else S.cam = { cx: p[0], cy: p[1], W: Z.span[0] * KX };
     draw();
   }
+  window.CHOC.reframe = () => { if (!S.moved && MAPV() && S.phase !== 'drop') fcZoom(FC.zoom); };
   function fcTap(px, py) {                                   // tap a point: what's there (tap it again, or land, to clear)
     let ll = unproject(px, py); const v = cam(), { sc, x0, y0 } = proj(v);
     const same = FC.pick && Math.hypot((FC.pick[0] * KX - x0) * sc - px, (-FC.pick[1] * KY - y0) * sc - py) < 16;
@@ -2863,9 +2932,9 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     }
     return w > 0.4 ? [T / w, Math.atan2(sx, sy) / D2R] : null;
   }
-  function pastFt(spot) {                                    // best 3 hours at the spot that day (the ray model on the buoy)
+  function pastFt(spot) {                                    // Choc at the hour on show; else the spot's best 3 hours that day (the ray model on the buoy)
     const x = DAYS[CST.idx]; if (!x) return null;
-    if (spot === 'choc') return x.mh[CST.daylight];
+    if (spot === 'choc') return PS.hs !== undefined && PS.iso === x.iso ? (PS.hs ? PS.hs.ft : null) : x.mh[CST.daylight];
     const v = DAYS2[x.iso]; return v && v[4] != null ? v[4] : null;
   }
   function pastWind(i, spot) {                               // [kn, from] at the spot's best hours (Part 3's rule decides clean)
@@ -2873,36 +2942,120 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     if (w && w[1] != null) return [w[1], w[0]];
     return x && x.wspd != null ? [x.wspd, x.wdir] : null;
   }
+  // ── the hour of a past day. A day opens at the hour you logged (your first session that day), else at
+  // Choc's biggest hour; the hour strip under the month moves through the other hours, and the map (the
+  // offshore color, the swells' rays near Fishers), the headline and the day's details follow. The hour's
+  // swells are the buoy's, hour by hour, from ocean/day/<year>.json (loaded a year at a time); until that
+  // file is in, the day's biggest hour stands in. Wind and tide come from the same file when it has them.
+  const LANE = {};
+  function laneYear(y) {
+    if (!(y in LANE)) { LANE[y] = null; json(`ocean/day/${y}.json`).then((d) => { LANE[y] = d || false; if (S.phase === 'past') setPast(CST.idx); window.CHOC.hourChanged(); }); }   // the day's details too
+    return LANE[y] || null;
+  }
+  const hourAt = (iso, h) => etMidnight(Date.parse(iso + 'T16:00:00Z')) + h * 36e5;
+  const utcKey = (ms) => new Date(ms).toISOString().slice(0, 13);
+  function laneAt(iso, h, lane) {                            // that hour's row of a lane, undefined while the year loads
+    const k = utcKey(hourAt(iso, h)), L = laneYear(k.slice(0, 4));
+    return L ? ((L[lane] || {})[k] || null) : undefined;
+  }
+  function tideAt(iso, h) {                                 // [ft, rising] at that hour, between the day's highs and lows
+    const L = laneYear(iso.slice(0, 4)); if (!L || !L.tide) return null;
+    const ev = [];
+    for (const d of [-1, 0, 1]) {
+      const dd = new Date(Date.parse(iso + 'T12:00:00Z') + d * 864e5).toISOString().slice(0, 10);
+      for (const q of L.tide[dd] || []) ev.push([hourAt(dd, +q[0].slice(0, 2)) + +q[0].slice(3, 5) * 6e4, q[1], q[2]]);
+    }
+    const t = hourAt(iso, h); let a = null, b = null;
+    for (const e of ev) { if (e[0] <= t && (!a || e[0] > a[0])) a = e; if (e[0] > t && (!b || e[0] < b[0])) b = e; }
+    if (!a || !b) return null;
+    const f = (t - a[0]) / (b[0] - a[0]);                    // a cosine between the two (the usual rule of twelfths)
+    return [(a[1] + b[1]) / 2 + (a[1] - b[1]) / 2 * Math.cos(Math.PI * f), b[2] === 'H'];
+  }
+  function hourSwell(iso, h) {                               // {ft at Choc, trains with their shares} that hour; null: no reading
+    const r = laneAt(iso, h, '44097'); if (r === undefined) return undefined; if (!r || !r.length) return null;
+    const list = r.map((q) => ({ ft: q[0], T: q[1], D: q[2], at: q[3] }));
+    return { hr: h, ft: Math.sqrt(list.reduce((a, q) => a + q.at * q.at, 0)), trains: window.CHOC.swell.shares(list) };
+  }
+  function defaultHour(iso) {
+    const lg = window.CHOC.logHours ? window.CHOC.logHours(iso) : []; if (lg.length) return lg[0];
+    const t = TRAINS[iso]; if (t && t[0] != null) return t[0];
+    return PS.bestH != null ? (PS.bestH + 1) % 24 : 12;
+  }
+  window.CHOC.hourOf = (iso) => (CST.hourIso === iso && CST.hour != null ? CST.hour : defaultHour(iso));
+  window.CHOC.swell.hour = (iso, h) => hourSwell(iso, h) || null;
+  window.CHOC.logChanged = () => {                           // the log came in after the day opened: go to the hour you logged
+    if (CST.hourPicked || !CST.hourIso) return;
+    const h = defaultHour(CST.hourIso); if (h === CST.hour) return;
+    CST.hour = h; if (S.phase === 'past') setPast(CST.idx); window.CHOC.hourChanged();
+  };
+  function setHour(h, picked) {
+    h = Math.max(0, Math.min(23, h)); if (h === CST.hour) return;
+    CST.hour = h; if (picked) CST.hourPicked = true;
+    setPast(CST.idx); window.CHOC.hourChanged();
+  }
   function setPast(i) {
     const x = DAYS[i]; if (!x) return;
     PS.iso = x.iso; const v2 = DAYS2[x.iso];
     PS.bestH = v2 ? v2[FC.spot === 'wild' ? 8 : 7] : null;
-    // the offshore field at the middle of the spot's best 3 hours (noon if there is no buoy that day)
-    const t = etMidnight(Date.parse(x.iso + 'T16:00:00Z')) + (PS.bestH != null ? PS.bestH + 1.5 : 12) * 36e5;
+    if (CST.hourIso !== x.iso) { CST.hourIso = x.iso; CST.hourPicked = false; CST.hour = defaultHour(x.iso); }
+    const h = CST.hour;
+    // the offshore field at the hour on show
+    const t = hourAt(x.iso, h) + 18e5;
     const F = pastYear(String(x.y)); PS.f = null;
     if (F) { const k = Math.round((t - F.start) / 108e5); if (k >= 0 && k < F.n) PS.f = { F, row: k }; }
     const O = pastOceanYear(String(x.y)); PS.o = null;
     if (O) { const k = Math.round((t - O.start) / 216e5); if (k >= 0 && k < O.n) PS.o = { F: O, row: k }; }
-    // the buoy's swell trains at Choc's biggest hour that day; a day without them uses the day's peak
-    const tr = TRAINS[x.iso];
-    PS.trains = tr && tr[1].length ? tr[1].map((q) => ({ ft: q[0], T: q[1], D: q[2] })) : x.hs ? [{ ft: x.hs, T: x.per, D: x.dir }] : [];
+    // the buoy's swell trains that hour; until the hourly file is in, those at Choc's biggest hour (or the day's peak)
+    const hs = hourSwell(x.iso, h), tr = TRAINS[x.iso];
+    PS.hs = hs;
+    PS.trains = hs ? hs.trains.map((q) => ({ ft: q.ft, T: q.T, D: q.D }))
+      : hs === null ? []
+      : tr && tr[1].length ? tr[1].map((q) => ({ ft: q[0], T: q[1], D: q[2] })) : x.hs ? [{ ft: x.hs, T: x.per, D: x.dir }] : [];
     if (S.phase !== 'past') return;
     FC.cur = PS.trains.filter((q) => q.T >= 5 && q.ft >= 0.3).map((q) => Object.assign({}, q));   // their rays: raysFor, once they show
     $('pastDate').value = x.iso;
-    pastHud(); pastStrip(); pastBest(); draw();
+    pastHud(); pastStrip(); pastHours(); pastBest(); draw();
   }
   const dateLong = (x) => new Date(Date.UTC(x.y, x.m - 1, x.d, 12)).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
   function pastHud() {
-    const x = DAYS[CST.idx], sp = FC.spot, ft = pastFt(sp), w = pastWind(CST.idx, sp);
-    $('tripPhase').textContent = `${dateLong(x)} · ${SPOT[sp].name} ${ft == null ? '–' : ft.toFixed(1) + ' ft'}`;
-    const mx = window.CHOC.swell && window.CHOC.swell.day(x.iso, sp);   // the buoy's height is all its swells together: say what each brought
-    const SW = window.CHOC.swell, nar = cw < 560;            // a phone gets the primary swell only, so the headline stays two lines
+    const x = DAYS[CST.idx], sp = FC.spot, h = CST.hour, hs = PS.hs, SW = window.CHOC.swell, nar = cw < 560;
+    // Choc that hour (the buoy's swells carried in); Wilderness keeps its best 3 hours (the hourly file has Choc only)
+    const ft = pastFt(sp);
+    $('tripPhase').textContent = `${dateLong(x)} · ${h12(h)} · ${SPOT[sp].name} ${ft == null ? '–' : ft.toFixed(1) + ' ft'}${sp === 'wild' ? ' best 3 h' : ''}`;
+    const mx = sp === 'choc' ? hs || (hs === undefined && SW && SW.day(x.iso, sp)) : SW && SW.day(x.iso, sp);
     const buoy = x.hs != null ? `Buoy ${x.hs.toFixed(1)} ft, all swells` : 'No buoy reading';
-    const lines = mx ? SW.rows(mx.trains, nar ? 1 : 2, nar ? null : SPOT[sp].name).map(([t, v]) => `${t} ${v}`) : [buoy];
+    const lines = mx ? SW.rows(mx.trains, nar ? 1 : 2, nar ? null : SPOT[sp].name).map(([tg, v]) => `${tg} ${v}`) : [hs === null ? 'No buoy reading this hour' : buoy];
+    const wr = laneAt(x.iso, h, 'wind'), w = wr ? [wr[0], wr[1]] : pastWind(CST.idx, sp);
+    const lg = window.CHOC.logHours ? window.CHOC.logHours(x.iso) : [];
     lines.push([w ? `Wind ${window.CHOC.windArrow(w[1])}${Math.round(w[0])} kn ${compass(w[1])}, ${windWord(windKind(w, sp))}` : '',
-      PS.bestH != null ? `best ~${h12((PS.bestH + 1) % 24)}` : '', mx && !nar ? buoy : ''].filter(Boolean).join(' · '));
+      lg.includes(h) ? 'you logged this hour' : '', PS.bestH != null ? `best ~${h12((PS.bestH + 1) % 24)}` : '', mx && !nar ? buoy : ''].filter(Boolean).join(' · '));
+    const td = !nar && tideAt(x.iso, h); if (td) lines.push(`Tide ${td[0].toFixed(1)} ft ${td[1] ? '▲ rising' : '▼ falling'}`);   // a phone keeps two lines
     $('tripLine').innerHTML = lines.filter(Boolean).join('<br>');
     $('tripPow').hidden = true;
+  }
+  // the day hour by hour under the month: Choc's height each hour, night shaded, your sessions marked, the hour
+  // on show lit; tap or drag to move through the day, or the arrow keys
+  function pastHours() {
+    const host = $('pastHours'); if (!host || host.offsetParent === null) return;
+    const x = DAYS[CST.idx], W = Math.max(200, Math.round(host.clientWidth)), H = 46, T0 = 10, B0 = 32, cell = (W - 4) / 24;
+    const hs = []; for (let h = 0; h < 24; h++) hs.push(hourSwell(x.iso, h));
+    const vals = hs.map((q) => (q ? q.ft : null)), loading = hs.every((q) => q === undefined);
+    const top = Math.max(2, Math.ceil(Math.max(0, ...vals.filter((v) => v != null)) + 0.3)), yy = (v) => B0 - v / top * (B0 - T0);
+    const [rise, set] = sunWin(hourAt(x.iso, 12)), lg = window.CHOC.logHours ? window.CHOC.logHours(x.iso) : [], peak = TRAINS[x.iso] && TRAINS[x.iso][0];
+    let s = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" aria-hidden="true">`;   // follows the bar's width as the screen turns
+    for (let h = 0; h < 24; h++) {
+      const cx = 2 + h * cell, t = hourAt(x.iso, h) + 18e5, v = vals[h];
+      if (t < rise || t > set) s += `<rect x="${cx.toFixed(1)}" y="${T0 - 4}" width="${cell.toFixed(1)}" height="${B0 - T0 + 6}" fill="rgba(0,0,0,.28)"/>`;
+      if (h === CST.hour) s += `<rect x="${cx.toFixed(1)}" y="${T0 - 6}" width="${cell.toFixed(1)}" height="${B0 - T0 + 8}" rx="3" fill="rgba(231,237,242,.16)" stroke="rgba(231,237,242,.7)"/>`;
+      if (v != null && v > 0) s += `<rect x="${(cx + cell * 0.18).toFixed(1)}" y="${yy(v).toFixed(1)}" width="${(cell * 0.64).toFixed(1)}" height="${(yy(0) - yy(v)).toFixed(1)}" rx="1.2" fill="${h === CST.hour ? '#f08a4b' : 'rgba(231,237,242,.42)'}"/>`;
+      if (lg.includes(h)) s += `<path d="M${(cx + cell / 2 - 3.5).toFixed(1)},${T0 - 8} h7 l-3.5,4.5z" fill="#f08a4b"/>`;
+      if (h % 6 === 0) s += `<text x="${(cx + 1).toFixed(1)}" y="${H - 2}" class="tl-t">${h12(h)}</text>`;
+    }
+    if (loading) s += `<text x="${W / 2}" y="${(B0 + T0) / 2 + 3}" text-anchor="middle" class="tl-k">Loading the hours…</text>`;
+    s += '</svg>'; host.innerHTML = s; PS.hstrip = { cell };
+    const v = vals[CST.hour];
+    host.setAttribute('aria-valuenow', String(CST.hour));
+    host.setAttribute('aria-valuetext', `${h12(CST.hour)}${v != null ? `, Choc ${v.toFixed(1)} ft` : ''}${lg.includes(CST.hour) ? ', you logged this hour' : ''}${CST.hour === peak ? ", Choc's biggest hour" : ''}`);
   }
   // a good day: Choc's ratings model at 7/10 or better (your log's scale); Wilderness has no ratings,
   // so there it means 3 ft or more with clean wind
@@ -3006,6 +3159,21 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     host.addEventListener('pointermove', (e) => { if (down) pick(e); });
     const end = () => { down = false; }; host.addEventListener('pointerup', end); host.addEventListener('pointercancel', end);
     new ResizeObserver(() => { if (S.phase === 'past') pastStrip(); }).observe(host);
+  }
+  {
+    const host = $('pastHours'); let down = false;
+    if (host) {
+      const pick = (e) => { const r = host.getBoundingClientRect(); setHour(Math.floor((e.clientX - r.left - 2) / (r.width - 4) * 24), true); };
+      host.addEventListener('pointerdown', (e) => { down = true; pastStop(); host.setPointerCapture(e.pointerId); pick(e); });
+      host.addEventListener('pointermove', (e) => { if (down) pick(e); });
+      const end = () => { down = false; }; host.addEventListener('pointerup', end); host.addEventListener('pointercancel', end);
+      host.addEventListener('keydown', (e) => {
+        const k = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[e.key];
+        if (k) { e.preventDefault(); setHour(CST.hour + k, true); }
+        else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); setHour(e.key === 'Home' ? 0 : 23, true); }
+      });
+      new ResizeObserver(() => { if (S.phase === 'past') pastHours(); }).observe(host);
+    }
   }
   // first day shown in the past view: your October 2025 Wilderness day; on the Explore tab, the newest day there is
   if (EXUI && DAYS.length) CST.idx = DAYS.length - 1;
@@ -3563,6 +3731,9 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
       const a = tr.pts[0], b = tr.pts[tr.pts.length - 1], r1 = (x) => Math.round(x * 10) / 10, ts = (k) => Date.parse(FC.d.gfs[k].t);
       return { min: Math.round(Math.min(...tr.pts.map((x) => x.p))), hours: Math.round((ts(b.k) - ts(a.k)) / 36e5), from: [r1(a.lat), r1(a.lon)], to: [r1(b.lat), r1(b.lon)], k: [a.k, b.k] };
     }) : null }),
+    // the same on a past day: the pressure step drawn (its UTC time) and the storms followed around it
+    _pastStorm: () => ({ meta: PP.meta ? { cols: PP.meta.cols, months: Object.keys(PP.meta.months || {}).length } : PP.meta, drawn: PP.drawn ? JSON.parse(JSON.stringify(PP.drawn)) : null,
+      tracks: PP.win ? PP.win.tracks.map((tr) => ({ min: Math.round(Math.min(...tr.pts.map((x) => x.p))), hours: Math.round((PP.win.g.ts[tr.pts[tr.pts.length - 1].k] - PP.win.g.ts[tr.pts[0].k]) / 36e5) })) : null }),
     _screen: (lon, lat) => { const { sc, x0, y0 } = proj(cam()); return [(lon * KX - x0) * sc, (-lat * KY - y0) * sc]; } };
 
   // first view: the forecast, unless this device last used Drop a wave

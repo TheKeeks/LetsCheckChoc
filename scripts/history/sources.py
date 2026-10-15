@@ -195,13 +195,13 @@ def load(cache=CACHE):
     def rd(p):
         with open(p, encoding='latin-1') as f: return f.read()
     j = lambda *p: jload(os.path.join(cache, *p))
-    d17 = os.path.join(cache, 'ndbc17'); dt_ = os.path.join(cache, 'tides')
+    d17 = os.path.join(cache, 'ndbc17'); dt_ = os.path.join(cache, 'tides'); sea = j('wind', 'sea.json')
     return dict(
         historic=os.path.join(cache, 'cdip', '154p1_historic.nc'), realtime=os.path.join(cache, 'cdip', '154p1_rt.nc'),
         f44097=[rd(p) for p in stdmet_files(cache)],
         f44017=[rd(os.path.join(d17, n)) for n in sorted(os.listdir(d17))] if os.path.isdir(d17) else [],
         hilo=[jload(os.path.join(dt_, n)) for n in sorted(os.listdir(dt_)) if n.endswith('.json')],
-        sea=j('wind', 'sea.json')['hourly'], ifs=j('wind', 'ifs1.json') + j('wind', 'ifs2.json'), era16=j('wind', 'era16.json'))
+        sea=sea['hourly'], sea_offset=sea.get('utc_offset_seconds'), ifs=j('wind', 'ifs1.json') + j('wind', 'ifs2.json'), era16=j('wind', 'era16.json'))
 
 
 if __name__ == '__main__':

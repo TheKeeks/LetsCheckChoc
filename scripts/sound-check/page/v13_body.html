@@ -38,7 +38,7 @@
             <button type="button" class="hub-tg" data-l="aim" data-mode="week" aria-pressed="true"><i class="ck"></i>Swell headed our way</button>
             <button type="button" class="hub-tg" data-l="wnd" data-mode="past" aria-pressed="false" hidden><i class="ck"></i>Wind arrows</button>
             <button type="button" class="hub-tg" data-l="rays" aria-pressed="true"><i class="ck"></i>Rays near Fishers</button>
-            <button type="button" class="hub-tg" data-l="storm" data-mode="week" aria-pressed="true"><i class="ck"></i>Pressure &amp; storms</button>
+            <button type="button" class="hub-tg" data-l="storm" data-mode="week past" aria-pressed="true"><i class="ck"></i>Pressure &amp; storms</button>
           </div></div>
         <div class="hub-g hub-goto" data-mode="week past"><div class="hub-h">Go to</div>
           <div class="seg hub-seg" role="group" aria-label="Go to" id="fcZoom"><button type="button" data-v="ocean" aria-pressed="false">Ocean</button><button type="button" data-v="reg" aria-pressed="true">Region</button><button type="button" data-v="fi" aria-pressed="false">Fishers</button></div></div>
@@ -74,14 +74,17 @@
           <h3>Reading a past day</h3>
           <ul>
             <li><b>Pick a day:</b> the bars at the bottom, the arrows, the date box, or the calendar further down. Play steps day by day.</li>
-            <li><b>Offshore color:</b> Copernicus reanalysis 1° swell over the spot's best 3 hours (every 0.4° near the coast, 2° across the North Atlantic). Streaks show which way it traveled.</li>
+            <li><b>Pick an hour:</b> the strip under the days, one bar per hour (Choc's height then, night shaded). A day you logged opens at your session's hour (orange tick), any other day at Choc's biggest hour.</li>
+            <li><b>Offshore color:</b> Copernicus reanalysis 1° swell at that hour (every 3 hours and 0.4° near the coast, every 6 hours and 2° across the North Atlantic). Streaks show which way it traveled.</li>
             <li><b>Survey map:</b> this page's ray model on what buoy 44097 measured. Tap the water for the height.</li>
-            <li><b>Rays near Fishers:</b> the buoy's swells at Choc's biggest hour. <b>Wind arrows</b> (under Show): that day's wind at 17 points.</li>
+            <li><b>Rays near Fishers:</b> the buoy's swells that hour. <b>Wind arrows</b> (under Show): that day's wind at 17 points.</li>
+            <li><b>Pressure &amp; storms</b> (zoomed out): sea-level pressure every 4 hPa at the nearest 6-hour step, <b>L</b> lows and <b>H</b> highs, and each storm's track over three days either side, brighter for the hours still to come.</li>
             <li><b>Bars:</b> the spot's best 3 hours each day. Orange is a good day: Choc's ratings model 7/10+, or Wilderness 3 ft+ with clean wind. Dots: the wind then.</li>
           </ul>
           <ul class="hub-fine">
             <li>Forecast and past share the camera, colors and layers.</li>
             <li>Buoy 44097 gaps filled from Montauk 44017 (until Feb 2023). Wind: ECMWF at 17 over-water points (ERA5 for 2016).</li>
+            <li>Pressure: ERA5 reanalysis, then GFS analyses, 1° every 6 hours.</li>
             <li>Contains modified Copernicus Marine Service information.</li>
           </ul>
         </div>
@@ -121,7 +124,8 @@
         <div class="hub-over"><button type="button" id="pastBest" class="hub-chip" hidden></button><div class="hub-key" role="img" aria-label="Wave height colors, 0 to 20 feet and up"><i></i><span><b>0</b><b style="left:22.4%">1</b><b style="left:50%">5</b><b>20+ ft</b></span></div></div>
         <div class="hub-bar"><button type="button" id="pastPlay" class="hub-play" aria-label="Play day by day">▶</button><div class="hub-tlw">
           <div class="hub-mrow"><button type="button" id="pastPrev" class="hub-mb" aria-label="Previous month">‹</button><button type="button" id="pastDec" class="hub-dec" aria-haspopup="dialog" aria-controls="decOv" title="Ten years, month by month"><b id="pastMonth" class="mono"></b><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h3v3H2zM6.5 2h3v3h-3zM11 2h3v3h-3zM2 6.5h3v3H2zM6.5 6.5h3v3h-3zM11 6.5h3v3h-3zM2 11h3v3H2zM6.5 11h3v3h-3zM11 11h3v3h-3z" fill="currentColor"/></svg><span class="hub-dec-t">Ten years</span></button><button type="button" id="pastNext" class="hub-mb" aria-label="Next month">›</button><input id="pastDate" type="date" aria-label="Pick a day"></div>
-          <div id="pastTl" class="fc-tl" aria-label="Tap a day of the month"></div></div></div>
+          <div id="pastTl" class="fc-tl" aria-label="Tap a day of the month"></div>
+          <div id="pastHours" class="fc-tl hrs" role="slider" tabindex="0" aria-label="Hour of the day. Tap or drag, or use the arrow keys" aria-valuemin="0" aria-valuemax="23" aria-valuenow="0"></div></div></div>
       </div>
       <div class="hub-bot" id="tripDropCtl" data-mode="drop" hidden>
         <div class="hub-bar"><button type="button" id="tripPlay" class="hub-go">Play</button><p id="tripOut" class="hub-note" aria-live="polite"></p></div>

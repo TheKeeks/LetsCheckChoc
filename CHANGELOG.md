@@ -1,5 +1,72 @@
 # Changelog
 
+## [Unreleased] — Explore's past days show the weather at the hour: storms, wind and tide
+
+The map now shows the weather at the hour picked on a past day, from the history bot's new files.
+
+Zoomed out with **Pressure & storms** on, a past day draws the Forecast tab's storm map for that time:
+- sea-level pressure every 4 hPa, at the 6-hour step nearest the hour;
+- the lows and highs, labelled with their pressure;
+- each storm's track over three days either side, brighter for the hours still to come.
+
+The Forecast tab and past days now share one drawing routine. A past day reads one month of pressure at a time (`research/ocean/pressure/<YYYY-MM>.png`), plus the month on either side when the three days cross into it. A month without a pressure map yet draws none. The layer is on the Show list for past days too, and the map's "How to read a past day" card explains it.
+
+The headline's wind is now the hour's wind at sea from the hourly wind lane, not the wind over the day's best three hours. The tide at that hour is worked out between the day's predicted highs and lows (on a phone the headline keeps its two lines and leaves the tide out).
+
+On the Forecast tab on a wide screen, the map now frames its view beside the hour's card, so Choc isn't under it.
+
+Verified with a new browser test, `preview-clean-explore-storms.js`, run on the bot's own fixtures (real GFS pressure and real ERA5 wind and CO-OPS tides for late September 2026). It checks that:
+- at 7am on Mon 28 Sep the wind is 16 kn NE (the day's best hours said 11 kn NNE);
+- the tide is 1.0 ft and rising, between the 4:55am low and the 11am high;
+- the ocean map draws close to 2,000 isobar segments at the 12Z step, with lows (including a 1007 hPa low just south of Long Island) and storm tracks;
+- moving to 1pm moves it to the 18Z step;
+- the layer switch turns it off;
+- August, which has no map in the fixture, draws nothing and shows no error.
+
+`preview-clean-forecast-layout.js` now checks that Choc is clear of the card at Region zoom; it fails on the old framing. The Forecast tab's storms test passes on the shared drawing routine.
+
+## [Unreleased] — Explore's past days, hour by hour
+
+A past day on Explore showed one moment: the swells at Choc's biggest hour, which could be 1 am, and the offshore colour at the middle of the day's best three hours. You couldn't see what the ocean was doing when you actually surfed.
+
+A strip of the day's 24 hours now sits under the month in the Past bar. It shows Choc's height each hour from the buoy's swells, shades the night, and marks your sessions with a small orange tick. Tap it, drag along it, or use the arrow keys to move through the hours. A day you logged opens at the hour of your first session. Any other day opens at Choc's biggest hour.
+
+At the hour you pick:
+- the map's headline, its Choc label and the swells' rays near Fishers all follow;
+- the offshore colour moves to the nearest 3-hour step (6-hour on the ocean-wide map);
+- the day's details in the ten-years column say "Swells at 7am, when you logged · Choc 2.0 ft".
+
+The hour's swells come from the buoy's hourly file, `research/ocean/day/<year>.json`, which the page now loads a year at a time. Choc's height for the hour combines each swell's height at Choc the way their energy adds. Wilderness keeps its best three hours, because the hourly file only carries Choc.
+
+Verified with a new browser test, `preview-clean-explore-hours.js`, on the pinned history and a session logged at 7:30 am on Mon 28 Sep 2026. It checks that:
+- the day opens at 7am, at 2.0 ft (1.7 and 1.1 ft at Choc);
+- its primary swell is "1° 3.4 ft @ 6 s SE 132° → 70% of Choc";
+- the arrow keys and a drag move the hour, and the column follows;
+- an unlogged day opens at its biggest hour;
+- the strip fits a phone.
+
+The research map's existing readout, swell-share, ten-years, photos, history, phone and zoom scenarios pass unchanged, as do the Explore ones.
+## [Unreleased] — Forecast: full-screen map with the week docked, the timeline on the map, Models | Swells
+
+The owner picked three designs for the Forecast tab. On a phone, the map's full-screen button only maximized the map inside its frame: the hour, the height and the week were gone, so you couldn't scrub the swell and watch it on the map at the same time. On a laptop or an iPad held sideways, the map sat in a box beside the readout with the week chart far below it. And the week chart showed the two models only, not which swell made up the height.
+
+Full screen ("Phone C"): the map's ⤢ button now opens the Forecast tab's own full screen, on any screen. The map fills the window (inside the iPhone's safe area), a small card top-left says the hour, the height at Choc and "GFS · ECMWF", the map's own buttons stay top-right with "Exit full screen", and a dark dock along the bottom holds a compact week chart (drag or tap it for the hour, arrow keys too), its buttons (play, a day back, a step, Now, a step, a day on), the Ocean / Region / Fishers zoom and the chart switch. The swells are the map's own labels. The map follows the hour as it always has. Back, the iPhone's back swipe, Escape or the map's button closes it at the same hour. The frame's button is caught in `research/methods-theme.js` (not the generated pages), which posts `lcc-fc-full` to the tab; the tab answers with its state and tells the map what covers its edges, so the colour key lifts above the dock and the layers panel opens under the zoom.
+
+Wide screens ("Laptop B"): from 900 px the map takes the full width and most of the window, the readout is a card over its top-left (as tall as the run's tallest hour, so it never changes size as you scrub), the zoom and spot sit top-right beside the map's buttons, and the week chart is docked in a dark band along the map's bottom edge with its buttons on the left. Wind and tide, the buoy check and the source line run below the map.
+
+Models | Swells: a switch by the week chart, everywhere it shows. Models is the chart as before (GFS-Wave solid orange, ECMWF dashed blue, their band, the mean in bold, tide and wind under it). Swells is the same week as a stack: at each step Choc's height (the two models' mean) is split by where its swell comes from, SE, E, S and other, each band as thick as that direction's share of the energy reaching Choc and coloured like the swell rows and the map's rays, SE at the bottom; the mean runs along the top. A key sits under the chart in both views, and the slider says what the chart draws. The choice is remembered on the device (Models by default). Also fixed: a hidden tab drew the chart with a negative width.
+
+Verified with a new browser test, `preview-clean-forecast-layout.js`: on a phone, tapping the map's button inside the frame fills the window with the map, shows the card and the dock, a sideways drag in the dock moves the hour and the map follows, Back and Escape return to the column at the same hour; Swells draws bands in the swell colours, SE first, whose top at the cursor is the mean height within a pixel, and it survives a reload; at 1280 px the map spans the content, the card is over its top-left, the week is docked inside its bottom edge, the rest is below, the card never changes height through the week, and full screen works there with a mouse drag and Back. `preview-clean-forecast.js` checks the new wide layout. `npm test` and the Forecast, a11y, Explore and look scenarios pass. One thing left for the map's own code (generated, not touched here): in full screen one finger still shows "use two fingers to move the map", because the map keeps the tab's scroll rule.
+## [Unreleased] — The history bot writes the past days' wind, tides and storms
+
+Explore's past days are to become scrubbable hour by hour and to show the pressure systems (isobars, lows and highs, storm tracks) for all ten years, the way the Forecast tab shows them for the days ahead. The page work is separate; this change makes the history bot write the data it needs. Nothing on the site changes until the page reads it, and none of the new data is committed here: the bot fills it on its first run after this lands.
+
+Each `research/ocean/day/<year>.json` gets two new lanes beside the buoy's `44097`. `wind` is the over-water wind the history already uses (ERA5 at 41.25 N 72.00 W), every hour, keyed by UTC hour like the buoy: `{"2026-09-25T04": [18.2, 40]}` (knots, from degrees). `tide` is each Eastern day's highs and lows at Silver Eel Pond (CO-OPS 8510719): `{"2026-09-25": [["03:02", 0.35, "L"], ["09:07", 2.8, "H"], ...]}` (Eastern times, feet). An hour or day without data is left out, never 0. The other lanes (Long Island, Montauk, the model) stay exactly as committed, and a run whose wind or tides would come out more than a week shorter than what's committed stops, like the rest of the history. Along the way it turned out that Open-Meteo labels its whole ten-year series with one UTC offset, the one in force on the day it's asked (it answered −4 h for a January-to-July range today, with exactly 24 hours a day). The new lane takes that into account. The history's own wind tables read the labels as Eastern clock time, so their wind sits an hour off for the half of the year in the other season. That is noted in `scripts/history/README.md` and left alone here, because fixing it would change the committed history.
+
+The new `scripts/history/pressure.py` keeps `research/ocean/pressure/<YYYY>-<MM>.png` and `meta.json`: sea-level pressure every 6 hours since 2016 over 10–70 N, 100–5 W on a 1° grid, one picture per month. Each picture has one row per step from the 1st 00Z and one column per cell, with 940 + 0.5·v hPa per pixel (255 = no data). `meta.json` lists each month on its own line, so a day's update changes one line. One picture a year would have been rewritten by every daily commit and grown the repo by about 1 GB a year. By month, a day's commit rewrites only the month so far. It uses ERA5 for 2016–2022, read straight from WeatherBench2's public 1° zarr copy on Google Cloud, and GFS analyses from 1 Jan 2023, range-read from NOAA's bucket on AWS with the forecast pull's GRIB decoder. The two overlap from 2021 to 10 Jan 2023, and ERA5 is kept through 2022. Each run fills the missing steps, oldest first, within a 20-minute budget, then adds yesterday's four steps a day. A step that fails stays missing and is retried on the next run. A month never gets shorter, a finished month is never rewritten, and a pressure failure never stops the history's commit. The workflow installs `numcodecs` (for ERA5's blosc chunks) and commits the new folder.
+
+Verified with the real sources from a web session: the whole backfill through 14 Oct 2026 ran in about 14.7 minutes (2016 in 32 s, then 2017 to 14 Oct 2026 in 848 s) and downloaded 2.18 GB. ERA5 was 1.56 GB, 152 kB and about 0.03 s a step, in one-day chunks. GFS was 623 MB in 11,064 range reads, 113 kB and 0.09 s a step with 16 at a time. No step is missing. A complete month's picture is 205–239 kB for ERA5 (220 kB on average) and 223–259 kB for GFS (238 kB), about 1.8–2.0 kB a step, 29 MB for all 130 months. In September 2026 the daily picture grew from 7 kB after the 1st to 227 kB after the 30th. The 30 rewrites add up to 3.5 MB, so the repo grows by about 3.5 MB a month, some 42 MB a year (less after git's compression). That fits the 20-minute budget. If the first Actions run is slower than this session, the budget stops it and the next run carries on. The January 2016 blizzard shows as a 987–988 hPa low tracking from 36 N 76 W to 41 N 62 W on 23–24 Jan. The switch from ERA5 to GFS on 1 Jan 2023 changes the field by no more than an ordinary 6 hours does (1.75 hPa against 1.6–2.2). New tests in `scripts/test_pressure.py` cover the encoding and its clamping, rows against times, the regrid on a made-up field, the ERA5 zarr reader, filling and retrying missing steps, the turn of a month, never shrinking a month, the ERA5/GFS split and the time budget, all with the network blocked. `scripts/test_history.py` gains tests for the wind and tide lanes: UTC hours, Eastern days, missing data left out, daylight saving, the other lanes kept in place, and a shrinking lane refused. `npm run test:py` and `npm test` pass. New fixtures for the page's tests are in `tests/fixtures/soundcheck/`: `pressure-2026-09.png`, `pressure-2026-10.png` and `pressure-meta.json` (the real GFS steps from 20 Sep to 6 Oct 2026) and `ocean-day-2026.json` (25 Sep–5 Oct with the real wind and tide lanes).
+
 ## [Unreleased] — Explore's ten years fit the screen; the map's (i) comes last; the Forecast chart holds still
 
 Explore's ten years column scrolled sideways on a computer and on a phone once a month had a logged session: its photo strip and a long link in the notes set the column's width, so the grid, the month's tiles and its calendar ran past the edge behind a sideways scroll bar. The column is now one track that never grows past its width (`research/methods-theme.css`, and the month and day in `scripts/sound-check/page/v13_head.html`): the photos scroll inside it and a link wraps.

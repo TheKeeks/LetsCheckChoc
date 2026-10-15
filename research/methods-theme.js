@@ -48,7 +48,49 @@
       clearTimeout(logTimer);
       logTimer = setTimeout(function () { if (window.CHOC && window.CHOC.reloadLog) window.CHOC.reloadLog(); }, 400);
     }
+    // The Forecast tab's map: whether the tab's full screen is open (the ⤢ button says "Exit full screen"), and
+    // what the tab lays over the map's edges (its zoom and spot along the top, the week docked along the bottom):
+    // the colour key and the layers panel move clear of them.
+    if (root.dataset.researchUi === 'forecast') {
+      if (data.type === 'lcc-fc-fullstate') setFull(!!data.on);
+      if (data.type === 'lcc-fc-inset') {
+        var px = function (v) { return Math.max(0, Math.min(2000, Number(v) || 0)) + 'px'; };
+        root.style.setProperty('--lcc-fc-top', px(data.top));
+        root.style.setProperty('--lcc-fc-bot', px(data.bottom));
+        root.style.setProperty('--lcc-fc-left', px(data.left));
+        if (window.CHOC && window.CHOC.reframe) window.CHOC.reframe();   // the map re-centres in what's left uncovered
+      }
+    }
   });
+
+  // The Forecast tab's map: its full-screen button opens the tab's own full screen (the map fills the window with the
+  // hour's card and the week docked under it) instead of maximizing the map inside its frame. Caught before the
+  // map's own handler; Escape inside the map closes it too (unless the map's info card is open: that closes first).
+  var fullOn = false;
+  function setFull(on) {
+    fullOn = on;
+    if (on) root.dataset.lccFull = '1'; else delete root.dataset.lccFull;
+    var b = document.getElementById('hubFull');
+    if (!b) return;
+    b.setAttribute('aria-pressed', String(on));
+    b.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
+    b.title = on ? 'Exit full screen' : 'Full screen';
+  }
+  if (root.dataset.researchUi === 'forecast' && window.parent !== window) {
+    document.addEventListener('click', function (event) {
+      var b = event.target && event.target.closest ? event.target.closest('#hubFull') : null;
+      if (!b) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      window.parent.postMessage({ type: 'lcc-fc-full' }, location.origin);
+    }, true);
+    window.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape' || !fullOn) return;
+      var card = document.getElementById('hubInfoCard');
+      if (card && !card.hidden) return;
+      window.parent.postMessage({ type: 'lcc-fc-full', on: false }, location.origin);
+    }, true);
+  }
 
   // The spot and, on the forecast, the hour the map shows, for the 3D map to open on.
   function open3D() {

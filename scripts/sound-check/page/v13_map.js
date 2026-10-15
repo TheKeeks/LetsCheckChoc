@@ -45,8 +45,10 @@
 
   // ── shared state: the day picked anywhere on the page (map, calendar, date pickers) and whether
   // counts use all hours or daylight only
-  const st = { daylight: 0, playing: false, idx: 0 };
-  const listeners = [], dayListeners = [];
+  // hour: the Eastern hour of the day on show in the map's Past view (ocean.js sets it with the day: the hour
+  // you logged, else Choc's biggest hour), hourIso the day it belongs to
+  const st = { daylight: 0, playing: false, idx: 0, hour: null, hourIso: '' };
+  const listeners = [], dayListeners = [], hourListeners = [];
   function jump(i) {
     st.idx = Math.max(0, Math.min(D.length - 1, i));
     dayListeners.forEach(f => f(st.idx));
@@ -66,6 +68,7 @@
   const daylight = (ms) => { const [a, b] = sunWin(ms); return ms >= a + 18e5 && ms <= b - 18e5; };
   window.CHOC = { st, D, MON, C, css, perColor, wSoft, BIG_E, OFF, HST, hCol, sunWin, daylight, windArrow,
     onChange: f => listeners.push(f), onDay: f => dayListeners.push(f), jump,
+    onHour: f => hourListeners.push(f), hourChanged: () => hourListeners.forEach(f => f(st.hour)),
     dayIndex: iso => (byIso.has(iso) ? byIso.get(iso) : -1),
     setDaylight: v => { st.daylight = v ? 1 : 0; listeners.forEach(f => f(st)); } };
 
