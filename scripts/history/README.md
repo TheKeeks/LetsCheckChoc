@@ -60,10 +60,12 @@ Replace the forward-ray table with a new one and the next run rebuilds all ten y
 The other lanes of `research/ocean/day/` (Montauk, Long Island, the Copernicus model) and the model's ocean maps
 in `research/ocean/field/` aren't part of this update yet.
 
-The wind lane's hours: Open-Meteo labels the whole series with one UTC offset, the one in force on the day it's asked
-(`utc_offset_seconds`: -4 h when fetched in summer, -5 h in winter, for all ten years), so the lane takes each label
-less that offset. (The history's own wind tables read the labels as Eastern clock time; that puts their wind an hour
-off for the half of the year in the other season.)
+The wind's hours: Open-Meteo labels the whole series with one UTC offset, the one in force on the day it's asked
+(`utc_offset_seconds`: -4 h when fetched in summer, -5 h in winter, for all ten years), so every table takes each
+label less that offset (`derive.sea_utc`): the wind lane, the clean hours and good-day scores (`analyze.wind_hours`),
+the days' and Wilderness's wind (`derive.wind_by_hour`) and the daily wind grid. Until 15 Oct 2026 all but the lane
+read the labels as Eastern clock time, which put their wind an hour late for the half of the year in the other
+season.
 
 ## The pressure maps
 
@@ -130,7 +132,9 @@ number move, because the bot takes the sessions in time order where the export l
 (an edit re-saves a session, which would shuffle them): a few of the buoy measures' bootstrap ranges, by 0.01-0.03,
 and three of the scorecard's rank correlations, by 0.01 (ties in your ratings were broken by that order). In the
 export's order both come out exactly as committed. The scorecard's forecasts, fetched again for three sessions,
-match to the hundredth of a foot.
+match to the hundredth of a foot. (The wind's hours have been placed by the series' UTC offset since 15 Oct 2026, so
+the numbers that use the wind, the clean hours, the good-day scores and Wilderness's wind, now differ from the
+hand-built files for half the year.)
 
 ## Every file ends on the same day
 

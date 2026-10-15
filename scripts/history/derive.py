@@ -32,9 +32,13 @@ def two(heights):
     return {k: v[:2] for k, v in heights.items()}
 
 
-def wind_by_hour(hourly):
-    """ERA5's over-water cell → {'YYYY-MM-DDTHH:00' Eastern: (kn, from deg)}"""
-    return {t: (s, d) for t, s, d in zip(hourly['time'], hourly['wind_speed_10m'], hourly['wind_direction_10m']) if s is not None}
+def wind_by_hour(hourly, offset=None):
+    """ERA5's over-water cell → {'YYYY-MM-DDTHH:00' Eastern: (kn, from deg)}, each label placed by sea_utc with the
+    series' UTC offset (in November the repeated 1 AM keeps its first hour, as the buoy's tables do)"""
+    out = {}
+    for u, s, d in zip(sea_utc(hourly['time'], offset), hourly['wind_speed_10m'], hourly['wind_direction_10m']):
+        if u is not None and s is not None: out.setdefault(u.astimezone(ET).strftime('%Y-%m-%dT%H:00'), (s, d))
+    return out
 
 
 def per_dir(f44097):
@@ -161,16 +165,16 @@ def wild_stats(C, W, PW, wind):
     return st
 
 
-def windgrid(hourly, ifs, era16, end, start=dt.date(2016, 1, 1)):
+def windgrid(hourly, ifs, era16, end, start=dt.date(2016, 1, 1), offset=None):
     """windgrid_out.json: {start, base: [[u, v]] per day, pts: [{lat, lon, elev, uv}]}, one [u, v] per day from start
     to end in half knots (the wind's from-direction vector). ifs: Open-Meteo's daily ECMWF IFS at the 20 grid points
     (2017 on), era16: ERA5 at the same points for 2016; points over 20 m up (land) are left out."""
     def idx(d): return (d - start).days
     N = idx(end) + 1
     acc = {}
-    for t, s, d in zip(hourly['time'], hourly['wind_speed_10m'], hourly['wind_direction_10m']):
-        if s is None: continue
-        k = idx(dt.date.fromisoformat(t[:10])); a = acc.setdefault(k, [0, 0, 0])
+    for u, s, d in zip(sea_utc(hourly['time'], offset), hourly['wind_speed_10m'], hourly['wind_direction_10m']):
+        if u is None or s is None or d is None: continue
+        k = idx(u.astimezone(ET).date()); a = acc.setdefault(k, [0, 0, 0])
         a[0] += s * math.sin(math.radians(d)); a[1] += s * math.cos(math.radians(d)); a[2] += 1
     def enc(u, v): return [int(round(u * 2)), int(round(v * 2))]
     base = [enc(acc[k][0] / acc[k][2], acc[k][1] / acc[k][2]) if k in acc else [0, 0] for k in range(N)]
