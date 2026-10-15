@@ -18,7 +18,7 @@ The ratings model (what makes a good session) is fitted to the surf log's sessio
 import bisect, collections, math, datetime as dt
 from zoneinfo import ZoneInfo
 import numpy as np
-import ratings
+import derive, ratings
 
 ET = ZoneInfo('America/New_York'); UTC = dt.timezone.utc; FT = 3.28084
 OFFSHORE = 335
@@ -84,10 +84,14 @@ def kchoc_fn(kavg):
     return kchoc
 
 
-def wind_hours(hourly):
-    """ERA5's over-water cell (Open-Meteo, Eastern time, knots) → {Eastern hour: (kn, from deg)}"""
-    return {dt.datetime.fromisoformat(t).replace(tzinfo=ET): (s, d)
-            for t, s, d in zip(hourly['time'], hourly['wind_speed_10m'], hourly['wind_direction_10m']) if s is not None and d is not None}
+def wind_hours(hourly, offset=None):
+    """ERA5's over-water cell (Open-Meteo, knots) → {Eastern hour: (kn, from deg)}. offset: the series' one UTC offset
+    (utc_offset_seconds): Open-Meteo labels all ten years with the offset in force on the day it's asked, so a label
+    is placed by derive.sea_utc, never read as Eastern clock time (an hour off for half the year)"""
+    out = {}
+    for u, s, d in zip(derive.sea_utc(hourly['time'], offset), hourly['wind_speed_10m'], hourly['wind_direction_10m']):
+        if u is not None and s is not None and d is not None: out.setdefault(u.astimezone(ET), (s, d))
+    return out
 
 
 def tide_turns(hilo_docs):

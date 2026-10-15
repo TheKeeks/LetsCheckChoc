@@ -460,6 +460,36 @@ class TestLanes(unittest.TestCase):
         u = self.d.sea_utc(['2026-10-10T00:00', '2026-10-10T01:00'])
         self.assertEqual([x.strftime('%dT%H') for x in u], ['10T04', '10T05'])
 
+    def test_the_history_tables_place_the_wind_like_the_lane(self):
+        """a winter series fetched in summer (labelled at -4 h all year): its 12:00 label is 16Z, 11 AM EST, so the
+        clean-hours table (analyze.wind_hours), the days' and Wilderness's (derive.wind_by_hour) and the daily wind
+        grid all have it at 11 AM, where the lane has it; they used to read the label as Eastern clock time, an hour
+        late for the half of the year in the other season"""
+        an = load(os.path.join(HISTORY, 'analyze.py'), 'analyze_wind')
+        times = ['2025-01-10T%02d:00' % h for h in range(24)] + ['2025-01-11T%02d:00' % h for h in range(24)]
+        h = dict(time=times, wind_speed_10m=[float(i) for i in range(48)], wind_direction_10m=[300] * 48)
+        h['wind_direction_10m'][13] = None                                     # no direction: left out of the hours
+        ET = an.ET
+        w = an.wind_hours(h, -14400)
+        self.assertEqual(w[dt.datetime(2025, 1, 10, 11, tzinfo=ET)], (12.0, 300), '12:00 at -4 h is 11 AM EST')
+        self.assertNotIn(dt.datetime(2025, 1, 10, 12, tzinfo=ET), w, 'the 13:00 label (noon EST) had no direction')
+        self.assertEqual(min(w), dt.datetime(2025, 1, 9, 23, tzinfo=ET), 'the first label is 11 PM the day before')
+        wh = self.d.wind_by_hour(h, -14400)
+        self.assertEqual(wh['2025-01-10T11:00'], (12.0, 300))
+        self.assertEqual(wh['2025-01-09T23:00'], (0.0, 300))
+        lane = self.d.wind_lane(h, dt.date(2025, 1, 11), offset=-14400)[2025]
+        for t, v in w.items():
+            self.assertEqual(lane[t.astimezone(UTC).strftime('%Y-%m-%dT%H')], [v[0], v[1]])
+        # the daily grid: the 10th, Eastern, is labels 01:00 on the 10th to 00:00 on the 11th (speeds 1-24, less the
+        # hour without a direction)
+        g = self.d.windgrid(h, [], [], dt.date(2025, 1, 11), start=dt.date(2025, 1, 10), offset=-14400)
+        u = sum(s * math.sin(math.radians(300)) for s in range(1, 25) if s != 13) / 23
+        self.assertEqual(g['base'][0][0], int(round(u * 2)))
+        # in summer the same offset is EDT: the label is the clock time, as before
+        hs = dict(time=['2025-07-10T12:00', '2025-07-10T13:00'], wind_speed_10m=[5.0, 6.0], wind_direction_10m=[90, 90])
+        self.assertEqual(an.wind_hours(hs, -14400), {dt.datetime(2025, 7, 10, 12, tzinfo=ET): (5.0, 90), dt.datetime(2025, 7, 10, 13, tzinfo=ET): (6.0, 90)})
+        self.assertEqual(sorted(self.d.wind_by_hour(hs, -14400)), ['2025-07-10T12:00', '2025-07-10T13:00'])
+
     def test_tides_by_eastern_day(self):
         """CO-OPS's local times as they are, heights to the hundredth, H or L; a turn late on an Eastern 31 December
         stays in that year's file; a day without predictions (or a bad value) is left out"""
@@ -494,8 +524,8 @@ class TestUpdate(unittest.TestCase):
             t += dt.timedelta(hours=6, minutes=12); hi = not hi
         dump(dict(predictions=turns), os.path.join(c, 'tides', 'hilo_2026.json'))
         et = [dt.datetime(2026, 10, 10) + dt.timedelta(hours=h) for h in range(72)]
-        dump(dict(hourly=dict(time=[x.strftime('%Y-%m-%dT%H:%M') for x in et], wind_speed_10m=[8.0] * 60 + [None] * 12,
-                              wind_direction_10m=[330] * 60 + [None] * 12)), os.path.join(c, 'wind', 'sea.json'))
+        dump(dict(utc_offset_seconds=-14400, hourly=dict(time=[x.strftime('%Y-%m-%dT%H:%M') for x in et], wind_speed_10m=[8.0] * 60 + [None] * 12,
+                              wind_direction_10m=[330] * 60 + [None] * 12)), os.path.join(c, 'wind', 'sea.json'))   # as fetched in summer
         pt = lambda la, lo, days: dict(latitude=la, longitude=lo, elevation=0.0, daily=dict(
             time=days, wind_speed_10m_mean=[10.0] * len(days), wind_direction_10m_dominant=[45] * len(days)))
         oct_days = ['2026-10-10', '2026-10-11', '2026-10-12']

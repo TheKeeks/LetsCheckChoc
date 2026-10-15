@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — The history's wind at the right hour all year
+
+The Sound Check history's wind was an hour off for half the year. Open-Meteo labels its ten years of hourly wind with one clock offset, the one in force on the day the bot asks: in summer every label is EDT, even the January ones. The clean-hours table, the good-day scores, the days' wind (`days2.json`), Wilderness's wind and the daily wind grid read those labels as Eastern clock time, so in the other season each hour got the wind from an hour later (or earlier). Which half was wrong flipped with the date the bot ran. The Past days' hourly wind lane already placed them right.
+
+Now every table places each label by the series' own offset, the way the lane does (`derive.sea_utc`); `analyze.wind_hours`, `derive.wind_by_hour` and `derive.windgrid` take the offset, and `update.py` hands it to all of them. The wind grid also skips an hour with a speed but no direction instead of failing on it (missing stays missing).
+
+Expect the next run of the history bot (daily, or Actions → Update Sound Check history → Run workflow) to move some numbers: clean hours, good-day scores and Wilderness's wind shift by an hour across the season the labels didn't match, so the monthly percentages and a few good days change a little. The swell, the tides and the buoy are untouched. A new test in `scripts/test_history.py` feeds a January series labelled at -4 h and checks that all four tables put the 12:00 label at 11 AM EST, where the lane has it (it fails on the old code), and that summer hours stay as they were; the update's own test now runs with the offset recorded as fetched. `npm run test:py` and `npm test` pass.
+
+The Sound Check readouts e2e (`w6-swell-map-readouts.js`) went red on `main` once the bot's first run after the hour-by-hour work added the tide lane to every year's day file: on a wide screen a past day's headline now ends with the tide at the hour, a fourth line the test didn't allow. It now accepts that line, in its `Tide 0.1 ft ▲ rising` form.
+
 ## [Unreleased] — Explore's past days show the weather at the hour: storms, wind and tide
 
 The map now shows the weather at the hour picked on a past day, from the history bot's new files.

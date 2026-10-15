@@ -65,7 +65,8 @@ def rebuild(inp, sp, buoy, end, model, kavg, sessions=None):
     trains = [x for x in sp['trains'] if spectra.local_day(x[0])[0] <= e]
     bent = [x for x in sp['bent'] if spectra.local_day(x[0])[0] <= e]
     bh = {t: v for t, v in buoy.items() if t.date() <= end}
-    wind = analyze.wind_hours(inp['sea']); wh = derive.wind_by_hour(inp['sea'])
+    off = inp.get('sea_offset')                       # the wind series' one UTC offset: every table places its hours by it
+    wind = analyze.wind_hours(inp['sea'], off); wh = derive.wind_by_hour(inp['sea'], off)
     C, W = derive.two(H['choc']), derive.two(H['wild'])
     return {
         'results4.json': analyze.analyze(bh, H['choc'], wind, analyze.tide_turns(inp['hilo']), kavg, model, sessions),
@@ -73,9 +74,9 @@ def rebuild(inp, sp, buoy, end, model, kavg, sessions=None):
         'trains_days.json': spectra.trains_days(trains),
         'bend_days.json': spectra.bend_days(bent),
         'wild_stats.json': derive.wild_stats(C, W, H['wild'], wh),
-        'windgrid_out.json': derive.windgrid(inp['sea'], inp['ifs'], inp['era16'], end),
+        'windgrid_out.json': derive.windgrid(inp['sea'], inp['ifs'], inp['era16'], end, offset=off),
         'lane': spectra.day_lane(trains),
-        'wind': derive.wind_lane(inp['sea'], end, inp.get('sea_offset')),
+        'wind': derive.wind_lane(inp['sea'], end, off),
         'tide': derive.tide_lane(inp['hilo'], end),
     }
 
