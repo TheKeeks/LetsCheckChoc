@@ -80,8 +80,9 @@
       link.addEventListener('click', function (event) { event.preventDefault(); openMap(); });
     });
     if (root.dataset.researchView === 'methods' && window.CHOC) window.CHOC.showPast = openMap;
-    // The Map page's map: a "3D" button beside Layers, the key and Full screen opens the sea floor
-    // around Fishers in 3D at the same spot and hour (the Map page answers lcc-open-3d).
+    // The Map page's map: a "3D" button under Layers and Full screen opens the sea floor around
+    // Fishers in 3D at the same spot and hour (the Map page answers lcc-open-3d). "How to read this
+    // map" (i) stays the last button.
     var tr = document.getElementById('hubTr');
     if (root.dataset.researchView === 'map' && tr && !document.getElementById('hub3d')) {
       var b3 = document.createElement('button');
@@ -90,7 +91,7 @@
       b3.setAttribute('aria-label', 'Explore the sea floor around Fishers in 3D');
       b3.innerHTML = '<span aria-hidden="true">3D</span>';
       b3.addEventListener('click', open3D);
-      tr.appendChild(b3);
+      tr.insertBefore(b3, document.getElementById('hubInfo'));
     }
     var date = query.get('date');
     if (root.dataset.researchView === 'map' && /^\d{4}-\d{2}-\d{2}$/.test(date || '') && window.CHOC && window.CHOC.showPast) window.CHOC.showPast(date);

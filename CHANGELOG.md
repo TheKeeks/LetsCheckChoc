@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — Explore's ten years fit the screen; the map's (i) comes last; the Forecast chart holds still
+
+Explore's ten years column scrolled sideways on a computer and on a phone once a month had a logged session: its photo strip and a long link in the notes set the column's width, so the grid, the month's tiles and its calendar ran past the edge behind a sideways scroll bar. The column is now one track that never grows past its width (`research/methods-theme.css`, and the month and day in `scripts/sound-check/page/v13_head.html`): the photos scroll inside it and a link wraps.
+
+The map's corner buttons now run Layers, Full screen, 3D and then "How to read this map" (i), last. On the Forecast tab, an hour with one more swell no longer nudges the map and the week chart down by a fraction of a pixel (the headline's reserved height was rounded down). `styles-kiosk.css`, the empty file kept for one deploy so the TV at the house would pick up the new code, is deleted.
+
+Verified with a new browser test, `preview-clean-explore-fit.js`: a session with four photos and a long link, at 1180 and 390 px wide. The column's content ends inside it and (i) is the last button. It fails on the old pages: the content was 600 px in a 419 px column. `preview-clean-forecast.js` now steps through every hour of the run and checks the map and the chart stay put. It fails on the old rounding.
+
 ## [Unreleased] — The old screens are gone
 
 The new look became the only one in the last few changes, but the old Windows-style screens were still in the site underneath it: about 4,700 lines of `app.js` drew the old Forecast, Tides, Regression and Log tabs into hidden boxes on every load, `kiosk.js` still built and drew the old Choc TV behind the new one, and `index.html`, `style.css` and three more style sheets carried their layout. `?classic=1` brought them back as an emergency fallback, and a look that failed to start handed the page back to them. Twenty browser tests still checked those old screens rather than the ones the crew use.
