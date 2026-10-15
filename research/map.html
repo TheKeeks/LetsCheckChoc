@@ -398,7 +398,7 @@ body { margin: 0; }
             <button type="button" class="hub-tg" data-l="aim" data-mode="week" aria-pressed="true"><i class="ck"></i>Swell headed our way</button>
             <button type="button" class="hub-tg" data-l="wnd" data-mode="past" aria-pressed="false" hidden><i class="ck"></i>Wind arrows</button>
             <button type="button" class="hub-tg" data-l="rays" aria-pressed="true"><i class="ck"></i>Rays near Fishers</button>
-            <button type="button" class="hub-tg" data-l="storm" data-mode="week" aria-pressed="true"><i class="ck"></i>Pressure &amp; storms</button>
+            <button type="button" class="hub-tg" data-l="storm" data-mode="week past" aria-pressed="true"><i class="ck"></i>Pressure &amp; storms</button>
           </div></div>
         <div class="hub-g hub-goto" data-mode="week past"><div class="hub-h">Go to</div>
           <div class="seg hub-seg" role="group" aria-label="Go to" id="fcZoom"><button type="button" data-v="ocean" aria-pressed="false">Ocean</button><button type="button" data-v="reg" aria-pressed="true">Region</button><button type="button" data-v="fi" aria-pressed="false">Fishers</button></div></div>
@@ -434,14 +434,17 @@ body { margin: 0; }
           <h3>Reading a past day</h3>
           <ul>
             <li><b>Pick a day:</b> the bars at the bottom, the arrows, the date box, or the calendar further down. Play steps day by day.</li>
-            <li><b>Offshore color:</b> Copernicus reanalysis 1° swell over the spot's best 3 hours (every 0.4° near the coast, 2° across the North Atlantic). Streaks show which way it traveled.</li>
+            <li><b>Pick an hour:</b> the strip under the days, one bar per hour (Choc's height then, night shaded). A day you logged opens at your session's hour (orange tick), any other day at Choc's biggest hour.</li>
+            <li><b>Offshore color:</b> Copernicus reanalysis 1° swell at that hour (every 3 hours and 0.4° near the coast, every 6 hours and 2° across the North Atlantic). Streaks show which way it traveled.</li>
             <li><b>Survey map:</b> this page's ray model on what buoy 44097 measured. Tap the water for the height.</li>
-            <li><b>Rays near Fishers:</b> the buoy's swells at Choc's biggest hour. <b>Wind arrows</b> (under Show): that day's wind at 17 points.</li>
+            <li><b>Rays near Fishers:</b> the buoy's swells that hour. <b>Wind arrows</b> (under Show): that day's wind at 17 points.</li>
+            <li><b>Pressure &amp; storms</b> (zoomed out): sea-level pressure every 4 hPa at the nearest 6-hour step, <b>L</b> lows and <b>H</b> highs, and each storm's track over three days either side, brighter for the hours still to come.</li>
             <li><b>Bars:</b> the spot's best 3 hours each day. Orange is a good day: Choc's ratings model 7/10+, or Wilderness 3 ft+ with clean wind. Dots: the wind then.</li>
           </ul>
           <ul class="hub-fine">
             <li>Forecast and past share the camera, colors and layers.</li>
             <li>Buoy 44097 gaps filled from Montauk 44017 (until Feb 2023). Wind: ECMWF at 17 over-water points (ERA5 for 2016).</li>
+            <li>Pressure: ERA5 reanalysis, then GFS analyses, 1° every 6 hours.</li>
             <li>Contains modified Copernicus Marine Service information.</li>
           </ul>
         </div>
@@ -1515,6 +1518,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     const NOFC = FCUI && S.phase === 'week' && (FC.out || FC.failed);   // the Forecast tab's map with no forecast for its hour
     if (WEEK && !NOFC) fcField(x0, y0, sc, v);
     if (WEEK && S.phase === 'week' && !NOFC) drawStorms(X, Y, v);
+    else if (WEEK && S.phase === 'past') drawPastStorms(X, Y, v);
     const ca = 0.55 * (1 - ramp(v.W, 120, 40)) * (WEEK ? 1 - Math.min(1, fieldAlpha(v.W) * 2) : 1);
     if (L.meta && ca > 0.01) {
       ctx.lineWidth = 1;
@@ -2272,14 +2276,14 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   // and highs (H), and each storm's track over the run, brighter for the hours still to come. From fcpull.py's
   // field_gfs_mslp.png: one row per GFS step, one pixel per cell of the ocean grid, tenths of a hPa above 800 in red
   // (high byte) and green (low byte), 65535 where there is none. Fades in from region zoom and is gone near Fishers.
-  const ST = { key: null, status: 'idle', hpa: null, lows: null, tracks: null, drawn: null };
+  const ST = { key: null, status: 'idle', hpa: null, g: null, lows: null, tracks: null, drawn: null };
   const stormAlpha = (W) => (FC.show.storm ? ramp(W, 400, 1200) : 0);
   function stormLoad() {
     const d = FC.d, G = d && d.grids && d.grids.ocean;
     if (!d || !G || !d.mslp || !d.mslp.file) { ST.status = d ? 'none' : 'idle'; return; }
     const base = d._base || 'fc/', key = base + '|' + d.made;
     if (ST.key === key) return;
-    ST.key = key; ST.status = 'loading'; ST.hpa = ST.lows = ST.tracks = null;
+    ST.key = key; ST.status = 'loading'; ST.hpa = ST.g = ST.lows = ST.tracks = null;
     img(`${base}${d.mslp.file}${/^https?:/.test(base) ? '?m=' + encodeURIComponent(d.made) : ''}`).then((im) => {
       if (ST.key !== key) return;                            // a newer pull arrived meanwhile
       const n = G.lat[3] * G.lon[3];
@@ -2290,7 +2294,8 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
         for (let q = 0; q < n; q++) { const o = 4 * (k * n + q), v = a[o] << 8 | a[o + 1]; row[q] = v === 65535 ? NaN : v / 10 + 800; }
         hpa.push(row);
       }
-      ST.hpa = hpa; trackLows(d, G); ST.status = 'ok';
+      ST.hpa = hpa; ST.g = { hpa, ts: d.gfs.map((r) => Date.parse(r.t)), nla: G.lat[3], nlo: G.lon[3], lat0: G.lat[0], lon0: G.lon[0], dg: G.lat[2] };
+      Object.assign(ST, trackLows(ST.g)); ST.status = 'ok';
       if (S.phase === 'week') draw();
     });
   }
@@ -2298,14 +2303,15 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
   // the ring 4° out, under 1008 hPa (over 1022), its centre refined between cells. Then each low is followed from step
   // to step (nearest low within what a storm can travel, 110 km/h) into tracks; a storm is a track that lasts a day or
   // more and gets to 1000 hPa or lower (shorter ones are mostly lows that form and fill again, and clutter the map).
-  function trackLows(d, G) {
-    const nla = G.lat[3], nlo = G.lon[3], dg = G.lat[2], ts = d.gfs.map((r) => Date.parse(r.t));
-    const lows = ST.hpa.map((P) => {
+  function trackLows(g) {                                    // g: {hpa: [rows], ts: [ms], nla, nlo, lat0 (north edge), lon0 (west edge), dg}
+    const { nla, nlo, dg, ts } = g;
+    const lows = g.hpa.map((P) => {
       const out = [];
+      if (!P) return out;
       for (let i = 4; i < nla - 4; i++) {
-        const lat = G.lat[0] - i * dg; if (lat < 8 || lat > 68) continue;
+        const lat = g.lat0 - i * dg; if (lat < 8 || lat > 68) continue;
         for (let j = 4; j < nlo - 4; j++) {
-          const lon = G.lon[0] + j * dg; if (lon < -100 || lon > 5) continue;
+          const lon = g.lon0 + j * dg; if (lon < -100 || lon > 5) continue;
           const p = P[i * nlo + j]; if (!(p <= 1008 || p >= 1022)) continue;
           const low = p <= 1008; let ok = true;
           for (let a = -3; a <= 3 && ok; a++) for (let b = -3; b <= 3; b++) {
@@ -2333,16 +2339,17 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
       Lk.forEach((x, xi) => { if (x.low && !taken[xi]) { const tr = { pts: [Object.assign({ k }, x)] }; tracks.push(tr); next.push(tr); } });
       open = next;
     });
-    ST.lows = lows;
-    ST.tracks = tracks.filter((tr) => ts[tr.pts[tr.pts.length - 1].k] - ts[tr.pts[0].k] >= 864e5 && tr.pts.some((x) => x.p <= 1000));
+    return { lows, tracks: tracks.filter((tr) => ts[tr.pts[tr.pts.length - 1].k] - ts[tr.pts[0].k] >= 864e5 && tr.pts.some((x) => x.p <= 1000)) };
   }
   function drawStorms(X, Y, v) {
     const al = stormAlpha(v.W); ST.drawn = null;
     if (al <= 0.02 || !FC.d) return;
     stormLoad();
-    const G = FC.d.grids && FC.d.grids.ocean, k = FC.i, P = ST.hpa && ST.hpa[k];
-    if (!G || !P) return;
-    const nla = G.lat[3], nlo = G.lon[3], dg = G.lat[2], ts = FC.d.gfs.map((r) => Date.parse(r.t));
+    if (ST.g && ST.g.hpa[FC.i]) ST.drawn = drawPressure(X, Y, al, ST.g, FC.i, ST.lows, ST.tracks);
+  }
+  // isobars, tracks and the lows and highs of one step k of a pressure grid (the forecast's or a past day's)
+  function drawPressure(X, Y, al, g, k, lowsAll, tracksAll) {
+    const P = g.hpa[k], nla = g.nla, nlo = g.nlo, dg = g.dg, ts = g.ts, G = { lat: [g.lat0], lon: [g.lon0] };
     const a = unproject(0, 0), b = unproject(cw, chh), Lw = Math.min(a[0], b[0]), Rw = Math.max(a[0], b[0]), Bw = Math.min(a[1], b[1]), Tw = Math.max(a[1], b[1]);
     const info = { lows: [], highs: 0, tracks: 0, isobars: 0 };
     ctx.save(); ctx.globalAlpha = al; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -2368,7 +2375,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(255,255,255,0.72)'; ctx.stroke(bold);
     // tracks: the whole run faint, the hours still to come brighter, a dot every 6 h
     const inView = (x) => x.lon >= Lw && x.lon <= Rw && x.lat >= Bw && x.lat <= Tw;
-    for (const tr of ST.tracks || []) {
+    for (const tr of tracksAll || []) {
       const pts = tr.pts; if (!pts.some(inView)) continue;
       info.tracks++; ctx.lineWidth = 1.6;
       for (let q = 1; q < pts.length; q++) {
@@ -2382,7 +2389,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     }
     // the lows and highs at the hour, labelled with their pressure
     ctx.font = '700 12px "Instrument Sans", system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-    for (const x of (ST.lows && ST.lows[k]) || []) {
+    for (const x of (lowsAll && lowsAll[k]) || []) {
       if (!inView(x)) continue;
       const t = (x.low ? 'L ' : 'H ') + Math.round(x.p), tw = ctx.measureText(t).width + 12;
       const px = Math.max(tw / 2 + 2, Math.min(cw - tw / 2 - 2, X(x.lon))), py = Math.max(12, Math.min(chh - 12, Y(x.lon, x.lat)));
@@ -2391,7 +2398,44 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
       ctx.fillStyle = x.low ? '#ff8a8a' : '#8ac4ff'; ctx.fillText(t, px, py);
     }
     ctx.restore();
-    ST.drawn = info;
+    return info;
+  }
+
+  // ── PRESSURE ON PAST DAYS: the same map from the history bot's ten years of sea-level pressure (ERA5, then GFS
+  // analyses), every 6 hours at 1°: ocean/pressure/<year>.png, one row per step from Jan 1 00Z, one gray pixel per
+  // cell (north to south, west to east), hPa = base + scale·v, 255 where there is none; ocean/pressure/meta.json says
+  // the grid. The step nearest the hour on show is drawn; lows are followed over three days either side of it.
+  const PP = { meta: undefined, years: {}, win: null };
+  function pastPressure() {
+    if (PP.meta === undefined) { PP.meta = null; json('ocean/pressure/meta.json').then((m) => { PP.meta = m || false; if (S.phase === 'past') draw(); }); }
+    const m = PP.meta, x = DAYS[CST.idx]; if (!m || !x || CST.hour == null) return null;
+    const t = hourAt(x.iso, CST.hour) + 18e5, y = new Date(t).getUTCFullYear(), Y0 = Date.UTC(y, 0, 1), info = m.years && m.years[y];
+    if (!info) return null;
+    if (PP.years[y] === undefined) {
+      PP.years[y] = null;
+      for (const k of Object.keys(PP.years)) if (+k !== y && Math.abs(+k - y) > 1) delete PP.years[k];   // memory: a year or two at a time
+      img(`ocean/pressure/${y}.png`).then((im) => { PP.years[y] = im && im.width === m.cols ? { a: window.CHOC.pixels(im), n: im.height } : false; if (S.phase === 'past') draw(); });
+    }
+    const Yr = PP.years[y]; if (!Yr) return null;
+    const step = m.hours * 36e5, k = Math.round((t - Y0) / step); if (k < 0 || k >= Yr.n) return null;
+    const k0 = Math.max(0, k - 12), k1 = Math.min(Yr.n - 1, k + 12), key = y + '|' + k0 + '|' + k1;
+    if (!PP.win || PP.win.key !== key) {
+      const nla = Math.round((m.lat1 - m.lat0) / m.deg) + 1, nlo = Math.round((m.lon1 - m.lon0) / m.deg) + 1, hpa = [], ts = [];
+      for (let r = k0; r <= k1; r++) {
+        const row = new Float32Array(m.cols);
+        for (let q = 0; q < m.cols; q++) { const v = Yr.a[4 * (r * m.cols + q)]; row[q] = v === m.missing ? NaN : m.base + m.scale * v; }
+        hpa.push(row.some((v) => v === v) ? row : null); ts.push(Y0 + r * step);
+      }
+      const g = { hpa, ts, nla, nlo, lat0: m.lat1, lon0: m.lon0, dg: m.deg };
+      PP.win = Object.assign({ key, g, k0 }, trackLows(g));
+    }
+    return PP.win.g.hpa[k - k0] ? { w: PP.win, k: k - k0, t: Y0 + k * step } : null;
+  }
+  function drawPastStorms(X, Y, v) {
+    const al = stormAlpha(v.W); PP.drawn = null;
+    if (al <= 0.02) return;
+    const q = pastPressure(); if (!q) return;
+    PP.drawn = Object.assign(drawPressure(X, Y, al, q.w.g, q.k, q.w.lows, q.w.tracks), { t: new Date(q.t).toISOString().slice(0, 13) + 'Z' });
   }
 
   // ── moving streaks over the field (Windy-style): drift along the travel direction, faster for longer period
@@ -3654,6 +3698,9 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
       const a = tr.pts[0], b = tr.pts[tr.pts.length - 1], r1 = (x) => Math.round(x * 10) / 10, ts = (k) => Date.parse(FC.d.gfs[k].t);
       return { min: Math.round(Math.min(...tr.pts.map((x) => x.p))), hours: Math.round((ts(b.k) - ts(a.k)) / 36e5), from: [r1(a.lat), r1(a.lon)], to: [r1(b.lat), r1(b.lon)], k: [a.k, b.k] };
     }) : null }),
+    // the same on a past day: the pressure step drawn (its UTC time) and the storms followed around it
+    _pastStorm: () => ({ meta: PP.meta ? { cols: PP.meta.cols, years: Object.keys(PP.meta.years || {}) } : PP.meta, drawn: PP.drawn ? JSON.parse(JSON.stringify(PP.drawn)) : null,
+      tracks: PP.win ? PP.win.tracks.map((tr) => ({ min: Math.round(Math.min(...tr.pts.map((x) => x.p))), hours: Math.round((PP.win.g.ts[tr.pts[tr.pts.length - 1].k] - PP.win.g.ts[tr.pts[0].k]) / 36e5) })) : null }),
     _screen: (lon, lat) => { const { sc, x0, y0 } = proj(cam()); return [(lon * KX - x0) * sc, (-lat * KY - y0) * sc]; } };
 
   // first view: the forecast, unless this device last used Drop a wave
