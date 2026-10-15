@@ -1,5 +1,30 @@
 # Changelog
 
+## [Unreleased] — Explore's past days show the weather at the hour: storms, wind and tide
+
+The map now shows the weather at the hour picked on a past day, from the history bot's new files.
+
+Zoomed out with **Pressure & storms** on, a past day draws the Forecast tab's storm map for that time:
+- sea-level pressure every 4 hPa, at the 6-hour step nearest the hour;
+- the lows and highs, labelled with their pressure;
+- each storm's track over three days either side, brighter for the hours still to come.
+
+The Forecast tab and past days now share one drawing routine. A past day reads one month of pressure at a time (`research/ocean/pressure/<YYYY-MM>.png`), plus the month on either side when the three days cross into it. A month without a pressure map yet draws none. The layer is on the Show list for past days too, and the map's "How to read a past day" card explains it.
+
+The headline's wind is now the hour's wind at sea from the hourly wind lane, not the wind over the day's best three hours. The tide at that hour is worked out between the day's predicted highs and lows (on a phone the headline keeps its two lines and leaves the tide out).
+
+On the Forecast tab on a wide screen, the map now frames its view beside the hour's card, so Choc isn't under it.
+
+Verified with a new browser test, `preview-clean-explore-storms.js`, run on the bot's own fixtures (real GFS pressure and real ERA5 wind and CO-OPS tides for late September 2026). It checks that:
+- at 7am on Mon 28 Sep the wind is 16 kn NE (the day's best hours said 11 kn NNE);
+- the tide is 1.0 ft and rising, between the 4:55am low and the 11am high;
+- the ocean map draws close to 2,000 isobar segments at the 12Z step, with lows (including a 1007 hPa low just south of Long Island) and storm tracks;
+- moving to 1pm moves it to the 18Z step;
+- the layer switch turns it off;
+- August, which has no map in the fixture, draws nothing and shows no error.
+
+`preview-clean-forecast-layout.js` now checks that Choc is clear of the card at Region zoom; it fails on the old framing. The Forecast tab's storms test passes on the shared drawing routine.
+
 ## [Unreleased] — Explore's past days, hour by hour
 
 A past day on Explore showed one moment: the swells at Choc's biggest hour, which could be 1 am, and the offshore colour at the middle of the day's best three hours. You couldn't see what the ocean was doing when you actually surfed.

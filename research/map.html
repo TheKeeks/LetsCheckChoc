@@ -2958,6 +2958,19 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     const k = utcKey(hourAt(iso, h)), L = laneYear(k.slice(0, 4));
     return L ? ((L[lane] || {})[k] || null) : undefined;
   }
+  function tideAt(iso, h) {                                 // [ft, rising] at that hour, between the day's highs and lows
+    const L = laneYear(iso.slice(0, 4)); if (!L || !L.tide) return null;
+    const ev = [];
+    for (const d of [-1, 0, 1]) {
+      const dd = new Date(Date.parse(iso + 'T12:00:00Z') + d * 864e5).toISOString().slice(0, 10);
+      for (const q of L.tide[dd] || []) ev.push([hourAt(dd, +q[0].slice(0, 2)) + +q[0].slice(3, 5) * 6e4, q[1], q[2]]);
+    }
+    const t = hourAt(iso, h); let a = null, b = null;
+    for (const e of ev) { if (e[0] <= t && (!a || e[0] > a[0])) a = e; if (e[0] > t && (!b || e[0] < b[0])) b = e; }
+    if (!a || !b) return null;
+    const f = (t - a[0]) / (b[0] - a[0]);                    // a cosine between the two (the usual rule of twelfths)
+    return [(a[1] + b[1]) / 2 + (a[1] - b[1]) / 2 * Math.cos(Math.PI * f), b[2] === 'H'];
+  }
   function hourSwell(iso, h) {                               // {ft at Choc, trains with their shares} that hour; null: no reading
     const r = laneAt(iso, h, '44097'); if (r === undefined) return undefined; if (!r || !r.length) return null;
     const list = r.map((q) => ({ ft: q[0], T: q[1], D: q[2], at: q[3] }));
@@ -3016,6 +3029,7 @@ const BACKK={"choc":{"periods":[5,6,7,8,9,10,11,12,13,14,15,16,17],"R":[[0.0,0.0
     const lg = window.CHOC.logHours ? window.CHOC.logHours(x.iso) : [];
     lines.push([w ? `Wind ${window.CHOC.windArrow(w[1])}${Math.round(w[0])} kn ${compass(w[1])}, ${windWord(windKind(w, sp))}` : '',
       lg.includes(h) ? 'you logged this hour' : '', PS.bestH != null ? `best ~${h12((PS.bestH + 1) % 24)}` : '', mx && !nar ? buoy : ''].filter(Boolean).join(' · '));
+    const td = !nar && tideAt(x.iso, h); if (td) lines.push(`Tide ${td[0].toFixed(1)} ft ${td[1] ? '▲ rising' : '▼ falling'}`);   // a phone keeps two lines
     $('tripLine').innerHTML = lines.filter(Boolean).join('<br>');
     $('tripPow').hidden = true;
   }
