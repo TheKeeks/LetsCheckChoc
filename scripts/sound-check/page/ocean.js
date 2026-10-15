@@ -1926,7 +1926,7 @@
   // file is in, the day's biggest hour stands in. Wind and tide come from the same file when it has them.
   const LANE = {};
   function laneYear(y) {
-    if (!(y in LANE)) { LANE[y] = null; json(`ocean/day/${y}.json`).then((d) => { LANE[y] = d || false; if (S.phase === 'past') setPast(CST.idx); }); }
+    if (!(y in LANE)) { LANE[y] = null; json(`ocean/day/${y}.json`).then((d) => { LANE[y] = d || false; if (S.phase === 'past') setPast(CST.idx); window.CHOC.hourChanged(); }); }   // the day's details too
     return LANE[y] || null;
   }
   const hourAt = (iso, h) => etMidnight(Date.parse(iso + 'T16:00:00Z')) + h * 36e5;

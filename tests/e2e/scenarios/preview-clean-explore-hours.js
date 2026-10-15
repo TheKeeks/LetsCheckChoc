@@ -1,5 +1,6 @@
 // Default look, Explore tab, a past day hour by hour, on the pinned history (tests/fixtures/soundcheck/hist.js.gz)
-// and the buoy's hourly lane in research/ocean/day/2026.json, with one session logged at 7:30 am on Mon 28 Sep:
+// and the buoy's hourly lane in research/ocean/day/2026.json (the fixture's copy, served late), with one session
+// logged at 7:30 am on Mon 28 Sep:
 //   • a day you logged opens at the hour you logged (7am), not at Choc's biggest hour (4pm): the headline, the
 //     hour strip under the month and the day's details in the column all say 7am, with that hour's swells and
 //     Choc's height worked out from them (1.7 and 1.1 ft at Choc → 2.0 ft, as the energy adds);
@@ -17,6 +18,10 @@ module.exports = {
   name: 'clean Explore hours: a past day opens at the hour you logged, the hour strip moves through the day, the map and the column follow',
   options: { viewport: { width: 1180, height: 860 }, timeoutMs: 150000, firebase: { mode: 'google', logs: LOGS } },
   async run({ page, ctx, assert, log }) {
+    // the hourly file (the bot's, pinned to the fixture's copy), held back 1.5 s: the column's day was drawn before it
+    // came in, so the day's details have to follow it when it does
+    ctx.serve('/research/ocean/day/2026.json', { file: 'soundcheck/ocean-day-2026.json', headers: { 'content-type': 'application/json' } });
+    await ctx.route(/\/research\/ocean\/day\/2026\.json/, async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });
     const fr = () => page.frames().find((f) => /research\/index\.html\?view=map/.test(f.url()));
     const boot = async () => {
       await ctx.open('/');
