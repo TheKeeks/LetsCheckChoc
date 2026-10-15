@@ -81,8 +81,13 @@
 [data-research-ui="forecast"] .hub-goto,
 [data-research-ui="forecast"] #fcBox .hub-bar,
 [data-research-ui="forecast"] #fcBest,
-[data-research-ui="forecast"] #hubFull,
 [data-research-ui="forecast"] .hub-nofc { display: none !important; }
+/* Its full-screen button opens the tab's own full screen (methods-theme.js). What the tab lays over the map's edges
+   (--lcc-fc-top: its zoom and spot on a wide screen; --lcc-fc-bot: the week docked along the bottom) pushes the
+   colour key up and the layers and info panels down. */
+[data-research-ui="forecast"] .hub-bot { bottom: calc(10px + var(--lcc-fc-bot, 0px)); }
+[data-research-ui="forecast"] .hub-panel,
+[data-research-ui="forecast"] .hub-info { top: calc(10px + var(--lcc-fc-top, 0px)); max-height: calc(100% - var(--botH, 0px) - var(--lcc-fc-top, 0px) - 20px); }
 .hub-fconly { display: none; }
 [data-research-ui="forecast"] .hub-fconly { display: list-item; }
 /* ...and one finger scrolls the tab while two move the map (ocean.js) */
