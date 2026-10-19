@@ -6,7 +6,7 @@
                         every hour of the history, which gives the good days
   sess_pairs.json       each session's size rating against the best 3 hours of its day at the buoy and at Choc
   sessions_all.json     how well each daily measure of the buoy ranks the sessions by the size you rated
-  research/fc/score.json  the forecast scorecard: what GFS-Wave forecast for Choc 1, 2 and 3 days before each
+  research/fc/score.json  the forecast scorecard: what GFS-Wave forecast for Choc 1, 2, 3, 7 and 10 days before each
                         session, next to what the buoy-based model says arrived
 
 The same arithmetic as the scripts that made them by hand from an export of the log
@@ -263,9 +263,12 @@ def gfs_choc(t_utc, lead_d):
     return math.sqrt(en)
 
 
+LEADS = (1, 2, 3, 7, 10)          # days ahead: the forecast's first days, and the end of its week and of its 10 days
+
+
 def scorecard(sessions, cspec, previous=None, forecast=None, budget=24, log=lambda *a: None):
-    """{sessions: [{date, size, avg, buoy_model, d1, d2, d3}], summary: {buoy_model, d1, d2, d3: {n, rho_size, ...}}}.
-    buoy_model: Choc's modeled height at the session's hour (cspec, the history's own); d1-d3: the forecasts.
+    """{sessions: [{date, size, avg, buoy_model, d1, d2, d3, d7, d10}], summary: {buoy_model, d1 ... d10: {n, rho_size, ...}}}.
+    buoy_model: Choc's modeled height at the session's hour (cspec, the history's own); d1-d10: the forecasts (LEADS).
     A forecast already in `previous` (the committed file) is kept: a past run never changes. New ones come from
     forecast(t_utc, lead) (gfs_choc), at most `budget` sessions a run; None (no forecast function, the archive
     has nothing, or the download failed) leaves that lead empty, to be asked again on the next run."""
@@ -276,9 +279,9 @@ def scorecard(sessions, cspec, previous=None, forecast=None, budget=24, log=lamb
         out = dict(date=r['date'][:16], size=float(r['size']), avg=float(r['avg']))
         k = t.strftime('%Y-%m-%dT%H'); out['buoy_model'] = cspec[k][1] if k in cspec else None
         old = prev.get(out['date'], {})
-        todo = [L for L in (1, 2, 3) if old.get(f'd{L}') is None] if forecast and asked < budget else []
+        todo = [L for L in LEADS if old.get(f'd{L}') is None] if forecast and asked < budget else []
         if todo: asked += 1
-        for L in (1, 2, 3):
+        for L in LEADS:
             if L not in todo: out[f'd{L}'] = old.get(f'd{L}'); continue
             try: out[f'd{L}'] = round(forecast(t, L), 2)
             except Exception as e: out[f'd{L}'] = None; log('  no forecast', r['date'], L, e)
@@ -286,7 +289,7 @@ def scorecard(sessions, cspec, previous=None, forecast=None, budget=24, log=lamb
     def spearman_np(x, y):
         rx = np.argsort(np.argsort(x)); ry = np.argsort(np.argsort(y)); return float(np.corrcoef(rx, ry)[0, 1])
     summ = {}
-    for key in ('buoy_model', 'd1', 'd2', 'd3'):
+    for key in ('buoy_model',) + tuple(f'd{L}' for L in LEADS):
         ok = [x for x in res if x.get(key) is not None]
         if len(ok) < 3: continue
         summ[key] = dict(n=len(ok), rho_size=round(spearman_np([x[key] for x in ok], [x['size'] for x in ok]), 2))

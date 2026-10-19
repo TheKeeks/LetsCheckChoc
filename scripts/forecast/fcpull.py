@@ -17,8 +17,13 @@ the page uses. A test against 177 hours in 2021-25 (fctest.py, archived GFS-Wave
 what arrived than the earlier edge-weighted version: typical miss 0.20 ft vs 0.30 ft a day ahead, with less
 bias. Where the model has no value at the buoy, the mean over a 5x5 block of points around it is used.
 
+Days 8-10 (XSTEPS, every 6 h to 240 h) come with the same pull for the Forecast tab's "10 days" switch, kept apart
+so a page showing the week never downloads them: fc.json's `ext` ({steps, gfs, ec}, the same rows as the week's) and
+field_<...>_x.png beside each image (rows = XSTEPS). ECMWF's 00 and 12 UTC runs reach 240 h, GFS-Wave 384 h; a run
+that doesn't reach 240 h yet (or a download that fails) leaves `ext` out of that pull, and the next one tries again.
+
 Usage: python3 scripts/forecast/fcpull.py OUTDIR   -> OUTDIR/fc.json, OUTDIR/field_<model>_<grid>.png,
-                                                       OUTDIR/field_gfs_mslp.png
+                                                       OUTDIR/field_gfs_mslp.png, and their _x.png for days 8-10
        python3 scripts/forecast/fcpull.py --pressure DIR   adds the sea-level pressure of the GFS run named in
                                                        DIR/fc.json (for a pull made before the pressure was added)
 
@@ -35,7 +40,8 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 FR_DIR = os.path.join(HERE, '..', '..', 'research', 'fr')             # the page's forward-ray tables
 FT = 3.28084
-STEPS = list(range(0, 145, 3)) + list(range(150, 169, 6))           # hours ahead, both models
+STEPS = list(range(0, 145, 3)) + list(range(150, 169, 6))           # hours ahead, both models: the week
+XSTEPS = list(range(174, 241, 6))                                   # days 8-10, for the "10 days" switch (fc.json's ext)
 GRIDS = {'reg': dict(lat=(35.0, 45.5), lon=(-77.5, -62.0), d=0.25),     # New Jersey to Cape Cod and out past the shelf
          'ocean': dict(lat=(-5.0, 70.0), lon=(-100.0, 10.0), d=1.0)}     # the whole North Atlantic, so the ocean view fills any screen
 
@@ -235,32 +241,36 @@ def enc_hpa(p):
 def dec_hpa(rgb):
     rgb = np.asarray(rgb, np.uint32); v = (rgb[..., 0] << 8) | rgb[..., 1]
     return np.where(v == HPA_NONE, np.nan, v / 10.0 + HPA0)
-def mslp_image(P, g='ocean'):
+def mslp_image(P, g='ocean', steps=None):
     """P: {step: decoded PRMSL field (Pa)} -> uint8 [steps, cells, 3] on grid g, cells in the same order as the swell
     field images (north row first, west to east)"""
     la, lo = grid_axes(g); LA, LO = np.meshgrid(la, lo, indexing='ij')
-    return np.stack([enc_hpa(sample(P[s], LA.ravel(), LO.ravel()) / 100.0) for s in STEPS])
+    return np.stack([enc_hpa(sample(P[s], LA.ravel(), LO.ravel()) / 100.0) for s in (steps or STEPS)])
 MSLP_META = dict(file='field_gfs_mslp.png', grid='ocean', unit='hPa', enc='(R*256+G)/10+800; R=G=255 no data')
-def write_mslp(OUT, P):
-    Image.fromarray(mslp_image(P), 'RGB').save(os.path.join(OUT, MSLP_META['file']), optimize=True)
+def xname(name, sfx):
+    """field_gfs_reg.png -> field_gfs_reg_x.png for days 8-10 (sfx '_x'), unchanged for the week (sfx '')"""
+    return name[:-4] + sfx + '.png'
+def write_mslp(OUT, P, steps=None, sfx=''):
+    Image.fromarray(mslp_image(P, steps=steps), 'RGB').save(os.path.join(OUT, xname(MSLP_META['file'], sfx)), optimize=True)
     return dict(MSLP_META)
 
-def main(OUT):
-    os.makedirs(OUT, exist_ok=True)
-    cg, (ce, esrc) = latest_gfs(), latest_ec()
-    print('GFS-Wave', cg, 'ECMWF', ce, 'from', esrc, flush=True)
+def pull(cg, ce, esrc, steps, pressure=True):
+    """every model's fields at these steps: (G, GG, E, P), P None when the pressure didn't come"""
     with cf.ThreadPoolExecutor(8) as ex:
-        G = dict(ex.map(lambda s: gfs_step(cg, s), STEPS)); print('gfs done', flush=True)
-        GG = dict(ex.map(lambda s: gfs_glob_step(cg, s), STEPS)); print('gfs global done', flush=True)
-        E = dict(ex.map(lambda s: ec_step(ce, esrc, s), STEPS)); print('ec done', flush=True)
+        G = dict(ex.map(lambda s: gfs_step(cg, s), steps)); print('gfs done', flush=True)
+        GG = dict(ex.map(lambda s: gfs_glob_step(cg, s), steps)); print('gfs global done', flush=True)
+        E = dict(ex.map(lambda s: ec_step(ce, esrc, s), steps)); print('ec done', flush=True)
         # the storms are a nice-to-have: a pull without them still publishes the swell
-        try: P = dict(ex.map(lambda s: gfs_mslp_step(cg, s), STEPS)); print('gfs pressure done', flush=True)
-        except Exception as e: P = None; print('no sea-level pressure this run:', e, flush=True)
-    elat = np.array([p[0] for p in EDGE]); elon = np.array([p[1] for p in EDGE])
-    t0g, t0e = cg, ce
-    times = sorted({t0g + dt.timedelta(hours=s) for s in STEPS} & {t0e + dt.timedelta(hours=s) for s in STEPS} | {t0g + dt.timedelta(hours=s) for s in STEPS})
+        P = None
+        if pressure:
+            try: P = dict(ex.map(lambda s: gfs_mslp_step(cg, s), steps)); print('gfs pressure done', flush=True)
+            except Exception as e: print('no sea-level pressure this run:', e, flush=True)
+    return G, GG, E, P
+
+def spot_series(G, E, steps, t0g, t0e):
+    """{'gfs': [...], 'ec': [...]}: each model at buoy 44097 and what it brings to the spots, one row per step"""
     series = {'gfs': [], 'ec': []}
-    for s in STEPS:
+    for s in steps:
         f = G[s]
         # each train at the buoy, and what it brings to each spot
         trains = []; ec2 = {'choc': 0.0, 'wild': 0.0}
@@ -281,13 +291,17 @@ def main(OUT):
         lp = math.sqrt(sum(float(np.nan_to_num(sample(fe[b], NLAT, NLON)).mean()) ** 2 for b in ('h1214', 'h1417', 'h1721', 'h2125', 'h2530')))
         series['ec'].append(dict(t=(t0e + dt.timedelta(hours=s)).strftime('%Y-%m-%dT%H:%MZ'), choc=round(c, 1) if q else None, wild=round(w, 1) if q else None,
                                  hs=round(h * FT, 1) if q else None, T=round(T, 1) if q else None, D=int(round(D)) % 360 if q else None, long=round(lp * FT, 1)))
-    # ── field images: one PNG per model per grid; row = step, each cell = 1 RGB pixel (height dm, period 0.1 s, from /2 deg)
+    return series
+
+def write_fields(OUT, G, GG, E, steps, sfx=''):
+    """field images: one PNG per model per grid; row = step, each cell = 1 RGB pixel (height dm, period 0.1 s, from /2 deg).
+    -> the grids' meta"""
     meta = {}
     for g in GRIDS:
         la, lo = grid_axes(g); LA, LO = np.meshgrid(la, lo, indexing='ij')
         for model, F, hk, tk, dk in (('gfs', G, 'hs', 'w1t', 'w1d'), ('ec', E, 'swh', 'pp1d', 'mwd')):
             rows = []
-            for s in STEPS:
+            for s in steps:
                 f = F[s]; hv = sample(f[hk], LA.ravel(), LO.ravel()); tv = sample(f[tk], LA.ravel(), LO.ravel()); dv = sample_dir(f[dk], LA.ravel(), LO.ravel())
                 if model == 'gfs':                                   # outside the coastal nest: the global grid
                     gg = GG[s]; miss = np.isnan(hv) | np.isnan(tv) | np.isnan(dv)
@@ -300,10 +314,10 @@ def main(OUT):
                         if not nod.any(): break
                         tv = np.where(nod, sample(src['wwt'], LA.ravel(), LO.ravel()), tv); dv = np.where(nod, sample_dir(src['wwd'], LA.ravel(), LO.ravel()), dv)
                 rows.append(np.stack([q8(hv, 10), q8(tv, 10), q8(dv, 0.5, 179)], -1))
-            Image.fromarray(np.stack(rows), 'RGB').save(os.path.join(OUT, f'field_{model}_{g}.png'), optimize=True)
+            Image.fromarray(np.stack(rows), 'RGB').save(os.path.join(OUT, f'field_{model}_{g}{sfx}.png'), optimize=True)
             if model == 'gfs':                                       # every swell train, for the "headed our way" dots: 3 pixels per cell
                 rows = []
-                for s in STEPS:
+                for s in steps:
                     f, gg = F[s], GG[s]; px = []
                     for k in ('w1', 'w2', 'w3'):
                         hv = sample(f[k + 'h'], LA.ravel(), LO.ravel()); tv = sample(f[k + 't'], LA.ravel(), LO.ravel()); dv = sample_dir(f[k + 'd'], LA.ravel(), LO.ravel())
@@ -312,13 +326,38 @@ def main(OUT):
                         dv = np.where(miss, sample_dir(gg[k + 'd'], LA.ravel(), LO.ravel()), dv)
                         px.append(np.stack([q8(hv, 10), q8(tv, 10), q8(dv, 0.5, 179)], -1))
                     rows.append(np.stack(px, 1).reshape(-1, 3))
-                Image.fromarray(np.stack(rows), 'RGB').save(os.path.join(OUT, f'field_gfs_{g}_sw.png'), optimize=True)
+                Image.fromarray(np.stack(rows), 'RGB').save(os.path.join(OUT, f'field_gfs_{g}_sw{sfx}.png'), optimize=True)
         meta[g] = dict(lat=[float(la[0]), float(la[-1]), GRIDS[g]['d'], len(la)], lon=[float(lo[0]), float(lo[-1]), GRIDS[g]['d'], len(lo)])
+    return meta
+
+def main(OUT):
+    os.makedirs(OUT, exist_ok=True)
+    cg, (ce, esrc) = latest_gfs(), latest_ec()
+    print('GFS-Wave', cg, 'ECMWF', ce, 'from', esrc, flush=True)
+    G, GG, E, P = pull(cg, ce, esrc, STEPS)
+    t0g, t0e = cg, ce
+    series = spot_series(G, E, STEPS, t0g, t0e)
+    meta = write_fields(OUT, G, GG, E, STEPS)
     fc = dict(made=dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), runs=dict(gfs=t0g.strftime('%Y-%m-%dT%HZ'), ec=t0e.strftime('%Y-%m-%dT%HZ')),
               steps=STEPS, buoy=BUOY, grids=meta, gfs=series['gfs'], ec=series['ec'])
     if P: fc['mslp'] = write_mslp(OUT, P)
+    del G, GG, E
+    # days 8-10 from the same runs: all of them or none (a run that doesn't reach 240 h yet, a failed download)
+    for f in os.listdir(OUT):
+        if f.startswith('field_') and f.endswith('_x.png'): os.remove(os.path.join(OUT, f))   # never an older pull's
+    try:
+        G, GG, E, PX = pull(cg, ce, esrc, XSTEPS, pressure=bool(P))
+        xs = spot_series(G, E, XSTEPS, t0g, t0e)
+        write_fields(OUT, G, GG, E, XSTEPS, '_x')
+        if P and PX: write_mslp(OUT, PX, XSTEPS, '_x')
+        fc['ext'] = dict(steps=XSTEPS, gfs=xs['gfs'], ec=xs['ec'], mslp=bool(P and PX))
+    except Exception as e:
+        print('no days 8-10 this pull:', repr(e), flush=True)
+        for f in os.listdir(OUT):
+            if f.startswith('field_') and f.endswith('_x.png'): os.remove(os.path.join(OUT, f))
     with open(os.path.join(OUT, 'fc.json'), 'w') as f: json.dump(fc, f, separators=(',', ':'))
-    print('wrote', OUT, 'steps', len(STEPS), 'peak Choc gfs', max(x['choc'] for x in series['gfs']), 'ec', max(x['choc'] for x in series['ec']))
+    print('wrote', OUT, 'steps', len(STEPS), '+ days 8-10' if 'ext' in fc else '(no days 8-10)', 'peak Choc gfs', max(x['choc'] for x in series['gfs']),
+          'ec', max(x['choc'] for x in series['ec'] if x['choc'] is not None))
 
 def add_pressure(DIR):
     """the sea-level pressure of the GFS run in DIR/fc.json, added to that pull (its other files untouched)"""

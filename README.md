@@ -36,7 +36,10 @@ Choc" with a bar. The map follows the same hour (below). The week chart
 underneath is the scrubber:
 drag it, use the arrow keys, « day / ‹ / Now / › / day »; nights are shaded,
 the tide and the wind (blue offshore, grey cross-shore, orange onshore) run
-along the bottom. Then the wind and tide for that hour, and the buoy check:
+along the bottom. "7 days | 10 days" next to Models | Swells runs the chart
+and the map out to day 10 when the run has it; days 8-10 are faded and
+labelled "trend only", because a swell from a storm that hasn't formed yet
+is a guess that far out. Then the wind and tide for that hour, and the buoy check:
 44097's latest reading next to what was forecast for that hour 1, 2 and 3 days
 before ("forecasts on track" when they were within half a foot or 15 %). Tap
 it for the last two days. If the model run doesn't reach the present (the

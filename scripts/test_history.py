@@ -423,6 +423,21 @@ class TestRatings(unittest.TestCase):
         self.assertEqual([x['d1'] for x in off['sessions']], [1.1, 2.1, None, None, None], 'offline: only what was scored before')
         self.assertNotIn('d1', self.ra.scorecard(s, cspec, None, None)['summary'], 'a lead with fewer than 3 sessions: no score')
 
+    def test_scorecard_reaches_a_week_and_ten_days_out(self):
+        """the 7- and 10-day forecasts (the end of the Forecast tab's week and of its 10 days), asked of sessions scored
+        before only at 1-3 days, alongside those, and summed up like them"""
+        s = self.sess(4, start=dt.datetime(2025, 7, 1, 8))
+        cspec = {self.ra.session_time(x).astimezone(UTC).strftime('%Y-%m-%dT%H'): [3.0, 2.0] for x in s}
+        prev = {'sessions': [{'date': x['date'], 'd1': 1.1, 'd2': 1.2, 'd3': 1.3} for x in s]}
+        asked = []
+        def forecast(t, lead):
+            asked.append(lead); return 2.0 + lead / 10
+        got = self.ra.scorecard(s, cspec, prev, forecast)
+        self.assertEqual(sorted(set(asked)), [7, 10], 'only the new leads are asked for')
+        self.assertEqual([(x['d1'], x['d7'], x['d10']) for x in got['sessions']], [(1.1, 2.7, 3.0)] * 4)
+        self.assertEqual(got['summary']['d7'], dict(n=4, rho_size=got['summary']['d7']['rho_size'], median_vs_arrived_ft=0.7, typical_miss_ft=0.7))
+        self.assertEqual(got['summary']['d10']['typical_miss_ft'], 1.0)
+
 
 @unittest.skipUnless(HAVE, 'needs numpy and scipy')
 class TestLanes(unittest.TestCase):

@@ -31,7 +31,7 @@ most of it CDIP's spectra archive. The workflow keeps the cache between runs, so
 | ECMWF IFS at a 4 x 5 grid over the sound (Open-Meteo), ERA5 for 2016 | daily wind | the map's wind arrows |
 | CO-OPS 8510719 (Silver Eel Pond) | highs and lows | the tide's rate (incoming or not), the Past days' tide lane |
 | The crew's surf log (Firestore `surf_logs`), with the read-only key in the `SURFLOG_READ_KEY` secret | each session's time, its three ratings, the swell and tide the app saved | the ratings model and the sessions' statistics |
-| GFS-Wave's archived runs on AWS (NOAA's open data), for new sessions only | the forecast 1, 2 and 3 days before each session | the forecast scorecard |
+| GFS-Wave's archived runs on AWS (NOAA's open data), for new sessions only | the forecast 1, 2, 3, 7 and 10 days before each session | the forecast scorecard |
 | ERA5's sea-level pressure, 2016-2022: WeatherBench2's 6-hourly 1° copy on Google Cloud (a zarr store, no key) | the pressure over the North Atlantic every 6 hours | the Past days' storm view |
 | GFS analyses since 2023 (f000 of each 00/06/12/18Z run, NOAA's open data on AWS) | the same | the same |
 
@@ -55,7 +55,7 @@ Replace the forward-ray table with a new one and the next run rebuilds all ten y
 | `research/hist.js` | all of these as the page's constants (`scripts/sound-check/page/build_hist.py`) |
 | `research/ocean/day/<year>.json` | three lanes of the Past days panels: `44097`, the trains every hour; `wind`, `{"YYYY-MM-DDTHH" (UTC hour): [kn, from deg]}` every hour; `tide`, `{"YYYY-MM-DD" (Eastern day): [["HH:MM" Eastern, ft, "H" or "L"], ...]}`. An hour or a day without data is left out, never 0. The file's other lanes stay as they are, in their places (a new lane goes last) |
 | `research/ocean/pressure/<YYYY>-<MM>.png`, `meta.json` | the sea-level pressure every 6 hours since 2016, one picture a month (`pressure.py`, below) |
-| `research/fc/score.json` | the forecast scorecard: per session, GFS-Wave's forecast for Choc 1, 2 and 3 days before and what the buoy-based model says arrived |
+| `research/fc/score.json` | the forecast scorecard: per session, GFS-Wave's forecast for Choc 1, 2, 3, 7 and 10 days before (`d1` … `d10`; the 7 and 10 days were added on 19 Oct 2026, and the bot asks the archive for them on its next runs, 24 sessions a run) and what the buoy-based model says arrived |
 
 The other lanes of `research/ocean/day/` (Montauk, Long Island, the Copernicus model) and the model's ocean maps
 in `research/ocean/field/` aren't part of this update yet.

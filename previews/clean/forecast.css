@@ -71,16 +71,17 @@
 
 /* ── Week scrubber ────────────────────────────────────────────────── */
 .cl-f-wk { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "wkh" "cx" "lgd" "ctl" "dz"; }
-.cl-f-wkh { grid-area: wkh; display: flex; align-items: flex-start; justify-content: flex-end; padding: 0 var(--gut) 6px; }
+.cl-f-wkh { grid-area: wkh; display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; justify-content: flex-end; padding: 0 var(--gut) 6px; }
+.cl-f-dseg[hidden] { display: none; }
 .cl-f-cx { grid-area: cx; }
 .cl-f-lgd { grid-area: lgd; }
 .cl-f-ctl { grid-area: ctl; }
 .cl-f-dz { grid-area: dz; }
 .cl-f-dz[hidden] { display: none; }
 /* Models | Swells: the chart's two views */
-.cl-f-vseg { display: inline-flex; border: 1px solid var(--hair); border-radius: 22px; overflow: hidden; }
-.cl-f-vseg button { min-height: 44px; min-width: 44px; padding: 0 12px; font-size: 13px; font-weight: 600; color: var(--muted); }
-.cl-f-vseg button[aria-pressed="true"] { color: var(--bg); background: var(--ink); border-radius: 22px; }
+.cl-f-vseg, .cl-f-dseg { display: inline-flex; border: 1px solid var(--hair); border-radius: 22px; overflow: hidden; }
+.cl-f-vseg button, .cl-f-dseg button { min-height: 44px; min-width: 44px; padding: 0 12px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.cl-f-vseg button[aria-pressed="true"], .cl-f-dseg button[aria-pressed="true"] { color: var(--bg); background: var(--ink); border-radius: 22px; }
 /* the chart's key, under it */
 .cl-f-lgd { display: flex; flex-wrap: wrap; column-gap: 12px; row-gap: 2px; padding: 2px var(--gut) 0 calc(var(--gut) + 30px); font-size: 12px; color: var(--muted); }
 .cl-f-lgd span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
@@ -95,6 +96,11 @@
 .cl-f-cx:focus-visible { outline-offset: -2px; }
 .cl-f-night { fill: var(--shade); }
 .cl-f-past { fill: var(--shade); }
+/* days 8-10: the run's long range, faded ("trend only") */
+.cl-f-xr { fill: var(--bg); opacity: .55; }
+.cl-f-xb { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
+.cl-f-xl { font-size: 10px; font-weight: 600; fill: var(--muted); }
+.cl-f-trend { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
 .cl-f-grid { stroke: var(--hair); stroke-width: 1; }
 .cl-f-day { stroke: var(--hair); stroke-width: 1; }
 .cl-f-ax { font-size: 10px; fill: var(--muted); }
