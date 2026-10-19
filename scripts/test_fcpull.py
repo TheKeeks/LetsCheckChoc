@@ -207,5 +207,64 @@ class TestPressure(unittest.TestCase):
         self.assertAlmostEqual(float(p), 1000.0 + 4.0 + 0.11, delta=0.06)
 
 
+@unittest.skipUnless(HAVE_DEPS, "fcpull needs numpy, Pillow and eccodes")
+class TestTenDays(unittest.TestCase):
+    """Days 8-10 for the Forecast tab's "10 days" switch: the same pull, kept apart from the week (fc.json's ext and
+    field_*_x.png), all of them or none."""
+
+    def field(self, v):
+        return dict(v=numpy.full((181, 360), float(v), numpy.float32), la0=90.0, lo0=0.0, dl=1.0, dj=1.0, ni=360, nj=181)
+
+    def run_pull(self, ec_reaches=240):
+        import tempfile
+        from PIL import Image
+        m, _ = load_fcpull(set())
+        cg, ce = dt.datetime(2026, 10, 9, 12, tzinfo=UTC), dt.datetime(2026, 10, 9, 12, tzinfo=UTC)
+        m.latest_gfs = lambda: cg
+        m.latest_ec = lambda: (ce, MIRROR)
+        gv = dict(hs=1.5, w1h=1.2, w1t=11, w1d=140, w2h=0.5, w2t=8, w2d=100, w3h=0.3, w3t=6, w3d=180, wwh=0.4, wwt=4, wwd=200, wind=5, wdir=330)
+        asked = []
+        def gfs(c, s):
+            asked.append(("gfs", s)); return s, {k: self.field(v + s / 1000) for k, v in gv.items()}
+        def ec(c, src, s):
+            asked.append(("ec", s))
+            if s > ec_reaches: raise OSError("404: this run doesn't reach %d h yet" % s)
+            return s, {k: self.field(v) for k, v in dict(swh=1.4, mwd=135, pp1d=10, h1012=0.3, h1214=0.2, h1417=0.1, h1721=0, h2125=0, h2530=0).items()}
+        m.gfs_step, m.gfs_glob_step, m.ec_step = gfs, gfs, ec
+        m.gfs_mslp_step = lambda c, s: (s, self.field(101300.0))
+        out = tempfile.mkdtemp()
+        m.main(out)
+        fc = json.loads(Path(out, "fc.json").read_text())
+        rows = {}
+        for f in Path(out).glob("field_*.png"):
+            with Image.open(f) as im: rows[f.name] = im.size[1]
+        return m, fc, rows, asked
+
+    def test_days_8_to_10_ride_along_in_their_own_files(self):
+        m, fc, rows, asked = self.run_pull()
+        self.assertEqual(m.XSTEPS, list(range(174, 241, 6)))
+        self.assertEqual(fc["steps"], m.STEPS, "the week as before")
+        self.assertEqual(len(fc["gfs"]), len(m.STEPS))
+        self.assertEqual(fc["gfs"][-1]["t"], "2026-10-16T12:00Z", "the week ends 168 h after the run")
+        x = fc["ext"]
+        self.assertEqual(x["steps"], m.XSTEPS)
+        self.assertEqual([r["t"] for r in x["gfs"]][:2], ["2026-10-16T18:00Z", "2026-10-17T00:00Z"])
+        self.assertEqual(x["gfs"][-1]["t"], "2026-10-19T12:00Z", "10 days after the run")
+        self.assertEqual(len(x["ec"]), len(m.XSTEPS))
+        self.assertTrue(all(r["choc"] is not None for r in x["ec"]))
+        self.assertTrue(x["mslp"])
+        for name in ("field_gfs_reg", "field_gfs_ocean", "field_ec_reg", "field_ec_ocean", "field_gfs_reg_sw", "field_gfs_ocean_sw", "field_gfs_mslp"):
+            self.assertEqual(rows[name + ".png"], len(m.STEPS), name + ": a row per step of the week")
+            self.assertEqual(rows[name + "_x.png"], len(m.XSTEPS), name + "_x: a row per step of days 8-10")
+        self.assertIn(("ec", 240), asked)
+
+    def test_a_run_that_doesnt_reach_day_10_yet_publishes_the_week_alone(self):
+        m, fc, rows, _ = self.run_pull(ec_reaches=200)
+        self.assertNotIn("ext", fc)
+        self.assertEqual(len(fc["gfs"]), len(m.STEPS))
+        self.assertEqual(sorted(n for n in rows if n.endswith("_x.png")), [], "no half-written days 8-10")
+        self.assertEqual(rows["field_gfs_reg.png"], len(m.STEPS))
+
+
 if __name__ == "__main__":
     unittest.main()

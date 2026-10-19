@@ -27,6 +27,14 @@
 //     lcc-f-chart): the two models as lines, or the same week as a stack
 //     of where the swell comes from (each family's share of the energy
 //     times the mean height, coloured like the swell rows).
+//     7 days | 10 days (lcc-f-days, shown when the run has days 8-10):
+//     the same run out to 240 h, every 6 h, days 8-10 faded and labelled
+//     "trend only" (a swell from a storm already on the map is fair at
+//     that range; one from a storm not yet formed, and the wind, are a
+//     guess). Their headline says so and how far apart the models are;
+//     their wind is GFS-Wave's (the app's own wind stops at 7 days) and
+//     their tide comes from the high and low times (cosine between them).
+//     The map follows (lcc-fc days: 10 loads the run's _x images).
 //   • Layout: one column on a phone. From 900 px the map takes the full
 //     width with the readout as a card over its top-left, the zoom and
 //     spot top-right and the week docked in a dark band along its bottom
@@ -66,7 +74,16 @@
   function rgb(c, a) { return a == null ? 'rgb(' + c.join(',') + ')' : 'rgba(' + c.join(',') + ',' + a + ')'; }
 
   var root = null, E = {};
-  var fc = C.model.state;                 // { steps, made, runs, buoy, status }: core's, read only
+  // core's run, read only: { steps, ext, made, runs, buoy, status }. Here steps is the week, or the week and days 8-10
+  // when "10 days" is on and the run has them (core's own state.steps stays the week, for Choc TV).
+  var sc = C.model.state, days = 7, joined = { a: null, b: null, v: null };
+  var fc = {};
+  ['ext', 'made', 'runs', 'buoy', 'status', 'checkedAt'].forEach(function (k) { Object.defineProperty(fc, k, { get: function () { return sc[k]; } }); });
+  Object.defineProperty(fc, 'steps', { get: function () {
+    if (!sc.steps || days !== 10 || !sc.ext) return sc.steps;
+    if (joined.a !== sc.steps || joined.b !== sc.ext) joined = { a: sc.steps, b: sc.ext, v: sc.steps.concat(sc.ext) };
+    return joined.v;
+  } });
   var spot = 'choc';
   var cur = { mode: 'now', i: -1 };       // 'now' follows the clock; 'pick' holds a picked step
   var geom = null, drag = null, rz = null;
@@ -91,6 +108,7 @@
   try { if (localStorage.getItem('lcc-f-spot') === 'wild') spot = 'wild'; } catch (_) { /* private mode */ }
   try { var z0 = localStorage.getItem('lcc-f-zoom'); if (ZOOMS[z0]) map.zoom = z0; } catch (_) { /* private mode */ }
   try { if (localStorage.getItem('lcc-f-chart') === 'swells') view = 'swells'; } catch (_) { /* private mode */ }
+  try { if (localStorage.getItem('lcc-f-days') === '10') days = 10; } catch (_) { /* private mode */ }
 
   function err(where, e) { C.err('forecast.' + where, e); }
   function run(where, fn) { try { fn(); } catch (e) { err(where, e); } }
@@ -144,6 +162,9 @@
         '</div>' +
         '<div class="cl-f-wk">' +
           '<div class="cl-f-wkh">' +
+            '<div class="cl-f-dseg" role="group" aria-label="How far ahead" hidden>' +
+              '<button type="button" data-days="7" aria-pressed="true">7 days</button><button type="button" data-days="10" aria-pressed="false">10 days</button>' +
+            '</div>' +
             '<div class="cl-f-vseg" role="group" aria-label="Chart">' +
               Object.keys(VIEWS).map(function (v) { return '<button type="button" data-view="' + v + '" aria-pressed="false">' + VIEWS[v] + '</button>'; }).join('') +
             '</div>' +
@@ -187,6 +208,7 @@
     E.f = el.querySelector('.cl-f');
     E.mbar = el.querySelector('.cl-f-mbar');
     E.vseg = el.querySelector('.cl-f-vseg');
+    E.dseg = el.querySelector('.cl-f-dseg');
     E.cxd = el.querySelector('#cl-f-cxd');
     E.lgd = el.querySelector('.cl-f-lgd');
     E.dz = el.querySelector('.cl-f-dz');
@@ -206,6 +228,10 @@
     E.vseg.addEventListener('click', C.guard('forecast.view', function (ev) {
       var b = ev.target.closest('button[data-view]'); if (!b) return;
       setView(b.getAttribute('data-view'));
+    }));
+    E.dseg.addEventListener('click', C.guard('forecast.days', function (ev) {
+      var b = ev.target.closest('button[data-days]'); if (!b) return;
+      setDays(Number(b.getAttribute('data-days')));
     }));
     // full screen: Back (the iPhone's back swipe) and Escape close it
     window.addEventListener('popstate', C.guard('forecast.fullpop', function (ev) {
@@ -250,6 +276,7 @@
 
   function render(reason) {
     if (!root) return;
+    run('days', renderDays);
     if (C.tab() === 'forecast') loadMap();   // the first time the tab is on screen (at boot it gets no onShow)
     if (reason === 'tick' && Date.now() - prev.at > 3 * HOUR) loadPrevRuns();
     run('head', renderHead);
@@ -270,8 +297,9 @@
     var sp = SPOTS[spot], s = fc.steps[i], v = s[sp.k], at = new Date(s.t);
     var h = '<p class="cl-f-when"><span class="cl-serif">' + esc(hourLabel(at)) + '</span>' + (now ? '<span class="cl-f-now">now</span>' : '') + '</p>';
     h += '<p class="cl-f-big"><span class="cl-f-num">' + (isNum(v.m) ? F.num(v.m) : DASH) + '</span><span class="cl-f-unit">ft at ' + esc(sp.name) + '</span></p>';
-    if (compact) return h + '<p class="cl-f-models">GFS ' + (isNum(v.g) ? F.num(v.g) : DASH) + ' · ECMWF ' + (isNum(v.e) ? F.num(v.e) : DASH) + '</p>';
+    if (compact) return h + '<p class="cl-f-models">GFS ' + (isNum(v.g) ? F.num(v.g) : DASH) + ' · ECMWF ' + (isNum(v.e) ? F.num(v.e) : DASH) + '</p>' + (s.ext ? trendHTML(v, true) : '');
     h += '<p class="cl-f-models">GFS-Wave ' + (isNum(v.g) ? F.num(v.g) : DASH) + ' · ECMWF ' + (isNum(v.e) ? F.num(v.e) : DASH) + NB + 'ft</p>';
+    if (s.ext) h += trendHTML(v);
     var ps = parts(s, spot);
     h += '<ul class="cl-f-tr" aria-label="Swells at buoy 44097 and their share of ' + esc(sp.name) + '">';
     ps.forEach(function (p, n) {
@@ -284,6 +312,12 @@
     if (!ps.length) h += '<li class="cl-f-none">No swell reaches ' + esc(sp.name) + ' this hour</li>';
     return h + '</ul>';
   }
+  // Days 8-10: a trend, and how far apart the two models are (the gap is the honest error bar that far out).
+  function trendHTML(v, compact) {
+    var gap = isNum(v.g) && isNum(v.e) ? Math.abs(v.g - v.e) : null;
+    return '<p class="cl-f-trend">' + (compact ? 'Trend only' : 'Days 8–10: a trend, not a forecast') +
+      (gap == null ? '' : ' · models ' + (gap < 0.3 ? 'agree' : F.num(gap) + NB + 'ft apart')) + '</p>';
+  }
   // The headline is as tall as the run's tallest hour (more swells, longer
   // lines), so the week chart below doesn't jump under a finger dragging
   // through the hours (and on a wide screen the card over the map keeps its
@@ -291,7 +325,7 @@
   var headMin = { key: '', px: 0 };
   function holdHeadHeight() {
     // the border box's width (the wide screen's card has a border; the probe is border-box too)
-    var w = Math.round(E.head.getBoundingClientRect().width * 100) / 100, key = fc.made + '|' + spot + '|' + w + '|' + layout();
+    var w = Math.round(E.head.getBoundingClientRect().width * 100) / 100, key = fc.made + '|' + spot + '|' + w + '|' + layout() + '|' + fc.steps.length;
     if (!w || headMin.key === key) return;
     var probe = document.createElement('div');
     probe.className = E.head.className;
@@ -350,10 +384,10 @@
     if (map.status !== 'ready' || map.raf) return;
     map.raf = requestAnimationFrame(function () {
       map.raf = 0;
-      var i = curStep(), t = i >= 0 ? fc.steps[i].t : Date.now(), key = t + spot;
+      var i = curStep(), t = i >= 0 ? fc.steps[i].t : Date.now(), nd = sc.ext ? days : 7, key = t + spot + nd;
       if (map.sent === key) return;
       map.sent = key;
-      post({ type: 'lcc-fc', time: t, spot: spot });
+      post({ type: 'lcc-fc', time: t, spot: spot, days: nd });
     });
   }
   function setZoom(z) {
@@ -453,6 +487,38 @@
   function renderView() {
     E.vseg.querySelectorAll('button[data-view]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === view)); });
   }
+  // 7 days | 10 days: only when the run has days 8-10 (a pull made before they were added, or one whose ECMWF run
+  // didn't reach 240 h yet, has none, and the week shows as before whatever the setting)
+  function setDays(n) {
+    if ((n !== 7 && n !== 10) || n === days) return;
+    var i = curStep(), t = i >= 0 ? fc.steps[i].t : null;
+    days = n;
+    try { localStorage.setItem('lcc-f-days', String(n)); } catch (_) { /* private mode */ }
+    // the hour on show stays on show; a day 8-10 hour going back to 7 days becomes the week's last step
+    if (cur.mode === 'pick' && t != null) cur.i = nearestIndex(t);
+    render('days');
+  }
+  function renderDays() {
+    E.dseg.hidden = !sc.ext;
+    E.dseg.querySelectorAll('button[data-days]').forEach(function (b) { b.setAttribute('aria-pressed', String(Number(b.getAttribute('data-days')) === (sc.ext ? days : 7))); });
+  }
+  function nearestIndex(t) {
+    var S = fc.steps, b = 0;
+    S.forEach(function (s, k) { if (Math.abs(s.t - t) < Math.abs(S[b].t - t)) b = k; });
+    return b;
+  }
+  // The tide at a time: the 6-minute predictions (7 days), or past them a cosine between the high and low times
+  // (10 days), as the history's tide; null outside both (never a made-up level).
+  function tideH(t) {
+    var td = D.tideAt(new Date(t));
+    if (td && isNum(td.h)) return td.h;
+    var ev = D.tideEvents(), a = null, b = null;
+    for (var k = 0; k < ev.length; k++) { var et = ev[k].t.getTime(); if (et <= t) a = ev[k]; else { b = ev[k]; break; } }
+    if (!a || !b || !isNum(a.h) || !isNum(b.h)) return null;
+    var f = (t - a.t.getTime()) / (b.t.getTime() - a.t.getTime());
+    return (a.h + b.h) / 2 + (a.h - b.h) / 2 * Math.cos(Math.PI * f);
+  }
+  function windAt(t) { return D.windAt(new Date(t)) || C.model.windAt(t); }
   // The Swells view at one step: the spot's height (the models' mean) split by where its swell comes from, each
   // family's share of the energy reaching the spot times the mean, so the stack's top is the mean. An hour whose
   // swells reach nothing (or that has none) is all "other"; no mean, no stack (null).
@@ -535,7 +601,9 @@
     for (d = U.startOfDay(new Date(t0)).getTime(); d <= t1; d += DAY) {
       if (d > t0) o += '<line class="cl-f-day" x1="' + x(d).toFixed(1) + '" x2="' + x(d).toFixed(1) + '" y1="' + PT + '" y2="' + (PT + CH) + '"/>';
       var mid = Math.max(t0, d) + (Math.min(t1, d + DAY) - Math.max(t0, d)) / 2;
-      if (Math.min(t1, d + DAY) - Math.max(t0, d) >= 8 * HOUR) o += '<text class="cl-f-dl" x="' + x(mid).toFixed(1) + '" y="' + (PT + CH + 13) + '" text-anchor="middle">' + esc(F.day(new Date(mid))) + '</text>';
+      // (10 days on a phone: a day needs half its hours on the chart for a label, so the run's short last morning
+      // doesn't crowd the day before it)
+      if (Math.min(t1, d + DAY) - Math.max(t0, d) >= (t1 - t0 > 8 * DAY && W < 560 ? 12 : 8) * HOUR) o += '<text class="cl-f-dl" x="' + x(mid).toFixed(1) + '" y="' + (PT + CH + 13) + '" text-anchor="middle">' + esc(F.day(new Date(mid))) + '</text>';
     }
     if (view === 'swells') {
       // where the swell comes from, stacked; the mean on top
@@ -551,9 +619,21 @@
       o += line(S, function (s) { return s[sp.k].e; }, 'cl-f-ec', x, y);
     }
     o += line(S, function (s) { return s[sp.k].m; }, 'cl-f-mean', x, y);
+    // days 8-10: faded, "trend only"
+    var xi = -1; S.forEach(function (s, k) { if (xi < 0 && s.ext) xi = k; });
+    if (xi > 0) {
+      var xa = (x(S[xi - 1].t) + x(S[xi].t)) / 2, xw = W - PR - xa;
+      o += '<rect class="cl-f-xr" x="' + xa.toFixed(1) + '" y="' + PT + '" width="' + xw.toFixed(1) + '" height="' + CH + '"/>' +
+        '<line class="cl-f-xb" x1="' + xa.toFixed(1) + '" x2="' + xa.toFixed(1) + '" y1="' + PT + '" y2="' + (PT + CH) + '"/>' +
+        (xw >= 58 ? '<text class="cl-f-xl" x="' + (xa + xw / 2).toFixed(1) + '" y="' + (PT + 10) + '" text-anchor="middle">trend only</text>' : '');
+    }
     if (nowT >= t0 && nowT <= t1) o += '<line class="cl-f-nowl" x1="' + x(nowT).toFixed(1) + '" x2="' + x(nowT).toFixed(1) + '" y1="' + PT + '" y2="' + (PT + CH) + '"/>';
     // tide lane
     var tc = D.tideCurve().filter(function (p, k) { return k % 3 === 0 && p.t.getTime() >= t0 && p.t.getTime() <= t1 && isNum(p.h); });
+    // past the 6-minute predictions (days 8-10): between the high and low times
+    for (var tt = tc.length ? tc[tc.length - 1].t.getTime() + 30 * 60e3 : t0; tt <= t1; tt += 30 * 60e3) {
+      var th = tideH(tt); if (isNum(th)) tc.push({ t: new Date(tt), h: th });
+    }
     if (tc.length > 1) {
       var hs = tc.map(function (p) { return p.h; }), lo = Math.min.apply(null, hs), hi = Math.max.apply(null, hs);
       var ty = function (hh) { return yT + LT - (hh - lo) / ((hi - lo) || 1) * LT; };
@@ -567,7 +647,7 @@
     // wind lane: arrows where the wind blows to, coloured by what it does at Choc
     var every = wide ? 3 * HOUR : 6 * HOUR, arrow = (I.paths && I.paths.chartArrow) || 'M0 3.5V-3.5M-3 -0.5L0 -3.5L3 -0.5';
     for (var t = Math.ceil(t0 / every) * every; t <= t1; t += every) {
-      var wd = D.windAt(new Date(t)); if (!wd || !isNum(wd.dir)) continue;
+      var wd = windAt(t); if (!wd || !isNum(wd.dir)) continue;
       o += '<path class="cl-f-wa ' + U.qualityClass(wd.quality) + '" d="' + arrow + '" transform="translate(' + x(t).toFixed(1) + ',' + yW + ') rotate(' + Math.round(wd.dir + 180) + ') scale(1.15)"/>';
     }
     o += '<text class="cl-f-ax" x="' + (PL - 6) + '" y="' + (yW + 3) + '" text-anchor="end">wind</text>';
@@ -577,9 +657,10 @@
     if (E.cx.__key !== key) { E.cx.innerHTML = o; E.cx.__key = key; }
     E.cx.setAttribute('aria-valuemax', String(S.length - 1));
     setHTML(E.lgd, legendHTML());
-    E.cxd.textContent = view === 'swells'
+    E.cxd.textContent = (view === 'swells'
       ? 'Chart: ' + sp.name + '’s height over the week (the two models’ mean), split by where its swell comes from: southeast, east, south and other, stacked, each as thick as its share of the energy. Tide and wind underneath.'
-      : 'Chart: ' + sp.name + '’s height over the week, GFS-Wave solid orange, ECMWF dashed blue, the band between them, their mean in bold. Tide and wind underneath.';
+      : 'Chart: ' + sp.name + '’s height over the week, GFS-Wave solid orange, ECMWF dashed blue, the band between them, their mean in bold. Tide and wind underneath.') +
+      (xi > 0 ? ' Days 8 to 10 are faded: a trend, not a forecast.' : '');
     E.wk.setAttribute('data-view', view);
     drawCursor();
   }
@@ -689,7 +770,8 @@
   // ════════════════════════════════════════════════════════════════════
   function renderCond() {
     var i = curStep(), t = i >= 0 ? new Date(fc.steps[i].t) : new Date();
-    var w = D.windAt(t), td = D.tideAt(t), h = '';
+    var w = windAt(t.getTime()), td = D.tideAt(t), h = '';
+    if (td && !isNum(td.h) && isNum(tideH(t.getTime()))) td = { h: tideH(t.getTime()), rising: td.rising };
     h += '<p><span class="cl-lab">Wind</span> ' + (w && isNum(w.mph)
       ? esc(F.wind(w.mph, w.dir)) + (w.quality ? ', ' + C.html.quality(w.quality, 'long') : '') + (isNum(w.gust) ? ' · gusts ' + Math.round(w.gust) : '')
       : DASH) + '</p>';
@@ -826,7 +908,7 @@
     var i = curStep();
     return { fc: fc.status, made: fc.made, step: i, t: i >= 0 ? fc.steps[i].t : null, mode: cur.mode, spot: spot,
       prev: prev.status, verif: verif.status, playing: !!play.timer, map: { status: map.status, zoom: map.zoom },
-      view: view, full: full.on, layout: layout() };
+      view: view, full: full.on, layout: layout(), days: sc.ext ? days : 7, steps: fc.steps ? fc.steps.length : 0 };
   };
 
   C.register('forecast', {

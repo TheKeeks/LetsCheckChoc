@@ -131,7 +131,8 @@
     const sg = v => (v == null ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)} ft`), f2 = v => (v == null ? '—' : v.toFixed(2));
     tb.innerHTML = '<thead><tr><th>Looking</th><th class="num">Orders your sessions by size</th><th class="num">Off from what arrived</th><th class="num">Typical miss</th></tr></thead><tbody>' +
       `<tr><td>The buoy, that hour</td><td class="num">${f2((m.buoy_model || {}).rho_size)}</td><td class="num">—</td><td class="num">—</td></tr>` +
-      [1, 2, 3].map(k => { const r = m['d' + k] || {}; return `<tr><td>${k} day${k > 1 ? 's' : ''} ahead</td><td class="num">${f2(r.rho_size)}</td><td class="num">${sg(r.median_vs_arrived_ft)}</td><td class="num">${r.typical_miss_ft == null ? '—' : r.typical_miss_ft.toFixed(1) + ' ft'}</td></tr>`; }).join('') + '</tbody>';
+      // 1-3 days always; a week and ten days out (the Forecast tab's week and its 10 days) once the bot has scored them
+      [1, 2, 3, 7, 10].filter(k => k <= 3 || m['d' + k]).map(k => { const r = m['d' + k] || {}; return `<tr><td>${k} day${k > 1 ? 's' : ''} ahead</td><td class="num">${f2(r.rho_size)}</td><td class="num">${sg(r.median_vs_arrived_ft)}</td><td class="num">${r.typical_miss_ft == null ? '—' : r.typical_miss_ft.toFixed(1) + ' ft'}</td></tr>`; }).join('') + '</tbody>';
     // the caption's numbers, from the same file: the sessions scored, how close on average, the typical miss
     const leads = ['d1', 'd2', 'd3'].map(k => m[k]).filter(r => r && r.median_vs_arrived_ft != null && r.typical_miss_ft != null);
     if (!leads.length) return;
@@ -140,6 +141,10 @@
     const w = Math.max(...leads.map(r => Math.abs(r.median_vs_arrived_ft))), lo = Math.min(...leads.map(r => r.typical_miss_ft)), hi = Math.max(...leads.map(r => r.typical_miss_ft));
     set('fcsWithin', w <= 0.05 ? 'a twentieth of a foot' : w <= 0.1 ? 'a tenth of a foot' : w.toFixed(1) + ' ft');
     set('fcsMiss', lo.toFixed(1) === hi.toFixed(1) ? lo.toFixed(1) + ' ft' : `${lo.toFixed(1)}–${hi.toFixed(1)} ft`);
+    // further out: how much the 10 days' end can be trusted
+    const far = [7, 10].map(k => [k, m['d' + k]]).filter(([, r]) => r && r.typical_miss_ft != null);
+    set('fcsLong', far.length ? ' Further out it typically misses by ' + far.map(([k, r]) => `${r.typical_miss_ft.toFixed(1)} ft ${k === 7 ? 'a week' : 'ten days'} ahead`).join(' and ') +
+      ` (${Math.max(...far.map(([, r]) => r.n))} sessions), which is why the Forecast tab fades days 8–10 as a trend.` : '');
   });
 
   // ── check any day (history)

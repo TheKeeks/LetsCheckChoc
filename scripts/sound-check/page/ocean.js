@@ -888,19 +888,31 @@
   const windWord = (k) => (k === 'light' || k === 'offshore' ? 'clean' : k === 'cross' ? 'cross-shore' : 'onshore');
 
   // ── field images: row = forecast step, one pixel per grid cell = (height dm, period 0.1 s, from/2 deg); 255 = no data
+  // A pull's image (from the same place as its numbers; a published pull's images are keyed to it, so a cached older
+  // one never pairs with newer numbers), and with "10 days" on (d._long) its days 8-10 (<name>_x.png, rows = the
+  // run's ext steps) joined under it: {w, h, a} or null. Days 8-10 that don't load leave the week alone.
+  function fcImgRows(d, file, withExt) {
+    const base = (d && d._base) || 'fc/', q = /^https?:/.test(base) ? '?m=' + encodeURIComponent(d.made) : '';
+    const one = (f) => img(base + f + q).then((im) => (im ? { w: im.width, h: im.height, a: window.CHOC.pixels(im) } : null));
+    return Promise.all([one(file), withExt ? one(file.replace(/\.png$/, '_x.png')) : null]).then(([m, x]) => {
+      if (!m || !x || x.w !== m.w) return m;
+      const a = new Uint8ClampedArray(m.a.length + x.a.length); a.set(m.a); a.set(x.a, m.a.length);
+      return { w: m.w, h: m.h + x.h, a };
+    });
+  }
   function fcPx(model, g) {
     const k = model + '_' + g; if (k in FC.px) return FC.px[k];
     FC.px[k] = null;
-    const d = FC.d, base = (d && d._base) || 'fc/';         // from the same place as the forecast's numbers; a published
-    img(`${base}field_${k}.png${/^https?:/.test(base) ? '?m=' + encodeURIComponent(d.made) : ''}`).then((im) => {   // pull's images are keyed to it, so a cached older one never pairs with newer numbers
-      if (!im || FC.d !== d) return;                         // ↻ brought a newer pull while this one loaded
-      FC.px[k] = { w: im.width, a: window.CHOC.pixels(im) };
+    const d = FC.d;
+    fcImgRows(d, `field_${k}.png`, d && d._long).then((F) => {
+      if (!F || FC.d !== d) return;                          // ↻ (or the 7 | 10 days switch) changed the pull while this one loaded
+      FC.px[k] = { w: F.w, a: F.a };
       FC.aim = {}; FC.arr = {};
       if (S.phase === 'week') { draw(); fcTimeline(); }
     });
     return null;
   }
-  function cellAt(F, step, q) { const p = 4 * (step * F.w + q); return F.a[p] === 255 || F.a[p + 1] === 255 ? null : [F.a[p] / 10, F.a[p + 1] / 10, F.a[p + 2] * 2]; }
+  function cellAt(F, step, q) { const p = 4 * (step * F.w + q); return p >= F.a.length || F.a[p] === 255 || F.a[p + 1] === 255 ? null : [F.a[p] / 10, F.a[p + 1] / 10, F.a[p + 2] * 2]; }
   function fcAt(lon, lat, model, step) {                     // [height m, period s, from deg] or null (land / outside)
     for (const g of ['reg', 'ocean']) {
       const F = fcPx(model, g), Gd = FC.d.grids[g]; if (!F) continue;
@@ -1265,15 +1277,15 @@
   function stormLoad() {
     const d = FC.d, G = d && d.grids && d.grids.ocean;
     if (!d || !G || !d.mslp || !d.mslp.file) { ST.status = d ? 'none' : 'idle'; return; }
-    const base = d._base || 'fc/', key = base + '|' + d.made;
+    const base = d._base || 'fc/', key = base + '|' + d.made + '|' + !!d._long;
     if (ST.key === key) return;
     ST.key = key; ST.status = 'loading'; ST.hpa = ST.g = ST.lows = ST.tracks = null;
-    img(`${base}${d.mslp.file}${/^https?:/.test(base) ? '?m=' + encodeURIComponent(d.made) : ''}`).then((im) => {
+    fcImgRows(d, d.mslp.file, d._long && d.ext && d.ext.mslp).then((im) => {
       if (ST.key !== key) return;                            // a newer pull arrived meanwhile
       const n = G.lat[3] * G.lon[3];
-      if (!im || im.width !== n) { ST.status = 'failed'; draw(); return; }
-      const a = window.CHOC.pixels(im), hpa = [];
-      for (let k = 0; k < im.height; k++) {
+      if (!im || im.w !== n) { ST.status = 'failed'; draw(); return; }
+      const a = im.a, hpa = [];
+      for (let k = 0; k < im.h; k++) {
         const row = new Float32Array(n);
         for (let q = 0; q < n; q++) { const o = 4 * (k * n + q), v = a[o] << 8 | a[o + 1]; row[q] = v === 65535 ? NaN : v / 10 + 800; }
         hpa.push(row);
@@ -1527,7 +1539,14 @@
       (d.runs.gfs === d.runs.ec ? ` · GFS-Wave and ECMWF ${run(d.runs.gfs)} runs` : ` · GFS-Wave ${run(d.runs.gfs)} run · ECMWF ${run(d.runs.ec)} run`);
     $('fcAsOf').textContent = (note ? note[0].toUpperCase() + note.slice(1) + ' · ' : '') + txt; $('fcAsOf').title = txt;
   }
-  function fcLoad(d) {                                       // the forecast's numbers, on load and when ↻ brings a newer pull
+  // The Forecast tab's 7 | 10 days (lcc-fc days): with 10, the pull's days 8-10 (fc.json's ext) join the week and
+  // the map reads them like any other step. The research page itself shows the week.
+  function fcView(d) {
+    if (!d || !FC.long || !d.ext || !d.ext.gfs || !d.ext.gfs.length) return d;
+    return Object.assign({}, d, { gfs: d.gfs.concat(d.ext.gfs), ec: d.ec.concat(d.ext.ec || []), _long: true });
+  }
+  function fcLoad(d) { FC.raw = d; fcShow(fcView(d)); }
+  function fcShow(d) {                                       // the forecast's numbers, on load and when ↻ brings a newer pull
     if (!d) {
       $('fcAsOf').textContent = 'The forecast file didn’t load.';
       if (FCUI) { FC.failed = true; draw(); if (window.parent !== window) window.parent.postMessage({ type: 'lcc-fc-failed' }, location.origin); }
@@ -1551,6 +1570,7 @@
     const m = e.data; if (!m) return;
     if (m.type === 'lcc-fc-refresh') { fcRefreshNow(); return; }   // the tab's ↻ (its bar's own is hidden there)
     if (m.type !== 'lcc-fc') return;
+    if ((m.days === 7 || m.days === 10) && (m.days === 10) !== !!FC.long) { FC.long = m.days === 10; if (FC.raw) fcShow(fcView(FC.raw)); }
     if ((m.spot === 'choc' || m.spot === 'wild') && m.spot !== FC.spot) setSpot(m.spot);
     if (m.zoom && ZOOMS[m.zoom]) fcZoom(m.zoom);
     const t = typeof m.time === 'number' ? m.time : Date.parse(m.time || '');

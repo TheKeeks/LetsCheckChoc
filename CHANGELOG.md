@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased] — Forecast: 10 days of both models
+
+The Forecast tab showed 7 days of GFS-Wave and ECMWF, though both models run further: ECMWF's midnight and noon runs to 10 days, GFS-Wave to 16. The owner asked for a way to see all 10.
+
+The forecast bot now pulls days 8-10 (every 6 hours to 240 h) from the same runs and keeps them apart from the week: `fc.json` gets an `ext` section and each map picture a `_x.png` twin, about 0.9 MB in all. A run that doesn't reach 240 h yet, or a failed download, leaves them out of that pull and the next one tries again. A pull now takes about 2.5 minutes instead of 2.
+
+The Forecast tab has a "7 days | 10 days" switch next to Models | Swells, shown when the run has days 8-10. It stays on 7 days until you pick 10, and remembers your choice on that device. With 10 days the chart runs on to day 10, with days 8-10 faded and labelled "trend only". At that range a swell from a storm already on the map is fair, but one from a storm that hasn't formed yet is a guess, and so is the wind. The headline for those hours says so and how far apart the two models are. Their wind arrows come from GFS-Wave, because the app's own wind stops at 7 days, and the tide runs on between the high and low times. The map follows to day 10, and only then downloads the days 8-10 pictures, so phones on 7 days and Choc TV download nothing extra. Choc TV keeps the week.
+
+The forecast scorecard on Methods now also scores GFS-Wave's forecasts made 7 and 10 days before each logged session, read from NOAA's archive like the 1-3 day ones. The history bot fills them in over its next runs (24 sessions a run). Methods then shows "7 days ahead" and "10 days ahead" rows and a line saying how much they typically miss, which is why the tab fades days 8-10.
+
+Verified with new tests: `scripts/test_fcpull.py` runs the whole pull on made-up fields and checks the week is unchanged, days 8-10 come in their own files with one row per step, and a run that doesn't reach day 10 publishes the week alone. `scripts/test_history.py` checks the scorecard asks only for the new leads and sums them up. The new e2e `preview-clean-forecast-10days.js` checks the switch, the faded days, the wind and tide under them, the day 10 headline, the map at day 10 (and nothing downloaded before), going back to 7 days, the choice remembered, Choc TV's week unchanged, the wide layout and a run without days 8-10. `w6-swell-map-log-follows.js` checks the new scorecard rows and caption. A real pull of today's runs took 2 min 33 s and produced 12 extra steps per model.
+
 ## [Unreleased] — The history's wind at the right hour all year
 
 The Sound Check history's wind was an hour off for half the year. Open-Meteo labels its ten years of hourly wind with one clock offset, the one in force on the day the bot asks: in summer every label is EDT, even the January ones. The clean-hours table, the good-day scores, the days' wind (`days2.json`), Wilderness's wind and the daily wind grid read those labels as Eastern clock time, so in the other season each hour got the wind from an hour later (or earlier). Which half was wrong flipped with the date the bot ran. The Past days' hourly wind lane already placed them right.

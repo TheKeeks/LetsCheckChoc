@@ -25,7 +25,7 @@ Writes (all owned by the history bot; never edit them by hand):
                                   highs and lows); the other lanes in those files stay as they are
   research/ocean/pressure/        sea-level pressure every 6 hours since 2016 for the Past days' storm view, one
                                   picture a month (pressure.py): what's missing is filled each run, oldest first
-  research/fc/score.json          the forecast scorecard: GFS-Wave's forecasts for each session, 1-3 days ahead
+  research/fc/score.json          the forecast scorecard: GFS-Wave's forecasts for each session, 1, 2, 3, 7 and 10 days ahead
 
 The ratings model (results4.json's model), the two session files and the scorecard are fitted to the crew's surf
 log (ratings.py), read from Firestore with the read-only key in SURFLOG_READ_KEY (surflog.py), or from an export

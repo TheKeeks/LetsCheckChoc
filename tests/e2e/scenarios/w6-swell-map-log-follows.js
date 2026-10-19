@@ -17,7 +17,7 @@ const read = () => {
     pairs: all('pairs'), model: all('model'), score: all('score'),
     rhoM: t('q1RhoM'), rhoB: t('q1RhoB'), better: t('q1Better'), order: t('qa1Order'),
     months: t('goodMonthsNote'), advice: t('logAdvice'), within: t('fcsWithin'), miss: t('fcsMiss'),
-    cap: t('decCap'), scoreRows: [...document.querySelectorAll('#fcScore tbody tr')].map((r) => [...r.cells].map((c) => c.textContent).join(' | '))
+    cap: t('decCap'), far: t('fcsLong'), scoreRows: [...document.querySelectorAll('#fcScore tbody tr')].map((r) => [...r.cells].map((c) => c.textContent).join(' | '))
   };
 };
 // Spearman's ρ with tied values sharing their average rank (worked out here independently of the page)
@@ -76,7 +76,9 @@ SESSPAIRS.push(['2025-12-14', 1, 6.1, 0.8]);
       buoy_model: { n: 29, rho_size: 0.8 },
       d1: { n: 29, rho_size: 0.66, median_vs_arrived_ft: -0.12, typical_miss_ft: 0.42 },
       d2: { n: 29, rho_size: 0.58, median_vs_arrived_ft: 0.08, typical_miss_ft: 0.5 },
-      d3: { n: 28, rho_size: 0.6, median_vs_arrived_ft: 0.02, typical_miss_ft: 0.36 }
+      d3: { n: 28, rho_size: 0.6, median_vs_arrived_ft: 0.02, typical_miss_ft: 0.36 },
+      d7: { n: 27, rho_size: 0.31, median_vs_arrived_ft: 0.2, typical_miss_ft: 0.71 },
+      d10: { n: 27, rho_size: 0.12, median_vs_arrived_ft: 0.25, typical_miss_ft: 0.94 }
     });
     ctx.serve('/research/fc/score.json', { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify(score) });
     await ctx.open('/research/index.html');
@@ -97,6 +99,10 @@ SESSPAIRS.push(['2025-12-14', 1, 6.1, 0.8]);
     assert.equal(r.miss, '0.4–0.5 ft');
     assert.match(r.cap, /built from your surf log at Choc\. Months with no logged sessions are extrapolation\./);
     assert.equal(r.scoreRows[1], '1 day ahead | 0.66 | −0.1 ft | 0.4 ft');
+    // a week and ten days out, once the bot has scored them: their rows, and a line in the caption
+    assert.deepEqual(r.scoreRows.slice(4), ['7 days ahead | 0.31 | +0.2 ft | 0.7 ft', '10 days ahead | 0.12 | +0.3 ft | 0.9 ft']);
+    assert.equal(r.far, 'Further out it typically misses by 0.7 ft a week ahead and 0.9 ft ten days ahead (27 sessions), which is why the Forecast tab fades days 8–10 as a trend.');
+    assert.equal(r.within, '0.1 ft', 'the caption\'s "every lead" is still the first three days');
     // December's bar in the good-day months is no longer hatched: it has a session now
     const dec = await page.evaluate(() => [...document.querySelectorAll('#goodMonths rect')].filter((n) => n.getAttribute('rx') === '2').map((n) => n.getAttribute('fill'))[11]);
     assert.ok(dec && !/hatch/.test(dec), `December filled, not hatched (${dec})`);

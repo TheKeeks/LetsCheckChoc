@@ -1119,10 +1119,14 @@
   // with g GFS-Wave, e ECMWF and m their mean (one model when the other
   // has no number). A run that doesn't reach an hour never stands in for
   // it, and a missing number stays null. Raises 'soundcheck' when a run is in
-  // (or none could load).
+  // (or none could load). Days 8-10 of the same run (fc.json's ext, every
+  // 6 h to 240 h) are state.ext, steps flagged ext: true, for the Forecast
+  // tab's "10 days" switch; state.steps stays the week (Choc TV's). null when
+  // the run has none. Each step also carries GFS-Wave's wind at the beach
+  // (wind: { kt, dir }), for days the app's 7-day wind doesn't reach.
   var SC_SHIP = 'research/fc/fc.json';
   var SC_LIVE = 'https://raw.githubusercontent.com/TheKeeks/LetsCheckChoc/fc-data/fc/fc.json';
-  var sc = { steps: null, made: null, runs: null, buoy: null, status: 'loading', checkedAt: 0 };
+  var sc = { steps: null, ext: null, made: null, runs: null, buoy: null, status: 'loading', checkedAt: 0 };
   var scStarted = false;
   // Where a swell comes from: one colour on every screen (the Forecast
   // tab's rows and bars, Choc TV, and the map's rays: research's FAM).
@@ -1134,24 +1138,32 @@
   ];
   function scFam(d) { return d >= 60 && d < 115 ? 0 : d >= 115 && d < 160 ? 1 : d >= 160 && d < 205 ? 2 : 3; }
   function scMean(a, b) { var v = [a, b].filter(isNum); return v.length ? v.reduce(function (x, y) { return x + y; }, 0) / v.length : null; }
-  function scUse(d) {
-    if (!d || !d.gfs || !d.gfs.length) return false;
-    if (sc.made && !(Date.parse(d.made) > Date.parse(sc.made))) return false;
+  function scSteps(gfs, ecRows, ext) {
     var ec = {};
-    (d.ec || []).forEach(function (r) { ec[Math.round(Date.parse(r.t) / HOUR)] = r; });
-    var steps = d.gfs.map(function (g) {
-      var t = Date.parse(g.t), e = ec[Math.round(t / HOUR)] || null;
+    (ecRows || []).forEach(function (r) { ec[Math.round(Date.parse(r.t) / HOUR)] = r; });
+    var steps = (gfs || []).map(function (g) {
+      var t = Date.parse(g.t), e = ec[Math.round(t / HOUR)] || null, w = g.wind;
       return {
         t: t,
+        ext: !!ext,
         hs: isNum(g.hs) ? g.hs : null,
         choc: { g: isNum(g.choc) ? g.choc : null, e: e && isNum(e.choc) ? e.choc : null },
         wild: { g: isNum(g.wild) ? g.wild : null, e: e && isNum(e.wild) ? e.wild : null },
-        trains: (g.trains || []).filter(function (x) { return isNum(x.ft) && isNum(x.T) && isNum(x.D); })
+        trains: (g.trains || []).filter(function (x) { return isNum(x.ft) && isNum(x.T) && isNum(x.D); }),
+        wind: w && isNum(w[0]) && isNum(w[1]) ? { kt: w[0], dir: w[1] } : null
       };
     }).filter(function (s) { return isNum(s.t); });
-    if (!steps.length) return false;
     steps.forEach(function (s) { s.choc.m = scMean(s.choc.g, s.choc.e); s.wild.m = scMean(s.wild.g, s.wild.e); });
+    return steps;
+  }
+  function scUse(d) {
+    if (!d || !d.gfs || !d.gfs.length) return false;
+    if (sc.made && !(Date.parse(d.made) > Date.parse(sc.made))) return false;
+    var steps = scSteps(d.gfs, d.ec, false);
+    if (!steps.length) return false;
+    var ext = d.ext && d.ext.gfs ? scSteps(d.ext.gfs, d.ext.ec, true).filter(function (s) { return s.t > steps[steps.length - 1].t; }) : [];
     sc.steps = steps;
+    sc.ext = ext.length ? ext : null;
     sc.made = d.made || null;
     sc.runs = d.runs || null;
     if (d.buoy && isNum(d.buoy[0]) && isNum(d.buoy[1])) sc.buoy = d.buoy;
@@ -1233,8 +1245,16 @@
       .filter(function (p) { return p.share >= 0.005; })
       .sort(function (a, b) { return b.share - a.share; });
   }
+  // GFS-Wave's wind at the beach at a step of the run (its nearest within
+  // 90 min, the week or days 8-10), in the shape of CLEAN.data.windAt's.
+  function scWindAt(t) {
+    var all = (sc.steps || []).concat(sc.ext || []), ms = +t, b = null, bd = 90 * MIN;
+    all.forEach(function (s) { var dd = Math.abs(s.t - ms); if (s.wind && dd <= bd) { bd = dd; b = s; } });
+    return b ? windObj({ mph: b.wind.kt * 1.15078, dir: b.wind.dir }) : null;
+  }
   CLEAN.model = {
     state: sc,                            // read-only for the parts
+    windAt: scWindAt,
     load: scLoad,
     refresh: scRefresh,
     stepAt: scStepAt,
