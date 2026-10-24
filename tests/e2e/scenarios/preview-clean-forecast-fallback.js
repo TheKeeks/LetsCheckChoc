@@ -75,7 +75,7 @@ module.exports = {
     ctx.route(/marine-api\.open-meteo\.com\/v1\/marine\?.*previous_day/, route => route.fulfill({ status: 503, body: '', headers: { 'access-control-allow-origin': '*' } }));
     r = await boot(() => window.CLEAN && CLEAN.forecastInfo && CLEAN.forecastInfo().prev === 'failed');
     log('earlier down', r.bc);
-    assert.equal(sp(r.bc), 'Buoy 44097 2 ft all waves · 8:30 AM The earlier forecasts didn’t load', 'the reading still shows, and why there is no verdict');
+    assert.equal(sp(r.bc), 'Buoy 44097 2 ft all waves · 8:30 AM Swell 1.3 ft @ 9 s SE 124° · wind chop 1.5 ft The earlier forecasts didn’t load', 'the reading still shows, and why there is no verdict');
     assert.deepEqual(r.errors, []);
   }
 };
