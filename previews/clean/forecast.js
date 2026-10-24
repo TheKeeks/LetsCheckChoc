@@ -45,9 +45,11 @@
 //     the bottom. Back, Escape or the map's button closes it, at the same
 //     hour (one history entry, like CLEAN.sub).
 //   • Wind and tide at that hour, then the buoy check: buoy 44097's
-//     latest reading against the forecasts made 1, 2 and 3 days before
-//     for that hour (Open-Meteo's earlier runs at the buoy); tap for the
-//     last two days.
+//     latest reading (all waves, its 8 s+ swell and the shorter chop)
+//     against the forecasts made 1, 2 and 3 days before for that hour
+//     (Open-Meteo's earlier runs at the buoy); tap for the last 12 hours
+//     a reading per hour (data/verification.json; tap one to find its dot)
+//     and the last two days against those forecasts.
 // The model forecast is core's CLEAN.model (research/fc/fc.json or the
 // bot's newer pull on the fc-data branch, whichever is newer; Choc TV
 // shows the same one). When neither covers the hour
@@ -90,6 +92,7 @@
   var prev = { status: 'idle', data: null, at: 0 };
   var verif = { status: 'idle', rows: null, at: 0 };
   var sheet = null;                       // the open buoy-check sub-page
+  var pickT = null;                       // its hour picked in the list (ms), shown big among the dots
   // the map in its frame: 'idle' until the tab is first shown, 'loading', then 'ready' once its forecast is in
   // ('failed' when it couldn't load one)
   var map = { status: 'idle', zoom: 'reg', sent: null, raf: 0, inset: null };
@@ -822,28 +825,54 @@
       var age = b.level === 'stale' ? ' cl-stale' : b.level === 'dead' ? ' cl-dead' : '';
       h = '<span class="cl-f-bc1"><b>Buoy 44097</b> ' + esc(F.ft(b.total)) + ' <span class="cl-muted">all waves</span> · <span class="' + age.trim() + '">' + (b.obsAt ? esc(F.when(b.obsAt)) : DASH) + '</span>' +
         (v ? '<span class="cl-f-chip cl-f-chip-' + v.cls + '">' + esc(v.txt) + '</span>' : '') + '</span>';
+      h += '<span class="cl-f-bc3">' + esc(readingLine(b.total, b.band ? b.h : null, b.period, b.dir)) + '</span>';
       h += '<span class="cl-fine cl-f-bc2">' + (p
         ? 'Forecast for ' + esc(F.time(new Date(Math.round(at / HOUR) * HOUR)).replace(':00' + NB, NB)) + ', made 1 · 2 · 3 days before: ' + [p.d1, p.d2, p.d3].map(function (x) { return isNum(x) ? F.num(x) : DASH; }).join(' · ') + NB + 'ft'
         : prev.status === 'loading' || prev.status === 'idle' ? 'Loading the earlier forecasts…' : 'The earlier forecasts didn’t load') + '</span>';
     }
     setHTML(E.bc, h + '<span class="cl-f-bcc" aria-hidden="true">' + I.chevronRight(18) + '</span>');
   }
+  // A reading in words: "Swell 1.8 ft @ 9 s E 111° · wind chop 2.4 ft" (the swell is the buoy's 8 s+ band, the chop
+  // everything shorter, so the two add up to all waves as energy does); without the band, the peak period and the
+  // mean direction of all the waves.
+  function readingLine(all, sw, per, dir) {
+    if (isNum(sw)) {
+      var chop = isNum(all) && all > sw ? Math.sqrt(all * all - sw * sw) : null;
+      return 'Swell ' + F.swell(sw, per, isNum(dir) ? dir : null) + (isNum(dir) ? ' ' + F.deg(dir) : '') + (isNum(chop) ? ' · wind chop ' + F.ft(chop) : '');
+    }
+    return isNum(per) ? 'Peak ' + F.period(per) + (isNum(dir) ? ' from ' + F.compass(dir) + ' ' + F.deg(dir) : '') : '';
+  }
   function loadVerif() {
     if (verif.status === 'loading' || verif.status === 'ok' && Date.now() - verif.at < HOUR) return;
     verif.status = 'loading'; verif.at = Date.now();
     getJSON(VERIF).then(function (d) {
-      verif.rows = d && Array.isArray(d.rows) ? d.rows.map(function (r) { return { t: Date.parse(r.t), hs: r.buoy && isNum(r.buoy.hs) ? r.buoy.hs : null }; }).filter(function (r) { return isNum(r.t) && isNum(r.hs); }) : null;
+      // each hour's reading: all waves, and its swell (the 8 s+ band where the row has it, else NDBC's own split)
+      verif.rows = d && Array.isArray(d.rows) ? d.rows.map(function (r) {
+        var b = r.buoy || {}, band = isNum(b.swh8);
+        return { t: Date.parse(r.t), hs: isNum(b.hs) ? b.hs : null, sw: band ? b.swh8 : isNum(b.swh) ? b.swh : null, per: band ? b.swp8 : isNum(b.swp) ? b.swp : null, dir: isNum(b.swd) ? b.swd : null };
+      }).filter(function (r) { return isNum(r.t) && isNum(r.hs); }) : null;
       verif.status = verif.rows ? 'ok' : 'failed';
       if (sheet) run('sheet', function () { renderSheet(sheet.body); });
     });
   }
   function openBuoyCheck() {
+    pickT = null;
     loadVerif();
     if (prev.status === 'failed') loadPrevRuns();
     sheet = C.sub.open({
       id: 'buoycheck',
-      title: 'Buoy vs earlier forecasts',
-      mount: function (body) { body.classList.add('cl-f-sheet'); renderSheet(body); },
+      title: 'Buoy 44097',
+      mount: function (body) {
+        body.classList.add('cl-f-sheet');
+        // an hour in the list: its dot on the chart (tap it again to let go)
+        body.addEventListener('click', C.guard('forecast.buoyhour', function (ev) {
+          var r = ev.target.closest('.cl-f-rr'); if (!r) return;
+          var t = Number(r.getAttribute('data-t'));
+          pickT = pickT === t ? null : t;
+          renderSheet(body);
+        }));
+        renderSheet(body);
+      },
       onClose: function () { sheet = null; }
     });
   }
@@ -851,7 +880,13 @@
     var now = Date.now(), t0 = now - 48 * HOUR, t1 = now + HOUR;
     var obs = (verif.rows || []).filter(function (r) { return r.t >= t0 && r.t <= t1; });
     var b = D.buoy();
-    if (b && isNum(b.total) && b.obsAt && (!obs.length || b.obsAt.getTime() > obs[obs.length - 1].t + 30 * 60e3)) obs.push({ t: b.obsAt.getTime(), hs: b.total });
+    // the latest reading (data/buoy.json): a row of its own when it's newer than the hourly file's last, else that
+    // row reads as the box above it does (the 8 s+ band, with its period and direction)
+    if (b && isNum(b.total) && b.obsAt) {
+      var lr = { t: b.obsAt.getTime(), hs: b.total, sw: b.band ? b.h : null, per: b.period, dir: b.dir, latest: true }, last = obs[obs.length - 1];
+      if (!last || lr.t > last.t + 30 * 60e3) obs.push(lr);
+      else if (Math.abs(lr.t - last.t) <= 30 * 60e3) obs[obs.length - 1] = Object.assign({}, last, { sw: lr.sw, per: lr.per, dir: lr.dir, latest: true });
+    }
     var fs = prev.data ? Object.keys(prev.data).map(function (k) { return prev.data[k]; }).filter(function (r) { return r.t >= t0 && r.t <= t1; }).sort(function (a, c) { return a.t - c.t; }) : [];
     var W = Math.min(640, (body.clientWidth || 358)) - 32, H = 190, PL = 28, PR = 6, PT = 8, CH = H - 30;
     var vals = obs.map(function (r) { return r.hs; });
@@ -866,8 +901,14 @@
       if (Math.min(t1, d + DAY) - Math.max(t0, d) > 6 * HOUR) o += '<text class="cl-f-dl" x="' + x(mid).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + esc(F.day(new Date(mid))) + '</text>';
     }
     [['d3', 'cl-f-l3'], ['d2', 'cl-f-l2'], ['d1', 'cl-f-l1']].forEach(function (q) { o += line(fs, function (r) { return r[q[0]]; }, q[1], function (t) { return x(t); }, y); });
-    obs.forEach(function (r) { o += '<circle class="cl-f-obs" cx="' + x(r.t).toFixed(1) + '" cy="' + y(r.hs).toFixed(1) + '" r="2.4"/>'; });
+    obs.forEach(function (r) { o += '<circle class="cl-f-obs' + (r.t === pickT ? ' cl-f-obs-on' : '') + '" cx="' + x(r.t).toFixed(1) + '" cy="' + y(r.hs).toFixed(1) + '" r="' + (r.t === pickT ? 5 : 2.4) + '"/>'; });
     o += '</svg>';
+    // the last 12 hours, newest first: tap one to find it among the dots
+    var recent = obs.filter(function (r) { return r.t >= now - 12 * HOUR - 30 * 60e3; }).slice().reverse();
+    var list = recent.length ? '<h2 class="cl-pad cl-f-rh">Last 12 hours</h2><div class="cl-list cl-f-rl">' + recent.map(function (r) {
+      return '<button type="button" class="cl-sr cl-f-rr" data-t="' + r.t + '" aria-pressed="' + (r.t === pickT) + '"><span>' + esc(F.time(new Date(r.t))) + (r.latest ? ' <span class="cl-f-lt">latest</span>' : '') +
+        '<small>' + esc(readingLine(r.hs, r.sw, r.per, r.dir) || 'No swell split this hour') + '</small></span><span class="cl-v">' + esc(F.ft(r.hs)) + '</span></button>';
+    }).join('') + '</div>' : '';
     // how each lead did over the two days, hour by hour where both exist
     var stats = [1, 2, 3].map(function (n) {
       var e = [], rel = [];
@@ -876,7 +917,7 @@
       var m = e.reduce(function (a, c) { return a + c; }, 0) / e.length, mr = rel.length ? rel.reduce(function (a, c) { return a + c; }, 0) / rel.length : null;
       return { n: n, m: m, mr: mr, k: e.length };
     });
-    var h = '<p class="cl-pad cl-f-sl">What buoy 44097 measured (dots: all waves, swell and wind chop) against the wave forecast for the same spot, made 1, 2 and 3 days before each hour (lines). When the lines have been tracking the dots, trust this week’s forecast more.</p>';
+    var h = list + '<p class="cl-pad cl-f-sl">What buoy 44097 measured (dots: all waves) against the wave forecast for the same spot, made 1, 2 and 3 days before each hour (lines). When the lines have been tracking the dots, trust this week’s forecast more.</p>';
     h += '<div class="cl-pad">' + (obs.length || fs.length ? o : '<p class="cl-muted">' + (verif.status === 'loading' || prev.status === 'loading' ? 'Loading…' : 'No buoy readings or earlier forecasts for the last two days') + '</p>') + '</div>';
     h += '<p class="cl-pad cl-f-lg"><span class="cl-f-k cl-f-k-obs">● buoy</span><span class="cl-f-k cl-f-k1">— 1 day before</span><span class="cl-f-k cl-f-k2">- - 2 days</span><span class="cl-f-k cl-f-k3">··· 3 days</span></p>';
     h += '<div class="cl-list">' + stats.map(function (st, k) {

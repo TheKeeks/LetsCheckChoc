@@ -95,7 +95,8 @@ module.exports = {
     assert.ok(m.pin[0] > 220 && m.pin[1] > 110 && m.pin[1] < 165 && m.pin[2] < 110, `Choc pinned at its place (${m.pin})`);
     assert.equal(m.label, 'Choc 0.5 ft', 'the map\'s Choc carries the headline\'s number');
     assert.match(sp(r.cond), /^Wind 7 mph SW, cross-shore · gusts 11 Tide 2\.3 ft ▲ · high 1:37 PM$/);
-    assert.equal(sp(r.bc), 'Buoy 44097 2 ft all waves · 8:30 AM forecasts on track Forecast for 9 AM, made 1 · 2 · 3 days before: 2.4 · 2.4 · 2.4 ft');
+    assert.equal(sp(r.bc), 'Buoy 44097 2 ft all waves · 8:30 AM forecasts on track Swell 1.3 ft @ 9 s SE 124° · wind chop 1.5 ft Forecast for 9 AM, made 1 · 2 · 3 days before: 2.4 · 2.4 · 2.4 ft',
+      'the reading, its 8 s+ swell (period and direction) and the shorter chop, then the earlier forecasts');
     assert.ok(r.bcStale, 'a 2.5 h old reading is marked stale');
     assert.equal(sp(r.valuetext), 'Thu 11 AM, 0.5 ft at Choc');
     await ctx.screenshot('forecast-phone', { fullPage: true });
@@ -181,10 +182,25 @@ module.exports = {
       title: document.querySelector('#cl-sub-buoycheck h1') && document.querySelector('#cl-sub-buoycheck h1').textContent,
       dots: document.querySelectorAll('#cl-sub-buoycheck .cl-f-obs').length,
       lines: ['.cl-f-l1', '.cl-f-l2', '.cl-f-l3'].map(c => document.querySelectorAll('#cl-sub-buoycheck ' + c).length),
-      rows: [...document.querySelectorAll('#cl-sub-buoycheck .cl-sr')].map(e => e.innerText)
+      rows: [...document.querySelectorAll('#cl-sub-buoycheck .cl-list:not(.cl-f-rl) .cl-sr')].map(e => e.innerText),
+      hours: [...document.querySelectorAll('#cl-sub-buoycheck .cl-f-rr')].map(e => e.innerText),
+      head: (document.querySelector('#cl-sub-buoycheck .cl-f-rh') || {}).textContent
     }));
     log('buoy check', JSON.stringify(sheet));
-    assert.equal(sheet.title, 'Buoy vs earlier forecasts');
+    assert.equal(sheet.title, 'Buoy 44097');
+    // the last 12 hours, newest first, each with its swell and chop
+    assert.equal(sheet.head, 'Last 12 hours');
+    // (the fixture's pipeline ran twice in those 12 hours: 1 AM and 8:30 AM; the live file has a row every hour)
+    assert.deepEqual(sheet.hours.map(sp), [
+      '8:30 AM latest Swell 1.3 ft @ 9 s SE 124° · wind chop 1.5 ft 2 ft',
+      '1:00 AM Swell 1 ft @ 13 s SE 124° · wind chop 1.7 ft 2 ft'
+    ], 'newest first; the latest reads as the box does');
+    // tap an hour: its dot stands out on the chart; tap it again to let go
+    await page.locator('#cl-sub-buoycheck .cl-f-rr').nth(1).click();
+    await ctx.waitFor(() => document.querySelectorAll('#cl-sub-buoycheck .cl-f-obs-on').length === 1 && document.querySelectorAll('#cl-sub-buoycheck .cl-f-rr[aria-pressed="true"]').length === 1, { label: 'the hour picked' });
+    await ctx.screenshot('forecast-buoycheck-hours');
+    await page.locator('#cl-sub-buoycheck .cl-f-rr').nth(1).click();
+    await ctx.waitFor(() => !document.querySelector('#cl-sub-buoycheck .cl-f-obs-on'), { label: 'let go' });
     assert.ok(sheet.dots >= 6, `buoy readings over two days (${sheet.dots})`);
     assert.deepEqual(sheet.lines.map(n => n > 0), [true, true, true], 'a line for each lead');
     assert.deepEqual(sheet.rows.map(sp), [

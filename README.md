@@ -40,9 +40,11 @@ along the bottom. "7 days | 10 days" next to Models | Swells runs the chart
 and the map out to day 10 when the run has it; days 8-10 are faded and
 labelled "trend only", because a swell from a storm that hasn't formed yet
 is a guess that far out. Then the wind and tide for that hour, and the buoy check:
-44097's latest reading next to what was forecast for that hour 1, 2 and 3 days
-before ("forecasts on track" when they were within half a foot or 15 %). Tap
-it for the last two days. If the model run doesn't reach the present (the
+44097's latest reading, its swell (the 8 s+ waves: height, period, direction)
+and the shorter wind chop, next to what was forecast for that hour 1, 2 and 3
+days before ("forecasts on track" when they were within half a foot or 15 %).
+Tap it for the last 12 hours, a reading per hour with its swell and chop (tap
+an hour to find it on the chart), and the last two days against the forecasts. If the model run doesn't reach the present (the
 forecast bot stalled), Forecast says so instead of showing an old number.
 **↻** (top right, beside Settings) asks for the newest model run now, without
 waiting for a reload (the forecast bot publishes one every 3 hours), and loads
