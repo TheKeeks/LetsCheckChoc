@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — Forecast: the buoy's swell now, and its last 12 hours
+
+The Forecast tab's buoy box showed only buoy 44097's total wave height ("2 ft all waves · 8:30 AM"). The owner wanted the raw readings: what the swell is doing now and over the last few hours.
+
+The box now has a second line with the latest reading's swell and wind chop, e.g. "Swell 1.3 ft @ 9 s SE 124° · wind chop 1.5 ft". The swell is the buoy's 8 s+ band, the same one the app already reads, with its peak period and direction. The chop is everything shorter, so the two add up to all waves the way wave energy does. Tapping the box opens "Buoy 44097". It now starts with "Last 12 hours": one reading per hour, newest first, each with all waves, the swell (height, period, direction) and the chop. Tap an hour and its dot stands out on the two-day chart below; tap it again to let go. The newest row reads exactly as the box does. The hourly readings come from `data/verification.json`, which the pipeline bot already writes every hour and which this page already downloaded for its chart, so nothing new is fetched. Hours from before the bot recorded the 8 s+ band use NDBC's own swell split. The chart's caption no longer says it draws swell and chop dots: it only ever drew all waves.
+
+Verified in `preview-clean-forecast.js`: the box's new line, the hour rows in order with their swell and chop, and tapping an hour to highlight its dot and tapping again to clear it. `preview-clean-forecast-fallback.js` covers the box when the earlier forecasts don't load.
+
 ## [Unreleased] — Forecast: 10 days of both models
 
 The Forecast tab showed 7 days of GFS-Wave and ECMWF, though both models run further: ECMWF's midnight and noon runs to 10 days, GFS-Wave to 16. The owner asked for a way to see all 10.
