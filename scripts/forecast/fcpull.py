@@ -22,8 +22,12 @@ so a page showing the week never downloads them: fc.json's `ext` ({steps, gfs, e
 field_<...>_x.png beside each image (rows = XSTEPS). ECMWF's 00 and 12 UTC runs reach 240 h, GFS-Wave 384 h; a run
 that doesn't reach 240 h yet (or a download that fails) leaves `ext` out of that pull, and the next one tries again.
 
+The wind the map's Wind layer draws is GFS-Wave's 10 m wind (the same run, both grids): field_gfs_wind_<grid>.png,
+one pixel per cell, red = speed in knots, green = where it blows from / 2 deg, 255 = no data (fc.json's `wind`).
+
 Usage: python3 scripts/forecast/fcpull.py OUTDIR   -> OUTDIR/fc.json, OUTDIR/field_<model>_<grid>.png,
-                                                       OUTDIR/field_gfs_mslp.png, and their _x.png for days 8-10
+                                                       OUTDIR/field_gfs_mslp.png, field_gfs_wind_<grid>.png, and their
+                                                       _x.png for days 8-10
        python3 scripts/forecast/fcpull.py --pressure DIR   adds the sea-level pressure of the GFS run named in
                                                        DIR/fc.json (for a pull made before the pressure was added)
 
@@ -126,7 +130,8 @@ def gfs_step(c, s):
     return s, out
 GLOB_VARS = {'hs': 'HTSGW:surface', 'w1h': 'SWELL:1 in sequence', 'w1t': 'SWPER:1 in sequence', 'w1d': 'SWDIR:1 in sequence',
              'w2h': 'SWELL:2 in sequence', 'w2t': 'SWPER:2 in sequence', 'w2d': 'SWDIR:2 in sequence',
-             'w3h': 'SWELL:3 in sequence', 'w3t': 'SWPER:3 in sequence', 'w3d': 'SWDIR:3 in sequence', 'wwt': 'WVPER:surface', 'wwd': 'WVDIR:surface'}
+             'w3h': 'SWELL:3 in sequence', 'w3t': 'SWPER:3 in sequence', 'w3d': 'SWDIR:3 in sequence', 'wwt': 'WVPER:surface', 'wwd': 'WVDIR:surface',
+             'wind': 'WIND:surface', 'wdir': 'WDIR:surface'}
 def gfs_glob_step(c, s):
     # the 0.16 deg Atlantic grid is a coastal nest (it only has data near the US coast); the open
     # ocean on the maps comes from the same run's global 0.25 deg grid
@@ -293,12 +298,27 @@ def spot_series(G, E, steps, t0g, t0e):
                                  hs=round(h * FT, 1) if q else None, T=round(T, 1) if q else None, D=int(round(D)) % 360 if q else None, long=round(lp * FT, 1)))
     return series
 
+WIND_META = dict(enc='R kn, G from/2 deg; 255 no data', grids=list(GRIDS))
+def wind_rows(G, GG, steps, g):
+    """the wind image's rows for grid g: [steps, cells, 3] of (knots, from/2 deg, 0), the coastal grid first and the
+    global grid where it has nothing"""
+    la, lo = grid_axes(g); LA, LO = np.meshgrid(la, lo, indexing='ij'); KN = 1.94384; rows = []
+    for s in steps:
+        f, gg = G[s], GG[s]
+        wv = sample(f['wind'], LA.ravel(), LO.ravel()) * KN; dv = sample_dir(f['wdir'], LA.ravel(), LO.ravel())
+        if 'wind' in gg:
+            miss = np.isnan(wv) | np.isnan(dv)
+            wv = np.where(miss, sample(gg['wind'], LA.ravel(), LO.ravel()) * KN, wv); dv = np.where(miss, sample_dir(gg['wdir'], LA.ravel(), LO.ravel()), dv)
+        rows.append(np.stack([q8(wv, 1), q8(dv, 0.5, 179), np.zeros(wv.shape, np.uint8)], -1))
+    return np.stack(rows)
+
 def write_fields(OUT, G, GG, E, steps, sfx=''):
-    """field images: one PNG per model per grid; row = step, each cell = 1 RGB pixel (height dm, period 0.1 s, from /2 deg).
-    -> the grids' meta"""
+    """field images: one PNG per model per grid; row = step, each cell = 1 RGB pixel (height dm, period 0.1 s, from /2 deg),
+    and GFS's wind per grid (wind_rows). -> the grids' meta"""
     meta = {}
     for g in GRIDS:
         la, lo = grid_axes(g); LA, LO = np.meshgrid(la, lo, indexing='ij')
+        Image.fromarray(wind_rows(G, GG, steps, g), 'RGB').save(os.path.join(OUT, f'field_gfs_wind_{g}{sfx}.png'), optimize=True)
         for model, F, hk, tk, dk in (('gfs', G, 'hs', 'w1t', 'w1d'), ('ec', E, 'swh', 'pp1d', 'mwd')):
             rows = []
             for s in steps:
@@ -339,7 +359,7 @@ def main(OUT):
     series = spot_series(G, E, STEPS, t0g, t0e)
     meta = write_fields(OUT, G, GG, E, STEPS)
     fc = dict(made=dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), runs=dict(gfs=t0g.strftime('%Y-%m-%dT%HZ'), ec=t0e.strftime('%Y-%m-%dT%HZ')),
-              steps=STEPS, buoy=BUOY, grids=meta, gfs=series['gfs'], ec=series['ec'])
+              steps=STEPS, buoy=BUOY, grids=meta, gfs=series['gfs'], ec=series['ec'], wind=dict(WIND_META))
     if P: fc['mslp'] = write_mslp(OUT, P)
     del G, GG, E
     # days 8-10 from the same runs: all of them or none (a run that doesn't reach 240 h yet, a failed download)

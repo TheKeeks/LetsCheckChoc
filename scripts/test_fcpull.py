@@ -218,6 +218,7 @@ class TestTenDays(unittest.TestCase):
     def run_pull(self, ec_reaches=240):
         import tempfile
         from PIL import Image
+        self.Image = Image
         m, _ = load_fcpull(set())
         cg, ce = dt.datetime(2026, 10, 9, 12, tzinfo=UTC), dt.datetime(2026, 10, 9, 12, tzinfo=UTC)
         m.latest_gfs = lambda: cg
@@ -238,6 +239,7 @@ class TestTenDays(unittest.TestCase):
         rows = {}
         for f in Path(out).glob("field_*.png"):
             with Image.open(f) as im: rows[f.name] = im.size[1]
+        self.out = out
         return m, fc, rows, asked
 
     def test_days_8_to_10_ride_along_in_their_own_files(self):
@@ -257,6 +259,13 @@ class TestTenDays(unittest.TestCase):
             self.assertEqual(rows[name + ".png"], len(m.STEPS), name + ": a row per step of the week")
             self.assertEqual(rows[name + "_x.png"], len(m.XSTEPS), name + "_x: a row per step of days 8-10")
         self.assertIn(("ec", 240), asked)
+        # GFS's wind for the map's Wind layer: a picture per grid (and for days 8-10), red = knots, green = from / 2
+        self.assertEqual(fc["wind"], {"enc": "R kn, G from/2 deg; 255 no data", "grids": ["reg", "ocean"]})
+        for g in ("reg", "ocean"):
+            self.assertEqual(rows["field_gfs_wind_%s.png" % g], len(m.STEPS))
+            self.assertEqual(rows["field_gfs_wind_%s_x.png" % g], len(m.XSTEPS))
+        with self.Image.open(Path(self.out, "field_gfs_wind_reg.png")) as im: px = im.getpixel((0, 0))
+        self.assertEqual(px[:2], (10, 165), "5 m/s is 10 kn; 330 deg / 2")
 
     def test_a_run_that_doesnt_reach_day_10_yet_publishes_the_week_alone(self):
         m, fc, rows, _ = self.run_pull(ec_reaches=200)

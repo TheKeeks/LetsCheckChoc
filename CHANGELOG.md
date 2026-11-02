@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — Forecast map: a Wind layer beside the swell layers
+
+Scrubbing the week on the Forecast tab showed the swell moving but not the wind, which decides whether a swell is worth the drive: the only wind on the map was the Explore tab's past-day arrows at 17 points, and the week's wind was a number in the readout.
+
+The map's layers panel (the ☰ button) now has **Wind** right after Swell motion, on by default. It draws GFS's 10 m wind that hour as small arrows blowing downwind, one every 50 px or so over the water and none over land, longer for stronger wind, and they follow the hour as you scrub or play the week. It is GFS's wind whichever model is picked (ECMWF's open wave files carry no wind). The forecast bot now writes the wind into a picture per grid, `field_gfs_wind_reg.png` and `field_gfs_wind_ocean.png` (red = knots, green = where it blows from), about 150 kB a pull, read only when the layer is on; days 8-10 get theirs too. A pull from before this change has no wind pictures, so the switch stays hidden for it and nothing is asked for. The Explore tab's past-day wind arrows use the same switch (so they are now on by default too) and the same arrow.
+
+The run that ships with the page got its wind pictures from NOAA's archive of the same GFS-Wave run (12Z on 9 Oct 2026), so the page and its tests have wind without waiting for the bot.
+
+Verified in the new e2e `preview-clean-forecast-wind.js`: the switch beside Swell motion, arrows over the water and none over New Jersey at Region zoom, a wind read at open water that changes a day on, the switch off and remembered, and a pull without wind pictures showing no switch and asking for none. `scripts/test_fcpull.py` checks the pictures' rows and encoding (5 m/s → 10 kn) and that days 8-10 get theirs.
+
 ## [Unreleased] — Forecast: the buoy's swell now, and its last 12 hours
 
 The Forecast tab's buoy box showed only buoy 44097's total wave height ("2 ft all waves · 8:30 AM"). The owner wanted the raw readings: what the swell is doing now and over the last few hours.
