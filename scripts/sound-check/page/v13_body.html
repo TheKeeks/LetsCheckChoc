@@ -35,8 +35,8 @@
           <div class="hub-tgs" id="fcLayers">
             <button type="button" class="hub-tg" data-l="field" aria-pressed="true"><i class="ck"></i>Wave height</button>
             <button type="button" class="hub-tg" data-l="flow" aria-pressed="true"><i class="ck"></i>Swell motion</button>
+            <button type="button" class="hub-tg" data-l="wnd" data-mode="week past" aria-pressed="true" hidden><i class="ck"></i>Wind</button>
             <button type="button" class="hub-tg" data-l="aim" data-mode="week" aria-pressed="true"><i class="ck"></i>Swell headed our way</button>
-            <button type="button" class="hub-tg" data-l="wnd" data-mode="past" aria-pressed="false" hidden><i class="ck"></i>Wind arrows</button>
             <button type="button" class="hub-tg" data-l="rays" aria-pressed="true"><i class="ck"></i>Rays near Fishers</button>
             <button type="button" class="hub-tg" data-l="storm" data-mode="week past" aria-pressed="true"><i class="ck"></i>Pressure &amp; storms</button>
           </div></div>
@@ -55,6 +55,7 @@
           <h3>Reading the forecast</h3>
           <ul>
             <li><b>Color:</b> wave height from the model you pick, swell and wind sea together.</li>
+            <li><b>Wind:</b> GFS's wind that hour (whichever model is picked), arrows blowing downwind, longer for stronger wind.</li>
             <li><b>Streaks:</b> which way the swell travels. Longer period moves faster.</li>
             <li><b>Pale dots:</b> open-ocean swell aimed at the spot from an angle its reef can see. Tap one: orange is the ray that reaches the spot, with when; gray is the rest of its spread.</li>
             <li class="hub-nofc"><b>Near Fishers:</b> the model's rays over the sea floor into the spot, colored by period.</li>
@@ -77,7 +78,7 @@
             <li><b>Pick an hour:</b> the strip under the days, one bar per hour (Choc's height then, night shaded). A day you logged opens at your session's hour (orange tick), any other day at Choc's biggest hour.</li>
             <li><b>Offshore color:</b> Copernicus reanalysis 1° swell at that hour (every 3 hours and 0.4° near the coast, every 6 hours and 2° across the North Atlantic). Streaks show which way it traveled.</li>
             <li><b>Survey map:</b> this page's ray model on what buoy 44097 measured. Tap the water for the height.</li>
-            <li><b>Rays near Fishers:</b> the buoy's swells that hour. <b>Wind arrows</b> (under Show): that day's wind at 17 points.</li>
+            <li><b>Rays near Fishers:</b> the buoy's swells that hour. <b>Wind</b> (under Show): that day's wind at 17 points.</li>
             <li><b>Pressure &amp; storms</b> (zoomed out): sea-level pressure every 4 hPa at the nearest 6-hour step, <b>L</b> lows and <b>H</b> highs, and each storm's track over three days either side, brighter for the hours still to come.</li>
             <li><b>Bars:</b> the spot's best 3 hours each day. Orange is a good day: Choc's ratings model 7/10+, or Wilderness 3 ft+ with clean wind. Dots: the wind then.</li>
           </ul>

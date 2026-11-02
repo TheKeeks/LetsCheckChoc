@@ -62,8 +62,11 @@ headed our way, the dots far offshore aimed at the spot from an angle its
 reef can see (tap one for when it gets here). **Fishers**: each swell's rays
 bending into Choc, thicker for a bigger share and coloured like its row
 (teal E, orange SE, violet S, grey anything else), labelled with its share.
-Layers (the stacked-squares button) switches the model (GFS-Wave or ECMWF)
-and each layer on or off; **3D** opens the sea floor in 3D on Explore at the
+**Wind** (on by default, beside Swell motion in the layers panel): GFS's
+wind that hour as small arrows blowing downwind, longer for stronger wind,
+so a scrub through the week shows the wind swing as the swell comes and
+goes. Layers (the stacked-squares button) switches the model (GFS-Wave or
+ECMWF) and each layer on or off; **3D** opens the sea floor in 3D on Explore at the
 same hour. On a phone one finger scrolls past the map and two move it. ▶
 plays the week, so you can watch a storm cross the ocean and the swell it
 makes head for the coast.

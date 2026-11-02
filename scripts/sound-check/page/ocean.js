@@ -849,7 +849,7 @@
   // here), and at Fishers zoom draws Part 1's rays for each train. Heights at the spots are fcpull's
   // read of each model at buoy 44097 (where the history reads the swell), run through Part 1's rays.
   const FC = { d: null, model: 'gfs', spot: 'choc', i: 0, px: {}, cv: {}, timer: 0, files: {}, cur: [], pick: null, zoom: 'reg', aim: {}, tf: new Map(), ecIx: [], arr: {}, cam: null,
-    show: { field: true, flow: true, aim: true, rays: true, wnd: false, storm: true } };
+    show: { field: true, flow: true, aim: true, rays: true, wnd: true, storm: true } };
   try { Object.assign(FC.show, JSON.parse(localStorage.getItem('choc.fcLayers') || '{}')); } catch (e) { /* defaults */ }
   // the two spots: where swell is aimed, and the wind that grooms each (offshore direction, tolerance)
   const SPOT = { choc: { name: 'Choc', pt: PEAK, off: 335, tol: 60 }, wild: { name: 'Wilderness', pt: [(W1[0] + W2[0]) / 2, (W1[1] + W2[1]) / 2], off: 40, tol: 70 } };
@@ -913,6 +913,20 @@
     return null;
   }
   function cellAt(F, step, q) { const p = 4 * (step * F.w + q); return p >= F.a.length || F.a[p] === 255 || F.a[p + 1] === 255 ? null : [F.a[p] / 10, F.a[p + 1] / 10, F.a[p + 2] * 2]; }
+  // GFS's wind at a point that hour (field_gfs_wind_<grid>.png: red = knots, green = from / 2 deg): [kn, from deg], or
+  // null over land, outside the grids, or while the pictures load (a pull without them has no Wind layer)
+  function fcWindAt(lon, lat, step) {
+    if (!FC.d || !FC.d.wind) return null;
+    for (const g of ['reg', 'ocean']) {
+      const F = fcPx('gfs', 'wind_' + g), Gd = FC.d.grids[g]; if (!F) continue;
+      const ia = Math.round((Gd.lat[0] - lat) / Gd.lat[2]), ja = Math.round((lon - Gd.lon[0]) / Gd.lon[2]);
+      if (ia < 0 || ja < 0 || ia >= Gd.lat[3] || ja >= Gd.lon[3]) continue;
+      const p = 4 * (step * F.w + ia * Gd.lon[3] + ja);
+      if (p >= F.a.length || F.a[p] === 255 || F.a[p + 1] === 255) { if (g === 'reg') return null; continue; }
+      return [F.a[p], F.a[p + 1] * 2];
+    }
+    return null;
+  }
   function fcAt(lon, lat, model, step) {                     // [height m, period s, from deg] or null (land / outside)
     for (const g of ['reg', 'ocean']) {
       const F = fcPx(model, g), Gd = FC.d.grids[g]; if (!F) continue;
@@ -1159,7 +1173,7 @@
     if (!PAST && FCUI && (FC.failed || (FC.d && FC.out))) { mapNote(FC.failed ? 'The forecast didn’t load' : 'No model forecast for this hour'); return; }
     if (!PAST && !FC.d) return;
     const fa = fieldAlpha(v.W), row = PAST ? null : fRow(), t0 = row == null ? 0 : Date.parse(FC.d[FC.model][row].t);
-    if (PAST) drawWind(X, Y, v);
+    if (PAST) drawWind(X, Y, v); else drawFcWind(X, Y, v);
     // swell headed for the spot: dots, bigger for swell that would arrive bigger
     if (!PAST && fa > 0.05 && FC.show.aim) {
       ctx.save(); ctx.globalAlpha = fa / 0.72;
@@ -1553,6 +1567,8 @@
       return;
     }
     FC.failed = false;
+    const wb = document.querySelector('#fcLayers [data-l="wnd"]');   // the Wind layer needs the pull's wind pictures (a pull from before they were added has none)
+    if (wb) { wb.dataset.mode = d.wind ? 'week past' : 'past'; if (S.phase === 'week') wb.hidden = !d.wind; }
     const at = FC.d ? Date.parse(FC.d.gfs[FC.i].t) : Date.now();   // first load: now; a newer pull keeps the hour on show
     FC.d = d; FC.px = {}; FC.cv = {}; FC.aim = {}; FC.arr = {};   // field images, colors and dots belong to the pull they came with
     FC.ecIx = d.gfs.map((r) => { const t = Date.parse(r.t); let b = null, bd = 3 * 36e5 + 1; d.ec.forEach((q, k) => { const x = Math.abs(Date.parse(q.t) - t); if (x < bd) { bd = x; b = k; } }); return b; });
@@ -2096,21 +2112,39 @@
     b.innerHTML = `<b>${g ? 'Best day' : 'Biggest day'}</b> ${MON[y.m - 1]} ${y.d} · ${spotVal(bi, sp).toFixed(1)} ft<span class="x"> · ${n} good day${n === 1 ? '' : 's'} this month</span>`;
   }
   function pastStop() { clearInterval(PS.timer); PS.timer = 0; CST.playing = false; $('pastPlay').textContent = '▶'; $('pastPlay').setAttribute('aria-label', 'Play day by day'); }
-  function drawWind(X, Y, v) {                               // the day's wind at the 17 over-water points: arrows blow downwind
+  // a small, quiet arrow blowing downwind: longer for stronger wind, no heavier; `label` writes the knots under it
+  function windArrow(x, y, from, kn, label) {
+    const a = (from + 180) * D2R, ux = Math.sin(a), uy = -Math.cos(a), len = Math.min(18, 7 + kn * 0.4);
+    const x1 = x - ux * len / 2, y1 = y - uy * len / 2, x2 = x + ux * len / 2, y2 = y + uy * len / 2;
+    ctx.strokeStyle = 'rgba(240,246,250,.8)'; ctx.fillStyle = 'rgba(240,246,250,.8)'; ctx.lineWidth = 1.3;
+    ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 2;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x2 + ux * 1.5, y2 + uy * 1.5); ctx.lineTo(x2 - ux * 3.5 - uy * 2.6, y2 - uy * 3.5 + ux * 2.6); ctx.lineTo(x2 - ux * 3.5 + uy * 2.6, y2 - uy * 3.5 - ux * 2.6); ctx.closePath(); ctx.fill();
+    if (label) { ctx.font = '9.5px "IBM Plex Mono", monospace'; ctx.fillStyle = 'rgba(231,237,242,.85)'; ctx.textAlign = 'center'; ctx.fillText(Math.round(kn) + ' kn', x, y + len / 2 + 10); }
+    ctx.shadowBlur = 0;
+  }
+  function drawWind(X, Y, v) {                               // the day's wind at the 17 over-water points
     if (!FC.show.wnd) return;
     const near = v.W < 120;
     ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     for (const p of MODEL.windPts(CST.idx)) {
       const x = X(p.lon), y = Y(p.lon, p.lat); if (x < -20 || y < -20 || x > cw + 20 || y > chh + 20) continue;
-      // a small, quiet arrow blowing downwind: longer for stronger wind, no heavier
-      const a = (p.from + 180) * D2R, ux = Math.sin(a), uy = -Math.cos(a), len = Math.min(18, 7 + p.kn * 0.4);
-      const x1 = x - ux * len / 2, y1 = y - uy * len / 2, x2 = x + ux * len / 2, y2 = y + uy * len / 2;
-      ctx.strokeStyle = 'rgba(240,246,250,.8)'; ctx.fillStyle = 'rgba(240,246,250,.8)'; ctx.lineWidth = 1.3;
-      ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 2;
-      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x2 + ux * 1.5, y2 + uy * 1.5); ctx.lineTo(x2 - ux * 3.5 - uy * 2.6, y2 - uy * 3.5 + ux * 2.6); ctx.lineTo(x2 - ux * 3.5 + uy * 2.6, y2 - uy * 3.5 - ux * 2.6); ctx.closePath(); ctx.fill();
-      if (near) { ctx.font = '9.5px "IBM Plex Mono", monospace'; ctx.fillStyle = 'rgba(231,237,242,.85)'; ctx.textAlign = 'center'; ctx.fillText(Math.round(p.kn) + ' kn', x, y + len / 2 + 10); }
-      ctx.shadowBlur = 0;
+      windArrow(x, y, p.from, p.kn, near);
+    }
+    ctx.restore();
+  }
+  // the week's wind (GFS's, whichever model is picked): an arrow every 48 px or so over the water, from the pull's wind
+  // pictures, so a scrub through the hours shows the wind swing as the swell comes and goes
+  function drawFcWind(X, Y, v) {
+    FC.windDrawn = 0;
+    const row = FC.d && FC.d.wind ? FC.d.gfs.indexOf(FC.d.gfs[FC.i]) : -1;
+    if (!FC.show.wnd || row < 0 || FC.out) return;
+    const G = cw < 500 ? 44 : 52, near = v.W < 120 && (cw < 500 ? G >= 60 : true) && v.W < 40;
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (let sy = INS.top + G / 2; sy < chh - INS.bottom; sy += G) for (let sx = INS.left + G / 2; sx < cw - INS.right; sx += G) {
+      if (covered(sx - 10, sy - 10, sx + 10, sy + 10)) continue;   // keep clear of the controls
+      const ll = unproject(sx, sy), w = ll && fcWindAt(ll[0], ll[1], row); if (!w) continue;
+      windArrow(sx, sy, w[1], w[0], near); FC.windDrawn++;
     }
     ctx.restore();
   }
@@ -2720,6 +2754,7 @@
   }
 
   window.CHOC.trip = { w3: W3, _aimed: () => (FC.d && fRow() != null ? fcAimed(FC.model, fRow(), FC.spot) : []), _at: (lon, lat) => fcAt(lon, lat, FC.model, fRow()),
+    _wind: (lon, lat) => (FC.d ? fcWindAt(lon, lat, FC.i) : null), _windDrawn: () => FC.windDrawn || 0,
     _week: (i) => setWeek(i), _tapAt: (lon, lat) => { const { sc, x0, y0 } = proj(cam()); fcTap((lon * KX - x0) * sc, (-lat * KY - y0) * sc); }, _raw: (T, lon, lat, th) => trace(T, lon, lat, th, false), state: S, aim: doAim, play, _miss: (T, lon, lat, th, spot) => miss(trace(T, lon, lat, th, false, aimTg(spot)), spot), _aim: (spot, T, s) => aim(spot, T, s), trace: (T, lon, lat, th) => makeRay(T, [lon, lat], th),
     _tiles: () => tileCache.size, _reefAsked: () => REEF.asked, _speeds: (T, h) => [cp(T, h), cg(T, h), rEff(T, 250)],
     skip: () => { if (S.ray) { S.dist = S.ray.len; S.phase = 'done'; S.playing = false; draw(); finish(); } }, setMode, fc: FC,

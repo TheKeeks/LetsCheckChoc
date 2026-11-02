@@ -55,7 +55,7 @@ node tests/e2e/run.js kiosk   # run only scenarios whose file/name matches
 | `scripts/fetch_buoy.py` | Pipeline: NDBC 44097 → `data/buoy.json`, plus model-vs-buoy rows |
 | `scripts/canary.py` | Upstream canary (`.github/workflows/canary.yml`, every 6 h): opens/closes one `data-canary` issue |
 | `scripts/rays/raycore.py`, `scripts/rays/build_tables.py` | Sound Check's wave-ray physics (exact wave speed, Snell's-law ray step) and the builder of Choc's and Wilderness's ray tables (its 812 MB survey grid stays outside the repo); tested by `scripts/test_raycore.py` |
-| `scripts/forecast/fcpull.py` | Sound Check forecast pull: GFS-Wave + ECMWF → `research/fc/fc.json` + field PNGs (and GFS sea-level pressure, `field_gfs_mslp.png`, for Forecast's Storms view; `--pressure DIR` adds it to a pull), tied to the spots with `research/fr/` and `scripts/forecast/{world,fwdk}.json` |
+| `scripts/forecast/fcpull.py` | Sound Check forecast pull: GFS-Wave + ECMWF → `research/fc/fc.json` + field PNGs (and GFS sea-level pressure, `field_gfs_mslp.png`, for Forecast's Storms view, `--pressure DIR` adds it to a pull; and GFS's 10 m wind per grid, `field_gfs_wind_<grid>.png`, red = knots, green = from/2°, for the map's Wind layer, fc.json's `wind`), tied to the spots with `research/fr/` and `scripts/forecast/{world,fwdk}.json` |
 | `scripts/smoke_regression.js`, `scripts/leak_deg_sensitivity.js`, `scripts/generate_icons.js`, `scripts/bracelet_plans.js` | Dev-only tools, never loaded by the page |
 | `test-gate.js` | Legacy tests, still run by `npm test` |
 | `tests/` | `tests/helpers/` (vm loader, DOM stub, fixture map), `tests/unit/`, `tests/e2e/`, `tests/fixtures/` |
