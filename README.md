@@ -43,8 +43,10 @@ is a guess that far out. Then the wind and tide for that hour, and the buoy chec
 44097's latest reading, its swell (the 8 s+ waves: height, period, direction)
 and the shorter wind chop, next to what was forecast for that hour 1, 2 and 3
 days before ("forecasts on track" when they were within half a foot or 15 %).
-Tap it for the last 12 hours, a reading per hour with its swell and chop (tap
-an hour to find it on the chart), and the last two days against the forecasts. If the model run doesn't reach the present (the
+Tap it for the last 12 hours, a reading per hour with every swell train the
+buoy's spectrum splits into ("1° 2.1 ft @ 11 s SE 130° · 2° 1.4 ft @ 6 s E
+95°", biggest first; tap an hour to find it on the chart), and the last two
+days against the forecasts. If the model run doesn't reach the present (the
 forecast bot stalled), Forecast says so instead of showing an old number.
 **↻** (top right, beside Settings) asks for the newest model run now, without
 waiting for a reload (the forecast bot publishes one every 3 hours), and loads
@@ -62,6 +64,10 @@ headed our way, the dots far offshore aimed at the spot from an angle its
 reef can see (tap one for when it gets here). **Fishers**: each swell's rays
 bending into Choc, thicker for a bigger share and coloured like its row
 (teal E, orange SE, violet S, grey anything else), labelled with its share.
+On a computer (any screen 900 px or wider) the tab opens in full screen by
+itself: the map fills the window under the tab bar, the hour's card over
+its top left and the week docked along its bottom. The map's ⤢ button,
+Escape or Back bring the normal layout back until the next reload.
 **Wind** (on by default, beside Swell motion in the layers panel): GFS's
 wind that hour as small arrows blowing downwind, longer for stronger wind,
 so a scrub through the week shows the wind swing as the swell comes and

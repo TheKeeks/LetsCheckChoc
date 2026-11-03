@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — Forecast on a computer opens full screen; the buoy's hours show every swell train
+
+Two asks from the owner. On a computer the Forecast tab showed the timeline on the map in the page, and full screen was a click away on the map's ⤢; they wanted it open that way by default. And the buoy box's last 12 hours showed one swell (the 8 s+ band) and the chop, when the spectrum often holds two or three swells.
+
+On a screen 900 px or wider the Forecast tab now opens in full screen by itself: the map fills the window under the tab bar, which stays so the other tabs are a click away; the hour's card sits over its top left and the week in the dock along its bottom. No history entry is made for it, so Back leaves the site as it would. The map's ⤢, Escape or Back give the timeline-on-the-map layout back, and that holds until the page is loaded again. Phones are as before: full screen only on the ⤢.
+
+The pipeline bot now splits each spectrum into its swell trains the way the history bot does (every frequency climbs the smoothed spectrum to its peak; neighbours from about the same direction, or barely separated, merge; trains under 0.3 ft fold into the closest-direction neighbour), in plain Python, and writes them biggest first into `data/buoy.json` (`trains`) and into each hourly row of `data/verification.json` (`buoy.trains`): `[[ft, peak period, from], ...]`, at most four, the direction null when the bins have none (never 0°, north). The buoy box's second line and each row of its last 12 hours now read "1° 2.1 ft @ 11 s SE 130° · 2° 1.4 ft @ 6 s E 95°". Rows from before the change keep the swell-and-chop line.
+
+Verified: `scripts/test_fetch_buoy.py` checks the split on synthetic spectra (two peaks on one hump merge with the energy-weighted direction, a wisp under 0.3 ft folds into the closest direction, no direction stays null) and that the hourly rows and buoy.json carry trains; the pipeline fixtures got real trains from their own NDBC spectra. The Forecast e2e scenarios check the box and rows read the trains, and the layout scenario that a wide screen opens full screen with the tab bar kept and no history entry, and that ⤢ gives the normal layout back for the visit.
+
 ## [Unreleased] — Forecast map: a Wind layer beside the swell layers
 
 Scrubbing the week on the Forecast tab showed the swell moving but not the wind, which decides whether a swell is worth the drive: the only wind on the map was the Explore tab's past-day arrows at 17 points, and the week's wind was a number in the readout.

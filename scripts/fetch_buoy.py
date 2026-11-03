@@ -308,6 +308,93 @@ def compute_swell_band(bins, min_period=SWELL_BAND_MIN_PERIOD):
     }
 
 
+MAX_TRAINS = 4
+
+
+def _angdiff(a, b):
+    return abs((a - b + 180) % 360 - 180)
+
+
+def compute_trains(bins):
+    """The spectrum split into its swell trains, biggest first:
+    [[ft, peak period s, from deg], ...] (the direction None when none of the
+    train's bins has one; at most MAX_TRAINS). The history bot's split
+    (scripts/history/spectra.py partition), in plain Python: every frequency
+    climbs the smoothed spectrum to its peak; neighbouring trains from about
+    the same direction (within 30°), or barely separated (the trough between
+    them above 70% of the lower peak), merge; trains under 0.3 ft fold into
+    the neighbour closest in direction. None without bins."""
+    if not bins:
+        return None
+    n = len(bins)
+    E = [max(b["energy"], 0.0) for b in bins]
+    W = bin_widths([b["freq"] for b in bins])
+    D = [b["dir1"] if _valid_dir(b.get("dir1")) else None for b in bins]
+    if n < 2 or sum(E) <= 0:
+        return []
+    Es = [0.25 * E[max(i - 1, 0)] + 0.5 * E[i] + 0.25 * E[min(i + 1, n - 1)] for i in range(n)]
+    lab = []
+    for i in range(n):
+        j = i
+        while True:
+            nb = [k for k in (j - 1, j + 1) if 0 <= k < n]
+            k = max(nb, key=lambda k: Es[k])
+            if Es[k] > Es[j]:
+                j = k
+            else:
+                break
+        lab.append(j)
+    parts = [[i for i in range(n) if lab[i] == p] for p in sorted(set(lab))]
+
+    def info(ix):
+        e = [E[i] * W[i] for i in ix]
+        m = sum(e)
+        x = sum(ei * math.cos(math.radians(D[i])) for i, ei in zip(ix, e) if D[i] is not None)
+        y = sum(ei * math.sin(math.radians(D[i])) for i, ei in zip(ix, e) if D[i] is not None)
+        d = (math.degrees(math.atan2(y, x)) + 360) % 360 if any(D[i] is not None and ei > 0 for i, ei in zip(ix, e)) else None
+        return m, d, max(Es[i] for i in ix)
+
+    changed = True
+    while changed and len(parts) > 1:
+        changed = False
+        for i in range(len(parts) - 1):
+            A, B = parts[i], parts[i + 1]
+            mA, dA, pA = info(A)
+            mB, dB, pB = info(B)
+            trough = min(Es[A[-1]:B[0] + 1])
+            same_dir = dA is not None and dB is not None and _angdiff(dA, dB) < 30
+            if same_dir or trough > 0.7 * min(pA, pB):
+                parts[i] = A + B
+                del parts[i + 1]
+                changed = True
+                break
+    small = (0.3 / M_TO_FT / 4) ** 2
+    changed = True
+    while changed and len(parts) > 1:
+        changed = False
+        for i, P in enumerate(parts):
+            m, d, _ = info(P)
+            if m < small:
+                nb = [k for k in (i - 1, i + 1) if 0 <= k < len(parts)]
+                if d is not None:
+                    nb.sort(key=lambda k: _angdiff(info(parts[k])[1], d) if info(parts[k])[1] is not None else 360)
+                k = nb[0]
+                lo, hi = sorted((i, k))
+                parts[lo] = parts[lo] + parts[hi]
+                del parts[hi]
+                changed = True
+                break
+    trains = []
+    for P in parts:
+        m, d, _ = info(P)
+        if m <= 0:
+            continue
+        peak = max(P, key=lambda i: E[i])
+        trains.append([round(4 * math.sqrt(m) * M_TO_FT, 1), round(bins[peak]["period"], 1), int(round(d)) % 360 if d is not None else None])
+    trains.sort(key=lambda t: -t[0])
+    return trains[:MAX_TRAINS]
+
+
 def compute_tm10(bins):
     """Energy period Tm-1,0 = Σ(E·df/f) / Σ(E·df) in seconds, over the
     whole spectrum. The models' mean `wave_period` tracks it far better
@@ -443,6 +530,7 @@ def _verif_buoy(obs, spec, bins):
         "tm10": compute_tm10(bins),
         "swh8": ft(band["hs_m"]) if band else None,
         "swp8": band["peak_period_s"] if band else None,
+        "trains": compute_trains(bins),
     }
 
 
@@ -629,6 +717,8 @@ def main(now=None):
         # and can trail buoy.time, or be up to SPECTRAL_CARRY_MAX_AGE old
         # when carried over. null whenever spectral_bins is.
         "spectral_obs_time": spectral_obs_time,
+        # the spectrum's swell trains, biggest first (compute_trains): the Forecast tab's buoy box and its hourly rows
+        "trains": compute_trains(sections["spectral_bins"]),
         "swell_band": compute_swell_band(sections["spectral_bins"]),
         "stale_sections": stale,
     }
