@@ -7,7 +7,9 @@
 //     and the map follows; Back (the iPhone's back swipe) closes it at the same hour, and so does Escape inside the map;
 //   • Swells: the same week as a stack of where the swell comes from (SE, E, S, other, in the swell rows' colours),
 //     whose top at the cursor is Choc's mean height (the cursor's dot) within a pixel; remembered across a reload;
-//   • wide (1280 px): the map spans the content width; the readout is a card over its top-left, the week is docked
+//   • wide (1280 px): the tab opens in full screen by itself, the tab bar kept above the map and no history entry
+//     (Back leaves the site); Escape gives the timeline on the map back for the visit (a re-render doesn't reopen
+//     it). Then the map spans the content width; the readout is a card over its top-left, the week is docked
 //     inside its bottom edge; wind and tide, the buoy check and the source run below it. The map's colour key lifts
 //     above the dock. Full screen there too, with a mouse drag in the dock and Back.
 'use strict';
@@ -187,10 +189,28 @@ module.exports = {
     checkStack(await stack(), 'phone, Sat');
 
     // ── Wide: the timeline on the map ──
+    // (a fresh load: leaving full screen above holds for the visit, so a resize alone doesn't reopen it)
     await page.setViewportSize({ width: 1280, height: 860 });
-    await page.waitForTimeout(500);
+    await boot();
+    await page.waitForTimeout(300);
+    // ── a wide screen opens full screen by itself, with the tab bar ──
+    await ctx.waitFor(() => CLEAN.forecastInfo().full, { label: 'full screen by itself', timeout: 5000 });
+    let ia = await info();
+    L = await R();
+    log('wide, by itself', JSON.stringify({ full: ia.full, auto: ia.fullAuto, tabs: ia.fullTabs, hist: L.hist, frame: L.frame, head: L.head }));
+    assert.deepEqual([ia.layout, ia.fullAuto, ia.fullTabs], ['full', true, true], 'full screen by itself, the tab bar kept');
+    assert.equal(L.hist, null, 'no history entry: Back leaves the site');
+    const tb = await ctx.state(() => { const t = document.querySelector('#cl-app .cl-tabs').getBoundingClientRect(); return { top: t.top, bottom: t.bottom, at: document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2) && document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2).closest('.cl-tabs') !== null }; });
+    assert.ok(Math.round(tb.top) === 0 && tb.at, 'the tab bar runs across the top, above the map');
+    near(L.frame.t, tb.bottom, 1, 'the map starts under the tab bar');
+    near(L.frame.h, L.vh - tb.bottom, 1, 'and fills the rest of the window');
+    assert.ok(L.head.t >= tb.bottom && L.head.t < tb.bottom + 20, 'the card under the tab bar');
+    await ctx.screenshot('layout-wide-auto-full');
+    await page.keyboard.press('Escape');
+    await ctx.waitFor(() => !CLEAN.forecastInfo().full, { label: 'Escape gives the timeline on the map back', timeout: 5000 });
     await ctx.state(() => CLEAN.render('forecast'));
     await page.waitForTimeout(300);
+    assert.equal((await info()).full, false, 'and a re-render doesn\'t reopen it');
     L = await R();
     log('wide', JSON.stringify(L));
     assert.equal((await info()).layout, 'wide');
@@ -224,10 +244,14 @@ module.exports = {
     assert.equal(sizes.size, 1, `the card never changes height (${[...sizes]})`);
     await page.locator('#cl-view-forecast .cl-f-jb[data-j="now"]').click();
 
-    // the choice survives a reload
+    // the choice survives a reload (which opens full screen again: Escape only holds until a reload)
     await boot();
     await page.waitForTimeout(300);
     assert.equal((await info()).view, 'swells', 'Swells remembered');
+    assert.deepEqual([(await info()).full, (await info()).fullAuto], [true, true], 'a reload opens full screen again');
+    await page.keyboard.press('Escape');
+    await ctx.waitFor(() => !CLEAN.forecastInfo().full, { label: 'Escape, again', timeout: 5000 });
+    await page.waitForTimeout(300);
     assert.equal(await page.getAttribute('#cl-view-forecast .cl-f-vseg button[data-view="swells"]', 'aria-pressed'), 'true');
     checkStack(await stack(), 'after a reload');
     await page.locator('#cl-view-forecast .cl-f-vseg button[data-view="models"]').click();
@@ -256,9 +280,9 @@ module.exports = {
     L = await R();
     log('wide full', JSON.stringify(L));
     near(L.frame.w, L.vw, 1, 'the frame fills the window');
-    near(L.frame.h, L.vh, 1, 'the frame fills the window');
+    near(L.frame.h, L.vh - 57, 1, 'the frame fills the window under the tab bar (kept on a wide screen)');
     near(L.wk.b, L.vh, 1, 'the dock on the bottom edge');
-    assert.ok(L.head.l < 40 && L.head.t < 40 && L.head.h < 160, 'the card top left');
+    assert.ok(L.head.l < 40 && L.head.t > 57 && L.head.t < 90 && L.head.h < 160, 'the card top left, under the tab bar');
     assert.ok(L.dz.h > 0, 'the zoom in the dock');
     await ctx.screenshot('layout-wide-full');
     await page.mouse.move(L.cx.l + L.cx.w * 0.3, L.cx.t + 50);

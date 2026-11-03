@@ -95,8 +95,8 @@ module.exports = {
     assert.ok(m.pin[0] > 220 && m.pin[1] > 110 && m.pin[1] < 165 && m.pin[2] < 110, `Choc pinned at its place (${m.pin})`);
     assert.equal(m.label, 'Choc 0.5 ft', 'the map\'s Choc carries the headline\'s number');
     assert.match(sp(r.cond), /^Wind 7 mph SW, cross-shore · gusts 11 Tide 2\.3 ft ▲ · high 1:37 PM$/);
-    assert.equal(sp(r.bc), 'Buoy 44097 2 ft all waves · 8:30 AM forecasts on track Swell 1.3 ft @ 9 s SE 124° · wind chop 1.5 ft Forecast for 9 AM, made 1 · 2 · 3 days before: 2.4 · 2.4 · 2.4 ft',
-      'the reading, its 8 s+ swell (period and direction) and the shorter chop, then the earlier forecasts');
+    assert.equal(sp(r.bc), 'Buoy 44097 2 ft all waves · 8:30 AM forecasts on track 1° 1.7 ft @ 9 s SE 124° · 2° 0.9 ft @ 3 s SW 228° Forecast for 9 AM, made 1 · 2 · 3 days before: 2.4 · 2.4 · 2.4 ft',
+      'the reading, every swell train the pipeline split its spectrum into (biggest first), then the earlier forecasts');
     assert.ok(r.bcStale, 'a 2.5 h old reading is marked stale');
     assert.equal(sp(r.valuetext), 'Thu 11 AM, 0.5 ft at Choc');
     await ctx.screenshot('forecast-phone', { fullPage: true });
@@ -192,9 +192,9 @@ module.exports = {
     assert.equal(sheet.head, 'Last 12 hours');
     // (the fixture's pipeline ran twice in those 12 hours: 1 AM and 8:30 AM; the live file has a row every hour)
     assert.deepEqual(sheet.hours.map(sp), [
-      '8:30 AM latest Swell 1.3 ft @ 9 s SE 124° · wind chop 1.5 ft 2 ft',
-      '1:00 AM Swell 1 ft @ 13 s SE 124° · wind chop 1.7 ft 2 ft'
-    ], 'newest first; the latest reads as the box does');
+      '8:30 AM latest 1° 1.7 ft @ 9 s SE 124° · 2° 0.9 ft @ 3 s SW 228° 2 ft',
+      '1:00 AM 1° 1.7 ft @ 9 s SE 130° · 2° 0.7 ft @ 5 s S 173° · 3° 0.5 ft @ 2 s WSW 243° 2 ft'
+    ], 'newest first, each hour\'s swell trains; the latest reads as the box does');
     // tap an hour: its dot stands out on the chart; tap it again to let go
     await page.locator('#cl-sub-buoycheck .cl-f-rr').nth(1).click();
     await ctx.waitFor(() => document.querySelectorAll('#cl-sub-buoycheck .cl-f-obs-on').length === 1 && document.querySelectorAll('#cl-sub-buoycheck .cl-f-rr[aria-pressed="true"]').length === 1, { label: 'the hour picked' });
@@ -224,6 +224,12 @@ module.exports = {
     //    along its bottom; preview-clean-forecast-layout.js checks it closely); a mouse drag scrubs ──
     await page.setViewportSize({ width: 1280, height: 860 });
     await page.waitForTimeout(400);
+    // a wide screen opens the tab in full screen by itself (the tab bar kept; preview-clean-forecast-layout.js
+    // checks it); Escape gives the timeline on the map back
+    await ctx.waitFor(() => CLEAN.forecastInfo().full && CLEAN.forecastInfo().fullAuto, { label: 'full screen by itself on a wide screen', timeout: 5000 });
+    await page.keyboard.press('Escape');
+    await ctx.waitFor(() => !CLEAN.forecastInfo().full, { label: 'the wide layout', timeout: 5000 });
+    await page.waitForTimeout(300);
     const lay = await ctx.state(() => {
       const R = s => document.querySelector(s).getBoundingClientRect();
       return { tabs: R('#cl-app .cl-tabs').top, tabsH: R('#cl-app .cl-tabs').height, map: R('#cl-view-forecast .cl-f-map'), head: R('#cl-view-forecast .cl-f-head'), wk: R('#cl-view-forecast .cl-f-wk'), side: R('#cl-view-forecast .cl-f-side') };
