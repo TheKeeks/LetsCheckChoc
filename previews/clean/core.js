@@ -835,6 +835,10 @@
         if (arr) reaches = new Date(obs + arr.minutes * MIN);
       }
     } catch (_) { reaches = null; }
+    // the spectrum split into its swell trains (the pipeline's compute_trains, biggest first), with the band's
+    // freshness: [[ft, period s, from deg | null], ...], or null for a pipeline from before it wrote them
+    var trains = hasBand && ctx && ctx.pipelineData && Array.isArray(ctx.pipelineData.trains)
+      ? ctx.pipelineData.trains.filter(function (t) { return Array.isArray(t) && isNum(t[0]) && isNum(t[1]); }) : null;
     return {
       h: hgt,
       period: isNum(per) ? per : null,
@@ -842,6 +846,7 @@
       compass: isNum(dir) ? compass(dir) : null,
       total: bp.waveHeight,               // total sea (WVHT), swell + wind waves
       band: hasBand,                      // true: the 8 s+ swell band of the spectrum
+      trains: trains,
       obsAt: obs != null ? new Date(obs) : null,
       ageMin: age ? Math.round(age.ageMs / MIN) : null,
       level: !age ? null : age.level === 'old' ? 'dead' : age.level,  // fresh | stale (>2 h) | dead (>6 h)

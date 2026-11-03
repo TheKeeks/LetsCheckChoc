@@ -234,6 +234,9 @@ html.cl-f-lock, html.cl-f-lock body { overflow: hidden; }
   position: fixed; inset: 0; z-index: 60; margin: 0; border-radius: 0; background: #0b1219;
   padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
 }
+/* on a wide screen (the tabs along the top) full screen keeps the tab bar: the map fills the window under it */
+.cl-f.cl-f-full.cl-f-tabs .cl-f-map { top: 57px; }
+.cl-f.cl-f-full.cl-f-tabs .cl-f-head { top: 67px; }
 .cl-f.cl-f-full .cl-f-stage, .cl-f.cl-f-full .cl-f-frame { height: 100%; min-height: 0; }
 .cl-f.cl-f-full .cl-f-mbar { display: none; }
 .cl-f.cl-f-full .cl-f-head {

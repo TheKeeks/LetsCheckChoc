@@ -43,7 +43,9 @@
 //     width: the map fills the window, a small card with the hour and
 //     height top-left, the week, its buttons and the zoom in a dock along
 //     the bottom. Back, Escape or the map's button closes it, at the same
-//     hour (one history entry, like CLEAN.sub).
+//     hour (one history entry, like CLEAN.sub). On a wide screen (a computer, the tabs on top) the tab opens in full
+//     screen by itself, with the tab bar kept above the map (no history entry); ⤢, Escape or Back give the
+//     timeline-on-the-map layout back for the rest of the visit.
 //   • Wind and tide at that hour, then the buoy check: buoy 44097's
 //     latest reading (all waves, its 8 s+ swell and the shorter chop)
 //     against the forecasts made 1, 2 and 3 days before for that hour
@@ -101,7 +103,9 @@
   var VIEWS = { models: 'Models', swells: 'Swells' };
   var view = 'models';
   // the tab's own full screen (the map's ⤢ button): { on, pushed (a history entry is ours), scroll (to go back to) }
-  var full = { on: false, pushed: false, scroll: 0 };
+  // optOut: the reader left full screen on a wide screen (⤢, Escape or Back), so the tab stops opening in it until
+  // the page is loaded again
+  var full = { on: false, pushed: false, scroll: 0, optOut: false };
   var wideMQ = window.matchMedia ? window.matchMedia('(min-width: 900px)') : null;
   // Swell families bottom to top in the Swells view: SE (Choc's own swell window) at the bottom, then E, S, other,
   // in the same order every step so each band runs on unbroken.
@@ -238,7 +242,8 @@
     }));
     // full screen: Back (the iPhone's back swipe) and Escape close it
     window.addEventListener('popstate', C.guard('forecast.fullpop', function (ev) {
-      if (full.on && !(ev.state && ev.state.clFull)) { full.pushed = false; setFull(false); }
+      // (a full screen the tab opened by itself has no history entry: a sub-page closing under it mustn't end it)
+      if (full.on && full.pushed && !(ev.state && ev.state.clFull)) { full.pushed = false; full.optOut = true; setFull(false); }
     }));
     document.addEventListener('keydown', C.guard('forecast.fullkey', function (ev) {
       if (ev.key === 'Escape' && full.on && !C.sub.depth()) exitFull();
@@ -279,6 +284,7 @@
 
   function render(reason) {
     if (!root) return;
+    run('autofull', autoFull);
     run('days', renderDays);
     if (C.tab() === 'forecast') loadMap();   // the first time the tab is on screen (at boot it gets no onShow)
     if (reason === 'tick' && Date.now() - prev.at > 3 * HOUR) loadPrevRuns();
@@ -431,13 +437,22 @@
   function layout() { return full.on ? 'full' : wideMQ && wideMQ.matches ? 'wide' : 'phone'; }
   // The map's ⤢ button opens the tab's own full screen: the map fills the window, the hour's card over its top-left,
   // the week docked along the bottom. One history entry, so Back and the iPhone's back swipe close it, as a sub-page.
-  function setFull(on) {
+  // A wide screen opens the tab in full screen by itself (the computer at the house, the iPad held sideways): the
+  // map under the tab bar, which stays, so the other tabs are a click away; no history entry, so Back leaves the site
+  // as it would. Once per visit: leaving it (⤢, Escape, Back) keeps the timeline-on-the-map layout until a reload.
+  function autoFull() {
+    if (full.on || full.optOut || !E.f || C.tab() !== 'forecast' || !(wideMQ && wideMQ.matches)) return;
+    setFull(true, true);
+  }
+  function setFull(on, auto) {
     on = !!on;
     if (on === full.on || !E.f) return;
     full.on = on;
     if (on) {
       full.scroll = window.scrollY || 0;
-      try { history.pushState({ clFull: 1 }, ''); full.pushed = true; } catch (_) { full.pushed = false; }
+      if (auto) full.pushed = false;
+      else { try { history.pushState({ clFull: 1 }, ''); full.pushed = true; } catch (_) { full.pushed = false; } }
+      E.f.classList.toggle('cl-f-tabs', !!(wideMQ && wideMQ.matches));   // the tabs on top stay
     }
     E.f.classList.toggle('cl-f-full', on);
     document.documentElement.classList.toggle('cl-f-lock', on);
@@ -449,6 +464,7 @@
   }
   function exitFull() {
     if (!full.on) return;
+    full.optOut = true;
     var st = null;
     try { st = history.state; } catch (_) { st = null; }
     if (full.pushed && st && st.clFull) { try { history.back(); return; } catch (_) { /* fall through */ } }
@@ -825,7 +841,7 @@
       var age = b.level === 'stale' ? ' cl-stale' : b.level === 'dead' ? ' cl-dead' : '';
       h = '<span class="cl-f-bc1"><b>Buoy 44097</b> ' + esc(F.ft(b.total)) + ' <span class="cl-muted">all waves</span> · <span class="' + age.trim() + '">' + (b.obsAt ? esc(F.when(b.obsAt)) : DASH) + '</span>' +
         (v ? '<span class="cl-f-chip cl-f-chip-' + v.cls + '">' + esc(v.txt) + '</span>' : '') + '</span>';
-      h += '<span class="cl-f-bc3">' + esc(readingLine(b.total, b.band ? b.h : null, b.period, b.dir)) + '</span>';
+      h += '<span class="cl-f-bc3">' + esc(readingLine(b.total, b.band ? b.h : null, b.period, b.dir, b.trains)) + '</span>';
       h += '<span class="cl-fine cl-f-bc2">' + (p
         ? 'Forecast for ' + esc(F.time(new Date(Math.round(at / HOUR) * HOUR)).replace(':00' + NB, NB)) + ', made 1 · 2 · 3 days before: ' + [p.d1, p.d2, p.d3].map(function (x) { return isNum(x) ? F.num(x) : DASH; }).join(' · ') + NB + 'ft'
         : prev.status === 'loading' || prev.status === 'idle' ? 'Loading the earlier forecasts…' : 'The earlier forecasts didn’t load') + '</span>';
@@ -835,7 +851,13 @@
   // A reading in words: "Swell 1.8 ft @ 9 s E 111° · wind chop 2.4 ft" (the swell is the buoy's 8 s+ band, the chop
   // everything shorter, so the two add up to all waves as energy does); without the band, the peak period and the
   // mean direction of all the waves.
-  function readingLine(all, sw, per, dir) {
+  function readingLine(all, sw, per, dir, trains) {
+    // every swell train the pipeline split the spectrum into, biggest first: "1° 2.1 ft @ 11 s SE 130° · 2° …"
+    if (trains && trains.length) {
+      return trains.map(function (t, n) {
+        return (n + 1) + '° ' + F.swell(t[0], t[1], isNum(t[2]) ? t[2] : null) + (isNum(t[2]) ? ' ' + F.deg(t[2]) : '');
+      }).join(' · ');
+    }
     if (isNum(sw)) {
       var chop = isNum(all) && all > sw ? Math.sqrt(all * all - sw * sw) : null;
       return 'Swell ' + F.swell(sw, per, isNum(dir) ? dir : null) + (isNum(dir) ? ' ' + F.deg(dir) : '') + (isNum(chop) ? ' · wind chop ' + F.ft(chop) : '');
@@ -849,7 +871,8 @@
       // each hour's reading: all waves, and its swell (the 8 s+ band where the row has it, else NDBC's own split)
       verif.rows = d && Array.isArray(d.rows) ? d.rows.map(function (r) {
         var b = r.buoy || {}, band = isNum(b.swh8);
-        return { t: Date.parse(r.t), hs: isNum(b.hs) ? b.hs : null, sw: band ? b.swh8 : isNum(b.swh) ? b.swh : null, per: band ? b.swp8 : isNum(b.swp) ? b.swp : null, dir: isNum(b.swd) ? b.swd : null };
+        return { t: Date.parse(r.t), hs: isNum(b.hs) ? b.hs : null, sw: band ? b.swh8 : isNum(b.swh) ? b.swh : null, per: band ? b.swp8 : isNum(b.swp) ? b.swp : null, dir: isNum(b.swd) ? b.swd : null,
+          trains: Array.isArray(b.trains) && b.trains.length ? b.trains : null };
       }).filter(function (r) { return isNum(r.t) && isNum(r.hs); }) : null;
       verif.status = verif.rows ? 'ok' : 'failed';
       if (sheet) run('sheet', function () { renderSheet(sheet.body); });
@@ -883,9 +906,9 @@
     // the latest reading (data/buoy.json): a row of its own when it's newer than the hourly file's last, else that
     // row reads as the box above it does (the 8 s+ band, with its period and direction)
     if (b && isNum(b.total) && b.obsAt) {
-      var lr = { t: b.obsAt.getTime(), hs: b.total, sw: b.band ? b.h : null, per: b.period, dir: b.dir, latest: true }, last = obs[obs.length - 1];
+      var lr = { t: b.obsAt.getTime(), hs: b.total, sw: b.band ? b.h : null, per: b.period, dir: b.dir, trains: b.trains || null, latest: true }, last = obs[obs.length - 1];
       if (!last || lr.t > last.t + 30 * 60e3) obs.push(lr);
-      else if (Math.abs(lr.t - last.t) <= 30 * 60e3) obs[obs.length - 1] = Object.assign({}, last, { sw: lr.sw, per: lr.per, dir: lr.dir, latest: true });
+      else if (Math.abs(lr.t - last.t) <= 30 * 60e3) obs[obs.length - 1] = Object.assign({}, last, { sw: lr.sw, per: lr.per, dir: lr.dir, trains: lr.trains || last.trains, latest: true });
     }
     var fs = prev.data ? Object.keys(prev.data).map(function (k) { return prev.data[k]; }).filter(function (r) { return r.t >= t0 && r.t <= t1; }).sort(function (a, c) { return a.t - c.t; }) : [];
     var W = Math.min(640, (body.clientWidth || 358)) - 32, H = 190, PL = 28, PR = 6, PT = 8, CH = H - 30;
@@ -907,7 +930,7 @@
     var recent = obs.filter(function (r) { return r.t >= now - 12 * HOUR - 30 * 60e3; }).slice().reverse();
     var list = recent.length ? '<h2 class="cl-pad cl-f-rh">Last 12 hours</h2><div class="cl-list cl-f-rl">' + recent.map(function (r) {
       return '<button type="button" class="cl-sr cl-f-rr" data-t="' + r.t + '" aria-pressed="' + (r.t === pickT) + '"><span>' + esc(F.time(new Date(r.t))) + (r.latest ? ' <span class="cl-f-lt">latest</span>' : '') +
-        '<small>' + esc(readingLine(r.hs, r.sw, r.per, r.dir) || 'No swell split this hour') + '</small></span><span class="cl-v">' + esc(F.ft(r.hs)) + '</span></button>';
+        '<small>' + esc(readingLine(r.hs, r.sw, r.per, r.dir, r.trains) || 'No swell split this hour') + '</small></span><span class="cl-v">' + esc(F.ft(r.hs)) + '</span></button>';
     }).join('') + '</div>' : '';
     // how each lead did over the two days, hour by hour where both exist
     var stats = [1, 2, 3].map(function (n) {
@@ -949,7 +972,7 @@
     var i = curStep();
     return { fc: fc.status, made: fc.made, step: i, t: i >= 0 ? fc.steps[i].t : null, mode: cur.mode, spot: spot,
       prev: prev.status, verif: verif.status, playing: !!play.timer, map: { status: map.status, zoom: map.zoom },
-      view: view, full: full.on, layout: layout(), days: sc.ext ? days : 7, steps: fc.steps ? fc.steps.length : 0 };
+      view: view, full: full.on, fullAuto: full.on && !full.pushed, fullTabs: !!(E.f && E.f.classList.contains('cl-f-tabs')), layout: layout(), days: sc.ext ? days : 7, steps: fc.steps ? fc.steps.length : 0 };
   };
 
   C.register('forecast', {

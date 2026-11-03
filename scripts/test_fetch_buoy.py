@@ -174,6 +174,7 @@ class MainOffline(unittest.TestCase):
             self.assertEqual(out["buoy"]["time"], "2026-10-01 14:00 UTC")
             self.assertEqual(out["spectral_summary"]["swell_period"], 10.5)
             self.assertEqual(len(out["spectral_bins"]), 98)
+            self.assertTrue(out["trains"] and out["trains"][0][0] > 0, "the spectrum's swell trains, for the buoy box")
 
             verif = json.loads((Path(tmp) / "verification.json").read_text())
             # The 14:00 obs waits for its hourly data_spec row (published
@@ -388,6 +389,24 @@ class SpectralBand(unittest.TestCase):
         self.assertIsNone(self.fb.compute_swell_band(None))
         self.assertIsNone(self.fb.compute_swell_band([]))
 
+    def test_trains_split_the_spectrum_like_the_history_bot(self):
+        # Two swell peaks two bins apart (10 s from 120°, 8.3 s from 150°) sit on one smoothed hump, so they merge
+        # into one train (the history's rule: the trough between them is above 70% of the lower peak), with the
+        # energy-weighted direction; the 5 s wind sea from 300° is its own train. Biggest first, in feet.
+        bins = synthetic_bins({0.10: 2.0, 0.12: 1.0, 0.20: 4.0}, {0.10: 120.0, 0.12: 150.0, 0.20: 300.0})
+        trains = self.fb.compute_trains(bins)
+        self.assertEqual(trains, [[round(4 * math.sqrt(0.04) * self.fb.M_TO_FT, 1), 5.0, 300],
+                                  [round(4 * math.sqrt(0.03) * self.fb.M_TO_FT, 1), 10.0, 130]])
+        # A train under 0.3 ft folds into the neighbour closest in direction (the 7 s wisp from 125° into the 10 s
+        # swell from 120°, not the wind sea), and a train whose bins have no direction keeps None, never 0° (north).
+        bins = synthetic_bins({0.10: 2.0, 0.15: 0.05, 0.25: 3.0}, {0.10: 120.0, 0.15: 125.0, 0.25: 300.0})
+        self.assertEqual(self.fb.compute_trains(bins), [[round(4 * math.sqrt(0.03) * self.fb.M_TO_FT, 1), 4.0, 300],
+                                                        [round(4 * math.sqrt(0.0205) * self.fb.M_TO_FT, 1), 10.0, 120]])
+        nodir = synthetic_bins({0.10: 2.0, 0.25: 3.0}, {0.10: 999.0, 0.25: 300.0})
+        self.assertEqual([t[2] for t in self.fb.compute_trains(nodir)], [300, None])
+        self.assertIsNone(self.fb.compute_trains(None))
+        self.assertEqual(self.fb.compute_trains(synthetic_bins({})), [])
+
     def test_missing_directions_are_skipped_not_read_as_north(self):
         # NDBC writes 999.0 for a bin with no direction (999° would average
         # as 279°), and a failed swdir leaves dir1 None. Neither counts.
@@ -468,6 +487,11 @@ class VerificationRows(unittest.TestCase):
         self.assertGreater(r["buoy"]["swh8"], r["buoy"]["swh"], "the 8 s+ band includes the 8–10 s swell SwH drops")
         self.assertTrue(8 <= r["buoy"]["swp8"] <= 25)
         self.assertTrue(115 <= r["buoy"]["swd"] <= 158, "direction from the >=8 s bins, not .spec compass text")
+        # the hour's swell trains, biggest first, each [ft, period, from]
+        tr = r["buoy"]["trains"]
+        self.assertTrue(1 <= len(tr) <= self.fb.MAX_TRAINS, tr)
+        self.assertEqual(tr, sorted(tr, key=lambda t: -t[0]))
+        self.assertTrue(all(0 < t[0] < 20 and 2 <= t[1] <= 30 and (t[2] is None or 0 <= t[2] < 360) for t in tr), tr)
         self.assertEqual(r["mb"]["wvd"], 120.0)
         self.assertEqual((r["mb"]["hs"], r["mc"]["hs"]), (2.3, 1.8))
         self.assertTrue(all(row["buoy"]["tm10"] is not None and row["mb"] for row in rows))
