@@ -130,6 +130,6 @@
   "2026-08": {"rows": 124, "first": "2026-08-01T00Z", "last": "2026-08-31T18Z", "missing": 0, "source": "GFS analysis (NOAA, f000, 1°)"},
   "2026-09": {"rows": 120, "first": "2026-09-01T00Z", "last": "2026-09-30T18Z", "missing": 0, "source": "GFS analysis (NOAA, f000, 1°)"},
   "2026-10": {"rows": 124, "first": "2026-10-01T00Z", "last": "2026-10-31T18Z", "missing": 0, "source": "GFS analysis (NOAA, f000, 1°)"},
-  "2026-11": {"rows": 16, "first": "2026-11-01T00Z", "last": "2026-11-04T18Z", "missing": 0, "source": "GFS analysis (NOAA, f000, 1°)"}
+  "2026-11": {"rows": 20, "first": "2026-11-01T00Z", "last": "2026-11-05T18Z", "missing": 0, "source": "GFS analysis (NOAA, f000, 1°)"}
  }
 }
