@@ -26,21 +26,21 @@
   },
   "E best 6 h of in-window power": {
    "n": 29,
-   "rho": 0.6,
-   "lo": 0.25,
-   "hi": 0.83
+   "rho": 0.57,
+   "lo": 0.24,
+   "hi": 0.8
   },
   "F daylight average in-window power": {
    "n": 29,
-   "rho": 0.55,
-   "lo": 0.24,
-   "hi": 0.76
+   "rho": 0.51,
+   "lo": 0.19,
+   "hi": 0.75
   },
   "G best 6 h of in-window height": {
    "n": 29,
-   "rho": 0.6,
-   "lo": 0.28,
-   "hi": 0.81
+   "rho": 0.51,
+   "lo": 0.17,
+   "hi": 0.76
   },
   "H height at the session hour (any direction)": {
    "n": 29,
@@ -70,7 +70,7 @@
    "n": 29,
    "rho": 0.7,
    "lo": 0.42,
-   "hi": 0.87
+   "hi": 0.86
   },
   "D* best 3 h in-window power, soft window edge": {
    "n": 29,
@@ -622,19 +622,19 @@
    "t": "2026-10-12T07:30:00-04:00",
    "size": 9.0,
    "L": 7.0,
-   "A day peak height (any direction) \u2014 current animation": 10.170604,
-   "B day peak height, in window": 10.170604,
-   "C day peak power, in window": 33.90408000000001,
-   "D best 3 h of in-window power": 21.885360000000002,
-   "E best 6 h of in-window power": 15.88776,
-   "F daylight average in-window power": 4.34403375,
-   "G best 6 h of in-window height": 4.92126,
-   "H height at the session hour (any direction)": 9.514436,
+   "A day peak height (any direction) \u2014 current animation": 10.4658796,
+   "B day peak height, in window": 9.7112864,
+   "C day peak power, in window": 30.9109248,
+   "D best 3 h of in-window power": 18.790457868,
+   "E best 6 h of in-window power": 9.395228934,
+   "F daylight average in-window power": 2.3488072335,
+   "G best 6 h of in-window height": 3.1167980000000006,
+   "H height at the session hour (any direction)": 9.2519688,
    "I in-window power at the session hour": 0.0,
    "J 3 h in-window power around the session": 0.0,
    "K 6 h in-window power around the session": 0.0,
-   "E* best 6 h in-window power, soft window edge": 26.083031470588235,
-   "D* best 3 h in-window power, soft window edge": 31.84677176470588,
+   "E* best 6 h in-window power, soft window edge": 17.99850954917647,
+   "D* best 3 h in-window power, soft window edge": 27.586271664000005,
    "L swell height the app logged (forecast pin)": 7.0
   }
  ]
